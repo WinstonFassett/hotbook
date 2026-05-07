@@ -1,0 +1,7 @@
+{
+  "name": "alloc-viz",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ]
+}

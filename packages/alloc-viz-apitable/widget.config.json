@@ -1,0 +1,21 @@
+{
+  "packageId": "wpkd3lh8rZHsx",
+  "spaceId": "spcufKW66nuMi",
+  "host": "https://apitable.app.winstonfassett.com",
+  "entry": "src/index.tsx",
+  "name": {
+    "en-US": "Allocation Visualizer",
+    "zh-CN": "Allocation Visualizer"
+  },
+  "description": {
+    "en-US": "Pie / bands / treemap with live SDK data and drag-to-edit",
+    "zh-CN": "Pie / bands / treemap with live SDK data and drag-to-edit"
+  },
+  "icon": "icon.png",
+  "cover": "cover.png",
+  "authorIcon": "author-icon.png",
+  "authorName": "Winston",
+  "authorEmail": "dev@winstonfassett.com",
+  "authorLink": "https://winstonfassett.com",
+  "sandbox": false
+}
