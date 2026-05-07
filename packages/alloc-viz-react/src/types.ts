@@ -13,4 +13,12 @@ export interface Goal {
   updatedAt: string
 }
 
-export type ViewMode = 'treemap' | 'radial' | 'bands'
+export type ViewMode = 'treemap' | 'radial' | 'bands' | 'h-treemap' | 'h-icicle' | 'h-radial'
+
+export interface GoalTree {
+  id: string
+  name: string
+  color: string
+  value: number
+  children?: GoalTree[]
+}

@@ -1,3 +1,4 @@
 export { Viz } from './Viz'
-export type { Goal, UnitKind, ViewMode } from './types'
+export { HViz } from './HViz'
+export type { Goal, GoalTree, UnitKind, ViewMode } from './types'
 export { pickColor } from './colors'

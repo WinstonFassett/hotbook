@@ -13,7 +13,9 @@
     }
   },
   "types": "./dist/index.d.ts",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "vite build",
     "dev": "vite build --watch"
@@ -22,10 +24,12 @@
     "react": ">=17"
   },
   "dependencies": {
+    "@types/d3-scale": "^4.0.9",
     "d3-drag": "^3.0.0",
     "d3-ease": "^3.0.1",
     "d3-hierarchy": "^3.1.2",
     "d3-interpolate": "^3.0.1",
+    "d3-scale": "^4.0.2",
     "d3-selection": "^3.0.0",
     "d3-shape": "^3.2.0",
     "d3-transition": "^3.0.1"
@@ -39,10 +43,10 @@
     "@types/d3-shape": "^3.1.6",
     "@types/d3-transition": "^3.0.9",
     "@types/react": "^18.0.0",
+    "@vitejs/plugin-react": "^4.0.0",
     "react": "^18.0.0",
     "typescript": "^5.9.3",
     "vite": "^6.0.0",
-    "@vitejs/plugin-react": "^4.0.0",
     "vite-plugin-dts": "^4.0.0"
   }
 }
