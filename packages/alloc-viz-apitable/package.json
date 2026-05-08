@@ -1,8 +1,11 @@
 {
   "name": "alloc-viz-apitable",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "APITable widget adapter for alloc-viz-react",
   "main": "src/index.tsx",
+  "files": [
+    "src"
+  ],
   "scripts": {
     "start": "widget-cli start",
     "build": "widget-cli release"
