@@ -3,3 +3,4 @@ dist/
 inspo/
 *.zip
 .DS_Store
+.apitable.yml
