@@ -170,6 +170,69 @@
 }
 .sb-btn-full { width: 100%; }
 
+/* ── Responsive ──────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .sb-body {
+    flex-direction: column;
+  }
+
+  .sb-left {
+    width: 100%;
+    max-height: 220px;
+    border-right: none;
+    border-bottom: 1px solid #222;
+  }
+
+  .sb-right {
+    flex: 1;
+    min-height: 300px;
+  }
+
+  /* Bigger touch targets for table inputs */
+  .sb-input,
+  .sb-select {
+    font-size: 14px;
+    padding: 4px 6px;
+  }
+
+  .sb-td {
+    padding: 3px 4px;
+  }
+
+  /* Toolbar: let buttons wrap naturally, no separator needed */
+  .sb-viz-toolbar {
+    gap: 5px;
+    padding: 6px 8px;
+    row-gap: 5px;
+  }
+
+  .sb-btn {
+    padding: 4px 10px;
+    font-size: 12px;
+  }
+
+  /* Sort group stays inline but doesn't push to far right on narrow screens */
+  .sb-sort-group {
+    margin-left: 0;
+  }
+
+  /* Board menu trigger: shrink max-width so it fits topbar */
+  .sb-menu-trigger {
+    max-width: 160px;
+  }
+
+  /* Del button bigger hit area */
+  .sb-del-btn {
+    font-size: 16px;
+    padding: 2px 6px;
+  }
+
+  .sb-add-row {
+    padding: 6px 8px;
+  }
+}
+/* ─────────────────────────────────────────────────────────── */
+
 /* Board menu */
 .sb-menu-wrap {
   position: relative;
