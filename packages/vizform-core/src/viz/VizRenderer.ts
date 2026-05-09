@@ -309,7 +309,7 @@ export class VizRenderer {
         const nameSel = sel.select<SVGTextElement>('text.name').interrupt()
         const valueSel = sel.select<SVGTextElement>('text.value').interrupt()
         nameSel.attr('text-anchor', prev.textAnchor)
-        valueSel.attr('text-anchor', /* prevMode */ (() => { return 'start' })() === 'bands' ? 'end' : prev.textAnchor)
+        valueSel.attr('text-anchor', prev.textAnchor)
 
         const f0 = frame(0)
         sel.attr('transform', f0.transform)
