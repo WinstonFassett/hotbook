@@ -18,6 +18,19 @@ import {
   MIN_ARC_ANGLE, MIN_NUMBER_ANGLE, PAD_ANGLE, REORDER_DUR, ROW_H,
 } from './constants'
 import { renderRadialChrome } from './chrome/radialChrome'
+
+function getClientPos(e: Event): { clientX: number; clientY: number } {
+  if ('touches' in e) {
+    const t = (e as TouchEvent).touches[0] ?? (e as TouchEvent).changedTouches[0]
+    if (t) return { clientX: t.clientX, clientY: t.clientY }
+  }
+  return { clientX: (e as MouseEvent).clientX, clientY: (e as MouseEvent).clientY }
+}
+
+function getClientAngle(sourceEvent: Event, svgEl: SVGSVGElement, cx: number, cy: number): number {
+  const { clientX, clientY } = getClientPos(sourceEvent)
+  return clientAngle(clientX, clientY, svgEl, cx, cy)
+}
 import { renderBandsChrome } from './chrome/bandsChrome'
 
 type AtomEl = SVGGElement & { _angles?: { startAngle: number; endAngle: number } }
@@ -500,7 +513,7 @@ export class VizRenderer {
           .on('drag', function(event, d) {
             const dr = self.radialResizeDrag
             if (!dr) return
-            const mouseA = clientAngle(event.sourceEvent.clientX, event.sourceEvent.clientY, svgEl, cx, cy)
+            const mouseA = getClientAngle(event.sourceEvent, svgEl, cx, cy)
             const minEnd = dr.arcStartAngle + PAD_ANGLE + 0.05
             const maxEnd = dr.arcStartAngle + (2 * Math.PI - dr.totalPad) - 0.05
             let unwrapped = mouseA
@@ -563,7 +576,7 @@ export class VizRenderer {
             .on('start', function(event, d) {
               if (d.isPhantom) return
               if (!d.arcParams) return
-              const mouseA = clientAngle(event.sourceEvent.clientX, event.sourceEvent.clientY, svgEl, cx, cy)
+              const mouseA = getClientAngle(event.sourceEvent, svgEl, cx, cy)
               const initialOrder = atoms.filter(a => !a.isPhantom).map(a => a.id)
               const layoutMap = new Map<string, AtomGeometry>()
               atoms.forEach(a => layoutMap.set(a.id, a))
@@ -587,7 +600,7 @@ export class VizRenderer {
                 select(this).interrupt().style('cursor', 'grabbing')
                 atomsG.select(`g.goal-atom[data-id="${dr.goalId}"]`).interrupt().raise()
               }
-              const mouseA = clientAngle(event.sourceEvent.clientX, event.sourceEvent.clientY, svgEl, cx, cy)
+              const mouseA = getClientAngle(event.sourceEvent, svgEl, cx, cy)
               let delta = mouseA - dr.startMouseAngle
               if (delta > Math.PI) delta -= 2 * Math.PI
               if (delta < -Math.PI) delta += 2 * Math.PI
@@ -751,7 +764,7 @@ export class VizRenderer {
           .on('drag', function(event, d) {
             const dr = self.bandsResizeDrag
             if (!dr) return
-            const x = event.sourceEvent.clientX - dr.trackLeftAbs
+            const x = getClientPos(event.sourceEvent).clientX - dr.trackLeftAbs
             const fraction = Math.max(0, x / dr.trackW)
             const newValue = Math.max(0, Math.round(dr.lockedAxis * fraction))
             dr.previewValue = newValue
@@ -803,12 +816,13 @@ export class VizRenderer {
           .clickDistance(5)
           .on('start', function(event, d) {
             const svgRect = svgEl.getBoundingClientRect()
-            const ySvg = event.sourceEvent.clientY - svgRect.top
+            const { clientX: _sx, clientY: _sy } = getClientPos(event.sourceEvent)
+            const ySvg = _sy - svgRect.top
             const rowTop = topPad + d.index * rowStep
             self.bandsReorderDrag = {
               goalId: d.id,
-              startClientX: event.sourceEvent.clientX,
-              startClientY: event.sourceEvent.clientY,
+              startClientX: _sx,
+              startClientY: _sy,
               grabOffsetY: ySvg - rowTop,
               initialOrder: atoms.map(x => x.id),
               currentOrder: atoms.map(x => x.id),
@@ -818,9 +832,10 @@ export class VizRenderer {
           .on('drag', function(event, d) {
             const dr = self.bandsReorderDrag
             if (!dr) return
+            const { clientX: _dx, clientY: _dy } = getClientPos(event.sourceEvent)
             if (!dr.activated) {
-              const dx = event.sourceEvent.clientX - dr.startClientX
-              const dy = event.sourceEvent.clientY - dr.startClientY
+              const dx = _dx - dr.startClientX
+              const dy = _dy - dr.startClientY
               if (dx * dx + dy * dy < 25) return
               dr.activated = true
               event.sourceEvent.stopPropagation()
@@ -829,7 +844,7 @@ export class VizRenderer {
               document.body.style.cursor = 'grabbing'
             }
             const svgRect = svgEl.getBoundingClientRect()
-            const ySvg = event.sourceEvent.clientY - svgRect.top
+            const ySvg = _dy - svgRect.top
             const newTop = Math.max(topPad, Math.min(topPad + (atoms.length - 1) * rowStep, ySvg - dr.grabOffsetY))
             atomsG.select(`g.goal-atom[data-id="${d.id}"]`).attr('transform', `translate(${trackX}, ${newTop + 4})`)
             chromeG.select(`g.band-rank-wrap[data-id="${d.id}"]`).attr('transform', `translate(0, ${newTop})`)
