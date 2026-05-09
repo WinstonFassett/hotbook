@@ -136,7 +136,7 @@ export class VizRenderer {
       const step = event.shiftKey ? 5 : 1
       const dir = event.deltaY < 0 ? +1 : -1
       const cur = Math.max(0, goal.measurements[opts.activeUnit] ?? DEFAULT_SIZE)
-      const next = Math.max(0, cur + dir * step)
+      const next = Math.max(1, cur + dir * step)
       if (next !== cur) {
         opts.onUpdate(goal.id, { measurements: { ...goal.measurements, [opts.activeUnit]: next } })
       }
@@ -198,6 +198,8 @@ export class VizRenderer {
     const previewGoals: Goal[] = active.map(g => {
       const r = this.bandsResizeDrag
       if (r && r.goalId === g.id) return { ...g, measurements: { ...g.measurements, [activeUnit]: r.previewValue } }
+      const rr = this.radialResizeDrag
+      if (rr && rr.goalId === g.id) return { ...g, measurements: { ...g.measurements, [activeUnit]: Math.max(1, rr.previewValue) } }
       return g
     })
 
@@ -561,7 +563,7 @@ export class VizRenderer {
             const newSpan = newEndAngle - dr.arcStartAngle - PAD_ANGLE
             const availSpan = 2 * Math.PI - dr.totalPad
             const p = Math.max(0.001, Math.min(0.999, newSpan / availSpan))
-            const previewValue = Math.max(0, Math.round(dr.otherTotal * p / (1 - p)))
+            const previewValue = Math.max(1, Math.round(dr.otherTotal * p / (1 - p)))
             if (previewValue !== dr.previewValue) {
               dr.previewValue = previewValue
               const goal = active.find(g => g.id === dr.goalId)
@@ -815,7 +817,7 @@ export class VizRenderer {
             if (!dr) return
             const x = getClientPos(event.sourceEvent).clientX - dr.trackLeftAbs
             const fraction = Math.max(0, x / dr.trackW)
-            const newValue = Math.max(0, Math.round(dr.lockedAxis * fraction))
+            const newValue = Math.max(1, Math.round(dr.lockedAxis * fraction))
             if (newValue !== dr.previewValue) {
               dr.previewValue = newValue
               const goal = active.find(g => g.id === d.id)
