@@ -1,0 +1,241 @@
+/* Layout */
+.sb-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* Topbar */
+.sb-topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border-bottom: 1px solid #222;
+  flex-shrink: 0;
+  background: #111;
+}
+.sb-wordmark {
+  color: #444;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-right: 4px;
+  user-select: none;
+}
+
+/* Body */
+.sb-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Left panel — data table */
+.sb-left {
+  width: 300px;
+  flex-shrink: 0;
+  border-right: 1px solid #222;
+  display: flex;
+  flex-direction: column;
+}
+.sb-left-header {
+  padding: 6px 10px;
+  border-bottom: 1px solid #1e1e1e;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sb-section-label {
+  color: #444;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.sb-group-toggle {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #555;
+  cursor: pointer;
+}
+.sb-table-scroll {
+  flex: 1;
+  overflow-y: auto;
+}
+.sb-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.sb-th {
+  padding: 4px 8px;
+  text-align: left;
+  color: #3a3a3a;
+  font-weight: 400;
+  font-size: 11px;
+  border-bottom: 1px solid #1a1a1a;
+}
+.sb-th-val { width: 55px; }
+.sb-th-del { width: 28px; }
+.sb-td {
+  padding: 2px 4px;
+  border-bottom: 1px solid #161616;
+}
+.sb-td-center { text-align: center; }
+.sb-input {
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: #aaa;
+  font-size: 12px;
+  padding: 2px 4px;
+  outline: none;
+}
+.sb-input-right { text-align: right; }
+.sb-select {
+  width: 100%;
+  background: #111;
+  border: none;
+  color: #aaa;
+  font-size: 12px;
+  padding: 2px 4px;
+  outline: none;
+}
+.sb-del-btn {
+  background: none;
+  border: none;
+  color: #3a3a3a;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+}
+.sb-add-row {
+  padding: 8px 10px;
+  border-top: 1px solid #1e1e1e;
+}
+
+/* Right panel — viz */
+.sb-right {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.sb-viz-toolbar {
+  display: flex;
+  gap: 4px;
+  padding: 4px 8px;
+  border-bottom: 1px solid #222;
+  flex-shrink: 0;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.sb-toolbar-sep {
+  color: #2a2a2a;
+  font-size: 11px;
+}
+.sb-sort-group {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+}
+.sb-viz-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #2a2a2a;
+  font-size: 13px;
+}
+.sb-viz-canvas {
+  flex: 1;
+  overflow: hidden;
+}
+
+/* Buttons */
+.sb-btn {
+  padding: 2px 10px;
+  border-radius: 4px;
+  border: 1px solid #2a2a2a;
+  background: transparent;
+  color: #888;
+  cursor: pointer;
+  font-size: 11px;
+}
+.sb-btn-active {
+  background: #2a2a2a;
+  color: #eee;
+}
+.sb-btn-full { width: 100%; }
+
+/* Board menu */
+.sb-menu-wrap {
+  position: relative;
+}
+.sb-menu-trigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 200px;
+  overflow: hidden;
+}
+.sb-menu-trigger-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sb-menu-caret {
+  color: #555;
+  flex-shrink: 0;
+}
+.sb-menu-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 100;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 4px;
+  min-width: 220px;
+  margin-top: 2px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+}
+.sb-menu-boards {
+  padding: 4px 0;
+  border-bottom: 1px solid #252525;
+}
+.sb-menu-board-btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 5px 12px;
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 12px;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+}
+.sb-menu-board-btn.active {
+  color: #fff;
+  border-left-color: #555;
+}
+.sb-menu-actions {
+  padding: 4px 0;
+}
+.sb-menu-action-btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 5px 12px;
+  background: none;
+  border: none;
+  color: #777;
+  font-size: 11px;
+  cursor: pointer;
+}
+.sb-menu-action-btn.danger {
+  color: #c44;
+}

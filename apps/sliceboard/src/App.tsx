@@ -6,6 +6,7 @@ import {
   boardToUrl,
 } from './persistence'
 import type { Row, Board, BoardStore } from './persistence'
+import './App.css'
 
 const GROUPS = ['Alpha', 'Beta', 'Gamma']
 const FLAT_MODES: ViewMode[] = ['treemap', 'radial', 'bands']
@@ -73,41 +74,29 @@ function BoardMenu({
   }, [open])
 
   return (
-    <div ref={ref} style={{ position: 'relative' }}>
+    <div ref={ref} className="sb-menu-wrap">
       <button
-        style={{ ...btnBase, display: 'flex', alignItems: 'center', gap: 6, maxWidth: 200, overflow: 'hidden' }}
+        className="sb-btn sb-menu-trigger"
         onClick={() => setOpen(o => !o)}
       >
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {store.active.name}
-        </span>
-        <span style={{ color: '#555', flexShrink: 0 }}>▾</span>
+        <span className="sb-menu-trigger-label">{store.active.name}</span>
+        <span className="sb-menu-caret">▾</span>
       </button>
 
       {open && (
-        <div style={{
-          position: 'absolute', top: '100%', left: 0, zIndex: 100,
-          background: '#1a1a1a', border: '1px solid #333', borderRadius: 4,
-          minWidth: 220, marginTop: 2, boxShadow: '0 4px 12px rgba(0,0,0,.6)',
-        }}>
-          <div style={{ padding: '4px 0', borderBottom: '1px solid #252525' }}>
+        <div className="sb-menu-dropdown">
+          <div className="sb-menu-boards">
             {store.boards.map(b => (
               <button
                 key={b.id}
                 onClick={() => { onSwitch(b); setOpen(false) }}
-                style={{
-                  display: 'block', width: '100%', textAlign: 'left',
-                  padding: '5px 12px', background: 'none', border: 'none',
-                  color: b.id === store.active.id ? '#fff' : '#888',
-                  fontSize: 12, cursor: 'pointer',
-                  borderLeft: b.id === store.active.id ? '2px solid #555' : '2px solid transparent',
-                }}
+                className={`sb-menu-board-btn${b.id === store.active.id ? ' active' : ''}`}
               >
                 {b.name}
               </button>
             ))}
           </div>
-          <div style={{ padding: '4px 0' }}>
+          <div className="sb-menu-actions">
             {([
               { label: 'New board',  action: onNew },
               { label: 'Duplicate', action: onDuplicate },
@@ -118,11 +107,7 @@ function BoardMenu({
               <button
                 key={label}
                 onClick={() => { action(); setOpen(false) }}
-                style={{
-                  display: 'block', width: '100%', textAlign: 'left',
-                  padding: '5px 12px', background: 'none', border: 'none',
-                  color: danger ? '#c44' : '#777', fontSize: 11, cursor: 'pointer',
-                }}
+                className={`sb-menu-action-btn${danger ? ' danger' : ''}`}
               >
                 {label}
               </button>
@@ -223,17 +208,11 @@ export function App() {
   const isHier = (HIER_MODES as string[]).includes(mode)
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div className="sb-root">
 
       {/* Topbar */}
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 8,
-        padding: '4px 10px', borderBottom: '1px solid #222',
-        flexShrink: 0, background: '#111',
-      }}>
-        <span style={{ color: '#444', fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', marginRight: 4, userSelect: 'none' }}>
-          sliceboard
-        </span>
+      <div className="sb-topbar">
+        <span className="sb-wordmark">sliceboard</span>
         <BoardMenu
           store={store}
           onSwitch={switchBoard}
@@ -246,84 +225,78 @@ export function App() {
       </div>
 
       {/* Body */}
-      <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+      <div className="sb-body">
 
         {/* Left: data table */}
-        <div style={{ width: 300, flexShrink: 0, borderRight: '1px solid #222', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ padding: '6px 10px', borderBottom: '1px solid #1e1e1e', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ color: '#444', fontSize: 11, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Data</span>
-            <label style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#555', cursor: 'pointer' }}>
+        <div className="sb-left">
+          <div className="sb-left-header">
+            <span className="sb-section-label">Data</span>
+            <label className="sb-group-toggle">
               <input type="checkbox" checked={grouped} onChange={e => patchState({ grouped: e.target.checked })} />
               group by
             </label>
           </div>
-          <div style={{ flex: 1, overflowY: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <div className="sb-table-scroll">
+            <table className="sb-table">
               <thead>
                 <tr>
-                  <th style={thStyle}>Name</th>
-                  {grouped && <th style={thStyle}>Group</th>}
-                  <th style={{ ...thStyle, width: 55 }}>Value</th>
-                  <th style={{ ...thStyle, width: 28 }} />
+                  <th className="sb-th">Name</th>
+                  {grouped && <th className="sb-th">Group</th>}
+                  <th className="sb-th sb-th-val">Value</th>
+                  <th className="sb-th sb-th-del" />
                 </tr>
               </thead>
               <tbody>
                 {rows.map(r => (
                   <tr key={r.id}>
-                    <td style={tdStyle}>
-                      <input style={inputStyle} value={r.name} onChange={e => updateName(r.id, e.target.value)} />
+                    <td className="sb-td">
+                      <input className="sb-input" value={r.name} onChange={e => updateName(r.id, e.target.value)} />
                     </td>
                     {grouped && (
-                      <td style={tdStyle}>
-                        <select style={{ ...inputStyle, background: '#111' }} value={r.group} onChange={e => updateGroup(r.id, e.target.value)}>
+                      <td className="sb-td">
+                        <select className="sb-select" value={r.group} onChange={e => updateGroup(r.id, e.target.value)}>
                           {GROUPS.map(g => <option key={g} value={g}>{g}</option>)}
                         </select>
                       </td>
                     )}
-                    <td style={tdStyle}>
-                      <input style={{ ...inputStyle, textAlign: 'right' }} value={r.value} type="number" min={0} onChange={e => updateValue(r.id, e.target.value)} />
+                    <td className="sb-td">
+                      <input className="sb-input sb-input-right" value={r.value} type="number" min={0} onChange={e => updateValue(r.id, e.target.value)} />
                     </td>
-                    <td style={{ ...tdStyle, textAlign: 'center' }}>
-                      <button onClick={() => removeRow(r.id)} style={{ background: 'none', border: 'none', color: '#3a3a3a', cursor: 'pointer', fontSize: 13, lineHeight: 1 }}>×</button>
+                    <td className="sb-td sb-td-center">
+                      <button onClick={() => removeRow(r.id)} className="sb-del-btn">×</button>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <div style={{ padding: '8px 10px', borderTop: '1px solid #1e1e1e' }}>
-            <button onClick={addRow} style={{ ...btnBase, width: '100%' }}>+ Add row</button>
+          <div className="sb-add-row">
+            <button onClick={addRow} className="sb-btn sb-btn-full">+ Add row</button>
           </div>
         </div>
 
         {/* Right: viz */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-          <div style={{
-            display: 'flex', gap: 4, padding: '4px 8px',
-            borderBottom: '1px solid #222', flexShrink: 0,
-            alignItems: 'center', flexWrap: 'wrap',
-          }}>
+        <div className="sb-right">
+          <div className="sb-viz-toolbar">
             {FLAT_MODES.map(m => (
-              <button key={m} style={mode === m ? btnActive : btnBase} onClick={() => patchState({ mode: m })}>{m}</button>
+              <button key={m} className={`sb-btn${mode === m ? ' sb-btn-active' : ''}`} onClick={() => patchState({ mode: m })}>{m}</button>
             ))}
-            <span style={{ color: '#2a2a2a', fontSize: 11 }}>|</span>
+            <span className="sb-toolbar-sep">|</span>
             {HIER_MODES.map(m => (
-              <button key={m} style={mode === m ? btnActive : btnBase} onClick={() => patchState({ mode: m })}>{HIER_LABELS[m]}</button>
+              <button key={m} className={`sb-btn${mode === m ? ' sb-btn-active' : ''}`} onClick={() => patchState({ mode: m })}>{HIER_LABELS[m]}</button>
             ))}
             {!isHier && (
-              <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
-                <button style={sortMode === 'index' ? btnActive : btnBase} onClick={() => patchState({ sortMode: 'index' })}>idx</button>
-                <button style={sortMode === 'size' ? btnActive : btnBase} onClick={() => patchState({ sortMode: 'size' })}>↓val</button>
+              <div className="sb-sort-group">
+                <button className={`sb-btn${sortMode === 'index' ? ' sb-btn-active' : ''}`} onClick={() => patchState({ sortMode: 'index' })}>idx</button>
+                <button className={`sb-btn${sortMode === 'size' ? ' sb-btn-active' : ''}`} onClick={() => patchState({ sortMode: 'size' })}>↓val</button>
               </div>
             )}
           </div>
 
           {rows.length === 0 ? (
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2a2a2a', fontSize: 13 }}>
-              Add a row to visualize
-            </div>
+            <div className="sb-viz-empty">Add a row to visualize</div>
           ) : (
-            <div style={{ flex: 1, overflow: 'hidden' }}>
+            <div className="sb-viz-canvas">
               {isHier ? (
                 <HViz tree={tree} mode={mode as 'h-treemap' | 'h-icicle' | 'h-radial'} />
               ) : (
@@ -343,12 +316,3 @@ export function App() {
     </div>
   )
 }
-
-const btnBase: React.CSSProperties = {
-  padding: '2px 10px', borderRadius: 4, border: '1px solid #2a2a2a',
-  background: 'transparent', color: '#888', cursor: 'pointer', fontSize: 11,
-}
-const btnActive: React.CSSProperties = { ...btnBase, background: '#2a2a2a', color: '#eee' }
-const thStyle: React.CSSProperties = { padding: '4px 8px', textAlign: 'left', color: '#3a3a3a', fontWeight: 400, fontSize: 11, borderBottom: '1px solid #1a1a1a' }
-const tdStyle: React.CSSProperties = { padding: '2px 4px', borderBottom: '1px solid #161616' }
-const inputStyle: React.CSSProperties = { width: '100%', background: 'transparent', border: 'none', color: '#aaa', fontSize: 12, padding: '2px 4px', outline: 'none' }
