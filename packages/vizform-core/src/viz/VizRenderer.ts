@@ -144,8 +144,11 @@ export class VizRenderer {
     this.svgEl.addEventListener('wheel', this.wheelHandler, { passive: false })
   }
 
-  private _startResizeDrag(atoms: AtomGeometry[]) {
+  private cancelCallback: (() => void) | null = null
+
+  private _startResizeDrag(atoms: AtomGeometry[], onCancel: () => void) {
     this.dragOrderSnapshot = atoms.filter(a => !a.isPhantom).map(a => a.id)
+    this.cancelCallback = onCancel
     this.escapeHandler = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
       this._cancelResizeDrag()
@@ -155,6 +158,7 @@ export class VizRenderer {
 
   private _endResizeDrag() {
     this.dragOrderSnapshot = null
+    this.cancelCallback = null
     if (this.escapeHandler) {
       document.removeEventListener('keydown', this.escapeHandler)
       this.escapeHandler = null
@@ -162,13 +166,13 @@ export class VizRenderer {
   }
 
   private _cancelResizeDrag() {
+    const revert = this.cancelCallback
     this.radialResizeDrag = null
     this.bandsResizeDrag = null
     document.body.style.userSelect = ''
     document.body.style.cursor = ''
     this._endResizeDrag()
-    // Re-render with original (uncommitted) goals to revert visual state
-    if (this.latestOpts) this.render(this.latestOpts)
+    revert?.()
   }
 
   render(opts: VizRenderOptions) {
@@ -537,7 +541,9 @@ export class VizRenderer {
               totalPad: N * PAD_ANGLE,
               previewValue: startValue,
             }
-            self._startResizeDrag(atoms)
+            self._startResizeDrag(atoms, () => {
+              onUpdate(d.id, { measurements: { ...goal.measurements, [activeUnit]: startValue } })
+            })
             select(this).style('opacity', 1)
             const root = topG.select<SVGGElement>('g.radial-root')
             root.select('text.center-total').classed('drag-mode', true).text(`${startValue}`)
@@ -556,7 +562,13 @@ export class VizRenderer {
             const availSpan = 2 * Math.PI - dr.totalPad
             const p = Math.max(0.001, Math.min(0.999, newSpan / availSpan))
             const previewValue = Math.max(0, Math.round(dr.otherTotal * p / (1 - p)))
-            dr.previewValue = previewValue
+            if (previewValue !== dr.previewValue) {
+              dr.previewValue = previewValue
+              const goal = active.find(g => g.id === dr.goalId)
+              if (goal) onUpdate(dr.goalId, { measurements: { ...goal.measurements, [activeUnit]: previewValue } })
+            } else {
+              dr.previewValue = previewValue
+            }
             const ghostArc = { ...d.arcParams!, endAngle: newEndAngle, innerRadius: innerR, outerRadius: outerR }
             const atomG = atomsG.select<SVGGElement>(`g.goal-atom[data-id="${dr.goalId}"]`)
             atomG.select<SVGPathElement>('path.shape').interrupt().attr('d', arcPath(ghostArc))
@@ -790,7 +802,9 @@ export class VizRenderer {
               trackLeftAbs: rect.left + trackX,
               trackW, previewValue: startValue,
             }
-            self._startResizeDrag(atoms)
+            self._startResizeDrag(atoms, () => {
+              onUpdate(d.id, { measurements: { ...goal.measurements, [activeUnit]: startValue } })
+            })
             select(this).style('opacity', 1)
             select(this).select<SVGRectElement>('rect.band-handle-vis').attr('fill', 'oklch(0.98 0 0)')
             document.body.style.userSelect = 'none'
@@ -802,7 +816,13 @@ export class VizRenderer {
             const x = getClientPos(event.sourceEvent).clientX - dr.trackLeftAbs
             const fraction = Math.max(0, x / dr.trackW)
             const newValue = Math.max(0, Math.round(dr.lockedAxis * fraction))
-            dr.previewValue = newValue
+            if (newValue !== dr.previewValue) {
+              dr.previewValue = newValue
+              const goal = active.find(g => g.id === d.id)
+              if (goal) onUpdate(d.id, { measurements: { ...goal.measurements, [activeUnit]: newValue } })
+            } else {
+              dr.previewValue = newValue
+            }
             const visW = Math.max(2, Math.min(dr.trackW, (newValue / dr.lockedAxis) * dr.trackW))
             const labelOp = visW >= 70 ? 1 : 0
             const atomG = atomsG.select<SVGGElement>(`g.goal-atom[data-id="${d.id}"]`)
