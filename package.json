@@ -4,5 +4,8 @@
   "workspaces": [
     "packages/*",
     "apps/*"
-  ]
+  ],
+  "scripts": {
+    "build": "npm run build -w packages/vizform-core && npm run build -w packages/vizform-react && npm run build -w apps/sliceboard"
+  }
 }
