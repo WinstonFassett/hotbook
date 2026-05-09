@@ -8,6 +8,7 @@ export interface LayoutOpts {
   sortUnit: string
   sortUnitKind: UnitKind
   frame?: number  // size-unit only; if set and > total, render unallocated remainder
+  forceOrder?: string[]  // when set, overrides sort — items rendered in this ID order
 }
 
 export const UNALLOCATED_ID = '__unallocated__'

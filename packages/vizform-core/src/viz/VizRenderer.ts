@@ -102,6 +102,11 @@ export class VizRenderer {
   private bandsResizeDrag: BandsResizeDrag | null = null
   private bandsReorderDrag: BandsReorderDrag | null = null
 
+  // Position freeze: IDs in display order captured at resize-drag start.
+  // Passed as forceOrder to layout so sort doesn't resequence mid-drag.
+  private dragOrderSnapshot: string[] | null = null
+  private escapeHandler: ((e: KeyboardEvent) => void) | null = null
+
   // Latest render state (for event handlers that fire outside render)
   private latestGoals: Goal[] = []
   private latestOpts: VizRenderOptions | null = null
@@ -139,6 +144,33 @@ export class VizRenderer {
     this.svgEl.addEventListener('wheel', this.wheelHandler, { passive: false })
   }
 
+  private _startResizeDrag(atoms: AtomGeometry[]) {
+    this.dragOrderSnapshot = atoms.filter(a => !a.isPhantom).map(a => a.id)
+    this.escapeHandler = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      this._cancelResizeDrag()
+    }
+    document.addEventListener('keydown', this.escapeHandler)
+  }
+
+  private _endResizeDrag() {
+    this.dragOrderSnapshot = null
+    if (this.escapeHandler) {
+      document.removeEventListener('keydown', this.escapeHandler)
+      this.escapeHandler = null
+    }
+  }
+
+  private _cancelResizeDrag() {
+    this.radialResizeDrag = null
+    this.bandsResizeDrag = null
+    document.body.style.userSelect = ''
+    document.body.style.cursor = ''
+    this._endResizeDrag()
+    // Re-render with original (uncommitted) goals to revert visual state
+    if (this.latestOpts) this.render(this.latestOpts)
+  }
+
   render(opts: VizRenderOptions) {
     const { goals, w, h, mode, activeUnit, unitKind, sortUnit, sortUnitKind, frame, onUpdate, onGoalClick } = opts
     this.latestGoals = goals
@@ -165,7 +197,7 @@ export class VizRenderer {
       return g
     })
 
-    const layoutOpts = { activeUnit, unitKind, sortUnit, sortUnitKind, frame }
+    const layoutOpts = { activeUnit, unitKind, sortUnit, sortUnitKind, frame, forceOrder: this.dragOrderSnapshot ?? undefined }
     const layout: LayoutResult =
       mode === 'treemap' ? layoutTreemap(previewGoals, w, h, layoutOpts) :
       mode === 'bands'   ? layoutBands(previewGoals, w, h, layoutOpts) :
@@ -505,6 +537,7 @@ export class VizRenderer {
               totalPad: N * PAD_ANGLE,
               previewValue: startValue,
             }
+            self._startResizeDrag(atoms)
             select(this).style('opacity', 1)
             const root = topG.select<SVGGElement>('g.radial-root')
             root.select('text.center-total').classed('drag-mode', true).text(`${startValue}`)
@@ -553,6 +586,7 @@ export class VizRenderer {
           .on('end', function(_ev, d) {
             const dr = self.radialResizeDrag
             self.radialResizeDrag = null
+            self._endResizeDrag()
             if (!dr) return
             select(this).style('opacity', 0)
             if (dr.previewValue !== dr.startValue) {
@@ -756,6 +790,7 @@ export class VizRenderer {
               trackLeftAbs: rect.left + trackX,
               trackW, previewValue: startValue,
             }
+            self._startResizeDrag(atoms)
             select(this).style('opacity', 1)
             select(this).select<SVGRectElement>('rect.band-handle-vis').attr('fill', 'oklch(0.98 0 0)')
             document.body.style.userSelect = 'none'
@@ -785,6 +820,7 @@ export class VizRenderer {
           .on('end', function(_ev, d) {
             const dr = self.bandsResizeDrag
             self.bandsResizeDrag = null
+            self._endResizeDrag()
             document.body.style.userSelect = ''
             document.body.style.cursor = ''
             select(this).select<SVGRectElement>('rect.band-handle-vis').attr('fill', 'oklch(0.93 0 0)')

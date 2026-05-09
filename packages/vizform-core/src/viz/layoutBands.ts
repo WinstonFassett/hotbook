@@ -23,13 +23,21 @@ export function layoutBands(
   const dataset: Goal[] = unallocated > 0
     ? [...active, phantomGoal(unallocated, opts.activeUnit)] : active
 
-  const sorted = [...dataset].sort((a, b) => {
-    if (a.id === UNALLOCATED_ID && b.id !== UNALLOCATED_ID) return 1
-    if (a.id !== UNALLOCATED_ID && b.id === UNALLOCATED_ID) return -1
-    const av = a.measurements[opts.sortUnit] ?? 0
-    const bv = b.measurements[opts.sortUnit] ?? 0
-    return opts.sortUnitKind === 'order' ? av - bv : bv - av
-  })
+  const sorted = opts.forceOrder
+    ? [...dataset].sort((a, b) => {
+        const ai = opts.forceOrder!.indexOf(a.id)
+        const bi = opts.forceOrder!.indexOf(b.id)
+        if (ai === -1) return 1
+        if (bi === -1) return -1
+        return ai - bi
+      })
+    : [...dataset].sort((a, b) => {
+        if (a.id === UNALLOCATED_ID && b.id !== UNALLOCATED_ID) return 1
+        if (a.id !== UNALLOCATED_ID && b.id === UNALLOCATED_ID) return -1
+        const av = a.measurements[opts.sortUnit] ?? 0
+        const bv = b.measurements[opts.sortUnit] ?? 0
+        return opts.sortUnitKind === 'order' ? av - bv : bv - av
+      })
 
   const rankX = LEFT_PAD
   const trackX = rankX + RANK_W + TRACK_GAP
