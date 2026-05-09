@@ -2,6 +2,8 @@
   "name": "@winstonfassett/vizform-core",
   "version": "0.1.0",
   "description": "vizform core — pure D3/TS visualization engine, no framework dependencies.",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/WinstonFassett/vizform.git", "directory": "packages/vizform-core" },
   "publishConfig": { "access": "public" },
   "type": "module",
   "main": "./dist/vizform-core.umd.cjs",
