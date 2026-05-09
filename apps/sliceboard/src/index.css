@@ -1,0 +1,9 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #root {
+  height: 100%;
+  background: #111;
+  color: #ccc;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+}

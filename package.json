@@ -1,7 +1,8 @@
 {
-  "name": "alloc-viz",
+  "name": "vizform",
   "private": true,
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "apps/*"
   ]
 }
