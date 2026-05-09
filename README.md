@@ -8,16 +8,20 @@ D3-based proportional and hierarchical visualization library — framework-agnos
 
 ```mermaid
 graph LR
-  core["@winstonfassett/vizform-core<br/><small>pure D3/TS — no framework</small>"]
-  react["@winstonfassett/vizform-react<br/><small>React adapter</small>"]
-  element["@winstonfassett/vizform-element<br/><small>web components</small>"]
-  apitable["@winstonfassett/vizform-apitable<br/><small>APITable widget</small>"]
-  sliceboard["apps/sliceboard<br/><small>demo app</small>"]
+  subgraph lib["lib"]
+    core["vizform-core"]
+    react["vizform-react"]
+    element["vizform-element"]
+  end
+  subgraph app["app"]
+    apitable["vizform-apitable"]
+    sliceboard["sliceboard"]
+  end
 
-  core --> react
-  core --> element
-  react --> apitable
-  react --> sliceboard
+  react --> core
+  element --> core
+  apitable --> react
+  sliceboard --> react
 ```
 
 | Package | Description |
