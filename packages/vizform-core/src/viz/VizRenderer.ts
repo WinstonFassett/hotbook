@@ -95,6 +95,10 @@ export class VizRenderer {
   // Morphing state
   private prevMode: VizMode | null = null
   private prevAtoms = new Map<string, AtomGeometry>()
+  // When a drag ends, we capture the ghost positions here so the settle
+  // transition starts from visual positions at release. update() consumes
+  // this once (replaces prevAtoms for that render) then clears it.
+  private dragSettlePrevAtoms: Map<string, AtomGeometry> | null = null
 
   // Drag state
   private radialResizeDrag: RadialResizeDrag | null = null
@@ -279,7 +283,11 @@ export class VizRenderer {
         if (goal) onGoalClick?.(goal)
       })
 
-    const prevAtoms = this.prevAtoms
+    // During settle sequence after radial reorder, use ghost positions as
+    // transition start. Keep until a new drag starts (cleared on drag start).
+    const isReordering = this.radialReorderDrag !== null
+    const prevAtoms = this.dragSettlePrevAtoms ?? this.prevAtoms
+    if (!isReordering) this.dragSettlePrevAtoms = null
 
     allAtoms.each(function(d) {
       const sel = select<AtomEl, AtomGeometry & { __value: number }>(this as AtomEl)
@@ -624,6 +632,7 @@ export class VizRenderer {
             .on('start', function(event, d) {
               if (d.isPhantom) return
               if (!d.arcParams) return
+              self.dragSettlePrevAtoms = null
               const mouseA = getClientAngle(event.sourceEvent, svgEl, cx, cy)
               const initialOrder = atoms.filter(a => !a.isPhantom).map(a => a.id)
               const layoutMap = new Map<string, AtomGeometry>()
@@ -657,6 +666,22 @@ export class VizRenderer {
               const ap = d.arcParams!
               const ghost = { ...ap, startAngle: newMid - half, endAngle: newMid + half, innerRadius: innerR, outerRadius: outerR }
               select(this).attr('d', arcPath(ghost))
+              const labelArcInner_d = (Math.min(meta.width, meta.height) / 2 * 0.86) * 0.58
+              const labelGen_d = arc<unknown, typeof ghost>().innerRadius(labelArcInner_d).outerRadius(labelArcInner_d)
+              const [lx_d, ly_d] = labelGen_d.centroid(ghost)
+              atomsG.select<SVGTextElement>(`g.goal-atom[data-id="${dr.goalId}"] text.name`)
+                .interrupt().attr('transform', `translate(${lx_d}, ${ly_d - 6})`)
+              atomsG.select<SVGTextElement>(`g.goal-atom[data-id="${dr.goalId}"] text.value`)
+                .interrupt().attr('transform', `translate(${lx_d}, ${ly_d + 10})`)
+              topG.select<SVGCircleElement>(`circle.resize-handle[data-id="${dr.goalId}"]`)
+                .interrupt()
+                .attr('cx', outerR * Math.sin(ghost.endAngle - PAD_ANGLE / 2))
+                .attr('cy', -outerR * Math.cos(ghost.endAngle - PAD_ANGLE / 2))
+              const numR_d = (Math.min(meta.width, meta.height) / 2 * 0.86) * 0.78
+              const numGen_d = arc<unknown, typeof ghost>().innerRadius(numR_d).outerRadius(numR_d)
+              const [nx_d, ny_d] = numGen_d.centroid(ghost)
+              topG.select<SVGTextElement>(`text.arc-number[data-id="${dr.goalId}"]`)
+                .interrupt().attr('transform', `translate(${nx_d},${ny_d})`)
               const angles = dr.currentOrder.map(id => {
                 if (id === dr.goalId) return { id, mid: newMid }
                 const a = dr.layoutMap.get(id)
@@ -724,18 +749,58 @@ export class VizRenderer {
               if (!dr) return
               select(this).style('cursor', 'grab')
               if (!dr.activated) return
+              // Stop any in-flight reorder transitions so their mid-animation
+              // positions don't interfere with the settle transition.
+              dr.layoutMap.forEach((_, id) => {
+                if (id === dr.goalId) return
+                atomsG.select<SVGPathElement>(`g.goal-atom[data-id="${id}"] path.shape`).interrupt('reorder')
+                atomsG.select<SVGTextElement>(`g.goal-atom[data-id="${id}"] text.name`).interrupt('reorder')
+                atomsG.select<SVGTextElement>(`g.goal-atom[data-id="${id}"] text.value`).interrupt('reorder')
+                topG.select<SVGCircleElement>(`circle.resize-handle[data-id="${id}"]`).interrupt('reorder')
+                topG.select<SVGTextElement>(`text.arc-number[data-id="${id}"]`).interrupt('reorder')
+              })
+              // Build dragSettlePrevAtoms: ghost positions at release so the
+              // settle transition animates from where slices visually are, not
+              // pre-drag positions. update() uses this and clears it once done.
+              const settleMap = new Map(self.prevAtoms)
+              dr.layoutMap.forEach((a, id) => {
+                if (id === dr.goalId) return
+                const prev = settleMap.get(id)
+                if (prev && a.arcParams) {
+                  settleMap.set(id, { ...prev, arcParams: a.arcParams })
+                }
+              })
+              if (d.arcParams) {
+                const mouseA = getClientAngle(_ev.sourceEvent, svgEl, cx, cy)
+                let delta = mouseA - dr.startMouseAngle
+                if (delta > Math.PI) delta -= 2 * Math.PI
+                if (delta < -Math.PI) delta += 2 * Math.PI
+                const newMid = (dr.startMidAngle + delta + 2 * Math.PI) % (2 * Math.PI)
+                const half = dr.arcSpan / 2
+                const ghostArc = {
+                  startAngle: newMid - half,
+                  endAngle: newMid + half,
+                  innerRadius: innerR,
+                  outerRadius: outerR,
+                  cornerRadius: d.arcParams.cornerRadius,
+                  padAngle: d.arcParams.padAngle,
+                }
+                const prev = settleMap.get(d.id)
+                if (prev) {
+                  settleMap.set(d.id, { ...prev, arcParams: ghostArc })
+                }
+              }
+              self.dragSettlePrevAtoms = settleMap
               if (sortUnitKind === 'order') {
-                const sortValues = active.map(g => g.measurements[sortUnit] ?? 0).sort((a, b) => a - b)
                 dr.currentOrder.forEach((id, i) => {
                   const goal = active.find(g => g.id === id)
                   if (!goal) return
-                  const newSortValue = sortValues[i]
+                  const newSortValue = i + 1
                   if (goal.measurements[sortUnit] !== newSortValue) {
                     onUpdate(id, { measurements: { ...goal.measurements, [sortUnit]: newSortValue } })
                   }
                 })
               }
-              void d
             })
         )
     } else {
@@ -949,11 +1014,10 @@ export class VizRenderer {
             chromeG.select(`g.band-handle[data-id="${d.id}"]`)
               .transition('reorder').duration(reorderDur).ease(EASE)
               .attr('transform', `translate(0, ${targetY})`)
-            const sortValues = active.map(g => g.measurements[sortUnit] ?? 0).sort((a, b) => a - b)
             dr.currentOrder.forEach((id, i) => {
               const g = active.find(x => x.id === id)
               if (!g) return
-              const newSortValue = sortValues[i]
+              const newSortValue = i + 1
               if (g.measurements[sortUnit] !== newSortValue) {
                 onUpdate(id, { measurements: { ...g.measurements, [sortUnit]: newSortValue } })
               }

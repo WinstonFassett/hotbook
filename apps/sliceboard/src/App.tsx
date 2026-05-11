@@ -194,11 +194,26 @@ export function App() {
 
   const handleVizUpdate = useCallback((id: string, patch: Partial<Goal>) => {
     if (!patch.measurements) return
-    const v = patch.measurements['value']
-    if (v == null) return
-    // rows ref is stale in useCallback — read from store via functional update
+    const m = patch.measurements
+    const v = m['value']
+    const newIndex = m['_index']
     setStore(s => {
-      const next = { ...s.active, rows: s.active.rows.map(r => r.id === id ? { ...r, value: v as number } : r) }
+      let rows = s.active.rows
+      if (v != null) {
+        rows = rows.map(r => r.id === id ? { ...r, value: v as number } : r)
+      }
+      if (newIndex != null) {
+        const targetIdx = Math.max(0, Math.min(rows.length - 1, (newIndex as number) - 1))
+        const curIdx = rows.findIndex(r => r.id === id)
+        if (curIdx !== -1 && curIdx !== targetIdx) {
+          const next = rows.slice()
+          const [moved] = next.splice(curIdx, 1)
+          next.splice(targetIdx, 0, moved)
+          rows = next
+        }
+      }
+      if (rows === s.active.rows) return s
+      const next = { ...s.active, rows }
       return { boards: persistBoard(next, s.boards), active: next }
     })
   }, [])
