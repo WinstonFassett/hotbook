@@ -26,6 +26,42 @@ export function useDimensions(): [React.RefObject<SVGSVGElement>, number, number
   return [ref, dims[0], dims[1]]
 }
 
+// ─── Alt+scroll to edit measurement ──────────────────────────────────────────
+
+export function useAltScroll(
+  ref: React.RefObject<SVGSVGElement>,
+  nodes: PNode[],
+  measureKey: string,
+  cellSelector: string,
+  nodeIdAttr: string,
+  onUpdate: (nodeId: string, measurements: PNode['measurements']) => void,
+) {
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const handler = (e: WheelEvent) => {
+      if (!e.altKey) return
+      const target = e.target as Element
+      const cell = target.closest(cellSelector) as SVGElement | null
+      if (!cell) return
+      const id = cell.getAttribute(nodeIdAttr)
+      if (!id) return
+      const node = nodes.find(n => n.id === id)
+      if (!node) return
+      const cur = node.measurements[measureKey] ?? 0
+      const step = e.shiftKey ? 5 : 1
+      const next = Math.max(1, cur + (e.deltaY < 0 ? 1 : -1) * step)
+      if (next !== cur) {
+        e.preventDefault()
+        e.stopPropagation()
+        onUpdate(id, { ...node.measurements, [measureKey]: next })
+      }
+    }
+    el.addEventListener('wheel', handler, { passive: false })
+    return () => el.removeEventListener('wheel', handler)
+  }, [ref, nodes, measureKey, onUpdate, cellSelector, nodeIdAttr])
+}
+
 // ─── Motion ───────────────────────────────────────────────────────────────────
 
 export type EaseShape = 'linear' | 'sin' | 'quad' | 'cubic' | 'poly' | 'exp'

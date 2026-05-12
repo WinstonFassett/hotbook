@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import * as d3 from 'd3'
 import type { PNode } from '../persistence'
-import { nodeColor, motion, buildVizTree, useDimensions } from './util'
+import { nodeColor, motion, buildVizTree, useDimensions, useAltScroll } from './util'
 
 type Datum = { id: string; children?: Datum[] }
 type Node = d3.HierarchyRectangularNode<Datum>
@@ -19,6 +19,7 @@ interface Props {
   onHover: (id: string | null) => void
   onSelect: (id: string) => void
   onFocus: (id: string) => void
+  onUpdate?: (nodeId: string, measurements: PNode['measurements']) => void
 }
 
 function labelArcPath(a: Arc, ringR: number): string {
@@ -39,9 +40,10 @@ function cssId(id: string): string {
   return id.replace(/[^a-zA-Z0-9_-]/g, '_')
 }
 
-export function Sunburst({ nodes, measureKey, hoverId, selectionId, focusId, depth = 2, onHover, onSelect, onFocus }: Props) {
+export function Sunburst({ nodes, measureKey, hoverId, selectionId, focusId, depth = 2, onHover, onSelect, onFocus, onUpdate }: Props) {
   const [ref, w, h] = useDimensions()
   const move = motion('move')
+  useAltScroll(ref, nodes, measureKey, 'path.slice', 'data-id', onUpdate ?? (() => {}))
 
   useEffect(() => {
     if (!ref.current || w === 0 || h === 0) return
@@ -89,6 +91,7 @@ export function Sunburst({ nodes, measureKey, hoverId, selectionId, focusId, dep
 
     const merged = entered.merge(sel)
       .attr('fill', d => nodeColor(nodes, d.data.id))
+      .attr('data-id', d => d.data.id)
       .attr('stroke', d => selectionId === d.data.id ? 'var(--pv-ink)' : hoverId === d.data.id ? 'var(--pv-ink-muted)' : 'var(--pv-bg)')
       .attr('stroke-width', d => selectionId === d.data.id || hoverId === d.data.id ? 1.5 : 0.5)
       .attr('cursor', d => d.children ? 'pointer' : 'default')

@@ -359,6 +359,18 @@ export function saveWorkspace(ws: Workspace): void {
 
 // ─── Mutations ────────────────────────────────────────────────────────────────
 
+export function updateNode(ws: Workspace, dsId: string, nodeId: string, patch: Partial<PNode>): Workspace {
+  return {
+    ...ws,
+    datasets: ws.datasets.map(ds =>
+      ds.id !== dsId ? ds : {
+        ...ds,
+        nodes: ds.nodes.map(n => n.id !== nodeId ? n : { ...n, ...patch, updatedAt: new Date().toISOString() }),
+      }
+    ),
+  }
+}
+
 export function createDataset(ws: Workspace, name: string): Workspace {
   const ds: Dataset = {
     id: genId(),

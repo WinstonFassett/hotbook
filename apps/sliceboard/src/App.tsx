@@ -12,8 +12,9 @@ import {
   createDataset, createDashboard, updateDataset, updateDashboard,
   addTile, removeTile, deleteDashboard, deleteDataset,
   activeDataset, activeDashboard, dashboardsForDataset, measurementsFromColumns,
+  updateNode,
 } from './persistence'
-import type { Workspace, Dataset, Dashboard, Tile, TileKind } from './persistence'
+import type { Workspace, Dataset, Dashboard, Tile, TileKind, PNode } from './persistence'
 import { hudStore, resetHudForDataset, useHudStore } from './store'
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
@@ -32,7 +33,7 @@ const TILE_LABELS: Record<TileKind, string> = {
 
 // ─── Tile content ─────────────────────────────────────────────────────────────
 
-function TileContent({ tile, ds, measureKey }: { tile: Tile; ds: Dataset; measureKey: string }) {
+function TileContent({ tile, ds, measureKey, onNodeUpdate }: { tile: Tile; ds: Dataset; measureKey: string; onNodeUpdate: (nodeId: string, measurements: PNode['measurements']) => void }) {
   const mk = tile.measureKey ?? measureKey
   const hud = useHudStore()
   const { hoverId, selectionId, focusId } = hud
@@ -42,13 +43,13 @@ function TileContent({ tile, ds, measureKey }: { tile: Tile; ds: Dataset; measur
 
   const depth = tile.depth ?? 2
   if (tile.kind === 'h-treemap') {
-    return <Treemap nodes={ds.nodes} measureKey={mk} depth={depth} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} />
+    return <Treemap nodes={ds.nodes} measureKey={mk} depth={depth} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} onUpdate={onNodeUpdate} />
   }
   if (tile.kind === 'h-icicle') {
-    return <Icicle nodes={ds.nodes} measureKey={mk} depth={depth} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} />
+    return <Icicle nodes={ds.nodes} measureKey={mk} depth={depth} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} onUpdate={onNodeUpdate} />
   }
   if (tile.kind === 'h-radial') {
-    return <Sunburst nodes={ds.nodes} measureKey={mk} depth={depth} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} />
+    return <Sunburst nodes={ds.nodes} measureKey={mk} depth={depth} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} onUpdate={onNodeUpdate} />
   }
   if (tile.kind === 'treetable') {
     return <HTreetable nodes={ds.nodes} measureKey={mk} />
@@ -78,7 +79,7 @@ function TileContent({ tile, ds, measureKey }: { tile: Tile; ds: Dataset; measur
 const HIER_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial'])
 
 function TileCard({
-  tile, ds, measureKey, onRemove, onMeasureChange, onDepthChange, availableMeasures,
+  tile, ds, measureKey, onRemove, onMeasureChange, onDepthChange, onNodeUpdate, availableMeasures,
 }: {
   tile: Tile
   ds: Dataset
@@ -86,6 +87,7 @@ function TileCard({
   onRemove: () => void
   onMeasureChange: (key: string) => void
   onDepthChange: (depth: number) => void
+  onNodeUpdate: (nodeId: string, measurements: PNode['measurements']) => void
   availableMeasures: { key: string; label: string }[]
 }) {
   const isHier = HIER_KINDS.has(tile.kind)
@@ -122,7 +124,7 @@ function TileCard({
         </div>
       </div>
       <div className={`tile-body${tile.kind === 'bands' ? ' tile-body--scroll' : ''}`}>
-        <TileContent tile={tile} ds={ds} measureKey={measureKey} />
+        <TileContent tile={tile} ds={ds} measureKey={measureKey} onNodeUpdate={onNodeUpdate} />
       </div>
     </div>
   )
@@ -363,6 +365,11 @@ export function App() {
     commit(updateDashboard(ws, next))
   }, [ws, dash])
 
+  const handleNodeUpdate = useCallback((nodeId: string, measurements: PNode['measurements']) => {
+    if (!ds) return
+    commit(updateNode(ws, ds.id, nodeId, { measurements }))
+  }, [ws, ds])
+
   const handleTileDepth = useCallback((tileId: string, depth: number) => {
     if (!dash) return
     const next: Dashboard = {
@@ -405,6 +412,7 @@ export function App() {
             onRemoveTile={handleRemoveTile}
             onTileMeasure={handleTileMeasure}
             onTileDepth={handleTileDepth}
+            onNodeUpdate={handleNodeUpdate}
           />
         ) : null}
       </div>
@@ -412,7 +420,7 @@ export function App() {
   )
 }
 
-function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeasure, onTileDepth }: {
+function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeasure, onTileDepth, onNodeUpdate }: {
   dash: Dashboard
   ds: Dataset
   measures: { key: string; label: string }[]
@@ -420,6 +428,7 @@ function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeas
   onRemoveTile: (id: string) => void
   onTileMeasure: (tileId: string, key: string) => void
   onTileDepth: (tileId: string, depth: number) => void
+  onNodeUpdate: (nodeId: string, measurements: PNode['measurements']) => void
 }) {
   const { width, containerRef, mounted } = useContainerWidth()
   return (
@@ -443,6 +452,7 @@ function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeas
                 onRemove={() => onRemoveTile(tile.id)}
                 onMeasureChange={key => onTileMeasure(tile.id, key)}
                 onDepthChange={d => onTileDepth(tile.id, d)}
+                onNodeUpdate={onNodeUpdate}
               />
             </div>
           ))}

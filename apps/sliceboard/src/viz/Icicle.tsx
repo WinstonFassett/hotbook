@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import * as d3 from 'd3'
 import type { PNode } from '../persistence'
-import { nodeColor, motion, explodePulse, buildVizTree, useDimensions } from './util'
+import { nodeColor, motion, explodePulse, buildVizTree, useDimensions, useAltScroll } from './util'
 
 type Node = d3.HierarchyRectangularNode<{ id: string }>
 type CellEl = SVGGElement & { __layout?: CellLayout }
@@ -17,11 +17,13 @@ interface Props {
   onHover: (id: string | null) => void
   onSelect: (id: string) => void
   onFocus: (id: string) => void
+  onUpdate?: (nodeId: string, measurements: PNode['measurements']) => void
 }
 
-export function Icicle({ nodes, measureKey, hoverId, selectionId, focusId, depth = 2, onHover, onSelect, onFocus }: Props) {
+export function Icicle({ nodes, measureKey, hoverId, selectionId, focusId, depth = 2, onHover, onSelect, onFocus, onUpdate }: Props) {
   const [ref, w, h] = useDimensions()
   const move = motion('move')
+  useAltScroll(ref, nodes, measureKey, 'g.cell', 'data-id', onUpdate ?? (() => {}))
 
   useEffect(() => {
     if (!ref.current || w === 0 || h === 0) return
@@ -59,6 +61,7 @@ export function Icicle({ nodes, measureKey, hoverId, selectionId, focusId, depth
 
     const merged = enter.merge(sel)
       .attr('cursor', 'pointer')
+      .attr('data-id', d => d.data.id)
       .on('pointerenter', (_e, d) => onHover(d.data.id))
       .on('pointerleave', () => onHover(null))
       .on('click', (e, d) => {

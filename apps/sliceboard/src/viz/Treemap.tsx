@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import * as d3 from 'd3'
 import type { PNode } from '../persistence'
-import { nodeColor, motion, buildVizTree, useDimensions } from './util'
+import { nodeColor, motion, buildVizTree, useDimensions, useAltScroll } from './util'
 import type { MotionSpec } from './util'
 
 const HEADER_H = 30
@@ -34,12 +34,14 @@ interface Props {
   onHover: (id: string | null) => void
   onSelect: (id: string) => void
   onFocus: (id: string) => void
+  onUpdate?: (nodeId: string, measurements: PNode['measurements']) => void
 }
 
-export function Treemap({ nodes, measureKey, hoverId, selectionId, focusId, depth = 2, onHover, onSelect, onFocus }: Props) {
+export function Treemap({ nodes, measureKey, hoverId, selectionId, focusId, depth = 2, onHover, onSelect, onFocus, onUpdate }: Props) {
   const [ref, w, h] = useDimensions()
   const stateRef = useRef<ChartState | null>(null)
   const move = motion('move')
+  useAltScroll(ref, nodes, measureKey, 'g.tm-cell', 'data-id', onUpdate ?? (() => {}))
 
   useEffect(() => {
     if (!ref.current || w === 0 || h === 0) return
@@ -61,7 +63,9 @@ export function Treemap({ nodes, measureKey, hoverId, selectionId, focusId, dept
       .round(true)(rootH)
     const root = rootH as unknown as RNode
 
-    const focus = (root.descendants().find(d => d.data.id === focusId) ?? root) as RNode
+    const focusCandidate = root.descendants().find(d => d.data.id === focusId) as RNode | undefined
+    // Don't focus a leaf — step up to its parent so there are always children to render
+    const focus = (focusCandidate?.children ? focusCandidate : focusCandidate?.parent ?? root) as RNode
 
     svg.selectAll('*').remove()
     const defs = svg.append('defs')
@@ -105,7 +109,8 @@ export function Treemap({ nodes, measureKey, hoverId, selectionId, focusId, dept
   useEffect(() => {
     const ctx = stateRef.current
     if (!ctx) return
-    const next = (ctx.root.descendants().find(d => d.data.id === focusId) ?? ctx.root) as RNode
+    const candidate = ctx.root.descendants().find(d => d.data.id === focusId) as RNode | undefined
+    const next = (candidate?.children ? candidate : candidate?.parent ?? ctx.root) as RNode
     if (next === ctx.focus) return
     zoomTo(ctx, next, nodes, measureKey, depth, move, onHover, onSelect, onFocus)
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -149,6 +154,7 @@ function renderView(
       return g
     })
     .attr('cursor', d => d.children ? 'pointer' : 'default')
+    .attr('data-id', d => d.data.id)
 
   cell.on('pointerenter', (_e, d) => onHover(d.data.id))
     .on('pointerleave', () => onHover(null))
