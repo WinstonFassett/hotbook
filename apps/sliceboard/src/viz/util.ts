@@ -18,8 +18,9 @@ export function useDimensions(): [React.RefObject<SVGSVGElement>, number, number
       setDims(([pw, ph]) => (Math.round(width) === pw && Math.round(height) === ph ? [pw, ph] : [Math.round(width), Math.round(height)]))
     })
     ro.observe(el)
-    // Seed from current size
-    setDims([el.clientWidth || 0, el.clientHeight || 0])
+    // Seed from current size (getBoundingClientRect works on SVG; clientWidth/clientHeight return 0)
+    const r = el.getBoundingClientRect()
+    if (r.width > 0 || r.height > 0) setDims([Math.round(r.width), Math.round(r.height)])
     return () => ro.disconnect()
   }, [])
 
@@ -41,8 +42,8 @@ export function useAltScroll(
     if (!el) return
     const handler = (e: WheelEvent) => {
       if (!e.altKey) return
-      const target = e.target as Element
-      const cell = target.closest(cellSelector) as SVGElement | null
+      const hit = document.elementFromPoint(e.clientX, e.clientY) as Element | null
+      const cell = hit?.closest(cellSelector) as SVGElement | null
       if (!cell) return
       const id = cell.getAttribute(nodeIdAttr)
       if (!id) return
