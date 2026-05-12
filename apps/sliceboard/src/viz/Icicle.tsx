@@ -1,7 +1,7 @@
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import * as d3 from 'd3'
 import type { PNode } from '../persistence'
-import { nodeColor, motion, explodePulse, buildVizTree } from './util'
+import { nodeColor, motion, explodePulse, buildVizTree, useDimensions } from './util'
 
 type Node = d3.HierarchyRectangularNode<{ id: string }>
 type CellEl = SVGGElement & { __layout?: CellLayout }
@@ -13,20 +13,19 @@ interface Props {
   hoverId: string | null
   selectionId: string | null
   focusId: string
+  depth?: number
   onHover: (id: string | null) => void
   onSelect: (id: string) => void
   onFocus: (id: string) => void
 }
 
-export function Icicle({ nodes, measureKey, hoverId, selectionId, focusId, onHover, onSelect, onFocus }: Props) {
-  const ref = useRef<SVGSVGElement>(null)
+export function Icicle({ nodes, measureKey, hoverId, selectionId, focusId, depth = 2, onHover, onSelect, onFocus }: Props) {
+  const [ref, w, h] = useDimensions()
   const move = motion('move')
 
   useEffect(() => {
-    if (!ref.current) return
+    if (!ref.current || w === 0 || h === 0) return
     const svg = d3.select(ref.current)
-    const w = ref.current.clientWidth || 800
-    const h = ref.current.clientHeight || 240
     svg.attr('viewBox', `0 0 ${w} ${h}`)
 
     const tree = buildVizTree(nodes)
@@ -42,7 +41,8 @@ export function Icicle({ nodes, measureKey, hoverId, selectionId, focusId, onHov
     if (!focus) focus = root as Node
     const f = focus
 
-    const all = (root as Node).descendants().filter(d => d.data.id !== '__root__') as Node[]
+    const maxDepth = f.depth + depth
+    const all = (root as Node).descendants().filter(d => d.data.id !== '__root__' && d.depth <= maxDepth) as Node[]
 
     const layoutOf = (d: Node): CellLayout => {
       const x = d.y0 - f.y0
@@ -107,7 +107,7 @@ export function Icicle({ nodes, measureKey, hoverId, selectionId, focusId, onHov
       .attr('class', 'icicle-bg').attr('x', 0).attr('y', 0).attr('width', w).attr('height', h)
       .attr('fill', 'transparent').lower().on('click', () => onFocus('__root__'))
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodes, measureKey, focusId])
+  }, [nodes, measureKey, focusId, depth, w, h])
 
   useEffect(() => {
     if (!ref.current) return

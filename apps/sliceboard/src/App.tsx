@@ -45,10 +45,10 @@ function TileContent({ tile, ds, measureKey }: { tile: Tile; ds: Dataset; measur
     return <Treemap nodes={ds.nodes} measureKey={mk} depth={depth} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} />
   }
   if (tile.kind === 'h-icicle') {
-    return <Icicle nodes={ds.nodes} measureKey={mk} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} />
+    return <Icicle nodes={ds.nodes} measureKey={mk} depth={depth} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} />
   }
   if (tile.kind === 'h-radial') {
-    return <Sunburst nodes={ds.nodes} measureKey={mk} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} />
+    return <Sunburst nodes={ds.nodes} measureKey={mk} depth={depth} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} />
   }
   if (tile.kind === 'treetable') {
     return <HTreetable nodes={ds.nodes} measureKey={mk} />
@@ -60,12 +60,16 @@ function TileContent({ tile, ds, measureKey }: { tile: Tile; ds: Dataset; measur
     archived: false, tags: n.tags, urgent: false, important: false,
     createdAt: n.createdAt, updatedAt: n.updatedAt,
   }))
+  // Bands rows are fixed height — give the container a natural minimum so the tile body can scroll
+  const bandsMinH = tile.kind === 'bands' ? 28 + goals.filter(g => !g.archived).length * 46 : undefined
   return (
-    <Viz
-      goals={goals} mode={tile.kind as 'treemap' | 'radial' | 'bands'}
-      activeUnit={mk} unitKind="size" sortUnit={mk} sortUnitKind="size"
-      frame={undefined} onUpdate={() => {}}
-    />
+    <div style={{ width: '100%', height: bandsMinH ?? '100%', minHeight: bandsMinH }}>
+      <Viz
+        goals={goals} mode={tile.kind as 'treemap' | 'radial' | 'bands'}
+        activeUnit={mk} unitKind="size" sortUnit={mk} sortUnitKind="size"
+        frame={undefined} onUpdate={() => {}}
+      />
+    </div>
   )
 }
 
@@ -117,7 +121,7 @@ function TileCard({
           <button className="tile-close-btn" onClick={onRemove}>×</button>
         </div>
       </div>
-      <div className="tile-body">
+      <div className={`tile-body${tile.kind === 'bands' ? ' tile-body--scroll' : ''}`}>
         <TileContent tile={tile} ds={ds} measureKey={measureKey} />
       </div>
     </div>

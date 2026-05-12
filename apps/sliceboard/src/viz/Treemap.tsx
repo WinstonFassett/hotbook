@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import * as d3 from 'd3'
 import type { PNode } from '../persistence'
-import { nodeColor, motion, buildVizTree } from './util'
+import { nodeColor, motion, buildVizTree, useDimensions } from './util'
 import type { MotionSpec } from './util'
 
 const HEADER_H = 30
@@ -37,15 +37,13 @@ interface Props {
 }
 
 export function Treemap({ nodes, measureKey, hoverId, selectionId, focusId, depth = 2, onHover, onSelect, onFocus }: Props) {
-  const ref = useRef<SVGSVGElement>(null)
+  const [ref, w, h] = useDimensions()
   const stateRef = useRef<ChartState | null>(null)
   const move = motion('move')
 
   useEffect(() => {
-    if (!ref.current) return
+    if (!ref.current || w === 0 || h === 0) return
     const svg = d3.select(ref.current)
-    const w = ref.current.clientWidth || 400
-    const h = ref.current.clientHeight || 300
     const bodyH = Math.max(1, h - HEADER_H)
     svg.attr('viewBox', `0 0 ${w} ${h}`)
 
@@ -102,7 +100,7 @@ export function Treemap({ nodes, measureKey, hoverId, selectionId, focusId, dept
         if (c && c.focus.depth > 0) onFocus(c.focus.parent?.data.id ?? '__root__')
       })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodes, measureKey, depth])
+  }, [nodes, measureKey, depth, w, h])
 
   useEffect(() => {
     const ctx = stateRef.current

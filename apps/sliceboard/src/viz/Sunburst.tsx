@@ -1,7 +1,7 @@
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import * as d3 from 'd3'
 import type { PNode } from '../persistence'
-import { nodeColor, motion, buildVizTree } from './util'
+import { nodeColor, motion, buildVizTree, useDimensions } from './util'
 
 type Datum = { id: string; children?: Datum[] }
 type Node = d3.HierarchyRectangularNode<Datum>
@@ -15,6 +15,7 @@ interface Props {
   hoverId: string | null
   selectionId: string | null
   focusId: string
+  depth?: number
   onHover: (id: string | null) => void
   onSelect: (id: string) => void
   onFocus: (id: string) => void
@@ -38,15 +39,13 @@ function cssId(id: string): string {
   return id.replace(/[^a-zA-Z0-9_-]/g, '_')
 }
 
-export function Sunburst({ nodes, measureKey, hoverId, selectionId, focusId, onHover, onSelect, onFocus }: Props) {
-  const ref = useRef<SVGSVGElement>(null)
+export function Sunburst({ nodes, measureKey, hoverId, selectionId, focusId, depth = 2, onHover, onSelect, onFocus }: Props) {
+  const [ref, w, h] = useDimensions()
   const move = motion('move')
 
   useEffect(() => {
-    if (!ref.current) return
+    if (!ref.current || w === 0 || h === 0) return
     const svg = d3.select(ref.current)
-    const w = ref.current.clientWidth || 400
-    const h = ref.current.clientHeight || 300
     const size = Math.min(w, h)
     const ringR = size / 6
     svg.attr('viewBox', `${-w / 2} ${-h / 2} ${w} ${h}`)
@@ -72,8 +71,8 @@ export function Sunburst({ nodes, measureKey, hoverId, selectionId, focusId, onH
       }
     }
 
-    const arcVisible = (a: Arc) => a.y1 <= 3 && a.y0 >= 1 && a.x1 > a.x0
-    const labelVisible = (a: Arc) => a.y1 <= 3 && a.y0 >= 1 && (a.y1 - a.y0) * (a.x1 - a.x0) > 0.03
+    const arcVisible = (a: Arc) => a.y1 <= depth + 1 && a.y0 >= 1 && a.x1 > a.x0
+    const labelVisible = (a: Arc) => a.y1 <= depth + 1 && a.y0 >= 1 && (a.y1 - a.y0) * (a.x1 - a.x0) > 0.03
 
     const arcGen = d3.arc<Arc>()
       .startAngle(a => a.x0).endAngle(a => a.x1)
@@ -156,7 +155,7 @@ export function Sunburst({ nodes, measureKey, hoverId, selectionId, focusId, onH
       .attr('pointer-events', 'none').attr('fill', 'var(--pv-ink-dim)').attr('font-size', 8).attr('letter-spacing', '0.1em')
       .text(showCenter ? 'CLICK TO ZOOM OUT' : '')
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodes, measureKey, hoverId, selectionId, focusId])
+  }, [nodes, measureKey, hoverId, selectionId, focusId, depth, w, h])
 
   return <svg ref={ref} style={{ width: '100%', height: '100%', display: 'block' }} />
 }

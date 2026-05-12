@@ -1,5 +1,30 @@
+import { useState, useEffect, useRef } from 'react'
 import * as d3 from 'd3'
 import type { PNode } from '../persistence'
+
+// ─── Resize-aware dimensions ──────────────────────────────────────────────────
+
+export function useDimensions(): [React.RefObject<SVGSVGElement>, number, number] {
+  const ref = useRef<SVGSVGElement>(null)
+  const [dims, setDims] = useState<[number, number]>([0, 0])
+
+  useEffect(() => {
+    if (!ref.current) return
+    const el = ref.current
+    const ro = new ResizeObserver(entries => {
+      const e = entries[0]
+      if (!e) return
+      const { width, height } = e.contentRect
+      setDims(([pw, ph]) => (Math.round(width) === pw && Math.round(height) === ph ? [pw, ph] : [Math.round(width), Math.round(height)]))
+    })
+    ro.observe(el)
+    // Seed from current size
+    setDims([el.clientWidth || 0, el.clientHeight || 0])
+    return () => ro.disconnect()
+  }, [])
+
+  return [ref, dims[0], dims[1]]
+}
 
 // ─── Motion ───────────────────────────────────────────────────────────────────
 
