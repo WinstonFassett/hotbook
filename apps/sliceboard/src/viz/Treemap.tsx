@@ -102,7 +102,6 @@ export function Treemap({ nodes, measureKey, hoverId, selectionId, focusId, onHo
     const next = (ctx.root.descendants().find(d => d.data.id === focusId) ?? ctx.root) as RNode
     if (next === ctx.focus) return
     zoomTo(ctx, next, nodes, measureKey, move, onHover, onSelect, onFocus)
-    updateHeader(ctx, next, nodes)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusId])
 
@@ -184,23 +183,74 @@ function zoomTo(
   onHover: (id: string | null) => void, onSelect: (id: string) => void, onFocus: (id: string) => void,
 ) {
   const dir = isDescendant(target, ctx.focus) ? 'in' : 'out'
+
+  // Snapshot old scales before mutating ctx
+  const x0 = ctx.x.copy()
+  const y0 = ctx.y.copy()
+
+  // New scales for the target view
+  const x1 = d3.scaleLinear().rangeRound([0, ctx.w]).domain([target.x0, target.x1])
+  const y1 = d3.scaleLinear().rangeRound([HEADER_H, HEADER_H + ctx.bodyH]).domain([target.y0, target.y1])
+
   const group0 = ctx.group.attr('pointer-events', 'none')
   const group1 = ctx.body.append<SVGGElement>('g').attr('class', 'tm-view')
   if (dir === 'out') group1.lower()
-  ctx.group = group1
-  renderView(ctx, target, nodes, measureKey, onHover, onSelect, onFocus)
-  position(ctx, group1, target)
 
-  ctx.x.domain([target.x0, target.x1])
-  ctx.y.domain([target.y0, target.y1])
+  ctx.x = x1
+  ctx.y = y1
+  ctx.group = group1
   ctx.focus = target
 
+  renderView(ctx, target, nodes, measureKey, onHover, onSelect, onFocus)
+
   const t = d3.transition().duration(move.duration).ease(move.ease)
-  const frozenFocus = ctx.focus
-  position(ctx, group0, dir === 'in' ? target : frozenFocus)
-  group0.transition(t).remove().attrTween('opacity', () => (t2: number) => String(1 - t2))
-  position(ctx, group1, target)
-  group1.attr('opacity', 0).transition(t).attrTween('opacity', () => (t2: number) => String(t2))
+
+  // Animate OLD group: cells tween from old-scale positions → new-scale positions (shrink/fly off)
+  group0.transition(t).remove()
+    .attrTween('opacity', () => (u: number) => String(1 - u))
+
+  group0.selectAll<SVGGElement, RNode>('g.tm-cell')
+    .each(function(d) {
+      const tx0 = x0(d.x0), ty0 = y0(d.y0)
+      const tx1 = x1(d.x0), ty1 = y1(d.y0)
+      const w0 = Math.max(0, x0(d.x1) - x0(d.x0)), w1 = Math.max(0, x1(d.x1) - x1(d.x0))
+      const h0 = Math.max(0, y0(d.y1) - y0(d.y0)), h1 = Math.max(0, y1(d.y1) - y1(d.y0))
+      const g = d3.select(this)
+      g.transition(t)
+        .attrTween('transform', () => {
+          const ix = d3.interpolateNumber(tx0, tx1)
+          const iy = d3.interpolateNumber(ty0, ty1)
+          return (u: number) => `translate(${ix(u)},${iy(u)})`
+        })
+      g.select<SVGRectElement>('rect.tm-rect').transition(t)
+        .attrTween('width', () => { const i = d3.interpolateNumber(w0, w1); return (u: number) => String(i(u)) })
+        .attrTween('height', () => { const i = d3.interpolateNumber(h0, h1); return (u: number) => String(i(u)) })
+    })
+
+  // Animate NEW group: cells start at old-scale positions and tween to new-scale positions (expand in)
+  group1.selectAll<SVGGElement, RNode>('g.tm-cell')
+    .each(function(d) {
+      const tx0 = x0(d.x0), ty0 = y0(d.y0)
+      const tx1 = x1(d.x0), ty1 = y1(d.y0)
+      const w0 = Math.max(0, x0(d.x1) - x0(d.x0)), w1 = Math.max(0, x1(d.x1) - x1(d.x0))
+      const h0 = Math.max(0, y0(d.y1) - y0(d.y0)), h1 = Math.max(0, y1(d.y1) - y1(d.y0))
+      const g = d3.select(this)
+      g.attr('transform', `translate(${tx0},${ty0})`)
+      g.select<SVGRectElement>('rect.tm-rect').attr('width', w0).attr('height', h0)
+      g.transition(t)
+        .attrTween('transform', () => {
+          const ix = d3.interpolateNumber(tx0, tx1)
+          const iy = d3.interpolateNumber(ty0, ty1)
+          return (u: number) => `translate(${ix(u)},${iy(u)})`
+        })
+      g.select<SVGRectElement>('rect.tm-rect').transition(t)
+        .attrTween('width', () => { const i = d3.interpolateNumber(w0, w1); return (u: number) => String(i(u)) })
+        .attrTween('height', () => { const i = d3.interpolateNumber(h0, h1); return (u: number) => String(i(u)) })
+    })
+
+  group1.attr('opacity', 0).transition(t).attrTween('opacity', () => (u: number) => String(u))
+
+  updateHeader(ctx, target, nodes)
 }
 
 function isDescendant(d: RNode, ancestor: RNode): boolean {
