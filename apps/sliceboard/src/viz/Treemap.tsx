@@ -5,6 +5,7 @@ import { nodeColor, motion, buildVizTree } from './util'
 import type { MotionSpec } from './util'
 
 const HEADER_H = 30
+const PARENT_LABEL_H = 18
 
 type Datum = { id: string; children?: Datum[] }
 type RNode = d3.HierarchyRectangularNode<Datum>
@@ -28,12 +29,14 @@ interface Props {
   hoverId: string | null
   selectionId: string | null
   focusId: string
+  /** How many descendant levels to render below focus. Default 2. */
+  depth?: number
   onHover: (id: string | null) => void
   onSelect: (id: string) => void
   onFocus: (id: string) => void
 }
 
-export function Treemap({ nodes, measureKey, hoverId, selectionId, focusId, onHover, onSelect, onFocus }: Props) {
+export function Treemap({ nodes, measureKey, hoverId, selectionId, focusId, depth = 2, onHover, onSelect, onFocus }: Props) {
   const ref = useRef<SVGSVGElement>(null)
   const stateRef = useRef<ChartState | null>(null)
   const move = motion('move')
@@ -52,7 +55,12 @@ export function Treemap({ nodes, measureKey, hoverId, selectionId, focusId, onHo
     const rootH = d3.hierarchy<Datum>(tree)
       .sum(d => nodes.find(n => n.id === d.id)?.measurements[measureKey] ?? 0)
       .sort((a, b) => (b.value ?? 0) - (a.value ?? 0))
-    d3.treemap<Datum>().tile(d3.treemapSquarify).size([w, bodyH]).paddingInner(2).round(true)(rootH)
+    d3.treemap<Datum>()
+      .tile(d3.treemapSquarify)
+      .size([w, bodyH])
+      .paddingInner(2)
+      .paddingTop(d => (d.depth === 0 ? 0 : (d.children ? PARENT_LABEL_H : 0)))
+      .round(true)(rootH)
     const root = rootH as unknown as RNode
 
     const focus = (root.descendants().find(d => d.data.id === focusId) ?? root) as RNode
@@ -84,7 +92,7 @@ export function Treemap({ nodes, measureKey, hoverId, selectionId, focusId, onHo
     const ctx: ChartState = { root, x, y, body, header, group, focus, w, h, bodyH }
     stateRef.current = ctx
 
-    renderView(ctx, focus, nodes, measureKey, onHover, onSelect, onFocus)
+    renderView(ctx, focus, nodes, measureKey, depth, onHover, onSelect, onFocus)
     position(ctx, group, focus)
     updateHeader(ctx, focus, nodes)
 
@@ -94,14 +102,14 @@ export function Treemap({ nodes, measureKey, hoverId, selectionId, focusId, onHo
         if (c && c.focus.depth > 0) onFocus(c.focus.parent?.data.id ?? '__root__')
       })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodes, measureKey])
+  }, [nodes, measureKey, depth])
 
   useEffect(() => {
     const ctx = stateRef.current
     if (!ctx) return
     const next = (ctx.root.descendants().find(d => d.data.id === focusId) ?? ctx.root) as RNode
     if (next === ctx.focus) return
-    zoomTo(ctx, next, nodes, measureKey, move, onHover, onSelect, onFocus)
+    zoomTo(ctx, next, nodes, measureKey, depth, move, onHover, onSelect, onFocus)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusId])
 
@@ -119,14 +127,19 @@ export function Treemap({ nodes, measureKey, hoverId, selectionId, focusId, onHo
 }
 
 function renderView(
-  ctx: ChartState, focus: RNode, nodes: PNode[], measureKey: string,
+  ctx: ChartState, focus: RNode, nodes: PNode[], measureKey: string, maxDepth: number,
   onHover: (id: string | null) => void, onSelect: (id: string) => void, onFocus: (id: string) => void,
 ) {
-  const items: RNode[] = (focus.children ?? []) as RNode[]
+  // Collect descendants of focus within maxDepth levels, sorted by depth so children render on top of parents
+  const items: RNode[] = focus.descendants()
+    .filter(d => d !== focus && (d.depth - focus.depth) <= maxDepth) as RNode[]
+  items.sort((a, b) => a.depth - b.depth)
+
   const fxr = Math.max(1e-9, focus.x1 - focus.x0)
   const fyr = Math.max(1e-9, focus.y1 - focus.y0)
   const dw = (d: RNode) => (d.x1 - d.x0) * (ctx.w / fxr)
   const dh = (d: RNode) => (d.y1 - d.y0) * (ctx.bodyH / fyr)
+  const isParent = (d: RNode) => !!d.children && (d.depth - focus.depth) < maxDepth
 
   const cell = ctx.group.selectAll<SVGGElement, RNode>('g.tm-cell')
     .data(items, d => d.data.id)
@@ -149,17 +162,24 @@ function renderView(
 
   cell.select<SVGRectElement>('rect.tm-rect')
     .attr('fill', d => nodeColor(nodes, d.data.id))
-    .attr('fill-opacity', 1).attr('stroke-width', 1.5).attr('stroke', 'transparent')
+    .attr('fill-opacity', d => isParent(d) ? 0.35 : 1)
+    .attr('stroke-width', 1.5).attr('stroke', 'transparent')
 
   cell.select<SVGTextElement>('text.tm-name')
-    .attr('x', 8).attr('y', 16).attr('fill', 'oklch(0.18 0.01 250)')
-    .attr('font-size', 12).attr('font-weight', 500).attr('pointer-events', 'none')
-    .text(d => labelFor(d, nodes, dw(d), dh(d)))
+    .attr('x', 6).attr('y', d => isParent(d) ? 12 : 16)
+    .attr('fill', d => isParent(d) ? 'var(--pv-ink)' : 'oklch(0.18 0.01 250)')
+    .attr('font-size', d => isParent(d) ? 10 : 12)
+    .attr('font-weight', d => isParent(d) ? 700 : 500)
+    .attr('letter-spacing', d => isParent(d) ? '0.04em' : '0')
+    .attr('text-transform', d => isParent(d) ? 'uppercase' : 'none')
+    .attr('pointer-events', 'none')
+    .text(d => parentOrLeafLabel(d, nodes, dw(d), dh(d), isParent(d)))
 
   cell.select<SVGTextElement>('text.tm-val')
-    .attr('x', 8).attr('y', 30).attr('fill', 'oklch(0.18 0.01 250)')
-    .attr('fill-opacity', 0.6).attr('font-size', 10).attr('pointer-events', 'none')
-    .text(d => valueFor(d, nodes, measureKey, dw(d), dh(d)))
+    .attr('x', 8).attr('y', 30)
+    .attr('fill', 'oklch(0.18 0.01 250)').attr('fill-opacity', 0.6)
+    .attr('font-size', 10).attr('pointer-events', 'none')
+    .text(d => isParent(d) ? '' : valueFor(d, nodes, measureKey, dw(d), dh(d)))
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -179,7 +199,7 @@ function updateHeader(ctx: ChartState, focus: RNode, nodes: PNode[]) {
 }
 
 function zoomTo(
-  ctx: ChartState, target: RNode, nodes: PNode[], measureKey: string, move: MotionSpec,
+  ctx: ChartState, target: RNode, nodes: PNode[], measureKey: string, maxDepth: number, move: MotionSpec,
   onHover: (id: string | null) => void, onSelect: (id: string) => void, onFocus: (id: string) => void,
 ) {
   const dir = isDescendant(target, ctx.focus) ? 'in' : 'out'
@@ -201,7 +221,7 @@ function zoomTo(
   ctx.group = group1
   ctx.focus = target
 
-  renderView(ctx, target, nodes, measureKey, onHover, onSelect, onFocus)
+  renderView(ctx, target, nodes, measureKey, maxDepth, onHover, onSelect, onFocus)
 
   const t = d3.transition().duration(move.duration).ease(move.ease)
 
@@ -270,10 +290,13 @@ function headerLabel(focus: RNode, nodes: PNode[]): string {
   return path.join('  ›  ')
 }
 
-function labelFor(d: RNode, nodes: PNode[], cw: number, ch: number): string {
-  if (cw < 44 || ch < 22) return ''
+function parentOrLeafLabel(d: RNode, nodes: PNode[], cw: number, ch: number, parent: boolean): string {
+  // Parent: needs width and at least the label strip height (PARENT_LABEL_H = 18). Leaf: needs ch >= 22.
+  if (cw < 44) return ''
+  if (!parent && ch < 22) return ''
+  if (parent && ch < PARENT_LABEL_H) return ''
   const name = nodes.find(n => n.id === d.data.id)?.name ?? ''
-  const max = Math.max(2, Math.floor((cw - 16) / 6.5))
+  const max = Math.max(2, Math.floor((cw - 16) / (parent ? 7.5 : 6.5)))
   return name.length > max ? name.slice(0, max) + '…' : name
 }
 

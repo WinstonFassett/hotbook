@@ -48,6 +48,8 @@ export interface Tile {
   groupBy?: string
   /** Per-tile color-by column key */
   colorBy?: string
+  /** For hierarchical tiles: how many descendant levels to render below focus. Default 2. */
+  depth?: number
 }
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────

@@ -40,8 +40,9 @@ function TileContent({ tile, ds, measureKey }: { tile: Tile; ds: Dataset; measur
   const onSelect = (id: string) => hudStore.setSelection(id)
   const onFocus = (id: string) => hudStore.setFocus(id)
 
+  const depth = tile.depth ?? 2
   if (tile.kind === 'h-treemap') {
-    return <Treemap nodes={ds.nodes} measureKey={mk} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} />
+    return <Treemap nodes={ds.nodes} measureKey={mk} depth={depth} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} />
   }
   if (tile.kind === 'h-icicle') {
     return <Icicle nodes={ds.nodes} measureKey={mk} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} />
@@ -70,21 +71,38 @@ function TileContent({ tile, ds, measureKey }: { tile: Tile; ds: Dataset; measur
 
 // ─── Tile wrapper ─────────────────────────────────────────────────────────────
 
+const HIER_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial'])
+
 function TileCard({
-  tile, ds, measureKey, onRemove, onMeasureChange, availableMeasures,
+  tile, ds, measureKey, onRemove, onMeasureChange, onDepthChange, availableMeasures,
 }: {
   tile: Tile
   ds: Dataset
   measureKey: string
   onRemove: () => void
   onMeasureChange: (key: string) => void
+  onDepthChange: (depth: number) => void
   availableMeasures: { key: string; label: string }[]
 }) {
+  const isHier = HIER_KINDS.has(tile.kind)
+  const depth = tile.depth ?? 2
   return (
     <div className="tile-card">
       <div className="tile-header">
         <span className="tile-title">{tile.title ?? TILE_LABELS[tile.kind]}</span>
         <div className="tile-header-actions">
+          {isHier && (
+            <select
+              className="tile-measure-select"
+              value={depth}
+              onChange={e => onDepthChange(Number(e.target.value))}
+              title="Levels to show"
+            >
+              {[1, 2, 3, 4, 5].map(n => (
+                <option key={n} value={n}>{n}L</option>
+              ))}
+            </select>
+          )}
           {availableMeasures.length > 1 && (
             <select
               className="tile-measure-select"
@@ -341,6 +359,15 @@ export function App() {
     commit(updateDashboard(ws, next))
   }, [ws, dash])
 
+  const handleTileDepth = useCallback((tileId: string, depth: number) => {
+    if (!dash) return
+    const next: Dashboard = {
+      ...dash,
+      tiles: dash.tiles.map(t => t.id === tileId ? { ...t, depth } : t),
+    }
+    commit(updateDashboard(ws, next))
+  }, [ws, dash])
+
   return (
     <div className="sb-root">
       <div className="sb-topbar">
@@ -373,6 +400,7 @@ export function App() {
             onLayoutChange={handleLayoutChange}
             onRemoveTile={handleRemoveTile}
             onTileMeasure={handleTileMeasure}
+            onTileDepth={handleTileDepth}
           />
         ) : null}
       </div>
@@ -380,13 +408,14 @@ export function App() {
   )
 }
 
-function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeasure }: {
+function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeasure, onTileDepth }: {
   dash: Dashboard
   ds: Dataset
   measures: { key: string; label: string }[]
   onLayoutChange: (layout: readonly LayoutItem[]) => void
   onRemoveTile: (id: string) => void
   onTileMeasure: (tileId: string, key: string) => void
+  onTileDepth: (tileId: string, depth: number) => void
 }) {
   const { width, containerRef, mounted } = useContainerWidth()
   return (
@@ -409,6 +438,7 @@ function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeas
                 availableMeasures={measures}
                 onRemove={() => onRemoveTile(tile.id)}
                 onMeasureChange={key => onTileMeasure(tile.id, key)}
+                onDepthChange={d => onTileDepth(tile.id, d)}
               />
             </div>
           ))}
