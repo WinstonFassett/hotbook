@@ -1,31 +1,87 @@
 import type { PNode, Measurement } from '@winstonfassett/vizform-react'
-
-const LS_BOARDS_KEY = 'sb:boards:v2'
-const LS_LAST_KEY = 'sb:lastBoardId:v2'
-const HASH_PREFIX = '#b2='
+import type { LayoutItem } from 'react-grid-layout'
 
 export type { PNode, Measurement }
 
-export interface BoardState {
-  mode: string
-  measureKey: string
-  sortMode: string
+// ─── Column schema ────────────────────────────────────────────────────────────
+
+export type ColumnType = 'number' | 'text'
+
+export interface Column {
+  key: string
+  label: string
+  type: ColumnType
+  /** For number columns — rollup strategy */
+  rollup?: Measurement['rollup']
+  /** For number columns — display unit */
+  unit?: string
 }
 
-export interface Board {
+// ─── Dataset ──────────────────────────────────────────────────────────────────
+
+export interface Dataset {
   id: string
   name: string
   createdAt: string
   nodes: PNode[]
-  measurements: Measurement[]
-  state: BoardState
+  columns: Column[]
 }
+
+// ─── Dashboard tile ───────────────────────────────────────────────────────────
+
+export type TileKind =
+  | 'treetable'
+  | 'treemap'
+  | 'radial'
+  | 'bands'
+  | 'h-treemap'
+  | 'h-icicle'
+  | 'h-radial'
+
+export interface Tile {
+  id: string
+  kind: TileKind
+  title?: string
+  /** Per-tile measure override; falls back to dashboard.measureKey */
+  measureKey?: string
+  /** Per-tile groupBy override */
+  groupBy?: string
+  /** Per-tile color-by column key */
+  colorBy?: string
+}
+
+// ─── Dashboard ────────────────────────────────────────────────────────────────
+
+export interface Dashboard {
+  id: string
+  datasetId: string
+  name: string
+  createdAt: string
+  /** RGL layout array — one entry per tile id */
+  layout: LayoutItem[]
+  tiles: Tile[]
+  /** Global measure for tiles without an override */
+  measureKey: string
+}
+
+// ─── Workspace ────────────────────────────────────────────────────────────────
+
+export interface Workspace {
+  datasets: Dataset[]
+  dashboards: Dashboard[]
+  activeDatasetId: string
+  activeDashboardId: string
+}
+
+// ─── Storage keys ─────────────────────────────────────────────────────────────
+
+const LS_KEY = 'sb:workspace:v3'
 
 function genId(): string {
   return Math.random().toString(36).slice(2, 10)
 }
 
-// --- Seed data: Goal → Project → Subproject → Task (4 levels) ---
+// ─── Seed data ────────────────────────────────────────────────────────────────
 
 const NOW = '2026-05-12T12:00:00.000Z'
 const PALETTE = ['#e08888', '#d4a86c', '#7ec87e', '#7aaae8', '#b090e0', '#60c4c0']
@@ -106,8 +162,8 @@ const GOAL_SPECS: GoalSpec[] = [
               { name: 'H-treemap drill', status: 'done', estimate: 8, actual: 10 },
               { name: 'H-icicle drill', status: 'done', estimate: 6, actual: 5 },
               { name: 'H-radial drill', status: 'done', estimate: 6, actual: 6 },
-              { name: 'PNode data model', status: 'doing', estimate: 6, actual: 2 },
-              { name: 'Treetable view', status: 'todo', estimate: 8 },
+              { name: 'PNode data model', status: 'done', estimate: 6, actual: 4 },
+              { name: 'Treetable view', status: 'doing', estimate: 8 },
             ],
           },
         ],
@@ -119,16 +175,16 @@ const GOAL_SPECS: GoalSpec[] = [
           {
             name: 'Data layer',
             tasks: [
-              { name: 'Persistence + seed', status: 'doing', estimate: 3, actual: 1 },
-              { name: 'Board CRUD', status: 'done', estimate: 4, actual: 3 },
+              { name: 'Persistence + seed', status: 'doing', estimate: 3, actual: 2 },
+              { name: 'Workspace model', status: 'doing', estimate: 4 },
             ],
           },
           {
             name: 'UI',
             tasks: [
               { name: 'Topbar + board menu', status: 'done', estimate: 2, actual: 2 },
-              { name: 'Viz toolbar', status: 'doing', estimate: 2, actual: 1 },
-              { name: 'Mode switcher', status: 'todo', estimate: 2 },
+              { name: 'HUD layout', status: 'todo', estimate: 6 },
+              { name: 'RGL tile grid', status: 'todo', estimate: 8 },
             ],
           },
         ],
@@ -197,19 +253,6 @@ const GOAL_SPECS: GoalSpec[] = [
           },
         ],
       },
-      {
-        name: 'cass search',
-        status: 'doing',
-        subs: [
-          {
-            name: 'Search engine',
-            tasks: [
-              { name: 'BM25 index', status: 'done', estimate: 10, actual: 12 },
-              { name: 'Semantic fallback', status: 'doing', estimate: 6, actual: 3 },
-            ],
-          },
-        ],
-      },
     ],
   },
 ]
@@ -219,144 +262,188 @@ function buildSeedNodes(): PNode[] {
   return GOAL_SPECS.flatMap((g, i) => makeGoal(g, i + 1))
 }
 
-export const SEED_MEASUREMENTS: Measurement[] = [
-  { key: 'estimate_hours', label: 'Estimate', unit: 'h', rollup: 'sum' },
-  { key: 'actual_hours', label: 'Actual', unit: 'h', rollup: 'sum' },
+const SEED_COLUMNS: Column[] = [
+  { key: 'estimate_hours', label: 'Estimate', type: 'number', rollup: 'sum', unit: 'h' },
+  { key: 'actual_hours', label: 'Actual', type: 'number', rollup: 'sum', unit: 'h' },
 ]
 
-export const SEED_BOARDS: Board[] = [
-  {
-    id: 'seed-vizform',
-    name: 'vizform roadmap (demo)',
-    createdAt: new Date(0).toISOString(),
-    nodes: buildSeedNodes(),
-    measurements: SEED_MEASUREMENTS,
-    state: { mode: 'treetable', measureKey: 'estimate_hours', sortMode: 'index' },
-  },
-]
+function buildSeedWorkspace(): Workspace {
+  const dsId = 'ds-vizform'
+  const dash1Id = 'dash-overview'
+  const dash2Id = 'dash-shape'
 
-// --- encode / decode ---
+  const t1: Tile = { id: 'tile-table', kind: 'treetable', title: 'Tasks' }
+  const t2: Tile = { id: 'tile-treemap', kind: 'h-treemap', title: 'Treemap' }
+  const t3: Tile = { id: 'tile-icicle', kind: 'h-icicle', title: 'Icicle' }
 
-function encodeBoard(board: Board): string {
-  return btoa(JSON.stringify(board))
-}
+  const overviewLayout: LayoutItem[] = [
+    { i: t1.id, x: 0, y: 0, w: 6, h: 12 },
+    { i: t2.id, x: 6, y: 0, w: 6, h: 6 },
+    { i: t3.id, x: 6, y: 6, w: 6, h: 6 },
+  ]
 
-function decodeBoard(encoded: string): Board | null {
-  try {
-    const parsed = JSON.parse(atob(encoded))
-    if (!Array.isArray(parsed?.nodes) || typeof parsed?.id !== 'string') return null
-    return parsed as Board
-  } catch {
-    return null
-  }
-}
+  const t4: Tile = { id: 'tile-radial', kind: 'radial', title: 'Radial' }
+  const t5: Tile = { id: 'tile-sunburst', kind: 'h-radial', title: 'Sunburst' }
 
-// --- URL ---
+  const detailLayout: LayoutItem[] = [
+    { i: t4.id, x: 0, y: 0, w: 6, h: 12 },
+    { i: t5.id, x: 6, y: 0, w: 6, h: 12 },
+  ]
 
-export function boardToUrl(board: Board): string {
-  return HASH_PREFIX + encodeBoard(board)
-}
-
-function boardFromUrl(): Board | null {
-  const hash = location.hash
-  if (!hash.startsWith(HASH_PREFIX)) return null
-  return decodeBoard(hash.slice(HASH_PREFIX.length))
-}
-
-export function writeUrl(board: Board): void {
-  history.replaceState(null, '', boardToUrl(board))
-}
-
-// --- localStorage ---
-
-function loadBoards(): Board[] {
-  try {
-    const raw = localStorage.getItem(LS_BOARDS_KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
-    if (!Array.isArray(parsed)) return []
-    return parsed as Board[]
-  } catch {
-    return []
-  }
-}
-
-function saveBoards(boards: Board[]): void {
-  try {
-    localStorage.setItem(LS_BOARDS_KEY, JSON.stringify(boards))
-  } catch { /* storage unavailable */ }
-}
-
-function saveLastId(id: string): void {
-  try {
-    localStorage.setItem(LS_LAST_KEY, id)
-  } catch { /* storage unavailable */ }
-}
-
-function loadLastId(): string | null {
-  try {
-    return localStorage.getItem(LS_LAST_KEY)
-  } catch {
-    return null
-  }
-}
-
-// --- public API ---
-
-export interface BoardStore {
-  boards: Board[]
-  active: Board
-}
-
-export function initStore(): BoardStore {
-  const urlBoard = boardFromUrl()
-  if (urlBoard) {
-    const boards = loadBoards()
-    const merged = boards.some(b => b.id === urlBoard.id)
-      ? boards.map(b => b.id === urlBoard.id ? urlBoard : b)
-      : [...boards, urlBoard]
-    saveBoards(merged)
-    saveLastId(urlBoard.id)
-    return { boards: merged, active: urlBoard }
-  }
-
-  const boards = loadBoards()
-  if (boards.length === 0) {
-    saveBoards(SEED_BOARDS)
-    writeUrl(SEED_BOARDS[0])
-    saveLastId(SEED_BOARDS[0].id)
-    return { boards: SEED_BOARDS, active: SEED_BOARDS[0] }
-  }
-
-  const lastId = loadLastId()
-  const last = (lastId ? boards.find(b => b.id === lastId) : undefined) ?? boards[0]
-  writeUrl(last)
-  return { boards, active: last }
-}
-
-export function persistBoard(board: Board, boards: Board[]): Board[] {
-  const next = boards.some(b => b.id === board.id)
-    ? boards.map(b => b.id === board.id ? board : b)
-    : [...boards, board]
-  saveBoards(next)
-  saveLastId(board.id)
-  writeUrl(board)
-  return next
-}
-
-export function createBoard(name: string, fromBoard?: Board): Board {
   return {
+    datasets: [
+      {
+        id: dsId,
+        name: 'vizform roadmap',
+        createdAt: NOW,
+        nodes: buildSeedNodes(),
+        columns: SEED_COLUMNS,
+      },
+    ],
+    dashboards: [
+      {
+        id: dash1Id,
+        datasetId: dsId,
+        name: 'Overview',
+        createdAt: NOW,
+        layout: overviewLayout,
+        tiles: [t1, t2, t3],
+        measureKey: 'estimate_hours',
+      },
+      {
+        id: dash2Id,
+        datasetId: dsId,
+        name: 'Shape',
+        createdAt: NOW,
+        layout: detailLayout,
+        tiles: [t4, t5],
+        measureKey: 'estimate_hours',
+      },
+    ],
+    activeDatasetId: dsId,
+    activeDashboardId: dash1Id,
+  }
+}
+
+// ─── Load / save ──────────────────────────────────────────────────────────────
+
+function load(): Workspace | null {
+  try {
+    const raw = localStorage.getItem(LS_KEY)
+    if (!raw) return null
+    return JSON.parse(raw) as Workspace
+  } catch {
+    return null
+  }
+}
+
+function save(ws: Workspace): void {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(ws))
+  } catch { /* storage unavailable */ }
+}
+
+export function initWorkspace(): Workspace {
+  const stored = load()
+  if (stored) return stored
+  const ws = buildSeedWorkspace()
+  save(ws)
+  return ws
+}
+
+export function saveWorkspace(ws: Workspace): void {
+  save(ws)
+}
+
+// ─── Mutations ────────────────────────────────────────────────────────────────
+
+export function createDataset(ws: Workspace, name: string): Workspace {
+  const ds: Dataset = {
     id: genId(),
     name,
     createdAt: new Date().toISOString(),
-    nodes: fromBoard ? fromBoard.nodes.map(n => ({ ...n, id: genId() })) : buildSeedNodes(),
-    measurements: fromBoard?.measurements ?? SEED_MEASUREMENTS,
-    state: fromBoard?.state ?? { mode: 'treetable', measureKey: 'estimate_hours', sortMode: 'index' },
+    nodes: buildSeedNodes(),
+    columns: SEED_COLUMNS,
   }
+  return { ...ws, datasets: [...ws.datasets, ds] }
 }
 
-export function deleteBoard(id: string, boards: Board[]): Board[] {
-  const next = boards.filter(b => b.id !== id)
-  saveBoards(next)
-  return next
+export function createDashboard(ws: Workspace, name: string, datasetId: string): Workspace {
+  const ds = ws.datasets.find(d => d.id === datasetId)
+  const dash: Dashboard = {
+    id: genId(),
+    datasetId,
+    name,
+    createdAt: new Date().toISOString(),
+    layout: [],
+    tiles: [],
+    measureKey: ds?.columns.find(c => c.type === 'number')?.key ?? '',
+  }
+  return { ...ws, dashboards: [...ws.dashboards, dash] }
+}
+
+export function updateDataset(ws: Workspace, ds: Dataset): Workspace {
+  return { ...ws, datasets: ws.datasets.map(d => d.id === ds.id ? ds : d) }
+}
+
+export function updateDashboard(ws: Workspace, dash: Dashboard): Workspace {
+  return { ...ws, dashboards: ws.dashboards.map(d => d.id === dash.id ? dash : d) }
+}
+
+export function addTile(ws: Workspace, dashId: string, kind: TileKind): Workspace {
+  const dash = ws.dashboards.find(d => d.id === dashId)
+  if (!dash) return ws
+  const tile: Tile = { id: genId(), kind }
+  const layout: LayoutItem = { i: tile.id, x: 0, y: Infinity, w: 6, h: 8 }
+  const next: Dashboard = {
+    ...dash,
+    tiles: [...dash.tiles, tile],
+    layout: [...dash.layout, layout],
+  }
+  return updateDashboard(ws, next)
+}
+
+export function removeTile(ws: Workspace, dashId: string, tileId: string): Workspace {
+  const dash = ws.dashboards.find(d => d.id === dashId)
+  if (!dash) return ws
+  const next: Dashboard = {
+    ...dash,
+    tiles: dash.tiles.filter(t => t.id !== tileId),
+    layout: dash.layout.filter(l => l.i !== tileId),
+  }
+  return updateDashboard(ws, next)
+}
+
+export function deleteDashboard(ws: Workspace, dashId: string): Workspace {
+  const remaining = ws.dashboards.filter(d => d.id !== dashId)
+  const nextActive = remaining[0]?.id ?? ''
+  return { ...ws, dashboards: remaining, activeDashboardId: nextActive }
+}
+
+export function deleteDataset(ws: Workspace, dsId: string): Workspace {
+  const datasets = ws.datasets.filter(d => d.id !== dsId)
+  const dashboards = ws.dashboards.filter(d => d.datasetId !== dsId)
+  const nextDs = datasets[0]?.id ?? ''
+  const nextDash = dashboards[0]?.id ?? ''
+  return { ...ws, datasets, dashboards, activeDatasetId: nextDs, activeDashboardId: nextDash }
+}
+
+// ─── Selectors ────────────────────────────────────────────────────────────────
+
+export function activeDataset(ws: Workspace): Dataset | undefined {
+  return ws.datasets.find(d => d.id === ws.activeDatasetId)
+}
+
+export function activeDashboard(ws: Workspace): Dashboard | undefined {
+  return ws.dashboards.find(d => d.id === ws.activeDashboardId)
+}
+
+export function dashboardsForDataset(ws: Workspace, dsId: string): Dashboard[] {
+  return ws.dashboards.filter(d => d.datasetId === dsId)
+}
+
+export function measurementsFromColumns(columns: Column[]): Measurement[] {
+  return columns
+    .filter(c => c.type === 'number')
+    .map(c => ({ key: c.key, label: c.label, unit: c.unit ?? '', rollup: c.rollup ?? 'sum' }))
 }

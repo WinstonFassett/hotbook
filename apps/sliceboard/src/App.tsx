@@ -1,103 +1,198 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { Viz, HViz, HTreetable, pickColor } from '@winstonfassett/vizform-react'
-import type { Goal, ViewMode, PNode, Measurement } from '@winstonfassett/vizform-react'
+import { GridLayout, useContainerWidth } from 'react-grid-layout'
+import type { LayoutItem } from 'react-grid-layout'
+import { Viz, HTreetable, pickColor } from '@winstonfassett/vizform-react'
+import type { Goal } from '@winstonfassett/vizform-react'
 import { leavesOf } from '@winstonfassett/vizform-core'
+import { Treemap } from './viz/Treemap'
+import { Icicle } from './viz/Icicle'
+import { Sunburst } from './viz/Sunburst'
 import {
-  initStore, persistBoard, createBoard, deleteBoard,
-  boardToUrl,
+  initWorkspace, saveWorkspace,
+  createDataset, createDashboard, updateDataset, updateDashboard,
+  addTile, removeTile, deleteDashboard, deleteDataset,
+  activeDataset, activeDashboard, dashboardsForDataset, measurementsFromColumns,
 } from './persistence'
-import type { Board, BoardStore } from './persistence'
+import type { Workspace, Dataset, Dashboard, Tile, TileKind } from './persistence'
+import { hudStore, resetHudForDataset, useHudStore } from './store'
+import 'react-grid-layout/css/styles.css'
+import 'react-resizable/css/styles.css'
 import './App.css'
 
-const FLAT_MODES: ViewMode[] = ['treemap', 'radial', 'bands']
-const HIER_MODES: ViewMode[] = ['h-treemap', 'h-icicle', 'h-radial', 'treetable']
-const HIER_LABELS: Record<string, string> = {
-  'h-treemap': 'tree',
-  'h-icicle': 'icicle',
-  'h-radial': 'sunburst',
-  'treetable': 'table',
+const TILE_KINDS: TileKind[] = ['treetable', 'h-treemap', 'h-icicle', 'h-radial', 'treemap', 'radial', 'bands']
+const TILE_LABELS: Record<TileKind, string> = {
+  'treetable': 'Table',
+  'h-treemap': 'H-Treemap',
+  'h-icicle': 'Icicle',
+  'h-radial': 'Sunburst',
+  'treemap': 'Treemap',
+  'radial': 'Radial',
+  'bands': 'Bands',
 }
 
-function nodesToGoals(nodes: PNode[], measureKey: string): Goal[] {
-  const leaves = leavesOf(nodes)
-  return leaves.map((n, idx) => ({
-    id: n.id,
-    name: n.name,
-    color: n.color ?? pickColor(idx),
+// ─── Tile content ─────────────────────────────────────────────────────────────
+
+function TileContent({ tile, ds, measureKey }: { tile: Tile; ds: Dataset; measureKey: string }) {
+  const mk = tile.measureKey ?? measureKey
+  const hud = useHudStore()
+  const { hoverId, selectionId, focusId } = hud
+  const onHover = (id: string | null) => hudStore.setHover(id)
+  const onSelect = (id: string) => hudStore.setSelection(id)
+  const onFocus = (id: string) => hudStore.setFocus(id)
+
+  if (tile.kind === 'h-treemap') {
+    return <Treemap nodes={ds.nodes} measureKey={mk} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} />
+  }
+  if (tile.kind === 'h-icicle') {
+    return <Icicle nodes={ds.nodes} measureKey={mk} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} />
+  }
+  if (tile.kind === 'h-radial') {
+    return <Sunburst nodes={ds.nodes} measureKey={mk} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} />
+  }
+  if (tile.kind === 'treetable') {
+    return <HTreetable nodes={ds.nodes} measureKey={mk} />
+  }
+
+  const goals: Goal[] = leavesOf(ds.nodes).map((n, idx) => ({
+    id: n.id, name: n.name, color: n.color ?? pickColor(idx),
     measurements: { ...n.measurements, _index: idx },
-    archived: false,
-    tags: n.tags,
-    urgent: false,
-    important: false,
-    createdAt: n.createdAt,
-    updatedAt: n.updatedAt,
+    archived: false, tags: n.tags, urgent: false, important: false,
+    createdAt: n.createdAt, updatedAt: n.updatedAt,
   }))
+  return (
+    <Viz
+      goals={goals} mode={tile.kind as 'treemap' | 'radial' | 'bands'}
+      activeUnit={mk} unitKind="size" sortUnit={mk} sortUnitKind="size"
+      frame={undefined} onUpdate={() => {}}
+    />
+  )
 }
 
-// --- Board menu ---
+// ─── Tile wrapper ─────────────────────────────────────────────────────────────
 
-function BoardMenu({
-  store, onSwitch, onNew, onDuplicate, onRename, onDelete, onCopyLink,
+function TileCard({
+  tile, ds, measureKey, onRemove, onMeasureChange, availableMeasures,
 }: {
-  store: BoardStore
-  onSwitch: (b: Board) => void
-  onNew: () => void
-  onDuplicate: () => void
-  onRename: () => void
-  onDelete: () => void
-  onCopyLink: () => void
+  tile: Tile
+  ds: Dataset
+  measureKey: string
+  onRemove: () => void
+  onMeasureChange: (key: string) => void
+  availableMeasures: { key: string; label: string }[]
 }) {
+  return (
+    <div className="tile-card">
+      <div className="tile-header">
+        <span className="tile-title">{tile.title ?? TILE_LABELS[tile.kind]}</span>
+        <div className="tile-header-actions">
+          {availableMeasures.length > 1 && (
+            <select
+              className="tile-measure-select"
+              value={tile.measureKey ?? measureKey}
+              onChange={e => onMeasureChange(e.target.value)}
+            >
+              {availableMeasures.map(m => (
+                <option key={m.key} value={m.key}>{m.label}</option>
+              ))}
+            </select>
+          )}
+          <button className="tile-close-btn" onClick={onRemove}>×</button>
+        </div>
+      </div>
+      <div className="tile-body">
+        <TileContent tile={tile} ds={ds} measureKey={measureKey} />
+      </div>
+    </div>
+  )
+}
+
+// ─── Add tile menu ────────────────────────────────────────────────────────────
+
+function AddTileMenu({ onAdd }: { onAdd: (kind: TileKind) => void }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!open) return
-    const handler = (e: MouseEvent) => {
+    const h = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
     }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
   }, [open])
 
   return (
     <div ref={ref} className="sb-menu-wrap">
-      <button
-        className="sb-btn sb-menu-trigger"
-        onClick={() => setOpen(o => !o)}
-      >
-        <span className="sb-menu-trigger-label">{store.active.name}</span>
+      <button className="sb-btn" onClick={() => setOpen(o => !o)}>+ Tile</button>
+      {open && (
+        <div className="sb-menu-dropdown">
+          {TILE_KINDS.map(k => (
+            <button
+              key={k}
+              className="sb-menu-board-btn"
+              onClick={() => { onAdd(k); setOpen(false) }}
+            >
+              {TILE_LABELS[k]}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Dataset picker ───────────────────────────────────────────────────────────
+
+function DatasetPicker({
+  ws, onSwitch, onNew, onDelete,
+}: {
+  ws: Workspace
+  onSwitch: (id: string) => void
+  onNew: () => void
+  onDelete: (id: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const current = ws.datasets.find(d => d.id === ws.activeDatasetId)
+
+  useEffect(() => {
+    if (!open) return
+    const h = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [open])
+
+  return (
+    <div ref={ref} className="sb-menu-wrap">
+      <button className="sb-btn sb-menu-trigger" onClick={() => setOpen(o => !o)}>
+        <span className="sb-menu-trigger-label">{current?.name ?? '—'}</span>
         <span className="sb-menu-caret">▾</span>
       </button>
-
       {open && (
         <div className="sb-menu-dropdown">
           <div className="sb-menu-boards">
-            {store.boards.map(b => (
+            {ws.datasets.map(d => (
               <button
-                key={b.id}
-                onClick={() => { onSwitch(b); setOpen(false) }}
-                className={`sb-menu-board-btn${b.id === store.active.id ? ' active' : ''}`}
+                key={d.id}
+                className={`sb-menu-board-btn${d.id === ws.activeDatasetId ? ' active' : ''}`}
+                onClick={() => { onSwitch(d.id); setOpen(false) }}
               >
-                {b.name}
+                {d.name}
               </button>
             ))}
           </div>
           <div className="sb-menu-actions">
-            {([
-              { label: 'New board',  action: onNew },
-              { label: 'Duplicate', action: onDuplicate },
-              { label: 'Rename',    action: onRename },
-              { label: 'Copy link', action: onCopyLink },
-              { label: 'Delete',    action: onDelete, danger: true },
-            ] as { label: string; action: () => void; danger?: boolean }[]).map(({ label, action, danger }) => (
+            <button className="sb-menu-action-btn" onClick={() => { onNew(); setOpen(false) }}>New dataset</button>
+            {ws.datasets.length > 1 && (
               <button
-                key={label}
-                onClick={() => { action(); setOpen(false) }}
-                className={`sb-menu-action-btn${danger ? ' danger' : ''}`}
+                className="sb-menu-action-btn danger"
+                onClick={() => { onDelete(ws.activeDatasetId); setOpen(false) }}
               >
-                {label}
+                Delete dataset
               </button>
-            ))}
+            )}
           </div>
         </div>
       )}
@@ -105,185 +200,223 @@ function BoardMenu({
   )
 }
 
-// --- Main app ---
+// ─── Dashboard picker ─────────────────────────────────────────────────────────
 
-const initData = initStore()
+function DashboardPicker({
+  ws, onSwitch, onNew, onDelete,
+}: {
+  ws: Workspace
+  onSwitch: (id: string) => void
+  onNew: () => void
+  onDelete: (id: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const dashes = dashboardsForDataset(ws, ws.activeDatasetId)
+  const current = ws.dashboards.find(d => d.id === ws.activeDashboardId)
 
-export function App() {
-  const [store, setStore] = useState<BoardStore>(initData)
-  const active = store.active
-  const { mode, measureKey, sortMode } = active.state
-  const nodes = active.nodes
-  const measurements: Measurement[] = active.measurements
-
-  function patchActive(patch: Partial<Board>) {
-    const next = { ...active, ...patch }
-    setStore(s => ({ boards: persistBoard(next, s.boards), active: next }))
-  }
-
-  function patchState(patch: Partial<typeof active.state>) {
-    patchActive({ state: { ...active.state, ...patch } })
-  }
-
-  const switchBoard = useCallback((b: Board) => {
-    setStore(s => ({ boards: persistBoard(b, s.boards), active: b }))
-  }, [])
-
-  const newBoard = useCallback(() => {
-    const name = prompt('Board name:', 'New board')
-    if (!name) return
-    const b = createBoard(name)
-    setStore(s => { const boards = persistBoard(b, s.boards); return { boards, active: b } })
-  }, [])
-
-  const duplicateBoard = useCallback(() => {
-    const name = prompt('Name for duplicate:', active.name + ' copy')
-    if (!name) return
-    const b = createBoard(name, active)
-    setStore(s => { const boards = persistBoard(b, s.boards); return { boards, active: b } })
-  }, [active])
-
-  const renameBoard = useCallback(() => {
-    const name = prompt('New name:', active.name)
-    if (!name || name === active.name) return
-    patchActive({ name })
-  }, [active])
-
-  const deleteCurrentBoard = useCallback(() => {
-    if (store.boards.length <= 1) { alert('Cannot delete the only board.'); return }
-    if (!confirm(`Delete "${active.name}"?`)) return
-    const remaining = deleteBoard(active.id, store.boards)
-    const next = remaining[0]
-    setStore({ boards: persistBoard(next, remaining), active: next })
-  }, [active, store.boards])
-
-  const copyLink = useCallback(() => {
-    const url = location.origin + location.pathname + boardToUrl(active)
-    navigator.clipboard.writeText(url).then(() => alert('Link copied!'))
-  }, [active])
-
-  const handleVizUpdate = useCallback((id: string, patch: Partial<Goal>) => {
-    if (!patch.measurements) return
-    const m = patch.measurements
-    const newMeasureVal = m[measureKey]
-    const newIndex = m['_index']
-    setStore(s => {
-      let ns = s.active.nodes
-      if (newMeasureVal != null) {
-        ns = ns.map(n => n.id === id
-          ? { ...n, measurements: { ...n.measurements, [measureKey]: newMeasureVal as number } }
-          : n)
-      }
-      if (newIndex != null) {
-        const targetIdx = Math.max(0, Math.min(ns.length - 1, (newIndex as number) - 1))
-        const curIdx = ns.findIndex(n => n.id === id)
-        if (curIdx !== -1 && curIdx !== targetIdx) {
-          const next = ns.slice()
-          const [moved] = next.splice(curIdx, 1)
-          next.splice(targetIdx, 0, moved)
-          ns = next
-        }
-      }
-      if (ns === s.active.nodes) return s
-      const next = { ...s.active, nodes: ns }
-      return { boards: persistBoard(next, s.boards), active: next }
-    })
-  }, [measureKey])
-
-  const goals = nodesToGoals(nodes, measureKey)
-  const isHier = (HIER_MODES as string[]).includes(mode)
-  const isTreetable = mode === 'treetable'
+  useEffect(() => {
+    if (!open) return
+    const h = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [open])
 
   return (
-    <div className="sb-root">
-
-      {/* Topbar */}
-      <div className="sb-topbar">
-        <span className="sb-wordmark">sliceboard</span>
-        <BoardMenu
-          store={store}
-          onSwitch={switchBoard}
-          onNew={newBoard}
-          onDuplicate={duplicateBoard}
-          onRename={renameBoard}
-          onDelete={deleteCurrentBoard}
-          onCopyLink={copyLink}
-        />
-      </div>
-
-      {/* Body */}
-      <div className="sb-body">
-
-        {/* Left: mode + measure controls */}
-        <div className="sb-left">
-          <div className="sb-left-header">
-            <span className="sb-section-label">View</span>
+    <div ref={ref} className="sb-menu-wrap">
+      <button className="sb-btn sb-menu-trigger" onClick={() => setOpen(o => !o)}>
+        <span className="sb-menu-trigger-label">{current?.name ?? '—'}</span>
+        <span className="sb-menu-caret">▾</span>
+      </button>
+      {open && (
+        <div className="sb-menu-dropdown">
+          <div className="sb-menu-boards">
+            {dashes.map(d => (
+              <button
+                key={d.id}
+                className={`sb-menu-board-btn${d.id === ws.activeDashboardId ? ' active' : ''}`}
+                onClick={() => { onSwitch(d.id); setOpen(false) }}
+              >
+                {d.name}
+              </button>
+            ))}
           </div>
-
-          <div className="sb-control-group">
-            <div className="sb-control-label">Flat</div>
-            <div className="sb-btn-group">
-              {FLAT_MODES.map(m => (
-                <button key={m} className={`sb-btn${mode === m ? ' sb-btn-active' : ''}`} onClick={() => patchState({ mode: m })}>{m}</button>
-              ))}
-            </div>
-          </div>
-
-          <div className="sb-control-group">
-            <div className="sb-control-label">Hierarchy</div>
-            <div className="sb-btn-group">
-              {HIER_MODES.map(m => (
-                <button key={m} className={`sb-btn${mode === m ? ' sb-btn-active' : ''}`} onClick={() => patchState({ mode: m })}>{HIER_LABELS[m]}</button>
-              ))}
-            </div>
-          </div>
-
-          {!isHier && (
-            <div className="sb-control-group">
-              <div className="sb-control-label">Sort</div>
-              <div className="sb-btn-group">
-                <button className={`sb-btn${sortMode === 'index' ? ' sb-btn-active' : ''}`} onClick={() => patchState({ sortMode: 'index' })}>idx</button>
-                <button className={`sb-btn${sortMode === 'size' ? ' sb-btn-active' : ''}`} onClick={() => patchState({ sortMode: 'size' })}>↓val</button>
-              </div>
-            </div>
-          )}
-
-          <div className="sb-control-group">
-            <div className="sb-control-label">Measure</div>
-            <div className="sb-btn-group">
-              {measurements.map(m => (
-                <button
-                  key={m.key}
-                  className={`sb-btn${measureKey === m.key ? ' sb-btn-active' : ''}`}
-                  onClick={() => patchState({ measureKey: m.key })}
-                >
-                  {m.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Right: viz */}
-        <div className="sb-right">
-          <div className="sb-viz-canvas">
-            {isTreetable ? (
-              <HTreetable nodes={nodes} measureKey={measureKey} />
-            ) : isHier ? (
-              <HViz nodes={nodes} measureKey={measureKey} mode={mode as 'h-treemap' | 'h-icicle' | 'h-radial'} />
-            ) : (
-              <Viz
-                goals={goals} mode={mode as 'treemap' | 'radial' | 'bands'}
-                activeUnit={measureKey} unitKind="size"
-                sortUnit={sortMode === 'index' ? '_index' : measureKey}
-                sortUnitKind={sortMode === 'index' ? 'order' : 'size'}
-                frame={undefined} onUpdate={handleVizUpdate}
-              />
+          <div className="sb-menu-actions">
+            <button className="sb-menu-action-btn" onClick={() => { onNew(); setOpen(false) }}>New dashboard</button>
+            {dashes.length > 1 && (
+              <button
+                className="sb-menu-action-btn danger"
+                onClick={() => { onDelete(ws.activeDashboardId); setOpen(false) }}
+              >
+                Delete dashboard
+              </button>
             )}
           </div>
         </div>
+      )}
+    </div>
+  )
+}
 
+// ─── Main app ─────────────────────────────────────────────────────────────────
+
+export function App() {
+  const [ws, setWs] = useState<Workspace>(() => initWorkspace())
+
+  function commit(next: Workspace) {
+    setWs(next)
+    saveWorkspace(next)
+  }
+
+  const ds = activeDataset(ws)
+  const dash = activeDashboard(ws)
+  const measures = ds ? measurementsFromColumns(ds.columns) : []
+
+  const switchDataset = useCallback((id: string) => {
+    const next = { ...ws, activeDatasetId: id }
+    const dashes = dashboardsForDataset(next, id)
+    const activeDash = dashes[0]?.id ?? ''
+    const updated = { ...next, activeDashboardId: activeDash }
+    commit(updated)
+    const newDs = updated.datasets.find(d => d.id === id)
+    if (newDs) resetHudForDataset(newDs.nodes)
+  }, [ws])
+
+  const newDataset = useCallback(() => {
+    const name = prompt('Dataset name:')
+    if (!name) return
+    let next = createDataset(ws, name)
+    next = { ...next, activeDatasetId: next.datasets[next.datasets.length - 1]!.id }
+    next = createDashboard(next, 'Overview', next.activeDatasetId)
+    next = { ...next, activeDashboardId: next.dashboards[next.dashboards.length - 1]!.id }
+    commit(next)
+  }, [ws])
+
+  const deleteDs = useCallback((id: string) => {
+    if (!confirm('Delete this dataset and all its dashboards?')) return
+    commit(deleteDataset(ws, id))
+  }, [ws])
+
+  const switchDashboard = useCallback((id: string) => {
+    commit({ ...ws, activeDashboardId: id })
+  }, [ws])
+
+  const newDashboard = useCallback(() => {
+    const name = prompt('Dashboard name:')
+    if (!name) return
+    let next = createDashboard(ws, name, ws.activeDatasetId)
+    next = { ...next, activeDashboardId: next.dashboards[next.dashboards.length - 1]!.id }
+    commit(next)
+  }, [ws])
+
+  const deleteDash = useCallback((id: string) => {
+    if (!confirm('Delete this dashboard?')) return
+    commit(deleteDashboard(ws, id))
+  }, [ws])
+
+  const handleAddTile = useCallback((kind: TileKind) => {
+    if (!dash) return
+    commit(addTile(ws, dash.id, kind))
+  }, [ws, dash])
+
+  const handleRemoveTile = useCallback((tileId: string) => {
+    if (!dash) return
+    commit(removeTile(ws, dash.id, tileId))
+  }, [ws, dash])
+
+  const handleLayoutChange = useCallback((layout: readonly LayoutItem[]) => {
+    if (!dash) return
+    const next: Dashboard = { ...dash, layout: layout as LayoutItem[] }
+    commit(updateDashboard(ws, next))
+  }, [ws, dash])
+
+  const handleTileMeasure = useCallback((tileId: string, key: string) => {
+    if (!dash) return
+    const next: Dashboard = {
+      ...dash,
+      tiles: dash.tiles.map(t => t.id === tileId ? { ...t, measureKey: key } : t),
+    }
+    commit(updateDashboard(ws, next))
+  }, [ws, dash])
+
+  return (
+    <div className="sb-root">
+      <div className="sb-topbar">
+        <span className="sb-wordmark">sliceboard</span>
+        <span className="sb-topbar-sep">·</span>
+        <DatasetPicker
+          ws={ws}
+          onSwitch={switchDataset}
+          onNew={newDataset}
+          onDelete={deleteDs}
+        />
+        <span className="sb-topbar-sep">/</span>
+        <DashboardPicker
+          ws={ws}
+          onSwitch={switchDashboard}
+          onNew={newDashboard}
+          onDelete={deleteDash}
+        />
+        <div className="sb-topbar-right">
+          <AddTileMenu onAdd={handleAddTile} />
+        </div>
       </div>
+
+      <div className="sb-grid-wrap">
+        {ds && dash ? (
+          <TileGrid
+            dash={dash}
+            ds={ds}
+            measures={measures}
+            onLayoutChange={handleLayoutChange}
+            onRemoveTile={handleRemoveTile}
+            onTileMeasure={handleTileMeasure}
+          />
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeasure }: {
+  dash: Dashboard
+  ds: Dataset
+  measures: { key: string; label: string }[]
+  onLayoutChange: (layout: readonly LayoutItem[]) => void
+  onRemoveTile: (id: string) => void
+  onTileMeasure: (tileId: string, key: string) => void
+}) {
+  const { width, containerRef, mounted } = useContainerWidth()
+  return (
+    <div ref={containerRef as unknown as React.RefCallback<HTMLDivElement>} className="sb-grid-inner">
+      {mounted && (
+        <GridLayout
+          width={width}
+          layout={dash.layout}
+          gridConfig={{ cols: 12, rowHeight: 60, margin: [12, 12] }}
+          dragConfig={{ handle: '.tile-header' }}
+          autoSize
+          onLayoutChange={onLayoutChange}
+        >
+          {dash.tiles.map(tile => (
+            <div key={tile.id} className="tile-wrap">
+              <TileCard
+                tile={tile}
+                ds={ds}
+                measureKey={dash.measureKey}
+                availableMeasures={measures}
+                onRemove={() => onRemoveTile(tile.id)}
+                onMeasureChange={key => onTileMeasure(tile.id, key)}
+              />
+            </div>
+          ))}
+        </GridLayout>
+      )}
+      {dash.tiles.length === 0 && (
+        <div className="sb-grid-empty">No tiles — click "+ Tile" to add one</div>
+      )}
     </div>
   )
 }
