@@ -1,5 +1,31 @@
 export type UnitKind = 'size' | 'order'
 
+export type NodeType = 'goal' | 'project' | 'subproject' | 'task'
+export type Status = 'todo' | 'doing' | 'review' | 'done' | 'blocked'
+
+export interface PNode {
+  id: string
+  type: NodeType
+  parentId: string | null
+  index: number
+  name: string
+  status: Status
+  tags: string[]
+  measurements: Record<string, number>
+  color?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type Rollup = 'sum' | 'max' | 'mean' | 'none'
+
+export interface Measurement {
+  key: string
+  label: string
+  unit: string
+  rollup: Rollup
+}
+
 export interface Goal {
   id: string
   name: string
@@ -13,9 +39,9 @@ export interface Goal {
   updatedAt: string
 }
 
-export type ViewMode = 'treemap' | 'radial' | 'bands' | 'h-treemap' | 'h-icicle' | 'h-radial'
+export type ViewMode = 'treemap' | 'radial' | 'bands' | 'h-treemap' | 'h-icicle' | 'h-radial' | 'treetable'
 export type FlatMode = 'treemap' | 'radial' | 'bands'
-export type HierMode = 'h-treemap' | 'h-icicle' | 'h-radial'
+export type HierMode = 'h-treemap' | 'h-icicle' | 'h-radial' | 'treetable'
 
 export interface GoalTree {
   id: string

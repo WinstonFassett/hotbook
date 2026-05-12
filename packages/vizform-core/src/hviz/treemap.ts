@@ -2,56 +2,41 @@ import * as d3 from 'd3-hierarchy'
 import { select } from 'd3-selection'
 import { interpolateObject } from 'd3-interpolate'
 import 'd3-transition'
-import type { GoalTree, HVizCallbacks } from '../types'
+import type { PNode, HVizCallbacks } from '../types'
 import { motion } from '../viz/constants'
+import { buildTree, buildColorMap, buildNameMap, measureValue } from './pnodeUtils'
 
-type Datum = GoalTree
+type Datum = { id: string; children?: Datum[] }
 type RNode = d3.HierarchyRectangularNode<Datum>
 
-// Layout box stashed on each cell DOM element for transition-from-current
 type Layout = { x: number; y: number; w: number; h: number }
 type CellEl = SVGGElement & { __layout?: Layout }
 
 const HEADER_H = 28
-// Inner group header strip so the group label doesn't overlap child tiles
 const GROUP_LABEL_H = 20
-// Padding between group tile edge and child tiles
 const CHILD_PAD = 3
 
-function buildColorMap(tree: GoalTree): Map<string, string> {
-  const m = new Map<string, string>()
-  function walk(n: GoalTree) { m.set(n.id, n.color); n.children?.forEach(walk) }
-  walk(tree)
-  return m
-}
-
-function buildNameMap(tree: GoalTree): Map<string, string> {
-  const m = new Map<string, string>()
-  function walk(n: GoalTree) { m.set(n.id, n.name); n.children?.forEach(walk) }
-  walk(tree)
-  return m
-}
-
 export interface TreemapMounted {
-  update(tree: GoalTree): void
+  update(nodes: PNode[], measureKey: string): void
   destroy(): void
 }
 
 export function mountTreemap(
   svgEl: SVGSVGElement,
-  initialTree: GoalTree,
+  nodes: PNode[],
+  measureKey: string,
   callbacks: HVizCallbacks,
 ): TreemapMounted {
-  let currentTree = initialTree
+  let currentNodes = nodes
+  let currentMeasureKey = measureKey
   let focusId = '__root__'
 
-  function buildRoot(tree: GoalTree, w: number, bodyH: number): RNode {
+  function buildRoot(w: number, bodyH: number): RNode {
+    const tree = buildTree(currentNodes, currentMeasureKey)
     const root = d3.hierarchy<Datum>(tree)
-      .sum(d => (d.children ? 0 : d.value))
+      .sum(d => (d.children ? 0 : measureValue(currentNodes, d.id, currentMeasureKey)))
       .sort((a, b) => (b.value ?? 0) - (a.value ?? 0))
 
-    // paddingTop on inner groups makes room for the group label strip so child
-    // tiles don't overlap the group name.
     d3.treemap<Datum>()
       .tile(d3.treemapSquarify)
       .size([w, bodyH])
@@ -63,8 +48,6 @@ export function mountTreemap(
     return root as RNode
   }
 
-  // Map a node's absolute treemap coords into SVG body space, relative to the
-  // focused node. Returns pixel rect { x, y, w, h } in SVG body coordinates.
   function layoutOf(d: RNode, focus: RNode, w: number, bodyH: number): Layout {
     const fxr = Math.max(1e-9, focus.x1 - focus.x0)
     const fyr = Math.max(1e-9, focus.y1 - focus.y0)
@@ -79,21 +62,17 @@ export function mountTreemap(
   }
 
   function render() {
-    const tree = currentTree
     const svg = select(svgEl)
     const w = svgEl.clientWidth || 400
     const h = svgEl.clientHeight || 300
     const bodyH = Math.max(1, h - HEADER_H)
     svg.attr('viewBox', `0 0 ${w} ${h}`)
 
-    const colorMap = buildColorMap(tree)
-    const nameMap = buildNameMap(tree)
-    const root = buildRoot(tree, w, bodyH)
+    const colorMap = buildColorMap(currentNodes)
+    const nameMap = buildNameMap(currentNodes)
+    const root = buildRoot(w, bodyH)
     const focus = (root.descendants().find(d => d.data.id === focusId) ?? root) as RNode
 
-    // Nodes to render: all descendants of focus, excluding focus itself and
-    // excluding the synthetic __root__ node. Show two levels below focus
-    // (groups + their leaves) — depth relative to focus <= 2.
     const focusDepth = focus.depth
     const all = (root.descendants() as RNode[]).filter(d =>
       d.data.id !== '__root__' &&
@@ -102,7 +81,6 @@ export function mountTreemap(
       d.depth <= focusDepth + 2,
     )
 
-    // --- Ensure structural DOM elements exist (defs, header, body) ---
     let defs = svg.select<SVGDefsElement>('defs')
     if (defs.empty()) defs = svg.append<SVGDefsElement>('defs')
     defs.selectAll('clipPath#htm-body-clip').data([null]).join(e =>
@@ -131,7 +109,6 @@ export function mountTreemap(
     headerG.select('rect.tm-header-bg').attr('width', w)
     headerG.select('text.tm-header-hint').attr('x', w - 8)
 
-    // Breadcrumb path
     const path: string[] = []
     let cur: RNode | null = focus
     while (cur && cur.data.id !== '__root__') {
@@ -154,7 +131,6 @@ export function mountTreemap(
         .attr('clip-path', 'url(#htm-body-clip)')
     }
 
-    // Background click drills out
     bodyG.selectAll<SVGRectElement, null>('rect.tm-bg').data([null]).join(
       e => e.append('rect').attr('class', 'tm-bg'),
     )
@@ -167,30 +143,21 @@ export function mountTreemap(
         }
       })
 
-    // --- Cell join: key by node id for continuity across renders ---
     const sel = bodyG.selectAll<CellEl, RNode>('g.tm-cell').data(all, d => d.data.id)
 
     const entered = sel.enter().append<CellEl>('g')
       .attr('class', 'tm-cell')
       .each(function(this: CellEl, d) {
-        // New elements start from their computed final position (no stash = no
-        // interpolation start, so they snap in — acceptable for initial render;
-        // on subsequent renders existing elements will have __layout stashed).
         this.__layout = layoutOf(d, focus, w, bodyH)
       })
 
-    // Group tile background
     entered.append('rect').attr('class', 'tm-rect')
-    // Group label strip (only visible on group nodes, i.e. nodes with children)
     entered.append('rect').attr('class', 'tm-group-strip')
-    // Name text
     entered.append('text').attr('class', 'tm-name')
-    // Value text (leaves only)
     entered.append('text').attr('class', 'tm-val')
 
     const merged = entered.merge(sel)
 
-    // Click: groups drill in; leaves invoke callback
     merged.attr('cursor', d => d.children ? 'pointer' : 'default')
     merged.on('click', (e, d) => {
       e.stopPropagation()
@@ -202,20 +169,15 @@ export function mountTreemap(
       }
     })
 
-    // Colors
     merged.select<SVGRectElement>('rect.tm-rect')
       .attr('fill', d => colorMap.get(d.data.id) ?? '#555')
       .attr('stroke', 'transparent')
       .attr('stroke-width', 1)
 
-    // Group label strip: the small header bar at top of each group tile
     merged.select<SVGRectElement>('rect.tm-group-strip')
       .attr('fill', d => d.children ? 'oklch(0 0 0 / 0.25)' : 'none')
-      .attr('x', 0)
-      .attr('y', 0)
+      .attr('x', 0).attr('y', 0)
 
-    // Text labels — updated from current layout (end state) for sizing;
-    // position is set inside the tween
     merged.select<SVGTextElement>('text.tm-name')
       .attr('fill', 'oklch(0.95 0 0)')
       .attr('font-size', 11).attr('font-weight', 500)
@@ -226,10 +188,8 @@ export function mountTreemap(
       .attr('fill-opacity', 0.6).attr('font-size', 10)
       .attr('pointer-events', 'none')
 
-    // Motion spec
     const mv = motion('move')
 
-    // Animate each cell from its stashed __layout to the new computed layout
     merged
       .interrupt('layout')
       .transition('layout')
@@ -253,10 +213,8 @@ export function mountTreemap(
           rect.attr('width', cur.w).attr('height', cur.h)
 
           if (isGroup) {
-            // Group strip height: fixed strip at top of group tile
             const stripH = Math.min(GROUP_LABEL_H, cur.h)
             strip.attr('width', cur.w).attr('height', stripH)
-            // Name in the strip
             if (cur.w >= 40 && cur.h >= 16) {
               const name = nameMap.get(d.data.id) ?? ''
               const maxChars = Math.max(1, Math.floor((cur.w - 10) / 6.5))
@@ -268,7 +226,6 @@ export function mountTreemap(
             }
             valText.text('')
           } else {
-            // Leaf tile
             strip.attr('width', 0).attr('height', 0)
             if (cur.w >= 36 && cur.h >= 20) {
               const name = nameMap.get(d.data.id) ?? ''
@@ -289,7 +246,6 @@ export function mountTreemap(
         }
       })
 
-    // Remove exited cells — animate them out by shrinking to zero size, then remove
     const ex = motion('exit')
     sel.exit()
       .interrupt('layout')
@@ -312,13 +268,13 @@ export function mountTreemap(
       .remove()
   }
 
-  // Initial render — wipe any prior DOM content first
   select(svgEl).selectAll('*').remove()
   render()
 
   return {
-    update(tree: GoalTree) {
-      currentTree = tree
+    update(nodes: PNode[], measureKey: string) {
+      currentNodes = nodes
+      currentMeasureKey = measureKey
       render()
     },
     destroy() {

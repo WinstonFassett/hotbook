@@ -2,51 +2,44 @@ import * as d3 from 'd3-hierarchy'
 import { select } from 'd3-selection'
 import { interpolateObject } from 'd3-interpolate'
 import 'd3-transition'
-import type { GoalTree, HVizCallbacks } from '../types'
+import type { PNode, HVizCallbacks } from '../types'
 import { motion } from '../viz/constants'
+import { buildTree, buildColorMap, buildNameMap, measureValue } from './pnodeUtils'
 
 const DRILL = motion('enter')
 const DRILL_EXIT = motion('exit')
 
-type Datum = GoalTree
+type Datum = { id: string; children?: Datum[] }
 type RNode = d3.HierarchyRectangularNode<Datum>
 type CellEl = SVGGElement & { __layout?: { x: number; y: number; w: number; h: number } }
 
-function buildColorMap(tree: GoalTree): Map<string, string> {
-  const m = new Map<string, string>()
-  function walk(n: GoalTree) { m.set(n.id, n.color); n.children?.forEach(walk) }
-  walk(tree)
-  return m
-}
-
-function buildNameMap(tree: GoalTree): Map<string, string> {
-  const m = new Map<string, string>()
-  function walk(n: GoalTree) { m.set(n.id, n.name); n.children?.forEach(walk) }
-  walk(tree)
-  return m
-}
-
 export interface IcicleMounted {
-  update(tree: GoalTree): void
+  update(nodes: PNode[], measureKey: string): void
   destroy(): void
 }
 
-export function mountIcicle(svgEl: SVGSVGElement, initialTree: GoalTree, callbacks: HVizCallbacks): IcicleMounted {
-  let currentTree = initialTree
+export function mountIcicle(
+  svgEl: SVGSVGElement,
+  nodes: PNode[],
+  measureKey: string,
+  callbacks: HVizCallbacks,
+): IcicleMounted {
+  let currentNodes = nodes
+  let currentMeasureKey = measureKey
   let focusId = '__root__'
 
   function render() {
-    const tree = currentTree
     const svg = select(svgEl)
     const w = svgEl.clientWidth || 800
     const h = svgEl.clientHeight || 300
     svg.attr('viewBox', `0 0 ${w} ${h}`)
 
-    const colorMap = buildColorMap(tree)
-    const nameMap = buildNameMap(tree)
+    const colorMap = buildColorMap(currentNodes)
+    const nameMap = buildNameMap(currentNodes)
 
+    const tree = buildTree(currentNodes, currentMeasureKey)
     const root = d3.hierarchy<Datum>(tree)
-      .sum(d => (d.children ? 0 : d.value))
+      .sum(d => (d.children ? 0 : measureValue(currentNodes, d.id, currentMeasureKey)))
       .sort((a, b) => (b.value ?? 0) - (a.value ?? 0))
 
     d3.partition<Datum>().size([h, w])(root)
@@ -135,8 +128,9 @@ export function mountIcicle(svgEl: SVGSVGElement, initialTree: GoalTree, callbac
   render()
 
   return {
-    update(tree: GoalTree) {
-      currentTree = tree
+    update(nodes: PNode[], measureKey: string) {
+      currentNodes = nodes
+      currentMeasureKey = measureKey
       render()
     },
     destroy() {

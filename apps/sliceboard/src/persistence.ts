@@ -1,17 +1,14 @@
-const LS_BOARDS_KEY = 'sb:boards'
-const LS_LAST_KEY = 'sb:lastBoardId'
-const HASH_PREFIX = '#b='
+import type { PNode, Measurement } from '@winstonfassett/vizform-react'
 
-export interface Row {
-  id: string
-  name: string
-  group: string
-  value: number
-}
+const LS_BOARDS_KEY = 'sb:boards:v2'
+const LS_LAST_KEY = 'sb:lastBoardId:v2'
+const HASH_PREFIX = '#b2='
+
+export type { PNode, Measurement }
 
 export interface BoardState {
   mode: string
-  grouped: boolean
+  measureKey: string
   sortMode: string
 }
 
@@ -19,7 +16,8 @@ export interface Board {
   id: string
   name: string
   createdAt: string
-  rows: Row[]
+  nodes: PNode[]
+  measurements: Measurement[]
   state: BoardState
 }
 
@@ -27,36 +25,213 @@ function genId(): string {
   return Math.random().toString(36).slice(2, 10)
 }
 
-export const SEED_BOARDS: Board[] = [
+// --- Seed data: Goal → Project → Subproject → Task (4 levels) ---
+
+const NOW = '2026-05-12T12:00:00.000Z'
+const PALETTE = ['#e08888', '#d4a86c', '#7ec87e', '#7aaae8', '#b090e0', '#60c4c0']
+
+let _idCounter = 0
+function nid(): string { return `n${++_idCounter}` }
+
+interface TaskSpec { name: string; status?: PNode['status']; estimate?: number; actual?: number }
+interface SubSpec { name: string; status?: PNode['status']; tasks: TaskSpec[] }
+interface ProjSpec { name: string; status?: PNode['status']; subs: SubSpec[] }
+interface GoalSpec { name: string; color: string; projects: ProjSpec[] }
+
+function makeTask(t: TaskSpec, parentId: string, index: number): PNode {
+  return {
+    id: nid(), type: 'task', parentId, index,
+    name: t.name, status: t.status ?? 'todo', tags: [],
+    measurements: {
+      estimate_hours: t.estimate ?? 4,
+      ...(t.actual != null ? { actual_hours: t.actual } : {}),
+    },
+    createdAt: NOW, updatedAt: NOW,
+  }
+}
+
+function makeSub(s: SubSpec, parentId: string, index: number, color: string): PNode[] {
+  const id = nid()
+  const sub: PNode = {
+    id, type: 'subproject', parentId, index,
+    name: s.name, status: s.status ?? 'todo', tags: [],
+    measurements: {}, color,
+    createdAt: NOW, updatedAt: NOW,
+  }
+  return [sub, ...s.tasks.map((t, i) => makeTask(t, id, i + 1))]
+}
+
+function makeProject(p: ProjSpec, parentId: string, index: number, color: string): PNode[] {
+  const id = nid()
+  const proj: PNode = {
+    id, type: 'project', parentId, index,
+    name: p.name, status: p.status ?? 'doing', tags: [],
+    measurements: {}, color,
+    createdAt: NOW, updatedAt: NOW,
+  }
+  return [proj, ...p.subs.flatMap((s, i) => makeSub(s, id, i + 1, color))]
+}
+
+function makeGoal(g: GoalSpec, index: number): PNode[] {
+  const id = nid()
+  const goal: PNode = {
+    id, type: 'goal', parentId: null, index,
+    name: g.name, status: 'doing', tags: [],
+    measurements: {}, color: g.color,
+    createdAt: NOW, updatedAt: NOW,
+  }
+  return [goal, ...g.projects.flatMap((p, i) => makeProject(p, id, i + 1, g.color))]
+}
+
+const GOAL_SPECS: GoalSpec[] = [
   {
-    id: 'seed-fruit',
-    name: 'Fruit (demo)',
-    createdAt: new Date(0).toISOString(),
-    rows: [
-      { id: '1', name: 'Apples',   group: 'Alpha', value: 40 },
-      { id: '2', name: 'Bananas',  group: 'Alpha', value: 25 },
-      { id: '3', name: 'Carrots',  group: 'Beta',  value: 30 },
-      { id: '4', name: 'Dates',    group: 'Beta',  value: 15 },
-      { id: '5', name: 'Eggplant', group: 'Gamma', value: 20 },
-      { id: '6', name: 'Fennel',   group: 'Gamma', value: 10 },
+    name: 'Ship vizform v1',
+    color: PALETTE[0],
+    projects: [
+      {
+        name: 'Core renderer',
+        subs: [
+          {
+            name: 'Flat viz',
+            tasks: [
+              { name: 'Treemap layout', status: 'done', estimate: 4, actual: 3.5 },
+              { name: 'Radial layout', status: 'done', estimate: 4, actual: 4 },
+              { name: 'Bands layout', status: 'done', estimate: 3, actual: 2.5 },
+            ],
+          },
+          {
+            name: 'Hierarchical viz',
+            status: 'doing',
+            tasks: [
+              { name: 'H-treemap drill', status: 'done', estimate: 8, actual: 10 },
+              { name: 'H-icicle drill', status: 'done', estimate: 6, actual: 5 },
+              { name: 'H-radial drill', status: 'done', estimate: 6, actual: 6 },
+              { name: 'PNode data model', status: 'doing', estimate: 6, actual: 2 },
+              { name: 'Treetable view', status: 'todo', estimate: 8 },
+            ],
+          },
+        ],
+      },
+      {
+        name: 'Sliceboard app',
+        status: 'doing',
+        subs: [
+          {
+            name: 'Data layer',
+            tasks: [
+              { name: 'Persistence + seed', status: 'doing', estimate: 3, actual: 1 },
+              { name: 'Board CRUD', status: 'done', estimate: 4, actual: 3 },
+            ],
+          },
+          {
+            name: 'UI',
+            tasks: [
+              { name: 'Topbar + board menu', status: 'done', estimate: 2, actual: 2 },
+              { name: 'Viz toolbar', status: 'doing', estimate: 2, actual: 1 },
+              { name: 'Mode switcher', status: 'todo', estimate: 2 },
+            ],
+          },
+        ],
+      },
     ],
-    state: { mode: 'treemap', grouped: false, sortMode: 'index' },
   },
   {
-    id: 'seed-team',
-    name: 'Team allocation (demo)',
-    createdAt: new Date(0).toISOString(),
-    rows: [
-      { id: '1', name: 'Design',   group: 'Q2', value: 20 },
-      { id: '2', name: 'Frontend', group: 'Q2', value: 35 },
-      { id: '3', name: 'Backend',  group: 'Q2', value: 30 },
-      { id: '4', name: 'Infra',    group: 'Q2', value: 15 },
-      { id: '5', name: 'Design',   group: 'Q3', value: 25 },
-      { id: '6', name: 'Frontend', group: 'Q3', value: 40 },
-      { id: '7', name: 'Backend',  group: 'Q3', value: 25 },
-      { id: '8', name: 'Infra',    group: 'Q3', value: 10 },
+    name: 'Health & longevity',
+    color: PALETTE[2],
+    projects: [
+      {
+        name: 'Strength',
+        subs: [
+          {
+            name: 'Barbell',
+            tasks: [
+              { name: 'Squat session', status: 'doing', estimate: 1, actual: 0.5 },
+              { name: 'Deadlift session', status: 'done', estimate: 1, actual: 1 },
+              { name: 'Press session', status: 'todo', estimate: 1 },
+            ],
+          },
+          {
+            name: 'Cardio',
+            tasks: [
+              { name: 'Zone 2 run', status: 'todo', estimate: 0.75 },
+              { name: 'HIIT intervals', status: 'todo', estimate: 0.5 },
+            ],
+          },
+        ],
+      },
+      {
+        name: 'Sleep',
+        status: 'review',
+        subs: [
+          {
+            name: 'Hygiene',
+            tasks: [
+              { name: 'No screens after 10pm', status: 'doing', estimate: 0.5, actual: 0.25 },
+              { name: 'Morning light', status: 'doing', estimate: 0.25, actual: 0.25 },
+            ],
+          },
+        ],
+      },
     ],
-    state: { mode: 'treemap', grouped: true, sortMode: 'index' },
+  },
+  {
+    name: 'Open source',
+    color: PALETTE[3],
+    projects: [
+      {
+        name: 'tix CLI',
+        subs: [
+          {
+            name: 'Core',
+            tasks: [
+              { name: 'Dep graph cmd', status: 'doing', estimate: 6, actual: 3 },
+              { name: 'Acceptance criteria DSL', status: 'review', estimate: 4, actual: 4 },
+            ],
+          },
+          {
+            name: 'Web viewer',
+            tasks: [
+              { name: 'React shell', status: 'todo', estimate: 5 },
+              { name: 'Graph visualization', status: 'todo', estimate: 8 },
+            ],
+          },
+        ],
+      },
+      {
+        name: 'cass search',
+        status: 'doing',
+        subs: [
+          {
+            name: 'Search engine',
+            tasks: [
+              { name: 'BM25 index', status: 'done', estimate: 10, actual: 12 },
+              { name: 'Semantic fallback', status: 'doing', estimate: 6, actual: 3 },
+            ],
+          },
+        ],
+      },
+    ],
+  },
+]
+
+function buildSeedNodes(): PNode[] {
+  _idCounter = 0
+  return GOAL_SPECS.flatMap((g, i) => makeGoal(g, i + 1))
+}
+
+export const SEED_MEASUREMENTS: Measurement[] = [
+  { key: 'estimate_hours', label: 'Estimate', unit: 'h', rollup: 'sum' },
+  { key: 'actual_hours', label: 'Actual', unit: 'h', rollup: 'sum' },
+]
+
+export const SEED_BOARDS: Board[] = [
+  {
+    id: 'seed-vizform',
+    name: 'vizform roadmap (demo)',
+    createdAt: new Date(0).toISOString(),
+    nodes: buildSeedNodes(),
+    measurements: SEED_MEASUREMENTS,
+    state: { mode: 'treetable', measureKey: 'estimate_hours', sortMode: 'index' },
   },
 ]
 
@@ -69,7 +244,7 @@ function encodeBoard(board: Board): string {
 function decodeBoard(encoded: string): Board | null {
   try {
     const parsed = JSON.parse(atob(encoded))
-    if (!Array.isArray(parsed?.rows) || typeof parsed?.id !== 'string') return null
+    if (!Array.isArray(parsed?.nodes) || typeof parsed?.id !== 'string') return null
     return parsed as Board
   } catch {
     return null
@@ -92,7 +267,7 @@ export function writeUrl(board: Board): void {
   history.replaceState(null, '', boardToUrl(board))
 }
 
-// --- localStorage boards list ---
+// --- localStorage ---
 
 function loadBoards(): Board[] {
   try {
@@ -134,7 +309,6 @@ export interface BoardStore {
 }
 
 export function initStore(): BoardStore {
-  // URL takes priority — shared link carries full board data
   const urlBoard = boardFromUrl()
   if (urlBoard) {
     const boards = loadBoards()
@@ -175,8 +349,9 @@ export function createBoard(name: string, fromBoard?: Board): Board {
     id: genId(),
     name,
     createdAt: new Date().toISOString(),
-    rows: fromBoard ? fromBoard.rows.map(r => ({ ...r, id: genId() })) : [],
-    state: fromBoard?.state ?? { mode: 'treemap', grouped: false, sortMode: 'index' },
+    nodes: fromBoard ? fromBoard.nodes.map(n => ({ ...n, id: genId() })) : buildSeedNodes(),
+    measurements: fromBoard?.measurements ?? SEED_MEASUREMENTS,
+    state: fromBoard?.state ?? { mode: 'treetable', measureKey: 'estimate_hours', sortMode: 'index' },
   }
 }
 

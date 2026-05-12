@@ -1,51 +1,37 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { Viz, HViz, pickColor } from '@winstonfassett/vizform-react'
-import type { Goal, GoalTree, ViewMode } from '@winstonfassett/vizform-react'
+import { Viz, HViz, HTreetable, pickColor } from '@winstonfassett/vizform-react'
+import type { Goal, ViewMode, PNode, Measurement } from '@winstonfassett/vizform-react'
+import { leavesOf } from '@winstonfassett/vizform-core'
 import {
   initStore, persistBoard, createBoard, deleteBoard,
   boardToUrl,
 } from './persistence'
-import type { Row, Board, BoardStore } from './persistence'
+import type { Board, BoardStore } from './persistence'
 import './App.css'
 
-const GROUPS = ['Alpha', 'Beta', 'Gamma']
 const FLAT_MODES: ViewMode[] = ['treemap', 'radial', 'bands']
-const HIER_MODES: ViewMode[] = ['h-treemap', 'h-icicle', 'h-radial']
-const HIER_LABELS: Record<string, string> = { 'h-treemap': 'tree', 'h-icicle': 'icicle', 'h-radial': 'sunburst' }
+const HIER_MODES: ViewMode[] = ['h-treemap', 'h-icicle', 'h-radial', 'treetable']
+const HIER_LABELS: Record<string, string> = {
+  'h-treemap': 'tree',
+  'h-icicle': 'icicle',
+  'h-radial': 'sunburst',
+  'treetable': 'table',
+}
 
-function rowsToGoals(rows: Row[]): Goal[] {
-  return rows.map((r, idx) => ({
-    id: r.id, name: r.name, color: pickColor(idx),
-    measurements: { value: r.value, _index: idx },
-    archived: false, tags: [], urgent: false, important: false,
-    createdAt: '', updatedAt: '',
+function nodesToGoals(nodes: PNode[], measureKey: string): Goal[] {
+  const leaves = leavesOf(nodes)
+  return leaves.map((n, idx) => ({
+    id: n.id,
+    name: n.name,
+    color: n.color ?? pickColor(idx),
+    measurements: { ...n.measurements, _index: idx },
+    archived: false,
+    tags: n.tags,
+    urgent: false,
+    important: false,
+    createdAt: n.createdAt,
+    updatedAt: n.updatedAt,
   }))
-}
-
-function rowsToTree(rows: Row[], grouped: boolean): GoalTree {
-  if (!grouped) {
-    return {
-      id: '__root__', name: 'All', color: 'oklch(0.28 0 0)', value: 0,
-      children: rows.map((r, i) => ({ id: r.id, name: r.name, color: pickColor(i), value: r.value })),
-    }
-  }
-  const groupMap = new Map<string, Row[]>()
-  for (const r of rows) {
-    if (!groupMap.has(r.group)) groupMap.set(r.group, [])
-    groupMap.get(r.group)!.push(r)
-  }
-  return {
-    id: '__root__', name: 'All', color: 'oklch(0.28 0 0)', value: 0,
-    children: Array.from(groupMap.entries()).map(([grp, recs], gi) => ({
-      id: `__grp__${grp}`, name: grp, color: pickColor(gi * 5), value: 0,
-      children: recs.map((r, ri) => ({ id: r.id, name: r.name, color: pickColor(gi * 5 + ri + 1), value: r.value })),
-    })),
-  }
-}
-
-let _nextId = 1
-function nextRowId(): string {
-  return `r${Date.now()}-${_nextId++}`
 }
 
 // --- Board menu ---
@@ -126,8 +112,9 @@ const initData = initStore()
 export function App() {
   const [store, setStore] = useState<BoardStore>(initData)
   const active = store.active
-  const { mode, grouped, sortMode } = active.state
-  const rows = active.rows
+  const { mode, measureKey, sortMode } = active.state
+  const nodes = active.nodes
+  const measurements: Measurement[] = active.measurements
 
   function patchActive(patch: Partial<Board>) {
     const next = { ...active, ...patch }
@@ -136,10 +123,6 @@ export function App() {
 
   function patchState(patch: Partial<typeof active.state>) {
     patchActive({ state: { ...active.state, ...patch } })
-  }
-
-  function patchRows(next: Row[]) {
-    patchActive({ rows: next })
   }
 
   const switchBoard = useCallback((b: Board) => {
@@ -179,48 +162,37 @@ export function App() {
     navigator.clipboard.writeText(url).then(() => alert('Link copied!'))
   }, [active])
 
-  // Row ops
-  const addRow = () => {
-    const id = nextRowId()
-    patchRows([...rows, { id, name: `Item ${rows.length + 1}`, group: GROUPS[rows.length % GROUPS.length], value: 10 }])
-  }
-  const removeRow = (id: string) => patchRows(rows.filter(r => r.id !== id))
-  const updateName  = (id: string, v: string) => patchRows(rows.map(r => r.id === id ? { ...r, name: v } : r))
-  const updateGroup = (id: string, v: string) => patchRows(rows.map(r => r.id === id ? { ...r, group: v } : r))
-  const updateValue = (id: string, raw: string) => {
-    const v = parseInt(raw, 10)
-    if (!isNaN(v) && v >= 0) patchRows(rows.map(r => r.id === id ? { ...r, value: v } : r))
-  }
-
   const handleVizUpdate = useCallback((id: string, patch: Partial<Goal>) => {
     if (!patch.measurements) return
     const m = patch.measurements
-    const v = m['value']
+    const newMeasureVal = m[measureKey]
     const newIndex = m['_index']
     setStore(s => {
-      let rows = s.active.rows
-      if (v != null) {
-        rows = rows.map(r => r.id === id ? { ...r, value: v as number } : r)
+      let ns = s.active.nodes
+      if (newMeasureVal != null) {
+        ns = ns.map(n => n.id === id
+          ? { ...n, measurements: { ...n.measurements, [measureKey]: newMeasureVal as number } }
+          : n)
       }
       if (newIndex != null) {
-        const targetIdx = Math.max(0, Math.min(rows.length - 1, (newIndex as number) - 1))
-        const curIdx = rows.findIndex(r => r.id === id)
+        const targetIdx = Math.max(0, Math.min(ns.length - 1, (newIndex as number) - 1))
+        const curIdx = ns.findIndex(n => n.id === id)
         if (curIdx !== -1 && curIdx !== targetIdx) {
-          const next = rows.slice()
+          const next = ns.slice()
           const [moved] = next.splice(curIdx, 1)
           next.splice(targetIdx, 0, moved)
-          rows = next
+          ns = next
         }
       }
-      if (rows === s.active.rows) return s
-      const next = { ...s.active, rows }
+      if (ns === s.active.nodes) return s
+      const next = { ...s.active, nodes: ns }
       return { boards: persistBoard(next, s.boards), active: next }
     })
-  }, [])
+  }, [measureKey])
 
-  const goals = rowsToGoals(rows)
-  const tree = rowsToTree(rows, grouped)
+  const goals = nodesToGoals(nodes, measureKey)
   const isHier = (HIER_MODES as string[]).includes(mode)
+  const isTreetable = mode === 'treetable'
 
   return (
     <div className="sb-root">
@@ -242,89 +214,73 @@ export function App() {
       {/* Body */}
       <div className="sb-body">
 
-        {/* Left: data table */}
+        {/* Left: mode + measure controls */}
         <div className="sb-left">
           <div className="sb-left-header">
-            <span className="sb-section-label">Data</span>
-            <label className="sb-group-toggle">
-              <input type="checkbox" checked={grouped} onChange={e => patchState({ grouped: e.target.checked })} />
-              group by
-            </label>
+            <span className="sb-section-label">View</span>
           </div>
-          <div className="sb-table-scroll">
-            <table className="sb-table">
-              <thead>
-                <tr>
-                  <th className="sb-th">Name</th>
-                  {grouped && <th className="sb-th">Group</th>}
-                  <th className="sb-th sb-th-val">Value</th>
-                  <th className="sb-th sb-th-del" />
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map(r => (
-                  <tr key={r.id}>
-                    <td className="sb-td">
-                      <input className="sb-input" value={r.name} onChange={e => updateName(r.id, e.target.value)} />
-                    </td>
-                    {grouped && (
-                      <td className="sb-td">
-                        <select className="sb-select" value={r.group} onChange={e => updateGroup(r.id, e.target.value)}>
-                          {GROUPS.map(g => <option key={g} value={g}>{g}</option>)}
-                        </select>
-                      </td>
-                    )}
-                    <td className="sb-td">
-                      <input className="sb-input sb-input-right" value={r.value} type="number" min={0} onChange={e => updateValue(r.id, e.target.value)} />
-                    </td>
-                    <td className="sb-td sb-td-center">
-                      <button onClick={() => removeRow(r.id)} className="sb-del-btn">×</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+
+          <div className="sb-control-group">
+            <div className="sb-control-label">Flat</div>
+            <div className="sb-btn-group">
+              {FLAT_MODES.map(m => (
+                <button key={m} className={`sb-btn${mode === m ? ' sb-btn-active' : ''}`} onClick={() => patchState({ mode: m })}>{m}</button>
+              ))}
+            </div>
           </div>
-          <div className="sb-add-row">
-            <button onClick={addRow} className="sb-btn sb-btn-full">+ Add row</button>
+
+          <div className="sb-control-group">
+            <div className="sb-control-label">Hierarchy</div>
+            <div className="sb-btn-group">
+              {HIER_MODES.map(m => (
+                <button key={m} className={`sb-btn${mode === m ? ' sb-btn-active' : ''}`} onClick={() => patchState({ mode: m })}>{HIER_LABELS[m]}</button>
+              ))}
+            </div>
+          </div>
+
+          {!isHier && (
+            <div className="sb-control-group">
+              <div className="sb-control-label">Sort</div>
+              <div className="sb-btn-group">
+                <button className={`sb-btn${sortMode === 'index' ? ' sb-btn-active' : ''}`} onClick={() => patchState({ sortMode: 'index' })}>idx</button>
+                <button className={`sb-btn${sortMode === 'size' ? ' sb-btn-active' : ''}`} onClick={() => patchState({ sortMode: 'size' })}>↓val</button>
+              </div>
+            </div>
+          )}
+
+          <div className="sb-control-group">
+            <div className="sb-control-label">Measure</div>
+            <div className="sb-btn-group">
+              {measurements.map(m => (
+                <button
+                  key={m.key}
+                  className={`sb-btn${measureKey === m.key ? ' sb-btn-active' : ''}`}
+                  onClick={() => patchState({ measureKey: m.key })}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
         {/* Right: viz */}
         <div className="sb-right">
-          <div className="sb-viz-toolbar">
-            {FLAT_MODES.map(m => (
-              <button key={m} className={`sb-btn${mode === m ? ' sb-btn-active' : ''}`} onClick={() => patchState({ mode: m })}>{m}</button>
-            ))}
-            <span className="sb-toolbar-sep">|</span>
-            {HIER_MODES.map(m => (
-              <button key={m} className={`sb-btn${mode === m ? ' sb-btn-active' : ''}`} onClick={() => patchState({ mode: m })}>{HIER_LABELS[m]}</button>
-            ))}
-            {!isHier && (
-              <div className="sb-sort-group">
-                <button className={`sb-btn${sortMode === 'index' ? ' sb-btn-active' : ''}`} onClick={() => patchState({ sortMode: 'index' })}>idx</button>
-                <button className={`sb-btn${sortMode === 'size' ? ' sb-btn-active' : ''}`} onClick={() => patchState({ sortMode: 'size' })}>↓val</button>
-              </div>
+          <div className="sb-viz-canvas">
+            {isTreetable ? (
+              <HTreetable nodes={nodes} measureKey={measureKey} />
+            ) : isHier ? (
+              <HViz nodes={nodes} measureKey={measureKey} mode={mode as 'h-treemap' | 'h-icicle' | 'h-radial'} />
+            ) : (
+              <Viz
+                goals={goals} mode={mode as 'treemap' | 'radial' | 'bands'}
+                activeUnit={measureKey} unitKind="size"
+                sortUnit={sortMode === 'index' ? '_index' : measureKey}
+                sortUnitKind={sortMode === 'index' ? 'order' : 'size'}
+                frame={undefined} onUpdate={handleVizUpdate}
+              />
             )}
           </div>
-
-          {rows.length === 0 ? (
-            <div className="sb-viz-empty">Add a row to visualize</div>
-          ) : (
-            <div className="sb-viz-canvas">
-              {isHier ? (
-                <HViz tree={tree} mode={mode as 'h-treemap' | 'h-icicle' | 'h-radial'} />
-              ) : (
-                <Viz
-                  goals={goals} mode={mode as 'treemap' | 'radial' | 'bands'}
-                  activeUnit="value" unitKind="size"
-                  sortUnit={sortMode === 'index' ? '_index' : 'value'}
-                  sortUnitKind={sortMode === 'index' ? 'order' : 'size'}
-                  frame={undefined} onUpdate={handleVizUpdate}
-                />
-              )}
-            </div>
-          )}
         </div>
 
       </div>
