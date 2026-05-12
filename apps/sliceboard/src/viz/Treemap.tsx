@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useId, useRef } from 'react'
 import * as d3 from 'd3'
 import type { PNode } from '../persistence'
 import { nodeColor, motion, buildVizTree, useDimensions, useAltScroll } from './util'
@@ -40,6 +40,7 @@ interface Props {
 export function Treemap({ nodes, measureKey, hoverId, selectionId, focusId, depth = 2, onHover, onSelect, onFocus, onUpdate }: Props) {
   const [ref, w, h] = useDimensions()
   const stateRef = useRef<ChartState | null>(null)
+  const clipId = useId().replace(/:/g, '_')
   const move = motion('move')
   useAltScroll(ref, nodes, measureKey, 'g.tm-cell', 'data-id', onUpdate ?? (() => {}))
 
@@ -69,11 +70,11 @@ export function Treemap({ nodes, measureKey, hoverId, selectionId, focusId, dept
 
     svg.selectAll('*').remove()
     const defs = svg.append('defs')
-    defs.append('clipPath').attr('id', 'tm-body-clip')
+    defs.append('clipPath').attr('id', clipId)
       .append('rect').attr('x', 0).attr('y', HEADER_H).attr('width', w).attr('height', bodyH)
 
     const header = svg.append<SVGGElement>('g').attr('class', 'tm-header')
-    const body = svg.append<SVGGElement>('g').attr('class', 'tm-body').attr('clip-path', 'url(#tm-body-clip)')
+    const body = svg.append<SVGGElement>('g').attr('class', 'tm-body').attr('clip-path', `url(#${clipId})`)
 
     header.append('rect').attr('class', 'tm-header-bg')
       .attr('x', 0).attr('y', 0).attr('width', w).attr('height', HEADER_H)
