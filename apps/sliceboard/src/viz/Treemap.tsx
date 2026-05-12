@@ -31,13 +31,14 @@ interface Props {
   focusId: string
   /** How many descendant levels to render below focus. Default 2. */
   depth?: number
+  sortBy?: 'index' | 'value'
   onHover: (id: string | null) => void
   onSelect: (id: string) => void
   onFocus: (id: string) => void
   onUpdate?: (nodeId: string, measurements: PNode['measurements']) => void
 }
 
-export function Treemap({ nodes, measureKey, hoverId, selectionId, focusId, depth = 2, onHover, onSelect, onFocus, onUpdate }: Props) {
+export function Treemap({ nodes, measureKey, hoverId, selectionId, focusId, depth = 2, sortBy = 'index', onHover, onSelect, onFocus, onUpdate }: Props) {
   const [ref, w, h] = useDimensions()
   const stateRef = useRef<ChartState | null>(null)
   const clipId = useId().replace(/:/g, '_')
@@ -55,7 +56,9 @@ export function Treemap({ nodes, measureKey, hoverId, selectionId, focusId, dept
 
     const rootH = d3.hierarchy<Datum>(tree)
       .sum(d => nodes.find(n => n.id === d.id)?.measurements[measureKey] ?? 0)
-      .sort((a, b) => (b.value ?? 0) - (a.value ?? 0))
+      .sort(sortBy === 'value'
+        ? (a, b) => (b.value ?? 0) - (a.value ?? 0)
+        : (a, b) => (nodes.find(n => n.id === a.data.id)?.index ?? 0) - (nodes.find(n => n.id === b.data.id)?.index ?? 0))
     d3.treemap<Datum>()
       .tile(d3.treemapSquarify)
       .size([w, bodyH])
@@ -105,7 +108,7 @@ export function Treemap({ nodes, measureKey, hoverId, selectionId, focusId, dept
         if (c && c.focus.depth > 0) onFocus(c.focus.parent?.data.id ?? '__root__')
       })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodes, measureKey, depth, w, h])
+  }, [nodes, measureKey, depth, sortBy, w, h])
 
   useEffect(() => {
     const ctx = stateRef.current

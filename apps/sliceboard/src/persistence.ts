@@ -50,6 +50,8 @@ export interface Tile {
   colorBy?: string
   /** For hierarchical tiles: how many descendant levels to render below focus. Default 2. */
   depth?: number
+  /** For hierarchical tiles: node ordering. Default 'index' (stable, matches data order). */
+  sortBy?: 'index' | 'value'
 }
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────

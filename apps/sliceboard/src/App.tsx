@@ -42,14 +42,15 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate }: { tile: Tile; ds: D
   const onFocus = (id: string) => hudStore.setFocus(id)
 
   const depth = tile.depth ?? 2
+  const sortBy = tile.sortBy ?? 'index'
   if (tile.kind === 'h-treemap') {
-    return <Treemap nodes={ds.nodes} measureKey={mk} depth={depth} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} onUpdate={onNodeUpdate} />
+    return <Treemap nodes={ds.nodes} measureKey={mk} depth={depth} sortBy={sortBy} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} onUpdate={onNodeUpdate} />
   }
   if (tile.kind === 'h-icicle') {
-    return <Icicle nodes={ds.nodes} measureKey={mk} depth={depth} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} onUpdate={onNodeUpdate} />
+    return <Icicle nodes={ds.nodes} measureKey={mk} depth={depth} sortBy={sortBy} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} onUpdate={onNodeUpdate} />
   }
   if (tile.kind === 'h-radial') {
-    return <Sunburst nodes={ds.nodes} measureKey={mk} depth={depth} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} onUpdate={onNodeUpdate} />
+    return <Sunburst nodes={ds.nodes} measureKey={mk} depth={depth} sortBy={sortBy} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} onUpdate={onNodeUpdate} />
   }
   if (tile.kind === 'treetable') {
     return <HTreetable nodes={ds.nodes} measureKey={mk} />
@@ -67,7 +68,9 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate }: { tile: Tile; ds: D
     <div style={{ width: '100%', height: bandsMinH ?? '100%', minHeight: bandsMinH }}>
       <Viz
         goals={goals} mode={tile.kind as 'treemap' | 'radial' | 'bands'}
-        activeUnit={mk} unitKind="size" sortUnit={mk} sortUnitKind="size"
+        activeUnit={mk} unitKind="size"
+        sortUnit={sortBy === 'index' ? '_index' : mk}
+        sortUnitKind={sortBy === 'index' ? 'order' : 'size'}
         frame={undefined} onUpdate={() => {}}
       />
     </div>
@@ -77,9 +80,10 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate }: { tile: Tile; ds: D
 // ─── Tile wrapper ─────────────────────────────────────────────────────────────
 
 const HIER_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial'])
+const VIZ_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial', 'treemap', 'radial', 'bands'])
 
 function TileCard({
-  tile, ds, measureKey, onRemove, onMeasureChange, onDepthChange, onNodeUpdate, availableMeasures,
+  tile, ds, measureKey, onRemove, onMeasureChange, onDepthChange, onSortChange, onNodeUpdate, availableMeasures,
 }: {
   tile: Tile
   ds: Dataset
@@ -87,11 +91,14 @@ function TileCard({
   onRemove: () => void
   onMeasureChange: (key: string) => void
   onDepthChange: (depth: number) => void
+  onSortChange: (sortBy: 'index' | 'value') => void
   onNodeUpdate: (nodeId: string, measurements: PNode['measurements']) => void
   availableMeasures: { key: string; label: string }[]
 }) {
   const isHier = HIER_KINDS.has(tile.kind)
+  const isViz = VIZ_KINDS.has(tile.kind)
   const depth = tile.depth ?? 2
+  const sortBy = tile.sortBy ?? 'index'
   return (
     <div className="tile-card">
       <div className="tile-header">
@@ -107,6 +114,17 @@ function TileCard({
               {[1, 2, 3, 4, 5].map(n => (
                 <option key={n} value={n}>{n}L</option>
               ))}
+            </select>
+          )}
+          {isViz && (
+            <select
+              className="tile-measure-select"
+              value={sortBy}
+              onChange={e => onSortChange(e.target.value as 'index' | 'value')}
+              title="Sort order"
+            >
+              <option value="index">Order</option>
+              <option value="value">Value</option>
             </select>
           )}
           {availableMeasures.length > 1 && (
@@ -379,6 +397,15 @@ export function App() {
     commit(updateDashboard(ws, next))
   }, [ws, dash])
 
+  const handleTileSort = useCallback((tileId: string, sortBy: 'index' | 'value') => {
+    if (!dash) return
+    const next: Dashboard = {
+      ...dash,
+      tiles: dash.tiles.map(t => t.id === tileId ? { ...t, sortBy } : t),
+    }
+    commit(updateDashboard(ws, next))
+  }, [ws, dash])
+
   return (
     <div className="sb-root">
       <div className="sb-topbar">
@@ -412,6 +439,7 @@ export function App() {
             onRemoveTile={handleRemoveTile}
             onTileMeasure={handleTileMeasure}
             onTileDepth={handleTileDepth}
+            onTileSort={handleTileSort}
             onNodeUpdate={handleNodeUpdate}
           />
         ) : null}
@@ -420,7 +448,7 @@ export function App() {
   )
 }
 
-function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeasure, onTileDepth, onNodeUpdate }: {
+function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeasure, onTileDepth, onTileSort, onNodeUpdate }: {
   dash: Dashboard
   ds: Dataset
   measures: { key: string; label: string }[]
@@ -428,6 +456,7 @@ function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeas
   onRemoveTile: (id: string) => void
   onTileMeasure: (tileId: string, key: string) => void
   onTileDepth: (tileId: string, depth: number) => void
+  onTileSort: (tileId: string, sortBy: 'index' | 'value') => void
   onNodeUpdate: (nodeId: string, measurements: PNode['measurements']) => void
 }) {
   const { width, containerRef, mounted } = useContainerWidth()
@@ -452,6 +481,7 @@ function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeas
                 onRemove={() => onRemoveTile(tile.id)}
                 onMeasureChange={key => onTileMeasure(tile.id, key)}
                 onDepthChange={d => onTileDepth(tile.id, d)}
+                onSortChange={s => onTileSort(tile.id, s)}
                 onNodeUpdate={onNodeUpdate}
               />
             </div>

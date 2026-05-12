@@ -16,6 +16,7 @@ interface Props {
   selectionId: string | null
   focusId: string
   depth?: number
+  sortBy?: 'index' | 'value'
   onHover: (id: string | null) => void
   onSelect: (id: string) => void
   onFocus: (id: string) => void
@@ -40,7 +41,7 @@ function cssId(id: string): string {
   return id.replace(/[^a-zA-Z0-9_-]/g, '_')
 }
 
-export function Sunburst({ nodes, measureKey, hoverId, selectionId, focusId, depth = 2, onHover, onSelect, onFocus, onUpdate }: Props) {
+export function Sunburst({ nodes, measureKey, hoverId, selectionId, focusId, depth = 2, sortBy = 'index', onHover, onSelect, onFocus, onUpdate }: Props) {
   const [ref, w, h] = useDimensions()
   const move = motion('move')
   useAltScroll(ref, nodes, measureKey, 'path.slice', 'data-id', onUpdate ?? (() => {}))
@@ -57,7 +58,9 @@ export function Sunburst({ nodes, measureKey, hoverId, selectionId, focusId, dep
 
     const root = d3.hierarchy<Datum>(tree)
       .sum(d => nodes.find(n => n.id === d.id)?.measurements[measureKey] ?? 0)
-      .sort((a, b) => (b.value ?? 0) - (a.value ?? 0))
+      .sort(sortBy === 'value'
+        ? (a, b) => (b.value ?? 0) - (a.value ?? 0)
+        : (a, b) => (nodes.find(n => n.id === a.data.id)?.index ?? 0) - (nodes.find(n => n.id === b.data.id)?.index ?? 0))
     d3.partition<Datum>().size([2 * Math.PI, root.height + 1])(root)
 
     const focus = (root.descendants().find(d => d.data.id === focusId) ?? root) as Node
@@ -158,7 +161,7 @@ export function Sunburst({ nodes, measureKey, hoverId, selectionId, focusId, dep
       .attr('pointer-events', 'none').attr('fill', 'var(--pv-ink-dim)').attr('font-size', 8).attr('letter-spacing', '0.1em')
       .text(showCenter ? 'CLICK TO ZOOM OUT' : '')
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodes, measureKey, hoverId, selectionId, focusId, depth, w, h])
+  }, [nodes, measureKey, hoverId, selectionId, focusId, depth, sortBy, w, h])
 
   return <svg ref={ref} style={{ width: '100%', height: '100%', display: 'block' }} />
 }

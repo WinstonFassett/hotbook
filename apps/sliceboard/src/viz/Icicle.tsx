@@ -14,13 +14,14 @@ interface Props {
   selectionId: string | null
   focusId: string
   depth?: number
+  sortBy?: 'index' | 'value'
   onHover: (id: string | null) => void
   onSelect: (id: string) => void
   onFocus: (id: string) => void
   onUpdate?: (nodeId: string, measurements: PNode['measurements']) => void
 }
 
-export function Icicle({ nodes, measureKey, hoverId, selectionId, focusId, depth = 2, onHover, onSelect, onFocus, onUpdate }: Props) {
+export function Icicle({ nodes, measureKey, hoverId, selectionId, focusId, depth = 2, sortBy = 'index', onHover, onSelect, onFocus, onUpdate }: Props) {
   const [ref, w, h] = useDimensions()
   const move = motion('move')
   useAltScroll(ref, nodes, measureKey, 'g.cell', 'data-id', onUpdate ?? (() => {}))
@@ -35,7 +36,9 @@ export function Icicle({ nodes, measureKey, hoverId, selectionId, focusId, depth
 
     const root = d3.hierarchy(tree)
       .sum(d => nodes.find(n => n.id === d.id)?.measurements[measureKey] ?? 0)
-      .sort((a, b) => (b.value ?? 0) - (a.value ?? 0))
+      .sort(sortBy === 'value'
+        ? (a, b) => (b.value ?? 0) - (a.value ?? 0)
+        : (a, b) => (nodes.find(n => n.id === a.data.id)?.index ?? 0) - (nodes.find(n => n.id === b.data.id)?.index ?? 0))
 
     d3.partition<{ id: string }>().size([h, w])(root as d3.HierarchyNode<{ id: string }>)
 
@@ -110,7 +113,7 @@ export function Icicle({ nodes, measureKey, hoverId, selectionId, focusId, depth
       .attr('class', 'icicle-bg').attr('x', 0).attr('y', 0).attr('width', w).attr('height', h)
       .attr('fill', 'transparent').lower().on('click', () => onFocus('__root__'))
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodes, measureKey, focusId, depth, w, h])
+  }, [nodes, measureKey, focusId, depth, sortBy, w, h])
 
   useEffect(() => {
     if (!ref.current) return
