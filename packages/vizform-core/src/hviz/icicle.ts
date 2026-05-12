@@ -3,6 +3,10 @@ import { select } from 'd3-selection'
 import { interpolateObject } from 'd3-interpolate'
 import 'd3-transition'
 import type { GoalTree, HVizCallbacks } from '../types'
+import { motion } from '../viz/constants'
+
+const DRILL = motion('enter')
+const DRILL_EXIT = motion('exit')
 
 type Datum = GoalTree
 type RNode = d3.HierarchyRectangularNode<Datum>
@@ -86,7 +90,7 @@ export function mountIcicle(svgEl: SVGSVGElement, initialTree: GoalTree, callbac
     merged.select<SVGRectElement>('rect')
       .attr('fill', d => colorMap.get(d.data.id) ?? '#555')
 
-    merged.transition('layout').duration(300)
+    merged.interrupt('layout').transition('layout').duration(DRILL.duration).ease(DRILL.ease)
       .tween('layout', function(this: CellEl, d) {
         const start = this.__layout ?? layoutOf(d)
         const end = layoutOf(d)
@@ -114,7 +118,11 @@ export function mountIcicle(svgEl: SVGSVGElement, initialTree: GoalTree, callbac
         return name.length > max ? name.slice(0, max) + '…' : name
       })
 
-    sel.exit().remove()
+    sel.exit<CellEl>()
+      .interrupt('layout')
+      .transition('layout').duration(DRILL_EXIT.duration).ease(DRILL_EXIT.ease)
+      .style('opacity', 0)
+      .remove()
 
     svg.selectAll('rect.icicle-bg').data([null]).join('rect')
       .attr('class', 'icicle-bg')

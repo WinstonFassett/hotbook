@@ -4,6 +4,10 @@ import { arc as d3arc } from 'd3-shape'
 import { interpolate as d3interpolate } from 'd3-interpolate'
 import 'd3-transition'
 import type { GoalTree, HVizCallbacks } from '../types'
+import { motion } from '../viz/constants'
+
+const DRILL = motion('enter')
+const DRILL_EXIT = motion('exit')
 
 type Datum = GoalTree
 type RNode = d3.HierarchyRectangularNode<Datum>
@@ -105,7 +109,8 @@ export function mountSunburst(svgEl: SVGSVGElement, initialTree: GoalTree, callb
         if (d.children) { focusId = d.data.id; render() }
         else callbacks.onLeafClick?.(d.data.id)
       })
-      .transition().duration(300)
+      .interrupt('arc')
+      .transition('arc').duration(DRILL.duration).ease(DRILL.ease)
       .tween('arc', function(this: ArcEl, d) {
         const target = disp(d)
         const start = this.__arc ?? target
@@ -119,7 +124,11 @@ export function mountSunburst(svgEl: SVGSVGElement, initialTree: GoalTree, callb
       .attr('fill-opacity', d => arcVisible(disp(d)) ? (d.children ? 0.7 : 0.85) : 0)
       .attr('pointer-events', d => arcVisible(disp(d)) ? 'auto' : 'none')
 
-    sel.exit().remove()
+    sel.exit<ArcEl>()
+      .interrupt('arc')
+      .transition('arc').duration(DRILL_EXIT.duration).ease(DRILL_EXIT.ease)
+      .attr('fill-opacity', 0)
+      .remove()
 
     let defs = svg.select<SVGDefsElement>('defs')
     if (defs.empty()) defs = svg.append<SVGDefsElement>('defs')
@@ -130,7 +139,8 @@ export function mountSunburst(svgEl: SVGSVGElement, initialTree: GoalTree, callb
       .attr('id', d => `hsb-larc-${cssId(d.data.id)}`)
       .each(function(this: TextPathEl, d) { this.__arc = { x0: 0, x1: 0, y0: disp(d).y0, y1: disp(d).y0 } })
     laEnter.merge(labelArcs)
-      .transition().duration(300)
+      .interrupt('label-arc')
+      .transition('label-arc').duration(DRILL.duration).ease(DRILL.ease)
       .tween('label-arc', function(this: TextPathEl, d) {
         const target = disp(d)
         const start = this.__arc ?? target
@@ -163,9 +173,14 @@ export function mountSunburst(svgEl: SVGSVGElement, initialTree: GoalTree, callb
         return name.length > max ? name.slice(0, max) + '…' : name
       })
     lEnter.merge(labels)
-      .transition().duration(300)
+      .interrupt('label-fade')
+      .transition('label-fade').duration(DRILL.duration).ease(DRILL.ease)
       .attr('fill-opacity', d => labelVisible(disp(d)) ? 1 : 0)
-    labels.exit().remove()
+    labels.exit<SVGTextElement>()
+      .interrupt('label-fade')
+      .transition('label-fade').duration(DRILL_EXIT.duration).ease(DRILL_EXIT.ease)
+      .attr('fill-opacity', 0)
+      .remove()
 
     const showCenter = focus.depth > 0
     svg.selectAll<SVGCircleElement, null>('circle.center').data([null]).join(
