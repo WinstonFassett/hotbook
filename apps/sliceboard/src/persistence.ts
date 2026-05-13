@@ -361,6 +361,21 @@ export function saveWorkspace(ws: Workspace): void {
 
 // ─── Mutations ────────────────────────────────────────────────────────────────
 
+export function reorderLeaves(ws: Workspace, dsId: string, orderedLeafIds: string[]): Workspace {
+  return {
+    ...ws,
+    datasets: ws.datasets.map(ds => {
+      if (ds.id !== dsId) return ds
+      const leafSet = new Set(ds.nodes.filter(n => !ds.nodes.some(m => m.parentId === n.id)).map(n => n.id))
+      const leafPositions = ds.nodes.reduce<number[]>((acc, n, i) => { if (leafSet.has(n.id)) acc.push(i); return acc }, [])
+      const byId = new Map(ds.nodes.map(n => [n.id, n]))
+      const result = [...ds.nodes]
+      orderedLeafIds.forEach((id, i) => { result[leafPositions[i]!] = byId.get(id)! })
+      return { ...ds, nodes: result }
+    }),
+  }
+}
+
 export function updateNode(ws: Workspace, dsId: string, nodeId: string, patch: Partial<PNode>): Workspace {
   return {
     ...ws,

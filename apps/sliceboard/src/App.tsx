@@ -12,7 +12,7 @@ import {
   createDataset, createDashboard, updateDataset, updateDashboard,
   addTile, removeTile, deleteDashboard, deleteDataset,
   activeDataset, activeDashboard, dashboardsForDataset, measurementsFromColumns,
-  updateNode,
+  updateNode, reorderLeaves,
 } from './persistence'
 import type { Workspace, Dataset, Dashboard, Tile, TileKind, PNode } from './persistence'
 import { hudStore, resetHudForDataset, useHudStore } from './store'
@@ -33,7 +33,7 @@ const TILE_LABELS: Record<TileKind, string> = {
 
 // ─── Tile content ─────────────────────────────────────────────────────────────
 
-function TileContent({ tile, ds, measureKey, onNodeUpdate }: { tile: Tile; ds: Dataset; measureKey: string; onNodeUpdate: (nodeId: string, measurements: PNode['measurements']) => void }) {
+function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodeReorder }: { tile: Tile; ds: Dataset; measureKey: string; onNodeUpdate: (nodeId: string, measurements: PNode['measurements']) => void; onNodeReorder: (orderedIds: string[]) => void }) {
   const mk = tile.measureKey ?? measureKey
   const hud = useHudStore()
   const { hoverId, selectionId, focusId } = hud
@@ -71,7 +71,9 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate }: { tile: Tile; ds: D
         activeUnit={mk} unitKind="size"
         sortUnit={sortBy === 'index' ? '_index' : mk}
         sortUnitKind={sortBy === 'index' ? 'order' : 'size'}
-        frame={undefined} onUpdate={(id, patch) => { if (patch.measurements) onNodeUpdate(id, patch.measurements as PNode['measurements']) }}
+        frame={undefined}
+        onUpdate={(id, patch) => { if (patch.measurements) onNodeUpdate(id, patch.measurements as PNode['measurements']) }}
+        onReorder={onNodeReorder}
       />
     </div>
   )
@@ -83,7 +85,7 @@ const HIER_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial'])
 const VIZ_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial', 'treemap', 'radial', 'bands'])
 
 function TileCard({
-  tile, ds, measureKey, onRemove, onMeasureChange, onDepthChange, onSortChange, onNodeUpdate, availableMeasures,
+  tile, ds, measureKey, onRemove, onMeasureChange, onDepthChange, onSortChange, onNodeUpdate, onNodeReorder, availableMeasures,
 }: {
   tile: Tile
   ds: Dataset
@@ -93,6 +95,7 @@ function TileCard({
   onDepthChange: (depth: number) => void
   onSortChange: (sortBy: 'index' | 'value') => void
   onNodeUpdate: (nodeId: string, measurements: PNode['measurements']) => void
+  onNodeReorder: (orderedIds: string[]) => void
   availableMeasures: { key: string; label: string }[]
 }) {
   const isHier = HIER_KINDS.has(tile.kind)
@@ -142,7 +145,7 @@ function TileCard({
         </div>
       </div>
       <div className={`tile-body${tile.kind === 'bands' ? ' tile-body--scroll' : ''}`}>
-        <TileContent tile={tile} ds={ds} measureKey={measureKey} onNodeUpdate={onNodeUpdate} />
+        <TileContent tile={tile} ds={ds} measureKey={measureKey} onNodeUpdate={onNodeUpdate} onNodeReorder={onNodeReorder} />
       </div>
     </div>
   )
@@ -388,6 +391,11 @@ export function App() {
     commit(updateNode(ws, ds.id, nodeId, { measurements }))
   }, [ws, ds])
 
+  const handleNodeReorder = useCallback((orderedIds: string[]) => {
+    if (!ds) return
+    commit(reorderLeaves(ws, ds.id, orderedIds))
+  }, [ws, ds])
+
   const handleTileDepth = useCallback((tileId: string, depth: number) => {
     if (!dash) return
     const next: Dashboard = {
@@ -441,6 +449,7 @@ export function App() {
             onTileDepth={handleTileDepth}
             onTileSort={handleTileSort}
             onNodeUpdate={handleNodeUpdate}
+            onNodeReorder={handleNodeReorder}
           />
         ) : null}
       </div>
@@ -448,7 +457,7 @@ export function App() {
   )
 }
 
-function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeasure, onTileDepth, onTileSort, onNodeUpdate }: {
+function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeasure, onTileDepth, onTileSort, onNodeUpdate, onNodeReorder }: {
   dash: Dashboard
   ds: Dataset
   measures: { key: string; label: string }[]
@@ -458,6 +467,7 @@ function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeas
   onTileDepth: (tileId: string, depth: number) => void
   onTileSort: (tileId: string, sortBy: 'index' | 'value') => void
   onNodeUpdate: (nodeId: string, measurements: PNode['measurements']) => void
+  onNodeReorder: (orderedIds: string[]) => void
 }) {
   const { width, containerRef, mounted } = useContainerWidth()
   return (
@@ -483,6 +493,7 @@ function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeas
                 onDepthChange={d => onTileDepth(tile.id, d)}
                 onSortChange={s => onTileSort(tile.id, s)}
                 onNodeUpdate={onNodeUpdate}
+                onNodeReorder={onNodeReorder}
               />
             </div>
           ))}

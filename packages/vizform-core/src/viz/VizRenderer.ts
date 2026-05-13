@@ -86,6 +86,7 @@ export interface VizRenderOptions {
   sortUnitKind: UnitKind
   frame: number | undefined
   onUpdate: (id: string, patch: Partial<Goal>) => void
+  onReorder?: (orderedIds: string[]) => void
   onGoalClick?: (goal: Goal) => void
 }
 
@@ -180,7 +181,7 @@ export class VizRenderer {
   }
 
   render(opts: VizRenderOptions) {
-    const { goals, w, h, mode, activeUnit, unitKind, sortUnit, sortUnitKind, frame, onUpdate, onGoalClick } = opts
+    const { goals, w, h, mode, activeUnit, unitKind, sortUnit, sortUnitKind, frame, onUpdate, onReorder, onGoalClick } = opts
     this.latestGoals = goals
     this.latestOpts = opts
 
@@ -479,9 +480,9 @@ export class VizRenderer {
     allAtoms.on('mouseenter.handle', null).on('mouseleave.handle', null)
 
     if (mode === 'radial') {
-      this._attachRadialDrag(allAtoms, atomsG, topG, atoms, atomsWithValues, active, previewGoals, meta, activeUnit, unitKind, sortUnit, sortUnitKind, frame, reorderDur, onUpdate)
+      this._attachRadialDrag(allAtoms, atomsG, topG, atoms, atomsWithValues, active, previewGoals, meta, activeUnit, unitKind, sortUnit, sortUnitKind, frame, reorderDur, onUpdate, onReorder)
     } else if (mode === 'bands') {
-      this._attachBandsDrag(allAtoms, atomsG, chromeG, atoms, atomsWithValues, active, meta, activeUnit, unitKind, sortUnit, sortUnitKind, frame, reorderDur, onUpdate)
+      this._attachBandsDrag(allAtoms, atomsG, chromeG, atoms, atomsWithValues, active, meta, activeUnit, unitKind, sortUnit, sortUnitKind, frame, reorderDur, onUpdate, onReorder)
     }
 
     const nextPrev = new Map<string, AtomGeometry>()
@@ -507,6 +508,7 @@ export class VizRenderer {
     frame: number | undefined,
     reorderDur: number,
     onUpdate: VizCallbacks['onUpdate'],
+    onReorder: VizCallbacks['onReorder'],
   ) {
     const self = this
     const cx = meta.cx ?? 0
@@ -792,14 +794,7 @@ export class VizRenderer {
               }
               self.dragSettlePrevAtoms = settleMap
               if (sortUnitKind === 'order') {
-                dr.currentOrder.forEach((id, i) => {
-                  const goal = active.find(g => g.id === id)
-                  if (!goal) return
-                  const newSortValue = i + 1
-                  if (goal.measurements[sortUnit] !== newSortValue) {
-                    onUpdate(id, { measurements: { ...goal.measurements, [sortUnit]: newSortValue } })
-                  }
-                })
+                onReorder?.(dr.currentOrder)
               }
             })
         )
@@ -824,6 +819,7 @@ export class VizRenderer {
     frame: number | undefined,
     reorderDur: number,
     onUpdate: VizCallbacks['onUpdate'],
+    onReorder: VizCallbacks['onReorder'],
   ) {
     const isOrderActive = unitKind === 'order'
     const canResize = !isOrderActive
@@ -1014,14 +1010,7 @@ export class VizRenderer {
             chromeG.select(`g.band-handle[data-id="${d.id}"]`)
               .transition('reorder').duration(reorderDur).ease(EASE)
               .attr('transform', `translate(0, ${targetY})`)
-            dr.currentOrder.forEach((id, i) => {
-              const g = active.find(x => x.id === id)
-              if (!g) return
-              const newSortValue = i + 1
-              if (g.measurements[sortUnit] !== newSortValue) {
-                onUpdate(id, { measurements: { ...g.measurements, [sortUnit]: newSortValue } })
-              }
-            })
+            onReorder?.(dr.currentOrder)
           })
       )
     }

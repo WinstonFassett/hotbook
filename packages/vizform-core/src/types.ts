@@ -66,6 +66,7 @@ export interface HVizConfig {
 
 export interface VizCallbacks {
   onUpdate: (id: string, patch: Partial<Goal>) => void
+  onReorder?: (orderedIds: string[]) => void
   onGoalClick?: (goal: Goal) => void
 }
 

@@ -11,10 +11,11 @@ interface Props {
   sortUnitKind: UnitKind
   frame?: number
   onUpdate: (id: string, patch: Partial<Goal>) => void
+  onReorder?: (orderedIds: string[]) => void
   onGoalClick?: (goal: Goal) => void
 }
 
-export function Viz({ goals, mode, activeUnit, unitKind, sortUnit, sortUnitKind, frame, onUpdate, onGoalClick }: Props) {
+export function Viz({ goals, mode, activeUnit, unitKind, sortUnit, sortUnitKind, frame, onUpdate, onReorder, onGoalClick }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
   const rendererRef = useRef<VizRenderer | null>(null)
@@ -57,8 +58,8 @@ export function Viz({ goals, mode, activeUnit, unitKind, sortUnit, sortUnitKind,
 
   useEffect(() => {
     if (!rendererRef.current || size.w === 0 || size.h === 0) return
-    rendererRef.current.render({ goals, w: size.w, h: size.h, mode, activeUnit, unitKind, sortUnit, sortUnitKind, frame, onUpdate, onGoalClick })
-  }, [goals, mode, activeUnit, unitKind, sortUnit, sortUnitKind, frame, size, onUpdate, onGoalClick])
+    rendererRef.current.render({ goals, w: size.w, h: size.h, mode, activeUnit, unitKind, sortUnit, sortUnitKind, frame, onUpdate, onReorder, onGoalClick })
+  }, [goals, mode, activeUnit, unitKind, sortUnit, sortUnitKind, frame, size, onUpdate, onReorder, onGoalClick])
 
   const active = goals.filter(g => !g.archived)
 
