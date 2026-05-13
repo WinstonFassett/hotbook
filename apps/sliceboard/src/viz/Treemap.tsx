@@ -35,7 +35,7 @@ interface Props {
   onHover: (id: string | null) => void
   onSelect: (id: string) => void
   onFocus: (id: string) => void
-  onUpdate?: (nodeId: string, measurements: PNode['measurements']) => void
+  onUpdate?: (nodeId: string, measures: PNode['measures']) => void
 }
 
 export function Treemap({ nodes, measureKey, hoverId, selectionId, focusId, depth = 2, sortBy = 'index', onHover, onSelect, onFocus, onUpdate }: Props) {
@@ -55,7 +55,7 @@ export function Treemap({ nodes, measureKey, hoverId, selectionId, focusId, dept
     if (!tree) { svg.selectAll('*').remove(); stateRef.current = null; return }
 
     const rootH = d3.hierarchy<Datum>(tree)
-      .sum(d => nodes.find(n => n.id === d.id)?.measurements[measureKey] ?? 0)
+      .sum(d => nodes.find(n => n.id === d.id)?.measures[measureKey] ?? 0)
       .sort(sortBy === 'value'
         ? (a, b) => (b.value ?? 0) - (a.value ?? 0)
         : (a, b) => (nodes.find(n => n.id === a.data.id)?.index ?? 0) - (nodes.find(n => n.id === b.data.id)?.index ?? 0))
@@ -311,6 +311,6 @@ function parentOrLeafLabel(d: RNode, nodes: PNode[], cw: number, ch: number, par
 function valueFor(d: RNode, nodes: PNode[], measureKey: string, cw: number, ch: number): string {
   if (cw < 56 || ch < 36) return ''
   const n = nodes.find(n => n.id === d.data.id)
-  const v = n?.measurements[measureKey] ?? d.value ?? 0
+  const v = n?.measures[measureKey] ?? d.value ?? 0
   return `${Math.round(v)}${d.children ? ` · ${d.children.length}` : ''}`
 }

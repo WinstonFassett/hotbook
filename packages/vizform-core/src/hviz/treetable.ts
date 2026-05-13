@@ -12,13 +12,6 @@ interface VisibleRow {
   hasKids: boolean
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  todo: 'oklch(0.5 0 0)',
-  doing: 'oklch(0.6 0.18 250)',
-  review: 'oklch(0.65 0.18 60)',
-  done: 'oklch(0.6 0.18 145)',
-  blocked: 'oklch(0.55 0.2 25)',
-}
 
 function fmtNum(v: number): string {
   if (v === 0) return ''
@@ -59,7 +52,6 @@ export function mountTreetable(
   head.style.cssText = 'display:flex;align-items:center;padding:4px 8px;border-bottom:1px solid oklch(0.25 0 0);position:sticky;top:0;background:oklch(0.14 0 0);z-index:1;'
   head.innerHTML = `
     <div style="flex:1;font-size:10px;font-weight:600;letter-spacing:0.06em;color:oklch(0.5 0 0);text-transform:uppercase;">Name</div>
-    <div style="width:52px;text-align:center;font-size:10px;font-weight:600;letter-spacing:0.06em;color:oklch(0.5 0 0);text-transform:uppercase;">Status</div>
     <div style="width:52px;text-align:right;font-size:10px;font-weight:600;letter-spacing:0.06em;color:oklch(0.5 0 0);text-transform:uppercase;">Value</div>
   `
   root.appendChild(head)
@@ -104,10 +96,7 @@ export function mountTreetable(
           }
           <span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;"></span>
           <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:oklch(0.88 0 0);">${node.name}</span>
-          <span style="font-size:10px;color:oklch(0.4 0 0);flex-shrink:0;">${node.type}</span>
-        </div>
-        <div style="width:52px;text-align:center;">
-          <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${STATUS_COLORS[node.status] ?? 'oklch(0.4 0 0)'};" title="${node.status}"></span>
+          ${Object.entries(node.dims ?? {}).map(([, v]) => `<span style="font-size:10px;color:oklch(0.4 0 0);flex-shrink:0;">${v}</span>`).join('')}
         </div>
         <div style="width:52px;text-align:right;color:oklch(0.7 0 0);font-variant-numeric:tabular-nums;">${fmtNum(value)}</div>
       `

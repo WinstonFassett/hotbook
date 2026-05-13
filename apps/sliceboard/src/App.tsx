@@ -11,8 +11,8 @@ import {
   initWorkspace, saveWorkspace,
   createDataset, createDashboard, updateDataset, updateDashboard,
   addTile, removeTile, deleteDashboard, deleteDataset,
-  activeDataset, activeDashboard, dashboardsForDataset, measurementsFromColumns,
-  updateNode, reorderLeaves,
+  activeDataset, activeDashboard, dashboardsForDataset,
+  updateRow, reorderLeaves, applyGroupBy,
 } from './persistence'
 import type { Workspace, Dataset, Dashboard, Tile, TileKind, PNode } from './persistence'
 import { hudStore, resetHudForDataset, useHudStore } from './store'
@@ -33,7 +33,7 @@ const TILE_LABELS: Record<TileKind, string> = {
 
 // ─── Tile content ─────────────────────────────────────────────────────────────
 
-function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodeReorder }: { tile: Tile; ds: Dataset; measureKey: string; onNodeUpdate: (nodeId: string, measurements: PNode['measurements']) => void; onNodeReorder: (orderedIds: string[]) => void }) {
+function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodeReorder }: { tile: Tile; ds: Dataset; measureKey: string; onNodeUpdate: (rowId: string, measures: PNode['measures']) => void; onNodeReorder: (orderedIds: string[]) => void }) {
   const mk = tile.measureKey ?? measureKey
   const hud = useHudStore()
   const { hoverId, selectionId, focusId } = hud
@@ -43,25 +43,36 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodeReorder }: { ti
 
   const depth = tile.depth ?? 2
   const sortBy = tile.sortBy ?? 'index'
+  const nodes = tile.groupBy ? applyGroupBy(ds.rows, tile.groupBy) : ds.rows
+
   if (tile.kind === 'h-treemap') {
-    return <Treemap nodes={ds.nodes} measureKey={mk} depth={depth} sortBy={sortBy} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} onUpdate={onNodeUpdate} />
+    return <Treemap nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} onUpdate={onNodeUpdate} />
   }
   if (tile.kind === 'h-icicle') {
-    return <Icicle nodes={ds.nodes} measureKey={mk} depth={depth} sortBy={sortBy} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} onUpdate={onNodeUpdate} />
+    return <Icicle nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} onUpdate={onNodeUpdate} />
   }
   if (tile.kind === 'h-radial') {
-    return <Sunburst nodes={ds.nodes} measureKey={mk} depth={depth} sortBy={sortBy} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} onUpdate={onNodeUpdate} />
+    return <Sunburst nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} onUpdate={onNodeUpdate} />
   }
   if (tile.kind === 'treetable') {
-    return <HTreetable nodes={ds.nodes} measureKey={mk} />
+    return <HTreetable nodes={nodes} measureKey={mk} />
   }
 
-  const goals: Goal[] = leavesOf(ds.nodes).map((n, idx) => ({
-    id: n.id, name: n.name, color: n.color ?? pickColor(idx),
-    measurements: { ...n.measurements, _index: idx },
-    archived: false, tags: n.tags, urgent: false, important: false,
-    createdAt: n.createdAt, updatedAt: n.updatedAt,
-  }))
+  // For flat viz with groupBy, assign color by group dim value
+  const groupColorMap = new Map<string, string>()
+  if (tile.groupBy) {
+    const vals = [...new Set(ds.rows.map(r => r.dims[tile.groupBy!] ?? ''))].filter(Boolean)
+    vals.forEach((v, i) => groupColorMap.set(v, pickColor(i * 3)))
+  }
+  const goals: Goal[] = leavesOf(nodes).map((n, idx) => {
+    const groupColor = tile.groupBy ? groupColorMap.get(n.dims[tile.groupBy] ?? '') : undefined
+    return {
+      id: n.id, name: n.name, color: groupColor ?? n.color ?? pickColor(idx),
+      measurements: { ...n.measures, _index: idx },
+      archived: false, tags: [], urgent: false, important: false,
+      createdAt: '', updatedAt: '',
+    }
+  })
   // Bands rows are fixed height — give the container a natural minimum so the tile body can scroll
   const bandsMinH = tile.kind === 'bands' ? 28 + goals.filter(g => !g.archived).length * 46 : undefined
   return (
@@ -72,7 +83,7 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodeReorder }: { ti
         sortUnit={sortBy === 'index' ? '_index' : mk}
         sortUnitKind={sortBy === 'index' ? 'order' : 'size'}
         frame={undefined}
-        onUpdate={(id, patch) => { if (patch.measurements) onNodeUpdate(id, patch.measurements as PNode['measurements']) }}
+        onUpdate={(id, patch) => { if (patch.measurements) onNodeUpdate(id, patch.measurements as PNode['measures']) }}
         onReorder={onNodeReorder}
       />
     </div>
@@ -85,7 +96,7 @@ const HIER_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial'])
 const VIZ_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial', 'treemap', 'radial', 'bands'])
 
 function TileCard({
-  tile, ds, measureKey, onRemove, onMeasureChange, onDepthChange, onSortChange, onNodeUpdate, onNodeReorder, availableMeasures,
+  tile, ds, measureKey, onRemove, onMeasureChange, onDepthChange, onSortChange, onGroupByChange, onNodeUpdate, onNodeReorder, availableMeasures,
 }: {
   tile: Tile
   ds: Dataset
@@ -94,7 +105,8 @@ function TileCard({
   onMeasureChange: (key: string) => void
   onDepthChange: (depth: number) => void
   onSortChange: (sortBy: 'index' | 'value') => void
-  onNodeUpdate: (nodeId: string, measurements: PNode['measurements']) => void
+  onGroupByChange: (key: string | undefined) => void
+  onNodeUpdate: (rowId: string, measures: PNode['measures']) => void
   onNodeReorder: (orderedIds: string[]) => void
   availableMeasures: { key: string; label: string }[]
 }) {
@@ -138,6 +150,19 @@ function TileCard({
             >
               {availableMeasures.map(m => (
                 <option key={m.key} value={m.key}>{m.label}</option>
+              ))}
+            </select>
+          )}
+          {ds.dimDefs.length > 0 && (
+            <select
+              className="tile-measure-select"
+              value={tile.groupBy ?? ''}
+              onChange={e => onGroupByChange(e.target.value || undefined)}
+              title="Group by"
+            >
+              <option value="">No group</option>
+              {ds.dimDefs.map(d => (
+                <option key={d.key} value={d.key}>{d.label}</option>
               ))}
             </select>
           )}
@@ -317,7 +342,7 @@ export function App() {
 
   const ds = activeDataset(ws)
   const dash = activeDashboard(ws)
-  const measures = ds ? measurementsFromColumns(ds.columns) : []
+  const measures = ds ? ds.measureDefs : []
 
   const switchDataset = useCallback((id: string) => {
     const next = { ...ws, activeDatasetId: id }
@@ -326,7 +351,7 @@ export function App() {
     const updated = { ...next, activeDashboardId: activeDash }
     commit(updated)
     const newDs = updated.datasets.find(d => d.id === id)
-    if (newDs) resetHudForDataset(newDs.nodes)
+    if (newDs) resetHudForDataset(newDs.rows)
   }, [ws])
 
   const newDataset = useCallback(() => {
@@ -386,9 +411,9 @@ export function App() {
     commit(updateDashboard(ws, next))
   }, [ws, dash])
 
-  const handleNodeUpdate = useCallback((nodeId: string, measurements: PNode['measurements']) => {
+  const handleNodeUpdate = useCallback((rowId: string, measures: PNode['measures']) => {
     if (!ds) return
-    commit(updateNode(ws, ds.id, nodeId, { measurements }))
+    commit(updateRow(ws, ds.id, rowId, { measures }))
   }, [ws, ds])
 
   const handleNodeReorder = useCallback((orderedIds: string[]) => {
@@ -407,11 +432,12 @@ export function App() {
 
   const handleTileSort = useCallback((tileId: string, sortBy: 'index' | 'value') => {
     if (!dash) return
-    const next: Dashboard = {
-      ...dash,
-      tiles: dash.tiles.map(t => t.id === tileId ? { ...t, sortBy } : t),
-    }
-    commit(updateDashboard(ws, next))
+    commit(updateDashboard(ws, { ...dash, tiles: dash.tiles.map(t => t.id === tileId ? { ...t, sortBy } : t) }))
+  }, [ws, dash])
+
+  const handleTileGroupBy = useCallback((tileId: string, groupBy: string | undefined) => {
+    if (!dash) return
+    commit(updateDashboard(ws, { ...dash, tiles: dash.tiles.map(t => t.id === tileId ? { ...t, groupBy } : t) }))
   }, [ws, dash])
 
   return (
@@ -448,6 +474,7 @@ export function App() {
             onTileMeasure={handleTileMeasure}
             onTileDepth={handleTileDepth}
             onTileSort={handleTileSort}
+            onTileGroupBy={handleTileGroupBy}
             onNodeUpdate={handleNodeUpdate}
             onNodeReorder={handleNodeReorder}
           />
@@ -457,7 +484,7 @@ export function App() {
   )
 }
 
-function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeasure, onTileDepth, onTileSort, onNodeUpdate, onNodeReorder }: {
+function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeasure, onTileDepth, onTileSort, onTileGroupBy, onNodeUpdate, onNodeReorder }: {
   dash: Dashboard
   ds: Dataset
   measures: { key: string; label: string }[]
@@ -466,7 +493,8 @@ function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeas
   onTileMeasure: (tileId: string, key: string) => void
   onTileDepth: (tileId: string, depth: number) => void
   onTileSort: (tileId: string, sortBy: 'index' | 'value') => void
-  onNodeUpdate: (nodeId: string, measurements: PNode['measurements']) => void
+  onTileGroupBy: (tileId: string, key: string | undefined) => void
+  onNodeUpdate: (rowId: string, measures: PNode['measures']) => void
   onNodeReorder: (orderedIds: string[]) => void
 }) {
   const { width, containerRef, mounted } = useContainerWidth()
@@ -492,6 +520,7 @@ function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeas
                 onMeasureChange={key => onTileMeasure(tile.id, key)}
                 onDepthChange={d => onTileDepth(tile.id, d)}
                 onSortChange={s => onTileSort(tile.id, s)}
+                onGroupByChange={k => onTileGroupBy(tile.id, k)}
                 onNodeUpdate={onNodeUpdate}
                 onNodeReorder={onNodeReorder}
               />

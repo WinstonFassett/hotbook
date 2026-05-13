@@ -35,7 +35,7 @@ export function useAltScroll(
   measureKey: string,
   cellSelector: string,
   nodeIdAttr: string,
-  onUpdate: (nodeId: string, measurements: PNode['measurements']) => void,
+  onUpdate: (nodeId: string, measures: PNode['measures']) => void,
 ) {
   useEffect(() => {
     const el = ref.current
@@ -51,10 +51,10 @@ export function useAltScroll(
       if (!node) return
       e.preventDefault()
       e.stopPropagation()
-      const cur = node.measurements[measureKey] ?? 0
+      const cur = node.measures[measureKey] ?? 0
       const step = e.shiftKey ? 5 : 1
       const next = Math.max(1, cur + (e.deltaY < 0 ? 1 : -1) * step)
-      if (next !== cur) onUpdate(id, { ...node.measurements, [measureKey]: next })
+      if (next !== cur) onUpdate(id, { ...node.measures, [measureKey]: next })
     }
     el.addEventListener('wheel', handler, { passive: false })
     return () => el.removeEventListener('wheel', handler)

@@ -1,20 +1,13 @@
 export type UnitKind = 'size' | 'order'
 
-export type NodeType = 'goal' | 'project' | 'subproject' | 'task'
-export type Status = 'todo' | 'doing' | 'review' | 'done' | 'blocked'
-
 export interface PNode {
   id: string
-  type: NodeType
   parentId: string | null
   index: number
   name: string
-  status: Status
-  tags: string[]
-  measurements: Record<string, number>
+  measures: Record<string, number>
+  dims: Record<string, string>
   color?: string
-  createdAt: string
-  updatedAt: string
 }
 
 export type Rollup = 'sum' | 'max' | 'mean' | 'none'

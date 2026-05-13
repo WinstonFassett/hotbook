@@ -1,5 +1,5 @@
 export { Viz } from './Viz'
 export { HViz } from './HViz'
 export { HTreetable } from './HTreetable'
-export type { Goal, GoalTree, UnitKind, ViewMode, FlatMode, HierMode, PNode, NodeType, Status, Rollup, Measurement } from '@winstonfassett/vizform-core'
+export type { Goal, GoalTree, UnitKind, ViewMode, FlatMode, HierMode, PNode, Rollup, Measurement } from '@winstonfassett/vizform-core'
 export { pickColor } from '@winstonfassett/vizform-core'

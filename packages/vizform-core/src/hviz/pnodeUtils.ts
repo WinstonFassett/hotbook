@@ -35,10 +35,10 @@ export function rollupMeasurement(
   key: string,
   rollup: Rollup = 'sum',
 ): number {
-  if (rollup === 'none') return nodes.find(n => n.id === rootId)?.measurements[key] ?? 0
-  const own = nodes.find(n => n.id === rootId)?.measurements[key]
+  if (rollup === 'none') return nodes.find(n => n.id === rootId)?.measures[key] ?? 0
+  const own = nodes.find(n => n.id === rootId)?.measures[key]
   const kids = descendantsOf(nodes, rootId)
-    .map(n => n.measurements[key])
+    .map(n => n.measures[key])
     .filter((v): v is number => v != null)
   const all = own != null ? [own, ...kids] : kids
   if (all.length === 0) return 0
@@ -88,5 +88,5 @@ export function buildTree(nodes: PNode[], measureKey: string): TreeDatum {
 }
 
 export function measureValue(nodes: PNode[], id: string, measureKey: string): number {
-  return nodes.find(n => n.id === id)?.measurements[measureKey] ?? 0
+  return nodes.find(n => n.id === id)?.measures[measureKey] ?? 0
 }

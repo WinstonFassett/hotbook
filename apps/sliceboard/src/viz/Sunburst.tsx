@@ -20,7 +20,7 @@ interface Props {
   onHover: (id: string | null) => void
   onSelect: (id: string) => void
   onFocus: (id: string) => void
-  onUpdate?: (nodeId: string, measurements: PNode['measurements']) => void
+  onUpdate?: (nodeId: string, measures: PNode['measures']) => void
 }
 
 function labelArcPath(a: Arc, ringR: number): string {
@@ -57,7 +57,7 @@ export function Sunburst({ nodes, measureKey, hoverId, selectionId, focusId, dep
     if (!tree) { svg.selectAll('*').remove(); return }
 
     const root = d3.hierarchy<Datum>(tree)
-      .sum(d => nodes.find(n => n.id === d.id)?.measurements[measureKey] ?? 0)
+      .sum(d => nodes.find(n => n.id === d.id)?.measures[measureKey] ?? 0)
       .sort(sortBy === 'value'
         ? (a, b) => (b.value ?? 0) - (a.value ?? 0)
         : (a, b) => (nodes.find(n => n.id === a.data.id)?.index ?? 0) - (nodes.find(n => n.id === b.data.id)?.index ?? 0))
