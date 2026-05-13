@@ -28,13 +28,21 @@ export function layoutRadial(
 
   const pie = d3pie<Goal>()
     .value(d => isOrder ? 1 : Math.max(0.001, d.measurements[opts.activeUnit] ?? DEFAULT_SIZE))
-    .sort((a, b) => {
-      if (a.id === UNALLOCATED_ID && b.id !== UNALLOCATED_ID) return 1
-      if (a.id !== UNALLOCATED_ID && b.id === UNALLOCATED_ID) return -1
-      return opts.sortUnitKind === 'order'
-        ? (a.measurements[opts.sortUnit] ?? 0) - (b.measurements[opts.sortUnit] ?? 0)
-        : (b.measurements[opts.sortUnit] ?? DEFAULT_SIZE) - (a.measurements[opts.sortUnit] ?? DEFAULT_SIZE)
-    })
+    .sort(opts.forceOrder
+      ? (a, b) => {
+          const ai = opts.forceOrder!.indexOf(a.id)
+          const bi = opts.forceOrder!.indexOf(b.id)
+          if (ai === -1) return 1
+          if (bi === -1) return -1
+          return ai - bi
+        }
+      : (a, b) => {
+          if (a.id === UNALLOCATED_ID && b.id !== UNALLOCATED_ID) return 1
+          if (a.id !== UNALLOCATED_ID && b.id === UNALLOCATED_ID) return -1
+          return opts.sortUnitKind === 'order'
+            ? (a.measurements[opts.sortUnit] ?? 0) - (b.measurements[opts.sortUnit] ?? 0)
+            : (b.measurements[opts.sortUnit] ?? DEFAULT_SIZE) - (a.measurements[opts.sortUnit] ?? DEFAULT_SIZE)
+        })
     .padAngle(PAD_ANGLE)
 
   // pie(data) returns slices in data order with each slice's .index reflecting

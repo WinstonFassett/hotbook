@@ -1,117 +1,268 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { Viz, HViz, pickColor } from '@winstonfassett/vizform-react'
-import type { Goal, GoalTree, ViewMode } from '@winstonfassett/vizform-react'
+import { GridLayout, useContainerWidth } from 'react-grid-layout'
+import type { LayoutItem } from 'react-grid-layout'
+import { Viz, HTreetable, pickColor } from '@winstonfassett/vizform-react'
+import type { Goal } from '@winstonfassett/vizform-react'
+import { leavesOf } from '@winstonfassett/vizform-core'
+import { Treemap } from './viz/Treemap'
+import { Icicle } from './viz/Icicle'
+import { Sunburst } from './viz/Sunburst'
 import {
-  initStore, persistBoard, createBoard, deleteBoard,
-  boardToUrl,
+  initWorkspace, saveWorkspace,
+  createDataset, createDashboard, updateDataset, updateDashboard,
+  addTile, removeTile, deleteDashboard, deleteDataset,
+  activeDataset, activeDashboard, dashboardsForDataset,
+  updateRow, reorderLeaves, applyGroupBy,
 } from './persistence'
-import type { Row, Board, BoardStore } from './persistence'
+import type { Workspace, Dataset, Dashboard, Tile, TileKind, PNode } from './persistence'
+import { hudStore, resetHudForDataset, useHudStore } from './store'
+import 'react-grid-layout/css/styles.css'
+import 'react-resizable/css/styles.css'
 import './App.css'
 
-const GROUPS = ['Alpha', 'Beta', 'Gamma']
-const FLAT_MODES: ViewMode[] = ['treemap', 'radial', 'bands']
-const HIER_MODES: ViewMode[] = ['h-treemap', 'h-icicle', 'h-radial']
-const HIER_LABELS: Record<string, string> = { 'h-treemap': 'tree', 'h-icicle': 'icicle', 'h-radial': 'sunburst' }
-
-function rowsToGoals(rows: Row[]): Goal[] {
-  return rows.map((r, idx) => ({
-    id: r.id, name: r.name, color: pickColor(idx),
-    measurements: { value: r.value, _index: idx },
-    archived: false, tags: [], urgent: false, important: false,
-    createdAt: '', updatedAt: '',
-  }))
+const TILE_KINDS: TileKind[] = ['treetable', 'h-treemap', 'h-icicle', 'h-radial', 'treemap', 'radial', 'bands']
+const TILE_LABELS: Record<TileKind, string> = {
+  'treetable': 'Table',
+  'h-treemap': 'H-Treemap',
+  'h-icicle': 'Icicle',
+  'h-radial': 'Sunburst',
+  'treemap': 'Treemap',
+  'radial': 'Radial',
+  'bands': 'Bands',
 }
 
-function rowsToTree(rows: Row[], grouped: boolean): GoalTree {
-  if (!grouped) {
+// ─── Tile content ─────────────────────────────────────────────────────────────
+
+function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodeReorder }: { tile: Tile; ds: Dataset; measureKey: string; onNodeUpdate: (rowId: string, measures: PNode['measures']) => void; onNodeReorder: (orderedIds: string[]) => void }) {
+  const mk = tile.measureKey ?? measureKey
+  const hud = useHudStore()
+  const { hoverId, selectionId, focusId } = hud
+  const onHover = (id: string | null) => hudStore.setHover(id)
+  const onSelect = (id: string) => hudStore.setSelection(id)
+  const onFocus = (id: string) => hudStore.setFocus(id)
+
+  const depth = tile.depth ?? 2
+  const sortBy = tile.sortBy ?? 'index'
+  const nodes = tile.groupBy ? applyGroupBy(ds.rows, tile.groupBy) : ds.rows
+
+  if (tile.kind === 'h-treemap') {
+    return <Treemap nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} onUpdate={onNodeUpdate} />
+  }
+  if (tile.kind === 'h-icicle') {
+    return <Icicle nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} onUpdate={onNodeUpdate} />
+  }
+  if (tile.kind === 'h-radial') {
+    return <Sunburst nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} onUpdate={onNodeUpdate} />
+  }
+  if (tile.kind === 'treetable') {
+    return <HTreetable nodes={nodes} measureKey={mk} />
+  }
+
+  // For flat viz with groupBy, assign color by group dim value
+  const groupColorMap = new Map<string, string>()
+  if (tile.groupBy) {
+    const vals = [...new Set(ds.rows.map(r => r.dims[tile.groupBy!] ?? ''))].filter(Boolean)
+    vals.forEach((v, i) => groupColorMap.set(v, pickColor(i * 3)))
+  }
+  const goals: Goal[] = leavesOf(nodes).map((n, idx) => {
+    const groupColor = tile.groupBy ? groupColorMap.get(n.dims[tile.groupBy] ?? '') : undefined
     return {
-      id: '__root__', name: 'All', color: 'oklch(0.28 0 0)', value: 0,
-      children: rows.map((r, i) => ({ id: r.id, name: r.name, color: pickColor(i), value: r.value })),
+      id: n.id, name: n.name, color: groupColor ?? n.color ?? pickColor(idx),
+      measurements: { ...n.measures, _index: idx },
+      archived: false, tags: [], urgent: false, important: false,
+      createdAt: '', updatedAt: '',
     }
-  }
-  const groupMap = new Map<string, Row[]>()
-  for (const r of rows) {
-    if (!groupMap.has(r.group)) groupMap.set(r.group, [])
-    groupMap.get(r.group)!.push(r)
-  }
-  return {
-    id: '__root__', name: 'All', color: 'oklch(0.28 0 0)', value: 0,
-    children: Array.from(groupMap.entries()).map(([grp, recs], gi) => ({
-      id: `__grp__${grp}`, name: grp, color: pickColor(gi * 5), value: 0,
-      children: recs.map((r, ri) => ({ id: r.id, name: r.name, color: pickColor(gi * 5 + ri + 1), value: r.value })),
-    })),
-  }
+  })
+  // Bands rows are fixed height — give the container a natural minimum so the tile body can scroll
+  const bandsMinH = tile.kind === 'bands' ? 28 + goals.filter(g => !g.archived).length * 46 : undefined
+  return (
+    <div style={{ width: '100%', height: bandsMinH ?? '100%', minHeight: bandsMinH }}>
+      <Viz
+        goals={goals} mode={tile.kind as 'treemap' | 'radial' | 'bands'}
+        activeUnit={mk} unitKind="size"
+        sortUnit={sortBy === 'index' ? '_index' : mk}
+        sortUnitKind={sortBy === 'index' ? 'order' : 'size'}
+        frame={undefined}
+        onUpdate={(id, patch) => { if (patch.measurements) onNodeUpdate(id, patch.measurements as PNode['measures']) }}
+        onReorder={onNodeReorder}
+      />
+    </div>
+  )
 }
 
-let _nextId = 1
-function nextRowId(): string {
-  return `r${Date.now()}-${_nextId++}`
-}
+// ─── Tile wrapper ─────────────────────────────────────────────────────────────
 
-// --- Board menu ---
+const HIER_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial'])
+const VIZ_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial', 'treemap', 'radial', 'bands'])
 
-function BoardMenu({
-  store, onSwitch, onNew, onDuplicate, onRename, onDelete, onCopyLink,
+function TileCard({
+  tile, ds, measureKey, onRemove, onMeasureChange, onDepthChange, onSortChange, onGroupByChange, onNodeUpdate, onNodeReorder, availableMeasures,
 }: {
-  store: BoardStore
-  onSwitch: (b: Board) => void
-  onNew: () => void
-  onDuplicate: () => void
-  onRename: () => void
-  onDelete: () => void
-  onCopyLink: () => void
+  tile: Tile
+  ds: Dataset
+  measureKey: string
+  onRemove: () => void
+  onMeasureChange: (key: string) => void
+  onDepthChange: (depth: number) => void
+  onSortChange: (sortBy: 'index' | 'value') => void
+  onGroupByChange: (key: string | undefined) => void
+  onNodeUpdate: (rowId: string, measures: PNode['measures']) => void
+  onNodeReorder: (orderedIds: string[]) => void
+  availableMeasures: { key: string; label: string }[]
 }) {
+  const isHier = HIER_KINDS.has(tile.kind)
+  const isViz = VIZ_KINDS.has(tile.kind)
+  const depth = tile.depth ?? 2
+  const sortBy = tile.sortBy ?? 'index'
+  return (
+    <div className="tile-card">
+      <div className="tile-header">
+        <span className="tile-title">{tile.title ?? TILE_LABELS[tile.kind]}</span>
+        <div className="tile-header-actions">
+          {isHier && (
+            <select
+              className="tile-measure-select"
+              value={depth}
+              onChange={e => onDepthChange(Number(e.target.value))}
+              title="Levels to show"
+            >
+              {[1, 2, 3, 4, 5].map(n => (
+                <option key={n} value={n}>{n}L</option>
+              ))}
+            </select>
+          )}
+          {isViz && (
+            <select
+              className="tile-measure-select"
+              value={sortBy}
+              onChange={e => onSortChange(e.target.value as 'index' | 'value')}
+              title="Sort order"
+            >
+              <option value="index">Order</option>
+              <option value="value">Value</option>
+            </select>
+          )}
+          {availableMeasures.length > 1 && (
+            <select
+              className="tile-measure-select"
+              value={tile.measureKey ?? measureKey}
+              onChange={e => onMeasureChange(e.target.value)}
+            >
+              {availableMeasures.map(m => (
+                <option key={m.key} value={m.key}>{m.label}</option>
+              ))}
+            </select>
+          )}
+          {ds.dimDefs.length > 0 && (
+            <select
+              className="tile-measure-select"
+              value={tile.groupBy ?? ''}
+              onChange={e => onGroupByChange(e.target.value || undefined)}
+              title="Group by"
+            >
+              <option value="">No group</option>
+              {ds.dimDefs.map(d => (
+                <option key={d.key} value={d.key}>{d.label}</option>
+              ))}
+            </select>
+          )}
+          <button className="tile-close-btn" onClick={onRemove}>×</button>
+        </div>
+      </div>
+      <div className={`tile-body${tile.kind === 'bands' ? ' tile-body--scroll' : ''}`}>
+        <TileContent tile={tile} ds={ds} measureKey={measureKey} onNodeUpdate={onNodeUpdate} onNodeReorder={onNodeReorder} />
+      </div>
+    </div>
+  )
+}
+
+// ─── Add tile menu ────────────────────────────────────────────────────────────
+
+function AddTileMenu({ onAdd }: { onAdd: (kind: TileKind) => void }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!open) return
-    const handler = (e: MouseEvent) => {
+    const h = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
     }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
   }, [open])
 
   return (
     <div ref={ref} className="sb-menu-wrap">
-      <button
-        className="sb-btn sb-menu-trigger"
-        onClick={() => setOpen(o => !o)}
-      >
-        <span className="sb-menu-trigger-label">{store.active.name}</span>
+      <button className="sb-btn" onClick={() => setOpen(o => !o)}>+ Tile</button>
+      {open && (
+        <div className="sb-menu-dropdown">
+          {TILE_KINDS.map(k => (
+            <button
+              key={k}
+              className="sb-menu-board-btn"
+              onClick={() => { onAdd(k); setOpen(false) }}
+            >
+              {TILE_LABELS[k]}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Dataset picker ───────────────────────────────────────────────────────────
+
+function DatasetPicker({
+  ws, onSwitch, onNew, onDelete,
+}: {
+  ws: Workspace
+  onSwitch: (id: string) => void
+  onNew: () => void
+  onDelete: (id: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const current = ws.datasets.find(d => d.id === ws.activeDatasetId)
+
+  useEffect(() => {
+    if (!open) return
+    const h = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [open])
+
+  return (
+    <div ref={ref} className="sb-menu-wrap">
+      <button className="sb-btn sb-menu-trigger" onClick={() => setOpen(o => !o)}>
+        <span className="sb-menu-trigger-label">{current?.name ?? '—'}</span>
         <span className="sb-menu-caret">▾</span>
       </button>
-
       {open && (
         <div className="sb-menu-dropdown">
           <div className="sb-menu-boards">
-            {store.boards.map(b => (
+            {ws.datasets.map(d => (
               <button
-                key={b.id}
-                onClick={() => { onSwitch(b); setOpen(false) }}
-                className={`sb-menu-board-btn${b.id === store.active.id ? ' active' : ''}`}
+                key={d.id}
+                className={`sb-menu-board-btn${d.id === ws.activeDatasetId ? ' active' : ''}`}
+                onClick={() => { onSwitch(d.id); setOpen(false) }}
               >
-                {b.name}
+                {d.name}
               </button>
             ))}
           </div>
           <div className="sb-menu-actions">
-            {([
-              { label: 'New board',  action: onNew },
-              { label: 'Duplicate', action: onDuplicate },
-              { label: 'Rename',    action: onRename },
-              { label: 'Copy link', action: onCopyLink },
-              { label: 'Delete',    action: onDelete, danger: true },
-            ] as { label: string; action: () => void; danger?: boolean }[]).map(({ label, action, danger }) => (
+            <button className="sb-menu-action-btn" onClick={() => { onNew(); setOpen(false) }}>New dataset</button>
+            {ws.datasets.length > 1 && (
               <button
-                key={label}
-                onClick={() => { action(); setOpen(false) }}
-                className={`sb-menu-action-btn${danger ? ' danger' : ''}`}
+                className="sb-menu-action-btn danger"
+                onClick={() => { onDelete(ws.activeDatasetId); setOpen(false) }}
               >
-                {label}
+                Delete dataset
               </button>
-            ))}
+            )}
           </div>
         </div>
       )}
@@ -119,200 +270,267 @@ function BoardMenu({
   )
 }
 
-// --- Main app ---
+// ─── Dashboard picker ─────────────────────────────────────────────────────────
 
-const initData = initStore()
+function DashboardPicker({
+  ws, onSwitch, onNew, onDelete,
+}: {
+  ws: Workspace
+  onSwitch: (id: string) => void
+  onNew: () => void
+  onDelete: (id: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const dashes = dashboardsForDataset(ws, ws.activeDatasetId)
+  const current = ws.dashboards.find(d => d.id === ws.activeDashboardId)
+
+  useEffect(() => {
+    if (!open) return
+    const h = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [open])
+
+  return (
+    <div ref={ref} className="sb-menu-wrap">
+      <button className="sb-btn sb-menu-trigger" onClick={() => setOpen(o => !o)}>
+        <span className="sb-menu-trigger-label">{current?.name ?? '—'}</span>
+        <span className="sb-menu-caret">▾</span>
+      </button>
+      {open && (
+        <div className="sb-menu-dropdown">
+          <div className="sb-menu-boards">
+            {dashes.map(d => (
+              <button
+                key={d.id}
+                className={`sb-menu-board-btn${d.id === ws.activeDashboardId ? ' active' : ''}`}
+                onClick={() => { onSwitch(d.id); setOpen(false) }}
+              >
+                {d.name}
+              </button>
+            ))}
+          </div>
+          <div className="sb-menu-actions">
+            <button className="sb-menu-action-btn" onClick={() => { onNew(); setOpen(false) }}>New dashboard</button>
+            {dashes.length > 1 && (
+              <button
+                className="sb-menu-action-btn danger"
+                onClick={() => { onDelete(ws.activeDashboardId); setOpen(false) }}
+              >
+                Delete dashboard
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Main app ─────────────────────────────────────────────────────────────────
 
 export function App() {
-  const [store, setStore] = useState<BoardStore>(initData)
-  const active = store.active
-  const { mode, grouped, sortMode } = active.state
-  const rows = active.rows
+  const [ws, setWs] = useState<Workspace>(() => initWorkspace())
 
-  function patchActive(patch: Partial<Board>) {
-    const next = { ...active, ...patch }
-    setStore(s => ({ boards: persistBoard(next, s.boards), active: next }))
+  function commit(next: Workspace) {
+    setWs(next)
+    saveWorkspace(next)
   }
 
-  function patchState(patch: Partial<typeof active.state>) {
-    patchActive({ state: { ...active.state, ...patch } })
-  }
+  const ds = activeDataset(ws)
+  const dash = activeDashboard(ws)
+  const measures = ds ? ds.measureDefs : []
 
-  function patchRows(next: Row[]) {
-    patchActive({ rows: next })
-  }
+  const switchDataset = useCallback((id: string) => {
+    const next = { ...ws, activeDatasetId: id }
+    const dashes = dashboardsForDataset(next, id)
+    const activeDash = dashes[0]?.id ?? ''
+    const updated = { ...next, activeDashboardId: activeDash }
+    commit(updated)
+    const newDs = updated.datasets.find(d => d.id === id)
+    if (newDs) resetHudForDataset(newDs.rows)
+  }, [ws])
 
-  const switchBoard = useCallback((b: Board) => {
-    setStore(s => ({ boards: persistBoard(b, s.boards), active: b }))
-  }, [])
-
-  const newBoard = useCallback(() => {
-    const name = prompt('Board name:', 'New board')
+  const newDataset = useCallback(() => {
+    const name = prompt('Dataset name:')
     if (!name) return
-    const b = createBoard(name)
-    setStore(s => { const boards = persistBoard(b, s.boards); return { boards, active: b } })
-  }, [])
+    let next = createDataset(ws, name)
+    next = { ...next, activeDatasetId: next.datasets[next.datasets.length - 1]!.id }
+    next = createDashboard(next, 'Overview', next.activeDatasetId)
+    next = { ...next, activeDashboardId: next.dashboards[next.dashboards.length - 1]!.id }
+    commit(next)
+  }, [ws])
 
-  const duplicateBoard = useCallback(() => {
-    const name = prompt('Name for duplicate:', active.name + ' copy')
+  const deleteDs = useCallback((id: string) => {
+    if (!confirm('Delete this dataset and all its dashboards?')) return
+    commit(deleteDataset(ws, id))
+  }, [ws])
+
+  const switchDashboard = useCallback((id: string) => {
+    commit({ ...ws, activeDashboardId: id })
+  }, [ws])
+
+  const newDashboard = useCallback(() => {
+    const name = prompt('Dashboard name:')
     if (!name) return
-    const b = createBoard(name, active)
-    setStore(s => { const boards = persistBoard(b, s.boards); return { boards, active: b } })
-  }, [active])
+    let next = createDashboard(ws, name, ws.activeDatasetId)
+    next = { ...next, activeDashboardId: next.dashboards[next.dashboards.length - 1]!.id }
+    commit(next)
+  }, [ws])
 
-  const renameBoard = useCallback(() => {
-    const name = prompt('New name:', active.name)
-    if (!name || name === active.name) return
-    patchActive({ name })
-  }, [active])
+  const deleteDash = useCallback((id: string) => {
+    if (!confirm('Delete this dashboard?')) return
+    commit(deleteDashboard(ws, id))
+  }, [ws])
 
-  const deleteCurrentBoard = useCallback(() => {
-    if (store.boards.length <= 1) { alert('Cannot delete the only board.'); return }
-    if (!confirm(`Delete "${active.name}"?`)) return
-    const remaining = deleteBoard(active.id, store.boards)
-    const next = remaining[0]
-    setStore({ boards: persistBoard(next, remaining), active: next })
-  }, [active, store.boards])
+  const handleAddTile = useCallback((kind: TileKind) => {
+    if (!dash) return
+    commit(addTile(ws, dash.id, kind))
+  }, [ws, dash])
 
-  const copyLink = useCallback(() => {
-    const url = location.origin + location.pathname + boardToUrl(active)
-    navigator.clipboard.writeText(url).then(() => alert('Link copied!'))
-  }, [active])
+  const handleRemoveTile = useCallback((tileId: string) => {
+    if (!dash) return
+    commit(removeTile(ws, dash.id, tileId))
+  }, [ws, dash])
 
-  // Row ops
-  const addRow = () => {
-    const id = nextRowId()
-    patchRows([...rows, { id, name: `Item ${rows.length + 1}`, group: GROUPS[rows.length % GROUPS.length], value: 10 }])
-  }
-  const removeRow = (id: string) => patchRows(rows.filter(r => r.id !== id))
-  const updateName  = (id: string, v: string) => patchRows(rows.map(r => r.id === id ? { ...r, name: v } : r))
-  const updateGroup = (id: string, v: string) => patchRows(rows.map(r => r.id === id ? { ...r, group: v } : r))
-  const updateValue = (id: string, raw: string) => {
-    const v = parseInt(raw, 10)
-    if (!isNaN(v) && v >= 0) patchRows(rows.map(r => r.id === id ? { ...r, value: v } : r))
-  }
+  const handleLayoutChange = useCallback((layout: readonly LayoutItem[]) => {
+    if (!dash) return
+    const next: Dashboard = { ...dash, layout: layout as LayoutItem[] }
+    commit(updateDashboard(ws, next))
+  }, [ws, dash])
 
-  const handleVizUpdate = useCallback((id: string, patch: Partial<Goal>) => {
-    if (!patch.measurements) return
-    const v = patch.measurements['value']
-    if (v == null) return
-    // rows ref is stale in useCallback — read from store via functional update
-    setStore(s => {
-      const next = { ...s.active, rows: s.active.rows.map(r => r.id === id ? { ...r, value: v as number } : r) }
-      return { boards: persistBoard(next, s.boards), active: next }
-    })
-  }, [])
+  const handleTileMeasure = useCallback((tileId: string, key: string) => {
+    if (!dash) return
+    const next: Dashboard = {
+      ...dash,
+      tiles: dash.tiles.map(t => t.id === tileId ? { ...t, measureKey: key } : t),
+    }
+    commit(updateDashboard(ws, next))
+  }, [ws, dash])
 
-  const goals = rowsToGoals(rows)
-  const tree = rowsToTree(rows, grouped)
-  const isHier = (HIER_MODES as string[]).includes(mode)
+  const handleNodeUpdate = useCallback((rowId: string, measures: PNode['measures']) => {
+    if (!ds) return
+    commit(updateRow(ws, ds.id, rowId, { measures }))
+  }, [ws, ds])
+
+  const handleNodeReorder = useCallback((orderedIds: string[]) => {
+    if (!ds) return
+    commit(reorderLeaves(ws, ds.id, orderedIds))
+  }, [ws, ds])
+
+  const handleTileDepth = useCallback((tileId: string, depth: number) => {
+    if (!dash) return
+    const next: Dashboard = {
+      ...dash,
+      tiles: dash.tiles.map(t => t.id === tileId ? { ...t, depth } : t),
+    }
+    commit(updateDashboard(ws, next))
+  }, [ws, dash])
+
+  const handleTileSort = useCallback((tileId: string, sortBy: 'index' | 'value') => {
+    if (!dash) return
+    commit(updateDashboard(ws, { ...dash, tiles: dash.tiles.map(t => t.id === tileId ? { ...t, sortBy } : t) }))
+  }, [ws, dash])
+
+  const handleTileGroupBy = useCallback((tileId: string, groupBy: string | undefined) => {
+    if (!dash) return
+    commit(updateDashboard(ws, { ...dash, tiles: dash.tiles.map(t => t.id === tileId ? { ...t, groupBy } : t) }))
+  }, [ws, dash])
 
   return (
     <div className="sb-root">
-
-      {/* Topbar */}
       <div className="sb-topbar">
         <span className="sb-wordmark">sliceboard</span>
-        <BoardMenu
-          store={store}
-          onSwitch={switchBoard}
-          onNew={newBoard}
-          onDuplicate={duplicateBoard}
-          onRename={renameBoard}
-          onDelete={deleteCurrentBoard}
-          onCopyLink={copyLink}
+        <span className="sb-topbar-sep">·</span>
+        <DatasetPicker
+          ws={ws}
+          onSwitch={switchDataset}
+          onNew={newDataset}
+          onDelete={deleteDs}
         />
+        <span className="sb-topbar-sep">/</span>
+        <DashboardPicker
+          ws={ws}
+          onSwitch={switchDashboard}
+          onNew={newDashboard}
+          onDelete={deleteDash}
+        />
+        <div className="sb-topbar-right">
+          <AddTileMenu onAdd={handleAddTile} />
+        </div>
       </div>
 
-      {/* Body */}
-      <div className="sb-body">
+      <div className="sb-grid-wrap">
+        {ds && dash ? (
+          <TileGrid
+            dash={dash}
+            ds={ds}
+            measures={measures}
+            onLayoutChange={handleLayoutChange}
+            onRemoveTile={handleRemoveTile}
+            onTileMeasure={handleTileMeasure}
+            onTileDepth={handleTileDepth}
+            onTileSort={handleTileSort}
+            onTileGroupBy={handleTileGroupBy}
+            onNodeUpdate={handleNodeUpdate}
+            onNodeReorder={handleNodeReorder}
+          />
+        ) : null}
+      </div>
+    </div>
+  )
+}
 
-        {/* Left: data table */}
-        <div className="sb-left">
-          <div className="sb-left-header">
-            <span className="sb-section-label">Data</span>
-            <label className="sb-group-toggle">
-              <input type="checkbox" checked={grouped} onChange={e => patchState({ grouped: e.target.checked })} />
-              group by
-            </label>
-          </div>
-          <div className="sb-table-scroll">
-            <table className="sb-table">
-              <thead>
-                <tr>
-                  <th className="sb-th">Name</th>
-                  {grouped && <th className="sb-th">Group</th>}
-                  <th className="sb-th sb-th-val">Value</th>
-                  <th className="sb-th sb-th-del" />
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map(r => (
-                  <tr key={r.id}>
-                    <td className="sb-td">
-                      <input className="sb-input" value={r.name} onChange={e => updateName(r.id, e.target.value)} />
-                    </td>
-                    {grouped && (
-                      <td className="sb-td">
-                        <select className="sb-select" value={r.group} onChange={e => updateGroup(r.id, e.target.value)}>
-                          {GROUPS.map(g => <option key={g} value={g}>{g}</option>)}
-                        </select>
-                      </td>
-                    )}
-                    <td className="sb-td">
-                      <input className="sb-input sb-input-right" value={r.value} type="number" min={0} onChange={e => updateValue(r.id, e.target.value)} />
-                    </td>
-                    <td className="sb-td sb-td-center">
-                      <button onClick={() => removeRow(r.id)} className="sb-del-btn">×</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="sb-add-row">
-            <button onClick={addRow} className="sb-btn sb-btn-full">+ Add row</button>
-          </div>
-        </div>
-
-        {/* Right: viz */}
-        <div className="sb-right">
-          <div className="sb-viz-toolbar">
-            {FLAT_MODES.map(m => (
-              <button key={m} className={`sb-btn${mode === m ? ' sb-btn-active' : ''}`} onClick={() => patchState({ mode: m })}>{m}</button>
-            ))}
-            <span className="sb-toolbar-sep">|</span>
-            {HIER_MODES.map(m => (
-              <button key={m} className={`sb-btn${mode === m ? ' sb-btn-active' : ''}`} onClick={() => patchState({ mode: m })}>{HIER_LABELS[m]}</button>
-            ))}
-            {!isHier && (
-              <div className="sb-sort-group">
-                <button className={`sb-btn${sortMode === 'index' ? ' sb-btn-active' : ''}`} onClick={() => patchState({ sortMode: 'index' })}>idx</button>
-                <button className={`sb-btn${sortMode === 'size' ? ' sb-btn-active' : ''}`} onClick={() => patchState({ sortMode: 'size' })}>↓val</button>
-              </div>
-            )}
-          </div>
-
-          {rows.length === 0 ? (
-            <div className="sb-viz-empty">Add a row to visualize</div>
-          ) : (
-            <div className="sb-viz-canvas">
-              {isHier ? (
-                <HViz tree={tree} mode={mode as 'h-treemap' | 'h-icicle' | 'h-radial'} />
-              ) : (
-                <Viz
-                  goals={goals} mode={mode as 'treemap' | 'radial' | 'bands'}
-                  activeUnit="value" unitKind="size"
-                  sortUnit={sortMode === 'index' ? '_index' : 'value'}
-                  sortUnitKind={sortMode === 'index' ? 'order' : 'size'}
-                  frame={undefined} onUpdate={handleVizUpdate}
-                />
-              )}
+function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeasure, onTileDepth, onTileSort, onTileGroupBy, onNodeUpdate, onNodeReorder }: {
+  dash: Dashboard
+  ds: Dataset
+  measures: { key: string; label: string }[]
+  onLayoutChange: (layout: readonly LayoutItem[]) => void
+  onRemoveTile: (id: string) => void
+  onTileMeasure: (tileId: string, key: string) => void
+  onTileDepth: (tileId: string, depth: number) => void
+  onTileSort: (tileId: string, sortBy: 'index' | 'value') => void
+  onTileGroupBy: (tileId: string, key: string | undefined) => void
+  onNodeUpdate: (rowId: string, measures: PNode['measures']) => void
+  onNodeReorder: (orderedIds: string[]) => void
+}) {
+  const { width, containerRef, mounted } = useContainerWidth()
+  return (
+    <div ref={containerRef as unknown as React.RefCallback<HTMLDivElement>} className="sb-grid-inner">
+      {mounted && (
+        <GridLayout
+          width={width}
+          layout={dash.layout}
+          gridConfig={{ cols: 12, rowHeight: 60, margin: [12, 12] }}
+          dragConfig={{ handle: '.tile-header' }}
+          autoSize
+          onLayoutChange={onLayoutChange}
+        >
+          {dash.tiles.map(tile => (
+            <div key={tile.id} className="tile-wrap">
+              <TileCard
+                tile={tile}
+                ds={ds}
+                measureKey={dash.measureKey}
+                availableMeasures={measures}
+                onRemove={() => onRemoveTile(tile.id)}
+                onMeasureChange={key => onTileMeasure(tile.id, key)}
+                onDepthChange={d => onTileDepth(tile.id, d)}
+                onSortChange={s => onTileSort(tile.id, s)}
+                onGroupByChange={k => onTileGroupBy(tile.id, k)}
+                onNodeUpdate={onNodeUpdate}
+                onNodeReorder={onNodeReorder}
+              />
             </div>
-          )}
-        </div>
-
-      </div>
+          ))}
+        </GridLayout>
+      )}
+      {dash.tiles.length === 0 && (
+        <div className="sb-grid-empty">No tiles — click "+ Tile" to add one</div>
+      )}
     </div>
   )
 }

@@ -1,5 +1,24 @@
 export type UnitKind = 'size' | 'order'
 
+export interface PNode {
+  id: string
+  parentId: string | null
+  index: number
+  name: string
+  measures: Record<string, number>
+  dims: Record<string, string>
+  color?: string
+}
+
+export type Rollup = 'sum' | 'max' | 'mean' | 'none'
+
+export interface Measurement {
+  key: string
+  label: string
+  unit: string
+  rollup: Rollup
+}
+
 export interface Goal {
   id: string
   name: string
@@ -13,9 +32,9 @@ export interface Goal {
   updatedAt: string
 }
 
-export type ViewMode = 'treemap' | 'radial' | 'bands' | 'h-treemap' | 'h-icicle' | 'h-radial'
+export type ViewMode = 'treemap' | 'radial' | 'bands' | 'h-treemap' | 'h-icicle' | 'h-radial' | 'treetable'
 export type FlatMode = 'treemap' | 'radial' | 'bands'
-export type HierMode = 'h-treemap' | 'h-icicle' | 'h-radial'
+export type HierMode = 'h-treemap' | 'h-icicle' | 'h-radial' | 'treetable'
 
 export interface GoalTree {
   id: string
@@ -40,6 +59,7 @@ export interface HVizConfig {
 
 export interface VizCallbacks {
   onUpdate: (id: string, patch: Partial<Goal>) => void
+  onReorder?: (orderedIds: string[]) => void
   onGoalClick?: (goal: Goal) => void
 }
 

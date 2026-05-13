@@ -1,67 +1,68 @@
 import React, { useEffect, useRef } from 'react'
 import { mountIcicle, mountSunburst, mountTreemap } from '@winstonfassett/vizform-core'
 import type { IcicleMounted, SunburstMounted, TreemapMounted } from '@winstonfassett/vizform-core'
-import type { GoalTree, HierMode } from '@winstonfassett/vizform-core'
+import type { PNode, HierMode } from '@winstonfassett/vizform-core'
 
 interface HVizProps {
-  tree: GoalTree
-  mode: HierMode
+  nodes: PNode[]
+  measureKey: string
+  mode: Exclude<HierMode, 'treetable'>
   onLeafClick?: (id: string) => void
 }
 
-function HIcicle({ tree, onLeafClick }: { tree: GoalTree; onLeafClick?: (id: string) => void }) {
+function HIcicle({ nodes, measureKey, onLeafClick }: { nodes: PNode[]; measureKey: string; onLeafClick?: (id: string) => void }) {
   const ref = useRef<SVGSVGElement>(null)
   const mountedRef = useRef<IcicleMounted | null>(null)
 
   useEffect(() => {
     if (!ref.current) return
-    mountedRef.current = mountIcicle(ref.current, tree, { onLeafClick })
+    mountedRef.current = mountIcicle(ref.current, nodes, measureKey, { onLeafClick })
     return () => { mountedRef.current?.destroy(); mountedRef.current = null }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    mountedRef.current?.update(tree)
-  }, [tree])
+    mountedRef.current?.update(nodes, measureKey)
+  }, [nodes, measureKey])
 
   return <svg ref={ref} style={{ width: '100%', height: '100%', display: 'block' }} />
 }
 
-function HSunburst({ tree, onLeafClick }: { tree: GoalTree; onLeafClick?: (id: string) => void }) {
+function HSunburst({ nodes, measureKey, onLeafClick }: { nodes: PNode[]; measureKey: string; onLeafClick?: (id: string) => void }) {
   const ref = useRef<SVGSVGElement>(null)
   const mountedRef = useRef<SunburstMounted | null>(null)
 
   useEffect(() => {
     if (!ref.current) return
-    mountedRef.current = mountSunburst(ref.current, tree, { onLeafClick })
+    mountedRef.current = mountSunburst(ref.current, nodes, measureKey, { onLeafClick })
     return () => { mountedRef.current?.destroy(); mountedRef.current = null }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    mountedRef.current?.update(tree)
-  }, [tree])
+    mountedRef.current?.update(nodes, measureKey)
+  }, [nodes, measureKey])
 
   return <svg ref={ref} style={{ width: '100%', height: '100%', display: 'block' }} />
 }
 
-function HTreemap({ tree, onLeafClick }: { tree: GoalTree; onLeafClick?: (id: string) => void }) {
+function HTreemap({ nodes, measureKey, onLeafClick }: { nodes: PNode[]; measureKey: string; onLeafClick?: (id: string) => void }) {
   const ref = useRef<SVGSVGElement>(null)
   const mountedRef = useRef<TreemapMounted | null>(null)
 
   useEffect(() => {
     if (!ref.current) return
-    mountedRef.current = mountTreemap(ref.current, tree, { onLeafClick })
+    mountedRef.current = mountTreemap(ref.current, nodes, measureKey, { onLeafClick })
     return () => { mountedRef.current?.destroy(); mountedRef.current = null }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    mountedRef.current?.update(tree)
-  }, [tree])
+    mountedRef.current?.update(nodes, measureKey)
+  }, [nodes, measureKey])
 
   return <svg ref={ref} style={{ width: '100%', height: '100%', display: 'block' }} />
 }
 
-export function HViz({ tree, mode, onLeafClick }: HVizProps) {
-  if (mode === 'h-icicle') return <HIcicle tree={tree} onLeafClick={onLeafClick} />
-  if (mode === 'h-radial') return <HSunburst tree={tree} onLeafClick={onLeafClick} />
-  return <HTreemap tree={tree} onLeafClick={onLeafClick} />
+export function HViz({ nodes, measureKey, mode, onLeafClick }: HVizProps) {
+  if (mode === 'h-icicle') return <HIcicle nodes={nodes} measureKey={measureKey} onLeafClick={onLeafClick} />
+  if (mode === 'h-radial') return <HSunburst nodes={nodes} measureKey={measureKey} onLeafClick={onLeafClick} />
+  return <HTreemap nodes={nodes} measureKey={measureKey} onLeafClick={onLeafClick} />
 }

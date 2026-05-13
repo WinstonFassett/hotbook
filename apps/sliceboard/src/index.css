@@ -2,8 +2,29 @@
 
 html, body, #root {
   height: 100%;
-  background: #111;
-  color: #ccc;
-  font-family: system-ui, -apple-system, sans-serif;
+  --pv-bg:           oklch(0.18 0.01 250);
+  --pv-surface:      oklch(0.22 0.01 250);
+  --pv-surface-hi:   oklch(0.26 0.01 250);
+  --pv-border:       oklch(0.32 0.01 250);
+  --pv-border-quiet: oklch(0.28 0.008 250);
+  --pv-ink:          oklch(0.95 0.005 250);
+  --pv-ink-muted:    oklch(0.78 0.008 250);
+  --pv-ink-dim:      oklch(0.58 0.012 250);
+  --pv-accent:       oklch(0.78 0.13 230);
+  --pv-status-todo:    oklch(0.55 0.01 250);
+  --pv-status-doing:   oklch(0.72 0.13 230);
+  --pv-status-review:  oklch(0.78 0.14 85);
+  --pv-status-done:    oklch(0.7  0.13 150);
+  --pv-status-blocked: oklch(0.62 0.16 25);
+  --pv-radius: 6px;
+  --pv-dur: 320ms;
+  --pv-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  background: var(--pv-bg);
+  color: var(--pv-ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   font-size: 13px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { --pv-dur: 0ms; }
 }

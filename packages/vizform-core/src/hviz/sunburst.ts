@@ -3,27 +3,18 @@ import { select } from 'd3-selection'
 import { arc as d3arc } from 'd3-shape'
 import { interpolate as d3interpolate } from 'd3-interpolate'
 import 'd3-transition'
-import type { GoalTree, HVizCallbacks } from '../types'
+import type { PNode, HVizCallbacks } from '../types'
+import { motion } from '../viz/constants'
+import { buildTree, buildColorMap, buildNameMap, measureValue } from './pnodeUtils'
 
-type Datum = GoalTree
+const DRILL = motion('enter')
+const DRILL_EXIT = motion('exit')
+
+type Datum = { id: string; children?: Datum[] }
 type RNode = d3.HierarchyRectangularNode<Datum>
 type Arc = { x0: number; x1: number; y0: number; y1: number }
 type ArcEl = SVGPathElement & { __arc?: Arc }
 type TextPathEl = SVGPathElement & { __arc?: Arc }
-
-function buildColorMap(tree: GoalTree): Map<string, string> {
-  const m = new Map<string, string>()
-  function walk(n: GoalTree) { m.set(n.id, n.color); n.children?.forEach(walk) }
-  walk(tree)
-  return m
-}
-
-function buildNameMap(tree: GoalTree): Map<string, string> {
-  const m = new Map<string, string>()
-  function walk(n: GoalTree) { m.set(n.id, n.name); n.children?.forEach(walk) }
-  walk(tree)
-  return m
-}
 
 function labelArcPath(a: Arc, ringR: number): string {
   const midR = ((a.y0 + a.y1) / 2) * ringR
@@ -42,16 +33,21 @@ function labelArcPath(a: Arc, ringR: number): string {
 function cssId(id: string): string { return id.replace(/[^a-zA-Z0-9_-]/g, '_') }
 
 export interface SunburstMounted {
-  update(tree: GoalTree): void
+  update(nodes: PNode[], measureKey: string): void
   destroy(): void
 }
 
-export function mountSunburst(svgEl: SVGSVGElement, initialTree: GoalTree, callbacks: HVizCallbacks): SunburstMounted {
-  let currentTree = initialTree
+export function mountSunburst(
+  svgEl: SVGSVGElement,
+  nodes: PNode[],
+  measureKey: string,
+  callbacks: HVizCallbacks,
+): SunburstMounted {
+  let currentNodes = nodes
+  let currentMeasureKey = measureKey
   let focusId = '__root__'
 
   function render() {
-    const tree = currentTree
     const svg = select(svgEl)
     const w = svgEl.clientWidth || 400
     const h = svgEl.clientHeight || 300
@@ -59,11 +55,12 @@ export function mountSunburst(svgEl: SVGSVGElement, initialTree: GoalTree, callb
     const ringR = size / 6
     svg.attr('viewBox', `${-w / 2} ${-h / 2} ${w} ${h}`)
 
-    const colorMap = buildColorMap(tree)
-    const nameMap = buildNameMap(tree)
+    const colorMap = buildColorMap(currentNodes)
+    const nameMap = buildNameMap(currentNodes)
 
+    const tree = buildTree(currentNodes, currentMeasureKey)
     const root = d3.hierarchy<Datum>(tree)
-      .sum(d => (d.children ? 0 : d.value))
+      .sum(d => (d.children ? 0 : measureValue(currentNodes, d.id, currentMeasureKey)))
       .sort((a, b) => (b.value ?? 0) - (a.value ?? 0))
     d3.partition<Datum>().size([2 * Math.PI, root.height + 1])(root)
 
@@ -105,7 +102,8 @@ export function mountSunburst(svgEl: SVGSVGElement, initialTree: GoalTree, callb
         if (d.children) { focusId = d.data.id; render() }
         else callbacks.onLeafClick?.(d.data.id)
       })
-      .transition().duration(300)
+      .interrupt('arc')
+      .transition('arc').duration(DRILL.duration).ease(DRILL.ease)
       .tween('arc', function(this: ArcEl, d) {
         const target = disp(d)
         const start = this.__arc ?? target
@@ -119,7 +117,11 @@ export function mountSunburst(svgEl: SVGSVGElement, initialTree: GoalTree, callb
       .attr('fill-opacity', d => arcVisible(disp(d)) ? (d.children ? 0.7 : 0.85) : 0)
       .attr('pointer-events', d => arcVisible(disp(d)) ? 'auto' : 'none')
 
-    sel.exit().remove()
+    sel.exit<ArcEl>()
+      .interrupt('arc')
+      .transition('arc').duration(DRILL_EXIT.duration).ease(DRILL_EXIT.ease)
+      .attr('fill-opacity', 0)
+      .remove()
 
     let defs = svg.select<SVGDefsElement>('defs')
     if (defs.empty()) defs = svg.append<SVGDefsElement>('defs')
@@ -130,7 +132,8 @@ export function mountSunburst(svgEl: SVGSVGElement, initialTree: GoalTree, callb
       .attr('id', d => `hsb-larc-${cssId(d.data.id)}`)
       .each(function(this: TextPathEl, d) { this.__arc = { x0: 0, x1: 0, y0: disp(d).y0, y1: disp(d).y0 } })
     laEnter.merge(labelArcs)
-      .transition().duration(300)
+      .interrupt('label-arc')
+      .transition('label-arc').duration(DRILL.duration).ease(DRILL.ease)
       .tween('label-arc', function(this: TextPathEl, d) {
         const target = disp(d)
         const start = this.__arc ?? target
@@ -163,9 +166,14 @@ export function mountSunburst(svgEl: SVGSVGElement, initialTree: GoalTree, callb
         return name.length > max ? name.slice(0, max) + '…' : name
       })
     lEnter.merge(labels)
-      .transition().duration(300)
+      .interrupt('label-fade')
+      .transition('label-fade').duration(DRILL.duration).ease(DRILL.ease)
       .attr('fill-opacity', d => labelVisible(disp(d)) ? 1 : 0)
-    labels.exit().remove()
+    labels.exit<SVGTextElement>()
+      .interrupt('label-fade')
+      .transition('label-fade').duration(DRILL_EXIT.duration).ease(DRILL_EXIT.ease)
+      .attr('fill-opacity', 0)
+      .remove()
 
     const showCenter = focus.depth > 0
     svg.selectAll<SVGCircleElement, null>('circle.center').data([null]).join(
@@ -194,7 +202,11 @@ export function mountSunburst(svgEl: SVGSVGElement, initialTree: GoalTree, callb
   render()
 
   return {
-    update(tree: GoalTree) { currentTree = tree; render() },
+    update(nodes: PNode[], measureKey: string) {
+      currentNodes = nodes
+      currentMeasureKey = measureKey
+      render()
+    },
     destroy() { select(svgEl).selectAll('*').remove() },
   }
 }

@@ -3,6 +3,7 @@
   display: flex;
   flex-direction: column;
   height: 100%;
+  overflow: hidden;
 }
 
 /* Topbar */
@@ -22,6 +23,99 @@
   text-transform: uppercase;
   margin-right: 4px;
   user-select: none;
+}
+
+/* Grid */
+.sb-grid-wrap {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+}
+.sb-grid {
+  min-height: 100%;
+}
+.sb-grid-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: #333;
+  font-size: 13px;
+}
+
+/* Tile */
+.tile-wrap {
+  overflow: hidden;
+}
+.tile-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #111;
+  border: 1px solid #222;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.tile-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  border-bottom: 1px solid #1e1e1e;
+  cursor: grab;
+  flex-shrink: 0;
+  user-select: none;
+}
+.tile-header:active { cursor: grabbing; }
+.tile-title {
+  font-size: 11px;
+  color: #444;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.tile-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.tile-measure-select {
+  background: transparent;
+  border: 1px solid #2a2a2a;
+  color: #666;
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.tile-close-btn {
+  background: none;
+  border: none;
+  color: #333;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+}
+.tile-close-btn:hover { color: #888; }
+.tile-body {
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.tile-body--scroll {
+  overflow-y: auto;
+}
+
+/* Topbar extras */
+.sb-topbar-sep {
+  color: #2a2a2a;
+  font-size: 12px;
+  padding: 0 2px;
+}
+.sb-topbar-right {
+  margin-left: auto;
 }
 
 /* Body */
@@ -169,6 +263,69 @@
   color: #eee;
 }
 .sb-btn-full { width: 100%; }
+
+/* ── Responsive ──────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .sb-body {
+    flex-direction: column;
+  }
+
+  .sb-left {
+    width: 100%;
+    max-height: 220px;
+    border-right: none;
+    border-bottom: 1px solid #222;
+  }
+
+  .sb-right {
+    flex: 1;
+    min-height: 300px;
+  }
+
+  /* Bigger touch targets for table inputs */
+  .sb-input,
+  .sb-select {
+    font-size: 14px;
+    padding: 4px 6px;
+  }
+
+  .sb-td {
+    padding: 3px 4px;
+  }
+
+  /* Toolbar: let buttons wrap naturally, no separator needed */
+  .sb-viz-toolbar {
+    gap: 5px;
+    padding: 6px 8px;
+    row-gap: 5px;
+  }
+
+  .sb-btn {
+    padding: 4px 10px;
+    font-size: 12px;
+  }
+
+  /* Sort group stays inline but doesn't push to far right on narrow screens */
+  .sb-sort-group {
+    margin-left: 0;
+  }
+
+  /* Board menu trigger: shrink max-width so it fits topbar */
+  .sb-menu-trigger {
+    max-width: 160px;
+  }
+
+  /* Del button bigger hit area */
+  .sb-del-btn {
+    font-size: 16px;
+    padding: 2px 6px;
+  }
+
+  .sb-add-row {
+    padding: 6px 8px;
+  }
+}
+/* ─────────────────────────────────────────────────────────── */
 
 /* Board menu */
 .sb-menu-wrap {

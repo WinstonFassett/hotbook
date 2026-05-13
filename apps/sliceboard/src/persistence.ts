@@ -1,187 +1,641 @@
-const LS_BOARDS_KEY = 'sb:boards'
-const LS_LAST_KEY = 'sb:lastBoardId'
-const HASH_PREFIX = '#b='
+import type { PNode } from '@winstonfassett/vizform-react'
+import type { LayoutItem } from 'react-grid-layout'
 
-export interface Row {
-  id: string
-  name: string
-  group: string
-  value: number
+export type { PNode }
+
+// ─── Schema defs ──────────────────────────────────────────────────────────────
+
+export interface MeasureDef {
+  key: string
+  label: string
+  unit?: string
 }
 
-export interface BoardState {
-  mode: string
-  grouped: boolean
-  sortMode: string
+export interface DimDef {
+  key: string
+  label: string
+  values?: string[]
 }
 
-export interface Board {
+// ─── Dataset ──────────────────────────────────────────────────────────────────
+
+export interface Dataset {
   id: string
   name: string
   createdAt: string
-  rows: Row[]
-  state: BoardState
+  rows: PNode[]
+  measureDefs: MeasureDef[]
+  dimDefs: DimDef[]
 }
+
+// ─── Dashboard tile ───────────────────────────────────────────────────────────
+
+export type TileKind =
+  | 'treetable'
+  | 'treemap'
+  | 'radial'
+  | 'bands'
+  | 'h-treemap'
+  | 'h-icicle'
+  | 'h-radial'
+
+export interface Tile {
+  id: string
+  kind: TileKind
+  title?: string
+  measureKey?: string
+  groupBy?: string
+  depth?: number
+  sortBy?: 'index' | 'value'
+}
+
+// ─── Dashboard ────────────────────────────────────────────────────────────────
+
+export interface Dashboard {
+  id: string
+  datasetId: string
+  name: string
+  createdAt: string
+  layout: LayoutItem[]
+  tiles: Tile[]
+  measureKey: string
+}
+
+// ─── Workspace ────────────────────────────────────────────────────────────────
+
+export interface Workspace {
+  datasets: Dataset[]
+  dashboards: Dashboard[]
+  activeDatasetId: string
+  activeDashboardId: string
+}
+
+// ─── Storage ──────────────────────────────────────────────────────────────────
+
+const LS_KEY = 'sb:workspace:v5'
 
 function genId(): string {
   return Math.random().toString(36).slice(2, 10)
 }
 
-export const SEED_BOARDS: Board[] = [
-  {
-    id: 'seed-fruit',
+// ─── Seed data ────────────────────────────────────────────────────────────────
+
+const NOW = '2026-05-13T12:00:00.000Z'
+
+let _idc = 0
+function nid(): string { return `n${++_idc}` }
+
+function row(name: string, measures: Record<string, number>, dims: Record<string, string>, parentId?: string, color?: string): PNode {
+  return { id: nid(), parentId: parentId ?? null, index: _idc, name, measures, dims, ...(color ? { color } : {}) }
+}
+
+// ─── Dataset 1: Fruit (flat + groupBy demo) ───────────────────────────────────
+
+function buildFruitDataset(): Dataset {
+  _idc = 0
+  const rows: PNode[] = [
+    row('Apples',      { value: 40 }, { group: 'Alpha', season: 'fall' },     undefined, '#e08888'),
+    row('Bananas',     { value: 25 }, { group: 'Alpha', season: 'all-year' }, undefined, '#e08888'),
+    row('Grapes',      { value: 35 }, { group: 'Alpha', season: 'fall' },     undefined, '#e08888'),
+    row('Carrots',     { value: 30 }, { group: 'Beta',  season: 'spring' },   undefined, '#7aaae8'),
+    row('Dates',       { value: 15 }, { group: 'Beta',  season: 'all-year' }, undefined, '#7aaae8'),
+    row('Elderberry',  { value: 12 }, { group: 'Beta',  season: 'summer' },   undefined, '#7aaae8'),
+    row('Eggplant',    { value: 20 }, { group: 'Gamma', season: 'summer' },   undefined, '#b090e0'),
+    row('Fennel',      { value: 10 }, { group: 'Gamma', season: 'fall' },     undefined, '#b090e0'),
+    row('Honeydew',    { value: 18 }, { group: 'Gamma', season: 'summer' },   undefined, '#b090e0'),
+    row('Jackfruit',   { value: 22 }, { group: 'Delta', season: 'all-year' }, undefined, '#7ec87e'),
+    row('Kale',        { value: 14 }, { group: 'Delta', season: 'winter' },   undefined, '#7ec87e'),
+    row('Lemon',       { value: 28 }, { group: 'Delta', season: 'all-year' }, undefined, '#7ec87e'),
+  ]
+  return {
+    id: 'ds-fruit',
     name: 'Fruit (demo)',
-    createdAt: new Date(0).toISOString(),
-    rows: [
-      { id: '1', name: 'Apples',   group: 'Alpha', value: 40 },
-      { id: '2', name: 'Bananas',  group: 'Alpha', value: 25 },
-      { id: '3', name: 'Carrots',  group: 'Beta',  value: 30 },
-      { id: '4', name: 'Dates',    group: 'Beta',  value: 15 },
-      { id: '5', name: 'Eggplant', group: 'Gamma', value: 20 },
-      { id: '6', name: 'Fennel',   group: 'Gamma', value: 10 },
+    createdAt: NOW,
+    rows,
+    measureDefs: [{ key: 'value', label: 'Value' }],
+    dimDefs: [
+      { key: 'group', label: 'Group', values: ['Alpha', 'Beta', 'Gamma', 'Delta'] },
+      { key: 'season', label: 'Season', values: ['spring', 'summer', 'fall', 'winter', 'all-year'] },
     ],
-    state: { mode: 'treemap', grouped: false, sortMode: 'index' },
+  }
+}
+
+// ─── Dataset 2: Team allocation (2-level hierarchy + groupBy demo) ────────────
+
+function buildTeamDataset(): Dataset {
+  _idc = 0
+  const q2id = nid(); const q3id = nid(); const q4id = nid()
+  const q2: PNode = { id: q2id, parentId: null, index: 1, name: 'Q2', measures: {}, dims: {}, color: '#7ec87e' }
+  const q3: PNode = { id: q3id, parentId: null, index: 2, name: 'Q3', measures: {}, dims: {}, color: '#7aaae8' }
+  const q4: PNode = { id: q4id, parentId: null, index: 3, name: 'Q4', measures: {}, dims: {}, color: '#b090e0' }
+  const rows: PNode[] = [
+    q2, q3, q4,
+    row('Design',   { budget: 20, headcount: 2 }, { team: 'Design',   role: 'product' }, q2id),
+    row('Frontend', { budget: 35, headcount: 3 }, { team: 'Frontend', role: 'eng' },     q2id),
+    row('Backend',  { budget: 30, headcount: 3 }, { team: 'Backend',  role: 'eng' },     q2id),
+    row('Infra',    { budget: 15, headcount: 1 }, { team: 'Infra',    role: 'eng' },     q2id),
+    row('Design',   { budget: 25, headcount: 2 }, { team: 'Design',   role: 'product' }, q3id),
+    row('Frontend', { budget: 40, headcount: 4 }, { team: 'Frontend', role: 'eng' },     q3id),
+    row('Backend',  { budget: 25, headcount: 3 }, { team: 'Backend',  role: 'eng' },     q3id),
+    row('Infra',    { budget: 10, headcount: 1 }, { team: 'Infra',    role: 'eng' },     q3id),
+    row('Design',   { budget: 30, headcount: 2 }, { team: 'Design',   role: 'product' }, q4id),
+    row('Frontend', { budget: 45, headcount: 4 }, { team: 'Frontend', role: 'eng' },     q4id),
+    row('Backend',  { budget: 35, headcount: 3 }, { team: 'Backend',  role: 'eng' },     q4id),
+    row('Infra',    { budget: 20, headcount: 2 }, { team: 'Infra',    role: 'eng' },     q4id),
+    row('PM',       { budget: 18, headcount: 1 }, { team: 'PM',       role: 'product' }, q4id),
+  ]
+  return {
+    id: 'ds-team',
+    name: 'Team allocation (demo)',
+    createdAt: NOW,
+    rows,
+    measureDefs: [
+      { key: 'budget', label: 'Budget', unit: 'k' },
+      { key: 'headcount', label: 'Headcount' },
+    ],
+    dimDefs: [
+      { key: 'team', label: 'Team', values: ['Design', 'Frontend', 'Backend', 'Infra', 'PM'] },
+      { key: 'role', label: 'Role', values: ['product', 'eng'] },
+    ],
+  }
+}
+
+// ─── Dataset 3: Life areas (4-level: goal → project → subproject → task) ──────
+
+const PALETTE = ['#e08888', '#d4a86c', '#7ec87e', '#7aaae8', '#b090e0', '#60c4c0']
+
+interface TaskSpec  { name: string; status?: string; est?: number; act?: number }
+interface SubSpec   { name: string; status?: string; tasks: TaskSpec[] }
+interface ProjSpec  { name: string; status?: string; subs: SubSpec[] }
+interface GoalSpec  { name: string; color: string; projects: ProjSpec[] }
+
+function makeHierarchy(goals: GoalSpec[]): PNode[] {
+  const out: PNode[] = []
+  goals.forEach((g, gi) => {
+    const gid = nid()
+    out.push({ id: gid, parentId: null, index: gi + 1, name: g.name, measures: {}, dims: { level: 'goal' }, color: g.color })
+    g.projects.forEach((p, pi) => {
+      const pid = nid()
+      out.push({ id: pid, parentId: gid, index: pi + 1, name: p.name, measures: {}, dims: { level: 'project', status: p.status ?? 'doing' }, color: g.color })
+      p.subs.forEach((s, si) => {
+        const sid = nid()
+        out.push({ id: sid, parentId: pid, index: si + 1, name: s.name, measures: {}, dims: { level: 'subproject', status: s.status ?? 'todo' }, color: g.color })
+        s.tasks.forEach((t, ti) => {
+          out.push({
+            id: nid(), parentId: sid, index: ti + 1, name: t.name,
+            measures: { est: t.est ?? 4, ...(t.act != null ? { act: t.act } : {}) },
+            dims: { level: 'task', status: t.status ?? 'todo' },
+          })
+        })
+      })
+    })
+  })
+  return out
+}
+
+const LIFE_GOALS: GoalSpec[] = [
+  {
+    name: 'Ship vizform v1',
+    color: PALETTE[0],
+    projects: [
+      {
+        name: 'Core renderer', status: 'doing',
+        subs: [
+          { name: 'Flat viz', status: 'done', tasks: [
+            { name: 'Treemap layout',  status: 'done', est: 4, act: 3.5 },
+            { name: 'Radial layout',   status: 'done', est: 4, act: 4 },
+            { name: 'Bands layout',    status: 'done', est: 3, act: 2.5 },
+          ]},
+          { name: 'Hierarchical viz', status: 'doing', tasks: [
+            { name: 'H-treemap drill', status: 'done', est: 8, act: 10 },
+            { name: 'H-icicle drill',  status: 'done', est: 6, act: 5 },
+            { name: 'H-radial drill',  status: 'done', est: 6, act: 6 },
+            { name: 'Data model',      status: 'done', est: 6, act: 4 },
+            { name: 'Treetable view',  status: 'doing', est: 8 },
+            { name: 'GroupBy wiring',  status: 'doing', est: 6 },
+          ]},
+        ],
+      },
+      {
+        name: 'Sliceboard app', status: 'doing',
+        subs: [
+          { name: 'Data layer', status: 'doing', tasks: [
+            { name: 'Persistence + seed', status: 'done', est: 3, act: 2 },
+            { name: 'Generic row model',  status: 'done', est: 4, act: 4 },
+            { name: 'APITable integration', status: 'todo', est: 8 },
+          ]},
+          { name: 'UI', tasks: [
+            { name: 'Topbar + board menu', status: 'done', est: 2, act: 2 },
+            { name: 'Tile grid (RGL)',     status: 'done', est: 8, act: 6 },
+            { name: 'HUD layout',          status: 'todo', est: 6 },
+            { name: 'GroupBy selector',    status: 'done', est: 3, act: 2 },
+          ]},
+        ],
+      },
+    ],
   },
   {
-    id: 'seed-team',
-    name: 'Team allocation (demo)',
-    createdAt: new Date(0).toISOString(),
-    rows: [
-      { id: '1', name: 'Design',   group: 'Q2', value: 20 },
-      { id: '2', name: 'Frontend', group: 'Q2', value: 35 },
-      { id: '3', name: 'Backend',  group: 'Q2', value: 30 },
-      { id: '4', name: 'Infra',    group: 'Q2', value: 15 },
-      { id: '5', name: 'Design',   group: 'Q3', value: 25 },
-      { id: '6', name: 'Frontend', group: 'Q3', value: 40 },
-      { id: '7', name: 'Backend',  group: 'Q3', value: 25 },
-      { id: '8', name: 'Infra',    group: 'Q3', value: 10 },
+    name: 'Open source',
+    color: PALETTE[3],
+    projects: [
+      {
+        name: 'tix CLI', status: 'doing',
+        subs: [
+          { name: 'Core', status: 'doing', tasks: [
+            { name: 'Dep graph cmd',         status: 'doing', est: 6, act: 3 },
+            { name: 'Acceptance criteria DSL', status: 'review', est: 4, act: 4 },
+            { name: 'Web export',            status: 'todo', est: 5 },
+          ]},
+          { name: 'Web viewer', tasks: [
+            { name: 'React shell',        status: 'todo', est: 5 },
+            { name: 'Graph visualization', status: 'todo', est: 8 },
+            { name: 'Ticket detail view', status: 'todo', est: 4 },
+          ]},
+        ],
+      },
+      {
+        name: 'vizform-react pkg', status: 'todo',
+        subs: [
+          { name: 'NPM publish', tasks: [
+            { name: 'Clean up exports', status: 'todo', est: 2 },
+            { name: 'Write README',     status: 'todo', est: 3 },
+            { name: 'Publish to npm',   status: 'todo', est: 1 },
+          ]},
+          { name: 'Docs site', tasks: [
+            { name: 'Landing page',  status: 'todo', est: 6 },
+            { name: 'API reference', status: 'todo', est: 8 },
+            { name: 'Examples',      status: 'todo', est: 5 },
+          ]},
+        ],
+      },
     ],
-    state: { mode: 'treemap', grouped: true, sortMode: 'index' },
+  },
+  {
+    name: 'Learning',
+    color: PALETTE[2],
+    projects: [
+      {
+        name: 'Engineering', status: 'doing',
+        subs: [
+          { name: 'Compilers', tasks: [
+            { name: 'Crafting Interpreters ch1-10', status: 'doing', est: 10, act: 4 },
+            { name: 'Crafting Interpreters ch11-20', status: 'todo', est: 10 },
+            { name: 'Write a toy compiler',         status: 'todo', est: 16 },
+          ]},
+          { name: 'Distributed systems', tasks: [
+            { name: 'Raft paper',         status: 'done', est: 2, act: 2 },
+            { name: 'MIT 6.824 labs',     status: 'doing', est: 20, act: 6 },
+            { name: 'Designing Data-Intensive Apps', status: 'todo', est: 12 },
+          ]},
+        ],
+      },
+      {
+        name: 'Design', status: 'doing',
+        subs: [
+          { name: 'Data viz', tasks: [
+            { name: 'D3 in Depth',           status: 'doing', est: 8, act: 3 },
+            { name: 'Visualization Analysis & Design', status: 'todo', est: 10 },
+            { name: 'Build 5 practice charts', status: 'todo', est: 10 },
+          ]},
+          { name: 'UI/UX fundamentals', tasks: [
+            { name: 'Laws of UX',         status: 'done', est: 2, act: 2 },
+            { name: 'Refactoring UI',     status: 'doing', est: 6, act: 2 },
+            { name: 'Design a dashboard', status: 'todo', est: 8 },
+          ]},
+        ],
+      },
+    ],
+  },
+  {
+    name: 'Health',
+    color: PALETTE[1],
+    projects: [
+      {
+        name: 'Fitness', status: 'doing',
+        subs: [
+          { name: 'Strength', tasks: [
+            { name: 'Squat session',    status: 'doing', est: 1, act: 0.75 },
+            { name: 'Deadlift session', status: 'done',  est: 1, act: 1 },
+            { name: 'Press session',    status: 'todo',  est: 1 },
+            { name: 'Row session',      status: 'todo',  est: 1 },
+          ]},
+          { name: 'Cardio', tasks: [
+            { name: 'Zone 2 run',    status: 'todo', est: 0.75 },
+            { name: 'HIIT session',  status: 'todo', est: 0.5 },
+            { name: 'Long walk',     status: 'done', est: 1, act: 1 },
+          ]},
+        ],
+      },
+      {
+        name: 'Sleep', status: 'review',
+        subs: [
+          { name: 'Hygiene', tasks: [
+            { name: 'No screens after 10pm', status: 'doing', est: 0.5, act: 0.25 },
+            { name: 'Morning light',         status: 'doing', est: 0.25, act: 0.25 },
+            { name: 'Consistent wake time',  status: 'todo',  est: 0.25 },
+          ]},
+          { name: 'Environment', tasks: [
+            { name: 'Blackout curtains', status: 'done', est: 1, act: 0.5 },
+            { name: 'Room temperature',  status: 'todo', est: 0.5 },
+          ]},
+        ],
+      },
+      {
+        name: 'Nutrition', status: 'todo',
+        subs: [
+          { name: 'Tracking', tasks: [
+            { name: 'Set macro targets',  status: 'todo', est: 0.5 },
+            { name: 'Log meals for 2wks', status: 'todo', est: 4 },
+            { name: 'Review and adjust',  status: 'todo', est: 1 },
+          ]},
+          { name: 'Meal prep', tasks: [
+            { name: 'Plan weekly menu',   status: 'todo', est: 0.5 },
+            { name: 'Sunday batch cook',  status: 'todo', est: 2 },
+          ]},
+        ],
+      },
+    ],
+  },
+  {
+    name: 'Family',
+    color: PALETTE[4],
+    projects: [
+      {
+        name: 'Home', status: 'doing',
+        subs: [
+          { name: 'Maintenance', tasks: [
+            { name: 'HVAC filter',      status: 'todo', est: 0.5 },
+            { name: 'Gutter clean',     status: 'todo', est: 2 },
+            { name: 'Smoke detectors',  status: 'done', est: 0.5, act: 0.5 },
+            { name: 'Water heater check', status: 'todo', est: 0.5 },
+          ]},
+          { name: 'Organization', tasks: [
+            { name: 'Garage sort',    status: 'todo', est: 4 },
+            { name: 'Pantry restock', status: 'doing', est: 1, act: 0.5 },
+            { name: 'File paperwork', status: 'todo', est: 2 },
+          ]},
+        ],
+      },
+      {
+        name: 'Connection', status: 'doing',
+        subs: [
+          { name: 'Quality time', tasks: [
+            { name: 'Weekly family dinner', status: 'doing', est: 2, act: 2 },
+            { name: 'Game night',           status: 'todo',  est: 2 },
+            { name: 'Day trip plan',        status: 'todo',  est: 3 },
+          ]},
+          { name: 'Admin', tasks: [
+            { name: 'Review insurance',   status: 'todo', est: 1 },
+            { name: 'Update emergency contacts', status: 'todo', est: 0.5 },
+            { name: 'Budget review',      status: 'doing', est: 2, act: 1 },
+          ]},
+        ],
+      },
+    ],
   },
 ]
 
-// --- encode / decode ---
-
-function encodeBoard(board: Board): string {
-  return btoa(JSON.stringify(board))
-}
-
-function decodeBoard(encoded: string): Board | null {
-  try {
-    const parsed = JSON.parse(atob(encoded))
-    if (!Array.isArray(parsed?.rows) || typeof parsed?.id !== 'string') return null
-    return parsed as Board
-  } catch {
-    return null
-  }
-}
-
-// --- URL ---
-
-export function boardToUrl(board: Board): string {
-  return HASH_PREFIX + encodeBoard(board)
-}
-
-function boardFromUrl(): Board | null {
-  const hash = location.hash
-  if (!hash.startsWith(HASH_PREFIX)) return null
-  return decodeBoard(hash.slice(HASH_PREFIX.length))
-}
-
-export function writeUrl(board: Board): void {
-  history.replaceState(null, '', boardToUrl(board))
-}
-
-// --- localStorage boards list ---
-
-function loadBoards(): Board[] {
-  try {
-    const raw = localStorage.getItem(LS_BOARDS_KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
-    if (!Array.isArray(parsed)) return []
-    return parsed as Board[]
-  } catch {
-    return []
-  }
-}
-
-function saveBoards(boards: Board[]): void {
-  try {
-    localStorage.setItem(LS_BOARDS_KEY, JSON.stringify(boards))
-  } catch { /* storage unavailable */ }
-}
-
-function saveLastId(id: string): void {
-  try {
-    localStorage.setItem(LS_LAST_KEY, id)
-  } catch { /* storage unavailable */ }
-}
-
-function loadLastId(): string | null {
-  try {
-    return localStorage.getItem(LS_LAST_KEY)
-  } catch {
-    return null
-  }
-}
-
-// --- public API ---
-
-export interface BoardStore {
-  boards: Board[]
-  active: Board
-}
-
-export function initStore(): BoardStore {
-  // URL takes priority — shared link carries full board data
-  const urlBoard = boardFromUrl()
-  if (urlBoard) {
-    const boards = loadBoards()
-    const merged = boards.some(b => b.id === urlBoard.id)
-      ? boards.map(b => b.id === urlBoard.id ? urlBoard : b)
-      : [...boards, urlBoard]
-    saveBoards(merged)
-    saveLastId(urlBoard.id)
-    return { boards: merged, active: urlBoard }
-  }
-
-  const boards = loadBoards()
-  if (boards.length === 0) {
-    saveBoards(SEED_BOARDS)
-    writeUrl(SEED_BOARDS[0])
-    saveLastId(SEED_BOARDS[0].id)
-    return { boards: SEED_BOARDS, active: SEED_BOARDS[0] }
-  }
-
-  const lastId = loadLastId()
-  const last = (lastId ? boards.find(b => b.id === lastId) : undefined) ?? boards[0]
-  writeUrl(last)
-  return { boards, active: last }
-}
-
-export function persistBoard(board: Board, boards: Board[]): Board[] {
-  const next = boards.some(b => b.id === board.id)
-    ? boards.map(b => b.id === board.id ? board : b)
-    : [...boards, board]
-  saveBoards(next)
-  saveLastId(board.id)
-  writeUrl(board)
-  return next
-}
-
-export function createBoard(name: string, fromBoard?: Board): Board {
+function buildLifeDataset(): Dataset {
+  _idc = 0
+  const rows = makeHierarchy(LIFE_GOALS)
   return {
+    id: 'ds-life',
+    name: 'Life areas',
+    createdAt: NOW,
+    rows,
+    measureDefs: [
+      { key: 'est', label: 'Estimate', unit: 'h' },
+      { key: 'act', label: 'Actual', unit: 'h' },
+    ],
+    dimDefs: [
+      { key: 'level', label: 'Level', values: ['goal', 'project', 'subproject', 'task'] },
+      { key: 'status', label: 'Status', values: ['todo', 'doing', 'review', 'done'] },
+    ],
+  }
+}
+
+function buildSeedWorkspace(): Workspace {
+  const fruit = buildFruitDataset()
+  const team  = buildTeamDataset()
+  const life  = buildLifeDataset()
+
+  // Fruit: flat viz
+  const fruitTiles: Tile[] = [
+    { id: 'ft-treemap', kind: 'treemap', title: 'Treemap' },
+    { id: 'ft-radial',  kind: 'radial',  title: 'Radial' },
+    { id: 'ft-bands',   kind: 'bands',   title: 'Bands' },
+  ]
+  const fruitLayout: LayoutItem[] = [
+    { i: 'ft-treemap', x: 0, y: 0,  w: 6, h: 10 },
+    { i: 'ft-radial',  x: 6, y: 0,  w: 6, h: 10 },
+    { i: 'ft-bands',   x: 0, y: 10, w: 12, h: 8 },
+  ]
+
+  // Team: hier + groupBy
+  const teamTiles: Tile[] = [
+    { id: 'tm-htreemap', kind: 'h-treemap', title: 'By Quarter' },
+    { id: 'tm-hicicle',  kind: 'h-icicle',  title: 'Icicle', groupBy: 'role' },
+  ]
+  const teamLayout: LayoutItem[] = [
+    { i: 'tm-htreemap', x: 0, y: 0, w: 6, h: 12 },
+    { i: 'tm-hicicle',  x: 6, y: 0, w: 6, h: 12 },
+  ]
+
+  // Life: 4-level hierarchy, two dashboards
+  const lifeTiles1: Tile[] = [
+    { id: 'lf-table',    kind: 'treetable', title: 'Tasks' },
+    { id: 'lf-htreemap', kind: 'h-treemap', title: 'Treemap' },
+    { id: 'lf-hicicle',  kind: 'h-icicle',  title: 'Icicle' },
+  ]
+  const lifeLayout1: LayoutItem[] = [
+    { i: 'lf-table',    x: 0, y: 0, w: 6, h: 12 },
+    { i: 'lf-htreemap', x: 6, y: 0, w: 6, h: 6 },
+    { i: 'lf-hicicle',  x: 6, y: 6, w: 6, h: 6 },
+  ]
+  const lifeTiles2: Tile[] = [
+    { id: 'lf-radial',   kind: 'radial',   title: 'Flat radial' },
+    { id: 'lf-hradial',  kind: 'h-radial', title: 'Sunburst' },
+  ]
+  const lifeLayout2: LayoutItem[] = [
+    { i: 'lf-radial',  x: 0, y: 0, w: 6, h: 12 },
+    { i: 'lf-hradial', x: 6, y: 0, w: 6, h: 12 },
+  ]
+
+  return {
+    datasets: [life, fruit, team],
+    dashboards: [
+      { id: 'dash-life-overview', datasetId: life.id, name: 'Overview', createdAt: NOW, layout: lifeLayout1, tiles: lifeTiles1, measureKey: 'est' },
+      { id: 'dash-life-shape',    datasetId: life.id, name: 'Shape',    createdAt: NOW, layout: lifeLayout2, tiles: lifeTiles2, measureKey: 'est' },
+      { id: 'dash-fruit',         datasetId: fruit.id, name: 'Overview', createdAt: NOW, layout: fruitLayout, tiles: fruitTiles, measureKey: 'value' },
+      { id: 'dash-team',          datasetId: team.id,  name: 'Allocation', createdAt: NOW, layout: teamLayout, tiles: teamTiles, measureKey: 'budget' },
+    ],
+    activeDatasetId: life.id,
+    activeDashboardId: 'dash-life-overview',
+  }
+}
+
+// ─── Load / save ──────────────────────────────────────────────────────────────
+
+function load(): Workspace | null {
+  try {
+    const raw = localStorage.getItem(LS_KEY)
+    if (!raw) return null
+    return JSON.parse(raw) as Workspace
+  } catch {
+    return null
+  }
+}
+
+function save(ws: Workspace): void {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(ws))
+  } catch { /* storage unavailable */ }
+}
+
+export function initWorkspace(): Workspace {
+  const stored = load()
+  if (stored) return stored
+  const ws = buildSeedWorkspace()
+  save(ws)
+  return ws
+}
+
+export function saveWorkspace(ws: Workspace): void {
+  save(ws)
+}
+
+// ─── GroupBy helper ───────────────────────────────────────────────────────────
+
+// Given a flat list of rows and a dim key, inserts virtual group-parent nodes
+// so the viz sees a two-level tree: group → leaf. Rows that already have a
+// parentId are passed through unchanged (groupBy only affects root-level rows).
+export function applyGroupBy(rows: PNode[], dimKey: string): PNode[] {
+  const roots = rows.filter(r => !r.parentId)
+  const nonRoots = rows.filter(r => r.parentId)
+
+  const groups = new Map<string, string>() // dimValue → virtual node id
+  const groupNodes: PNode[] = []
+  let gi = 0
+
+  for (const r of roots) {
+    const val = r.dims[dimKey] ?? '(none)'
+    if (!groups.has(val)) {
+      const gid = `__grp__${dimKey}__${val}`
+      groups.set(val, gid)
+      groupNodes.push({ id: gid, parentId: null, index: gi++, name: val, measures: {}, dims: {} })
+    }
+  }
+
+  const regrouped = roots.map(r => ({
+    ...r,
+    parentId: groups.get(r.dims[dimKey] ?? '(none)') ?? null,
+  }))
+
+  return [...groupNodes, ...regrouped, ...nonRoots]
+}
+
+// ─── Mutations ────────────────────────────────────────────────────────────────
+
+export function updateRow(ws: Workspace, dsId: string, rowId: string, patch: Partial<PNode>): Workspace {
+  return {
+    ...ws,
+    datasets: ws.datasets.map(ds =>
+      ds.id !== dsId ? ds : {
+        ...ds,
+        rows: ds.rows.map(r => r.id !== rowId ? r : { ...r, ...patch }),
+      }
+    ),
+  }
+}
+
+export function reorderLeaves(ws: Workspace, dsId: string, orderedLeafIds: string[]): Workspace {
+  return {
+    ...ws,
+    datasets: ws.datasets.map(ds => {
+      if (ds.id !== dsId) return ds
+      const leafSet = new Set(ds.rows.filter(n => !ds.rows.some(m => m.parentId === n.id)).map(n => n.id))
+      const leafPositions = ds.rows.reduce<number[]>((acc, n, i) => { if (leafSet.has(n.id)) acc.push(i); return acc }, [])
+      const byId = new Map(ds.rows.map(n => [n.id, n]))
+      const result = [...ds.rows]
+      orderedLeafIds.forEach((id, i) => { result[leafPositions[i]!] = byId.get(id)! })
+      return { ...ds, rows: result }
+    }),
+  }
+}
+
+export function createDataset(ws: Workspace, name: string): Workspace {
+  const ds: Dataset = {
     id: genId(),
     name,
     createdAt: new Date().toISOString(),
-    rows: fromBoard ? fromBoard.rows.map(r => ({ ...r, id: genId() })) : [],
-    state: fromBoard?.state ?? { mode: 'treemap', grouped: false, sortMode: 'index' },
+    rows: [],
+    measureDefs: [{ key: 'value', label: 'Value' }],
+    dimDefs: [],
   }
+  return { ...ws, datasets: [...ws.datasets, ds] }
 }
 
-export function deleteBoard(id: string, boards: Board[]): Board[] {
-  const next = boards.filter(b => b.id !== id)
-  saveBoards(next)
-  return next
+export function createDashboard(ws: Workspace, name: string, datasetId: string): Workspace {
+  const ds = ws.datasets.find(d => d.id === datasetId)
+  const dash: Dashboard = {
+    id: genId(),
+    datasetId,
+    name,
+    createdAt: new Date().toISOString(),
+    layout: [],
+    tiles: [],
+    measureKey: ds?.measureDefs[0]?.key ?? 'value',
+  }
+  return { ...ws, dashboards: [...ws.dashboards, dash] }
+}
+
+export function updateDataset(ws: Workspace, ds: Dataset): Workspace {
+  return { ...ws, datasets: ws.datasets.map(d => d.id === ds.id ? ds : d) }
+}
+
+export function updateDashboard(ws: Workspace, dash: Dashboard): Workspace {
+  return { ...ws, dashboards: ws.dashboards.map(d => d.id === dash.id ? dash : d) }
+}
+
+export function addTile(ws: Workspace, dashId: string, kind: TileKind): Workspace {
+  const dash = ws.dashboards.find(d => d.id === dashId)
+  if (!dash) return ws
+  const tile: Tile = { id: genId(), kind }
+  const layout: LayoutItem = { i: tile.id, x: 0, y: Infinity, w: 6, h: 8 }
+  return updateDashboard(ws, { ...dash, tiles: [...dash.tiles, tile], layout: [...dash.layout, layout] })
+}
+
+export function removeTile(ws: Workspace, dashId: string, tileId: string): Workspace {
+  const dash = ws.dashboards.find(d => d.id === dashId)
+  if (!dash) return ws
+  return updateDashboard(ws, {
+    ...dash,
+    tiles: dash.tiles.filter(t => t.id !== tileId),
+    layout: dash.layout.filter(l => l.i !== tileId),
+  })
+}
+
+export function deleteDashboard(ws: Workspace, dashId: string): Workspace {
+  const remaining = ws.dashboards.filter(d => d.id !== dashId)
+  return { ...ws, dashboards: remaining, activeDashboardId: remaining[0]?.id ?? '' }
+}
+
+export function deleteDataset(ws: Workspace, dsId: string): Workspace {
+  const datasets = ws.datasets.filter(d => d.id !== dsId)
+  const dashboards = ws.dashboards.filter(d => d.datasetId !== dsId)
+  return { ...ws, datasets, dashboards, activeDatasetId: datasets[0]?.id ?? '', activeDashboardId: dashboards[0]?.id ?? '' }
+}
+
+// ─── Selectors ────────────────────────────────────────────────────────────────
+
+export function activeDataset(ws: Workspace): Dataset | undefined {
+  return ws.datasets.find(d => d.id === ws.activeDatasetId)
+}
+
+export function activeDashboard(ws: Workspace): Dashboard | undefined {
+  return ws.dashboards.find(d => d.id === ws.activeDashboardId)
+}
+
+export function dashboardsForDataset(ws: Workspace, dsId: string): Dashboard[] {
+  return ws.dashboards.filter(d => d.datasetId === dsId)
 }

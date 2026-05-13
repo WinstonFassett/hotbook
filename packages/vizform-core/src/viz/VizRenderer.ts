@@ -18,6 +18,19 @@ import {
   MIN_ARC_ANGLE, MIN_NUMBER_ANGLE, PAD_ANGLE, REORDER_DUR, ROW_H,
 } from './constants'
 import { renderRadialChrome } from './chrome/radialChrome'
+
+function getClientPos(e: Event): { clientX: number; clientY: number } {
+  if ('touches' in e) {
+    const t = (e as TouchEvent).touches[0] ?? (e as TouchEvent).changedTouches[0]
+    if (t) return { clientX: t.clientX, clientY: t.clientY }
+  }
+  return { clientX: (e as MouseEvent).clientX, clientY: (e as MouseEvent).clientY }
+}
+
+function getClientAngle(sourceEvent: Event, svgEl: SVGSVGElement, cx: number, cy: number): number {
+  const { clientX, clientY } = getClientPos(sourceEvent)
+  return clientAngle(clientX, clientY, svgEl, cx, cy)
+}
 import { renderBandsChrome } from './chrome/bandsChrome'
 
 type AtomEl = SVGGElement & { _angles?: { startAngle: number; endAngle: number } }
@@ -73,6 +86,7 @@ export interface VizRenderOptions {
   sortUnitKind: UnitKind
   frame: number | undefined
   onUpdate: (id: string, patch: Partial<Goal>) => void
+  onReorder?: (orderedIds: string[]) => void
   onGoalClick?: (goal: Goal) => void
 }
 
@@ -82,12 +96,21 @@ export class VizRenderer {
   // Morphing state
   private prevMode: VizMode | null = null
   private prevAtoms = new Map<string, AtomGeometry>()
+  // When a drag ends, we capture the ghost positions here so the settle
+  // transition starts from visual positions at release. update() consumes
+  // this once (replaces prevAtoms for that render) then clears it.
+  private dragSettlePrevAtoms: Map<string, AtomGeometry> | null = null
 
   // Drag state
   private radialResizeDrag: RadialResizeDrag | null = null
   private radialReorderDrag: RadialReorderDrag | null = null
   private bandsResizeDrag: BandsResizeDrag | null = null
   private bandsReorderDrag: BandsReorderDrag | null = null
+
+  // Position freeze: IDs in display order captured at resize-drag start.
+  // Passed as forceOrder to layout so sort doesn't resequence mid-drag.
+  private dragOrderSnapshot: string[] | null = null
+  private escapeHandler: ((e: KeyboardEvent) => void) | null = null
 
   // Latest render state (for event handlers that fire outside render)
   private latestGoals: Goal[] = []
@@ -106,8 +129,8 @@ export class VizRenderer {
       if (!opts) return
       if (opts.unitKind === 'order') return
       if (!event.altKey) return
-      const target = event.target as Element
-      const atomG = target.closest('g.goal-atom') as SVGGElement | null
+      const hit = document.elementFromPoint(event.clientX, event.clientY) as Element | null
+      const atomG = hit?.closest('g.goal-atom') as SVGGElement | null
       if (!atomG || atomG.classList.contains('phantom')) return
       const id = atomG.getAttribute('data-id')
       if (!id) return
@@ -118,7 +141,7 @@ export class VizRenderer {
       const step = event.shiftKey ? 5 : 1
       const dir = event.deltaY < 0 ? +1 : -1
       const cur = Math.max(0, goal.measurements[opts.activeUnit] ?? DEFAULT_SIZE)
-      const next = Math.max(0, cur + dir * step)
+      const next = Math.max(1, cur + dir * step)
       if (next !== cur) {
         opts.onUpdate(goal.id, { measurements: { ...goal.measurements, [opts.activeUnit]: next } })
       }
@@ -126,8 +149,39 @@ export class VizRenderer {
     this.svgEl.addEventListener('wheel', this.wheelHandler, { passive: false })
   }
 
+  private cancelCallback: (() => void) | null = null
+
+  private _startResizeDrag(atoms: AtomGeometry[], onCancel: () => void) {
+    this.dragOrderSnapshot = atoms.filter(a => !a.isPhantom).map(a => a.id)
+    this.cancelCallback = onCancel
+    this.escapeHandler = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      this._cancelResizeDrag()
+    }
+    document.addEventListener('keydown', this.escapeHandler)
+  }
+
+  private _endResizeDrag() {
+    this.dragOrderSnapshot = null
+    this.cancelCallback = null
+    if (this.escapeHandler) {
+      document.removeEventListener('keydown', this.escapeHandler)
+      this.escapeHandler = null
+    }
+  }
+
+  private _cancelResizeDrag() {
+    const revert = this.cancelCallback
+    this.radialResizeDrag = null
+    this.bandsResizeDrag = null
+    document.body.style.userSelect = ''
+    document.body.style.cursor = ''
+    this._endResizeDrag()
+    revert?.()
+  }
+
   render(opts: VizRenderOptions) {
-    const { goals, w, h, mode, activeUnit, unitKind, sortUnit, sortUnitKind, frame, onUpdate, onGoalClick } = opts
+    const { goals, w, h, mode, activeUnit, unitKind, sortUnit, sortUnitKind, frame, onUpdate, onReorder, onGoalClick } = opts
     this.latestGoals = goals
     this.latestOpts = opts
 
@@ -149,10 +203,12 @@ export class VizRenderer {
     const previewGoals: Goal[] = active.map(g => {
       const r = this.bandsResizeDrag
       if (r && r.goalId === g.id) return { ...g, measurements: { ...g.measurements, [activeUnit]: r.previewValue } }
+      const rr = this.radialResizeDrag
+      if (rr && rr.goalId === g.id) return { ...g, measurements: { ...g.measurements, [activeUnit]: Math.max(1, rr.previewValue) } }
       return g
     })
 
-    const layoutOpts = { activeUnit, unitKind, sortUnit, sortUnitKind, frame }
+    const layoutOpts = { activeUnit, unitKind, sortUnit, sortUnitKind, frame, forceOrder: this.dragOrderSnapshot ?? undefined }
     const layout: LayoutResult =
       mode === 'treemap' ? layoutTreemap(previewGoals, w, h, layoutOpts) :
       mode === 'bands'   ? layoutBands(previewGoals, w, h, layoutOpts) :
@@ -228,7 +284,11 @@ export class VizRenderer {
         if (goal) onGoalClick?.(goal)
       })
 
-    const prevAtoms = this.prevAtoms
+    // During settle sequence after radial reorder, use ghost positions as
+    // transition start. Keep until a new drag starts (cleared on drag start).
+    const isReordering = this.radialReorderDrag !== null
+    const prevAtoms = this.dragSettlePrevAtoms ?? this.prevAtoms
+    if (!isReordering) this.dragSettlePrevAtoms = null
 
     allAtoms.each(function(d) {
       const sel = select<AtomEl, AtomGeometry & { __value: number }>(this as AtomEl)
@@ -420,9 +480,9 @@ export class VizRenderer {
     allAtoms.on('mouseenter.handle', null).on('mouseleave.handle', null)
 
     if (mode === 'radial') {
-      this._attachRadialDrag(allAtoms, atomsG, topG, atoms, atomsWithValues, active, previewGoals, meta, activeUnit, unitKind, sortUnit, sortUnitKind, frame, reorderDur, onUpdate)
+      this._attachRadialDrag(allAtoms, atomsG, topG, atoms, atomsWithValues, active, previewGoals, meta, activeUnit, unitKind, sortUnit, sortUnitKind, frame, reorderDur, onUpdate, onReorder)
     } else if (mode === 'bands') {
-      this._attachBandsDrag(allAtoms, atomsG, chromeG, atoms, atomsWithValues, active, meta, activeUnit, unitKind, sortUnit, sortUnitKind, frame, reorderDur, onUpdate)
+      this._attachBandsDrag(allAtoms, atomsG, chromeG, atoms, atomsWithValues, active, meta, activeUnit, unitKind, sortUnit, sortUnitKind, frame, reorderDur, onUpdate, onReorder)
     }
 
     const nextPrev = new Map<string, AtomGeometry>()
@@ -448,6 +508,7 @@ export class VizRenderer {
     frame: number | undefined,
     reorderDur: number,
     onUpdate: VizCallbacks['onUpdate'],
+    onReorder: VizCallbacks['onReorder'],
   ) {
     const self = this
     const cx = meta.cx ?? 0
@@ -492,6 +553,9 @@ export class VizRenderer {
               totalPad: N * PAD_ANGLE,
               previewValue: startValue,
             }
+            self._startResizeDrag(atoms, () => {
+              onUpdate(d.id, { measurements: { ...goal.measurements, [activeUnit]: startValue } })
+            })
             select(this).style('opacity', 1)
             const root = topG.select<SVGGElement>('g.radial-root')
             root.select('text.center-total').classed('drag-mode', true).text(`${startValue}`)
@@ -500,7 +564,7 @@ export class VizRenderer {
           .on('drag', function(event, d) {
             const dr = self.radialResizeDrag
             if (!dr) return
-            const mouseA = clientAngle(event.sourceEvent.clientX, event.sourceEvent.clientY, svgEl, cx, cy)
+            const mouseA = getClientAngle(event.sourceEvent, svgEl, cx, cy)
             const minEnd = dr.arcStartAngle + PAD_ANGLE + 0.05
             const maxEnd = dr.arcStartAngle + (2 * Math.PI - dr.totalPad) - 0.05
             let unwrapped = mouseA
@@ -509,8 +573,14 @@ export class VizRenderer {
             const newSpan = newEndAngle - dr.arcStartAngle - PAD_ANGLE
             const availSpan = 2 * Math.PI - dr.totalPad
             const p = Math.max(0.001, Math.min(0.999, newSpan / availSpan))
-            const previewValue = Math.max(0, Math.round(dr.otherTotal * p / (1 - p)))
-            dr.previewValue = previewValue
+            const previewValue = Math.max(1, Math.round(dr.otherTotal * p / (1 - p)))
+            if (previewValue !== dr.previewValue) {
+              dr.previewValue = previewValue
+              const goal = active.find(g => g.id === dr.goalId)
+              if (goal) onUpdate(dr.goalId, { measurements: { ...goal.measurements, [activeUnit]: previewValue } })
+            } else {
+              dr.previewValue = previewValue
+            }
             const ghostArc = { ...d.arcParams!, endAngle: newEndAngle, innerRadius: innerR, outerRadius: outerR }
             const atomG = atomsG.select<SVGGElement>(`g.goal-atom[data-id="${dr.goalId}"]`)
             atomG.select<SVGPathElement>('path.shape').interrupt().attr('d', arcPath(ghostArc))
@@ -540,6 +610,7 @@ export class VizRenderer {
           .on('end', function(_ev, d) {
             const dr = self.radialResizeDrag
             self.radialResizeDrag = null
+            self._endResizeDrag()
             if (!dr) return
             select(this).style('opacity', 0)
             if (dr.previewValue !== dr.startValue) {
@@ -563,7 +634,8 @@ export class VizRenderer {
             .on('start', function(event, d) {
               if (d.isPhantom) return
               if (!d.arcParams) return
-              const mouseA = clientAngle(event.sourceEvent.clientX, event.sourceEvent.clientY, svgEl, cx, cy)
+              self.dragSettlePrevAtoms = null
+              const mouseA = getClientAngle(event.sourceEvent, svgEl, cx, cy)
               const initialOrder = atoms.filter(a => !a.isPhantom).map(a => a.id)
               const layoutMap = new Map<string, AtomGeometry>()
               atoms.forEach(a => layoutMap.set(a.id, a))
@@ -587,7 +659,7 @@ export class VizRenderer {
                 select(this).interrupt().style('cursor', 'grabbing')
                 atomsG.select(`g.goal-atom[data-id="${dr.goalId}"]`).interrupt().raise()
               }
-              const mouseA = clientAngle(event.sourceEvent.clientX, event.sourceEvent.clientY, svgEl, cx, cy)
+              const mouseA = getClientAngle(event.sourceEvent, svgEl, cx, cy)
               let delta = mouseA - dr.startMouseAngle
               if (delta > Math.PI) delta -= 2 * Math.PI
               if (delta < -Math.PI) delta += 2 * Math.PI
@@ -596,6 +668,22 @@ export class VizRenderer {
               const ap = d.arcParams!
               const ghost = { ...ap, startAngle: newMid - half, endAngle: newMid + half, innerRadius: innerR, outerRadius: outerR }
               select(this).attr('d', arcPath(ghost))
+              const labelArcInner_d = (Math.min(meta.width, meta.height) / 2 * 0.86) * 0.58
+              const labelGen_d = arc<unknown, typeof ghost>().innerRadius(labelArcInner_d).outerRadius(labelArcInner_d)
+              const [lx_d, ly_d] = labelGen_d.centroid(ghost)
+              atomsG.select<SVGTextElement>(`g.goal-atom[data-id="${dr.goalId}"] text.name`)
+                .interrupt().attr('transform', `translate(${lx_d}, ${ly_d - 6})`)
+              atomsG.select<SVGTextElement>(`g.goal-atom[data-id="${dr.goalId}"] text.value`)
+                .interrupt().attr('transform', `translate(${lx_d}, ${ly_d + 10})`)
+              topG.select<SVGCircleElement>(`circle.resize-handle[data-id="${dr.goalId}"]`)
+                .interrupt()
+                .attr('cx', outerR * Math.sin(ghost.endAngle - PAD_ANGLE / 2))
+                .attr('cy', -outerR * Math.cos(ghost.endAngle - PAD_ANGLE / 2))
+              const numR_d = (Math.min(meta.width, meta.height) / 2 * 0.86) * 0.78
+              const numGen_d = arc<unknown, typeof ghost>().innerRadius(numR_d).outerRadius(numR_d)
+              const [nx_d, ny_d] = numGen_d.centroid(ghost)
+              topG.select<SVGTextElement>(`text.arc-number[data-id="${dr.goalId}"]`)
+                .interrupt().attr('transform', `translate(${nx_d},${ny_d})`)
               const angles = dr.currentOrder.map(id => {
                 if (id === dr.goalId) return { id, mid: newMid }
                 const a = dr.layoutMap.get(id)
@@ -663,18 +751,51 @@ export class VizRenderer {
               if (!dr) return
               select(this).style('cursor', 'grab')
               if (!dr.activated) return
-              if (sortUnitKind === 'order') {
-                const sortValues = active.map(g => g.measurements[sortUnit] ?? 0).sort((a, b) => a - b)
-                dr.currentOrder.forEach((id, i) => {
-                  const goal = active.find(g => g.id === id)
-                  if (!goal) return
-                  const newSortValue = sortValues[i]
-                  if (goal.measurements[sortUnit] !== newSortValue) {
-                    onUpdate(id, { measurements: { ...goal.measurements, [sortUnit]: newSortValue } })
-                  }
-                })
+              // Stop any in-flight reorder transitions so their mid-animation
+              // positions don't interfere with the settle transition.
+              dr.layoutMap.forEach((_, id) => {
+                if (id === dr.goalId) return
+                atomsG.select<SVGPathElement>(`g.goal-atom[data-id="${id}"] path.shape`).interrupt('reorder')
+                atomsG.select<SVGTextElement>(`g.goal-atom[data-id="${id}"] text.name`).interrupt('reorder')
+                atomsG.select<SVGTextElement>(`g.goal-atom[data-id="${id}"] text.value`).interrupt('reorder')
+                topG.select<SVGCircleElement>(`circle.resize-handle[data-id="${id}"]`).interrupt('reorder')
+                topG.select<SVGTextElement>(`text.arc-number[data-id="${id}"]`).interrupt('reorder')
+              })
+              // Build dragSettlePrevAtoms: ghost positions at release so the
+              // settle transition animates from where slices visually are, not
+              // pre-drag positions. update() uses this and clears it once done.
+              const settleMap = new Map(self.prevAtoms)
+              dr.layoutMap.forEach((a, id) => {
+                if (id === dr.goalId) return
+                const prev = settleMap.get(id)
+                if (prev && a.arcParams) {
+                  settleMap.set(id, { ...prev, arcParams: a.arcParams })
+                }
+              })
+              if (d.arcParams) {
+                const mouseA = getClientAngle(_ev.sourceEvent, svgEl, cx, cy)
+                let delta = mouseA - dr.startMouseAngle
+                if (delta > Math.PI) delta -= 2 * Math.PI
+                if (delta < -Math.PI) delta += 2 * Math.PI
+                const newMid = (dr.startMidAngle + delta + 2 * Math.PI) % (2 * Math.PI)
+                const half = dr.arcSpan / 2
+                const ghostArc = {
+                  startAngle: newMid - half,
+                  endAngle: newMid + half,
+                  innerRadius: innerR,
+                  outerRadius: outerR,
+                  cornerRadius: d.arcParams.cornerRadius,
+                  padAngle: d.arcParams.padAngle,
+                }
+                const prev = settleMap.get(d.id)
+                if (prev) {
+                  settleMap.set(d.id, { ...prev, arcParams: ghostArc })
+                }
               }
-              void d
+              self.dragSettlePrevAtoms = settleMap
+              if (sortUnitKind === 'order') {
+                onReorder?.(dr.currentOrder)
+              }
             })
         )
     } else {
@@ -698,6 +819,7 @@ export class VizRenderer {
     frame: number | undefined,
     reorderDur: number,
     onUpdate: VizCallbacks['onUpdate'],
+    onReorder: VizCallbacks['onReorder'],
   ) {
     const isOrderActive = unitKind === 'order'
     const canResize = !isOrderActive
@@ -743,6 +865,9 @@ export class VizRenderer {
               trackLeftAbs: rect.left + trackX,
               trackW, previewValue: startValue,
             }
+            self._startResizeDrag(atoms, () => {
+              onUpdate(d.id, { measurements: { ...goal.measurements, [activeUnit]: startValue } })
+            })
             select(this).style('opacity', 1)
             select(this).select<SVGRectElement>('rect.band-handle-vis').attr('fill', 'oklch(0.98 0 0)')
             document.body.style.userSelect = 'none'
@@ -751,10 +876,16 @@ export class VizRenderer {
           .on('drag', function(event, d) {
             const dr = self.bandsResizeDrag
             if (!dr) return
-            const x = event.sourceEvent.clientX - dr.trackLeftAbs
+            const x = getClientPos(event.sourceEvent).clientX - dr.trackLeftAbs
             const fraction = Math.max(0, x / dr.trackW)
-            const newValue = Math.max(0, Math.round(dr.lockedAxis * fraction))
-            dr.previewValue = newValue
+            const newValue = Math.max(1, Math.round(dr.lockedAxis * fraction))
+            if (newValue !== dr.previewValue) {
+              dr.previewValue = newValue
+              const goal = active.find(g => g.id === d.id)
+              if (goal) onUpdate(d.id, { measurements: { ...goal.measurements, [activeUnit]: newValue } })
+            } else {
+              dr.previewValue = newValue
+            }
             const visW = Math.max(2, Math.min(dr.trackW, (newValue / dr.lockedAxis) * dr.trackW))
             const labelOp = visW >= 70 ? 1 : 0
             const atomG = atomsG.select<SVGGElement>(`g.goal-atom[data-id="${d.id}"]`)
@@ -772,6 +903,7 @@ export class VizRenderer {
           .on('end', function(_ev, d) {
             const dr = self.bandsResizeDrag
             self.bandsResizeDrag = null
+            self._endResizeDrag()
             document.body.style.userSelect = ''
             document.body.style.cursor = ''
             select(this).select<SVGRectElement>('rect.band-handle-vis').attr('fill', 'oklch(0.93 0 0)')
@@ -803,12 +935,13 @@ export class VizRenderer {
           .clickDistance(5)
           .on('start', function(event, d) {
             const svgRect = svgEl.getBoundingClientRect()
-            const ySvg = event.sourceEvent.clientY - svgRect.top
+            const { clientX: _sx, clientY: _sy } = getClientPos(event.sourceEvent)
+            const ySvg = _sy - svgRect.top
             const rowTop = topPad + d.index * rowStep
             self.bandsReorderDrag = {
               goalId: d.id,
-              startClientX: event.sourceEvent.clientX,
-              startClientY: event.sourceEvent.clientY,
+              startClientX: _sx,
+              startClientY: _sy,
               grabOffsetY: ySvg - rowTop,
               initialOrder: atoms.map(x => x.id),
               currentOrder: atoms.map(x => x.id),
@@ -818,9 +951,10 @@ export class VizRenderer {
           .on('drag', function(event, d) {
             const dr = self.bandsReorderDrag
             if (!dr) return
+            const { clientX: _dx, clientY: _dy } = getClientPos(event.sourceEvent)
             if (!dr.activated) {
-              const dx = event.sourceEvent.clientX - dr.startClientX
-              const dy = event.sourceEvent.clientY - dr.startClientY
+              const dx = _dx - dr.startClientX
+              const dy = _dy - dr.startClientY
               if (dx * dx + dy * dy < 25) return
               dr.activated = true
               event.sourceEvent.stopPropagation()
@@ -829,7 +963,7 @@ export class VizRenderer {
               document.body.style.cursor = 'grabbing'
             }
             const svgRect = svgEl.getBoundingClientRect()
-            const ySvg = event.sourceEvent.clientY - svgRect.top
+            const ySvg = _dy - svgRect.top
             const newTop = Math.max(topPad, Math.min(topPad + (atoms.length - 1) * rowStep, ySvg - dr.grabOffsetY))
             atomsG.select(`g.goal-atom[data-id="${d.id}"]`).attr('transform', `translate(${trackX}, ${newTop + 4})`)
             chromeG.select(`g.band-rank-wrap[data-id="${d.id}"]`).attr('transform', `translate(0, ${newTop})`)
@@ -876,15 +1010,7 @@ export class VizRenderer {
             chromeG.select(`g.band-handle[data-id="${d.id}"]`)
               .transition('reorder').duration(reorderDur).ease(EASE)
               .attr('transform', `translate(0, ${targetY})`)
-            const sortValues = active.map(g => g.measurements[sortUnit] ?? 0).sort((a, b) => a - b)
-            dr.currentOrder.forEach((id, i) => {
-              const g = active.find(x => x.id === id)
-              if (!g) return
-              const newSortValue = sortValues[i]
-              if (g.measurements[sortUnit] !== newSortValue) {
-                onUpdate(id, { measurements: { ...g.measurements, [sortUnit]: newSortValue } })
-              }
-            })
+            onReorder?.(dr.currentOrder)
           })
       )
     }

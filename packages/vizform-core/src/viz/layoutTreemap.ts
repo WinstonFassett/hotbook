@@ -26,15 +26,25 @@ export function layoutTreemap(
       if (isOrder) return DEFAULT_SIZE
       return (d as Goal).measurements[opts.activeUnit] ?? DEFAULT_SIZE
     })
-    .sort((a, b) => {
-      const aId = 'id' in a.data ? a.data.id : undefined
-      const bId = 'id' in b.data ? b.data.id : undefined
-      if (aId === UNALLOCATED_ID && bId !== UNALLOCATED_ID) return 1
-      if (aId !== UNALLOCATED_ID && bId === UNALLOCATED_ID) return -1
-      const av = 'measurements' in a.data ? (a.data as Goal).measurements[opts.sortUnit] ?? 0 : 0
-      const bv = 'measurements' in b.data ? (b.data as Goal).measurements[opts.sortUnit] ?? 0 : 0
-      return opts.sortUnitKind === 'order' ? av - bv : bv - av
-    })
+    .sort(opts.forceOrder
+      ? (a, b) => {
+          const aId = 'id' in a.data ? (a.data as { id: string }).id : undefined
+          const bId = 'id' in b.data ? (b.data as { id: string }).id : undefined
+          const ai = aId ? opts.forceOrder!.indexOf(aId) : -1
+          const bi = bId ? opts.forceOrder!.indexOf(bId) : -1
+          if (ai === -1) return 1
+          if (bi === -1) return -1
+          return ai - bi
+        }
+      : (a, b) => {
+          const aId = 'id' in a.data ? a.data.id : undefined
+          const bId = 'id' in b.data ? b.data.id : undefined
+          if (aId === UNALLOCATED_ID && bId !== UNALLOCATED_ID) return 1
+          if (aId !== UNALLOCATED_ID && bId === UNALLOCATED_ID) return -1
+          const av = 'measurements' in a.data ? (a.data as Goal).measurements[opts.sortUnit] ?? 0 : 0
+          const bv = 'measurements' in b.data ? (b.data as Goal).measurements[opts.sortUnit] ?? 0 : 0
+          return opts.sortUnitKind === 'order' ? av - bv : bv - av
+        })
 
   treemap<{ children?: Goal[]; id?: string }>()
     .tile(treemapSquarify.ratio(1))
