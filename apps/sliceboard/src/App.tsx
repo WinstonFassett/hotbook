@@ -71,7 +71,7 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate }: { tile: Tile; ds: D
         activeUnit={mk} unitKind="size"
         sortUnit={sortBy === 'index' ? '_index' : mk}
         sortUnitKind={sortBy === 'index' ? 'order' : 'size'}
-        frame={undefined} onUpdate={() => {}}
+        frame={undefined} onUpdate={(id, patch) => { if (patch.measurements) onNodeUpdate(id, patch.measurements as PNode['measurements']) }}
       />
     </div>
   )

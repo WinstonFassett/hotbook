@@ -49,8 +49,9 @@ export function Icicle({ nodes, measureKey, hoverId, selectionId, focusId, depth
     const maxDepth = f.depth + depth
     const all = (root as Node).descendants().filter(d => d.data.id !== '__root__' && d.depth <= maxDepth) as Node[]
 
+    const rootColW = f.data.id === '__root__' ? f.y1 - f.y0 : 0
     const layoutOf = (d: Node): CellLayout => {
-      const x = d.y0 - f.y0
+      const x = d.y0 - f.y0 - rootColW
       const y = ((d.x0 - f.x0) / Math.max(1, f.x1 - f.x0)) * h
       const yE = ((d.x1 - f.x0) / Math.max(1, f.x1 - f.x0)) * h
       return { x, y, w: Math.max(0, d.y1 - d.y0 - 1), h: Math.max(0, yE - y - 1) }

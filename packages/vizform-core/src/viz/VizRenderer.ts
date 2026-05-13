@@ -128,8 +128,8 @@ export class VizRenderer {
       if (!opts) return
       if (opts.unitKind === 'order') return
       if (!event.altKey) return
-      const target = event.target as Element
-      const atomG = target.closest('g.goal-atom') as SVGGElement | null
+      const hit = document.elementFromPoint(event.clientX, event.clientY) as Element | null
+      const atomG = hit?.closest('g.goal-atom') as SVGGElement | null
       if (!atomG || atomG.classList.contains('phantom')) return
       const id = atomG.getAttribute('data-id')
       if (!id) return

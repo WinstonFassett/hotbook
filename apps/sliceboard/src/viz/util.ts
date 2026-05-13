@@ -49,14 +49,12 @@ export function useAltScroll(
       if (!id) return
       const node = nodes.find(n => n.id === id)
       if (!node) return
+      e.preventDefault()
+      e.stopPropagation()
       const cur = node.measurements[measureKey] ?? 0
       const step = e.shiftKey ? 5 : 1
       const next = Math.max(1, cur + (e.deltaY < 0 ? 1 : -1) * step)
-      if (next !== cur) {
-        e.preventDefault()
-        e.stopPropagation()
-        onUpdate(id, { ...node.measurements, [measureKey]: next })
-      }
+      if (next !== cur) onUpdate(id, { ...node.measurements, [measureKey]: next })
     }
     el.addEventListener('wheel', handler, { passive: false })
     return () => el.removeEventListener('wheel', handler)
