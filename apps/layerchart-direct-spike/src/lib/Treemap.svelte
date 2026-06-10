@@ -13,13 +13,33 @@
   directly. The next step (after the bridge is proven) is to vendor the real
   LayerChart layout components and feed them the shared tree.
 
-  No drag. Focus a tile (click), then cmd/ctrl+wheel up/down to scrub value.
-  Arrow keys also work (±1, shift ±5).
+  Interaction:
+    - Hover a tile + cmd/ctrl+wheel to scrub. While the modifier is held the
+      gesture target is locked, so re-layout (or a tile shrinking to zero) can't
+      steal the gesture out from under the cursor — release cmd/ctrl to end.
+    - Click to focus a tile for keyboard control. Tab / Shift+Tab walk siblings
+      and descend into the focused branch's first child. Arrow keys nudge
+      value (±1, shift ±5). Groups scale via their Num.lens.
 -->
 
 <script lang="ts">
   import { onDestroy } from "svelte";
   import { hierarchy, treemap, treemapSquarify } from "d3-hierarchy";
+  // Match LayerChart's tile wrapping so subtree orientation decisions agree
+  // with Instance C. Squarify operates against the outer chart aspect ratio,
+  // then children are rescaled into their actual sub-rect. This is what
+  // enables smooth zoom transitions in LayerChart's treemap.
+  function aspectTile(tile: typeof treemapSquarify, w: number, h: number) {
+    return (node: any, x0: number, y0: number, x1: number, y1: number) => {
+      tile(node, 0, 0, w, h);
+      for (const child of node.children ?? []) {
+        child.x0 = x0 + (child.x0 / w) * (x1 - x0);
+        child.x1 = x0 + (child.x1 / w) * (x1 - x0);
+        child.y0 = y0 + (child.y0 / h) * (y1 - y0);
+        child.y1 = y0 + (child.y1 / h) * (y1 - y0);
+      }
+    };
+  }
   import { effect as biEffect } from "bireactive";
   import { sharedTree, leaves, parentOf, type BiNode } from "./tree";
 
@@ -54,7 +74,7 @@
     const h = hierarchy<BiNode>(sharedTree, (n) => n.children)
       .sum((n) => (n.children ? 0 : n.total.value));
     const laid = treemap<BiNode>()
-      .tile(treemapSquarify)
+      .tile(aspectTile(treemapSquarify, width, height))
       .size([width, height])
       .paddingOuter(4)
       .paddingInner(2)
@@ -76,9 +96,17 @@
   });
 
   // Use raw — BiNode contains bireactive Cell objects which Svelte's proxy
-  // mishandles (and we don't want Svelte tracking node internals; bireactive
-  // does that). Raw means equality is identity, like we want.
+  // mishandles. Raw means equality is identity, which is what we want for
+  // node references.
   let focusedNode = $state.raw<BiNode | null>(null);
+  let hoveredNode = $state.raw<BiNode | null>(null);
+
+  // Sticky gesture lock. Set on first cmd/ctrl+wheel event, cleared when the
+  // modifier key is released. This is the fix for "tile relayouts out from
+  // under the cursor mid-gesture" and "tile shrinks to zero and is unreachable":
+  // once a gesture starts, the target node is pinned independent of cursor
+  // position or layout.
+  let wheelLocked = $state.raw<BiNode | null>(null);
 
   function applyDelta(node: BiNode, delta: number) {
     const parent = parentOf(sharedTree, node);
@@ -88,6 +116,8 @@
     const next = Math.max(0, cur + delta);
     const real = next - cur;
     if (real === 0) return;
+    // Writing to a branch's total goes through Num.lens, which redistributes
+    // the branch's children proportionally — so groups scale naturally.
     node.total.value = next;
     let remaining = real;
     if (real > 0) {
@@ -124,16 +154,73 @@
     focusedNode = t.node;
   }
 
+  function onTileEnter(t: Tile) {
+    hoveredNode = t.node;
+  }
+
+  function onTileLeave(t: Tile) {
+    if (hoveredNode === t.node) hoveredNode = null;
+  }
+
   function onWheel(e: WheelEvent) {
     if (!(e.metaKey || e.ctrlKey)) return;
-    if (!focusedNode || focusedNode.children) return;
+    // Pick the target: locked node wins; otherwise hovered; otherwise focused.
+    // Don't scale the root (no parent to redistribute against).
+    if (!wheelLocked) wheelLocked = hoveredNode ?? focusedNode;
+    const target = wheelLocked;
+    if (!target || target === sharedTree) return;
     e.preventDefault();
     const step = e.shiftKey ? 5 : 1;
-    applyDelta(focusedNode, e.deltaY < 0 ? +step : -step);
+    applyDelta(target, e.deltaY < 0 ? +step : -step);
+  }
+
+  // Release the lock the moment the modifier comes back up — that's the
+  // natural gesture boundary. Listen at window level because the svg doesn't
+  // reliably have focus after a wheel gesture (wheels don't transfer focus,
+  // and inside a customElement shadow root focus often stays on document.body),
+  // so element-level keyup misses the release and the lock never clears.
+  function onWindowKeyup(e: KeyboardEvent) {
+    if (e.key === "Meta" || e.key === "Control" || (!e.metaKey && !e.ctrlKey)) {
+      wheelLocked = null;
+    }
+  }
+  function onWindowBlur() {
+    wheelLocked = null;
+  }
+  $effect(() => {
+    window.addEventListener("keyup", onWindowKeyup);
+    window.addEventListener("blur", onWindowBlur);
+    return () => {
+      window.removeEventListener("keyup", onWindowKeyup);
+      window.removeEventListener("blur", onWindowBlur);
+    };
+  });
+
+  // Tab navigation: walk a depth-first ordering of the whole tree (skip root).
+  // Arrow keys still nudge the focused node's value; Tab moves focus.
+  function flatOrder(root: BiNode): BiNode[] {
+    const out: BiNode[] = [];
+    const walk = (n: BiNode) => {
+      if (n !== root) out.push(n);
+      n.children?.forEach(walk);
+    };
+    walk(root);
+    return out;
   }
 
   function onKeydown(e: KeyboardEvent) {
-    if (!focusedNode || focusedNode.children) return;
+    if (e.key === "Tab") {
+      const order = flatOrder(sharedTree);
+      if (order.length === 0) return;
+      const i = focusedNode ? order.indexOf(focusedNode) : -1;
+      const next = e.shiftKey
+        ? order[(i <= 0 ? order.length : i) - 1]
+        : order[(i + 1) % order.length];
+      focusedNode = next;
+      e.preventDefault();
+      return;
+    }
+    if (!focusedNode || focusedNode === sharedTree) return;
     const step = e.shiftKey ? 5 : 1;
     if (e.key === "ArrowUp" || e.key === "ArrowRight") {
       applyDelta(focusedNode, +step);
@@ -177,6 +264,8 @@
       rx={3}
       style="cursor: pointer;"
       onclick={() => onTileClick(t)}
+      onmouseenter={() => onTileEnter(t)}
+      onmouseleave={() => onTileLeave(t)}
     />
     {#if t.depth > 0 && w > 28 && h > 16}
       <text
@@ -196,6 +285,6 @@
     {/if}
   {/each}
   <text x={width / 2} y={height - 6} text-anchor="middle" font-size="10" fill="#9aa0a8">
-    total: {total.toFixed(0)} · focused: {focusedNode?.label ?? "(none — click a tile)"} · cmd/ctrl+wheel or arrows to scrub
+    total: {total.toFixed(0)} · focused: {focusedNode?.label ?? "(none)"} · hover + cmd/ctrl+wheel · click + arrows/Tab
   </text>
 </svg>

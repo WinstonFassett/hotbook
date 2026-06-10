@@ -34,10 +34,21 @@
       <section>
         <h2>Instance A — Treemap (web component)</h2>
         <p class="note">
-          Click any tile to focus it, then cmd/ctrl+wheel up/down (or arrow keys) to scrub the leaf's value.
-          The Num.lens at each branch redistributes siblings and re-derives parent totals automatically.
+          Hover a tile and hold cmd/ctrl+wheel to scrub — the gesture target locks while the modifier is held,
+          so re-layout (or shrinking to zero) can't break the gesture. Click to focus, then Tab/Shift+Tab to walk
+          cells, arrow keys to nudge value (±1, shift ±5). Works on groups too — the Num.lens redistributes
+          children proportionally and sibling totals re-derive automatically.
         </p>
         <div class="demo"><lc-treemap-demo></lc-treemap-demo></div>
+      </section>
+      <section>
+        <h2>Instance C — Real LayerChart &lt;Chart&gt; + &lt;Treemap&gt;, same tree</h2>
+        <p class="note">
+          Same shared bireactive tree, but the layout is run by the actual LayerChart components
+          consumed from npm — not our local d3.treemap call. Proves the Path A bet: LayerChart's
+          hierarchy vocabulary works when the data underneath is writable cells. Same gestures.
+        </p>
+        <div class="demo"><lc-treemap-lc></lc-treemap-lc></div>
       </section>
       <section>
         <h2>Instance B — Same web component, same underlying tree</h2>
@@ -47,7 +58,7 @@
           proving cross-instance reactivity via shared bireactive cells, with zero event plumbing
           between the components.
         </p>
-        <div class="demo"><lc-treemap-demo width="600" height="280"></lc-treemap-demo></div>
+        <div class="demo"><lc-treemap-demo></lc-treemap-demo></div>
       </section>
     </main>
     <script type="module" src="/src/main.ts"></script>
