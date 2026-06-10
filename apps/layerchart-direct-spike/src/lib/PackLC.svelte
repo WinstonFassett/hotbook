@@ -1,15 +1,17 @@
-<svelte:options customElement="lc-treemap-lc" />
+<svelte:options customElement="lc-pack-lc" />
 
 <!--
-  Real LayerChart <Chart> + <Treemap> driven by the shared bireactive tree.
-  Path A validation: LayerChart's hierarchy vocabulary works backed by writable
-  cells. See lib/interaction.ts for the shared gesture/write logic.
+  Circle packing via d3.pack, layered as nested circles. Pack yields
+  HierarchyCircularNode (x, y, r) per node — note x/y are circle centers,
+  not the [0,0]-anchored rect coords the other layouts use.
+
+  Same shared bireactive tree; same gesture model.
 -->
 
 <script lang="ts">
   import { onDestroy } from "svelte";
-  import { type HierarchyRectangularNode } from "d3-hierarchy";
-  import { Chart, Svg, Treemap, Group, Rect } from "layerchart";
+  import { type HierarchyCircularNode } from "d3-hierarchy";
+  import { Chart, Svg, Pack, Circle } from "layerchart";
   import { sharedTree, type BiNode } from "./tree";
   import {
     applyDelta,
@@ -19,7 +21,7 @@
     installGestureRelease,
   } from "./interaction";
 
-  let { width = 720, height = 360 }: { width?: number; height?: number } = $props();
+  let { width = 480, height = 480 }: { width?: number; height?: number } = $props();
 
   let version = $state(0);
   onDestroy(subscribeAllLeaves(() => version++));
@@ -77,53 +79,44 @@
   style="width: {width}px; height: {height}px; outline: none;"
   tabindex="0"
   role="application"
-  aria-label="treemap-lc"
+  aria-label="pack-lc"
   onwheel={onWheel}
   onkeydown={onKeydown}
 >
   <Chart data={hData} {width} {height}>
     <Svg>
-      <Treemap let:nodes paddingOuter={4} paddingInner={2} paddingTop={16}>
+      <Pack padding={2} let:nodes>
         {#each nodes as node (node.data)}
-          {@const n = node as HierarchyRectangularNode<BiNode>}
-          {@const w = Math.max(0, n.x1 - n.x0)}
-          {@const h = Math.max(0, n.y1 - n.y0)}
+          {@const n = node as HierarchyCircularNode<BiNode>}
           {@const isLeaf = !n.data.children}
           {@const isFocused = focusedNode === n.data}
-          <Group
-            x={n.x0}
-            y={n.y0}
+          <Circle
+            cx={n.x}
+            cy={n.y}
+            r={n.r}
+            fill={n.data.color}
+            fillOpacity={n.depth === 0 ? 0.12 : isLeaf ? 0.95 : 0.4}
+            stroke={isFocused ? "#fff" : n.depth === 0 ? "#444" : "#0b0d12"}
+            strokeWidth={isFocused ? 2 : 1}
             onclick={() => (focusedNode = n.data)}
             onpointerenter={() => (hoveredNode = n.data)}
             onpointerleave={() => { if (hoveredNode === n.data) hoveredNode = null; }}
-          >
-            <Rect
-              width={w}
-              height={h}
-              fill={n.data.color}
-              fillOpacity={n.depth === 0 ? 0.12 : isLeaf ? 0.95 : 0.45}
-              stroke={isFocused ? "#fff" : n.depth === 0 ? "#444" : "#0b0d12"}
-              stroke-width={isFocused ? 2 : 1}
-              rx={3}
-              style="cursor: pointer;"
-            />
-            {#if n.depth > 0 && w > 28 && h > 16}
-              <text
-                x={w / 2}
-                y={isLeaf ? h / 2 : 10}
-                text-anchor="middle"
-                dominant-baseline="middle"
-                font-size={isLeaf ? 11 : 10}
-                font-weight={isLeaf ? 400 : 600}
-                fill="#fff"
-                pointer-events="none"
-              >
-                {n.data.label}{#if isLeaf}<tspan x={w / 2} dy="1.2em" font-size="10">{n.data.total.value.toFixed(0)}</tspan>{/if}
-              </text>
-            {/if}
-          </Group>
+          />
+          {#if isLeaf && n.r > 14}
+            <text
+              x={n.x}
+              y={n.y}
+              text-anchor="middle"
+              dominant-baseline="middle"
+              font-size="11"
+              fill="#fff"
+              pointer-events="none"
+            >
+              {n.data.label}<tspan x={n.x} dy="1.2em" font-size="9">{n.data.total.value.toFixed(0)}</tspan>
+            </text>
+          {/if}
         {/each}
-      </Treemap>
+      </Pack>
     </Svg>
   </Chart>
   <div style="font-size: 10px; color: #9aa0a8; text-align: center; margin-top: -18px; pointer-events: none;">

@@ -1,15 +1,20 @@
-<svelte:options customElement="lc-treemap-lc" />
+<svelte:options customElement="lc-icicle-lc" />
 
 <!--
-  Real LayerChart <Chart> + <Treemap> driven by the shared bireactive tree.
-  Path A validation: LayerChart's hierarchy vocabulary works backed by writable
-  cells. See lib/interaction.ts for the shared gesture/write logic.
+  Icicle = d3.partition in cartesian coords. Same Partition layout that drives
+  the sunburst, but rendered as stacked bars. orientation="vertical" sizes the
+  partition [width, height] so siblings span horizontally and depth flows
+  downward — the conventional icicle look. (orientation="horizontal" swaps to
+  [height, width], which puts depth on the x-axis and would need x/y swapped
+  when reading x0/y0 from each node.)
+
+  Same shared bireactive tree; same gesture model.
 -->
 
 <script lang="ts">
   import { onDestroy } from "svelte";
   import { type HierarchyRectangularNode } from "d3-hierarchy";
-  import { Chart, Svg, Treemap, Group, Rect } from "layerchart";
+  import { Chart, Svg, Partition, Group, Rect } from "layerchart";
   import { sharedTree, type BiNode } from "./tree";
   import {
     applyDelta,
@@ -77,53 +82,55 @@
   style="width: {width}px; height: {height}px; outline: none;"
   tabindex="0"
   role="application"
-  aria-label="treemap-lc"
+  aria-label="icicle-lc"
   onwheel={onWheel}
   onkeydown={onKeydown}
 >
   <Chart data={hData} {width} {height}>
     <Svg>
-      <Treemap let:nodes paddingOuter={4} paddingInner={2} paddingTop={16}>
+      <Partition orientation="vertical" let:nodes>
         {#each nodes as node (node.data)}
           {@const n = node as HierarchyRectangularNode<BiNode>}
           {@const w = Math.max(0, n.x1 - n.x0)}
           {@const h = Math.max(0, n.y1 - n.y0)}
           {@const isLeaf = !n.data.children}
           {@const isFocused = focusedNode === n.data}
-          <Group
-            x={n.x0}
-            y={n.y0}
-            onclick={() => (focusedNode = n.data)}
-            onpointerenter={() => (hoveredNode = n.data)}
-            onpointerleave={() => { if (hoveredNode === n.data) hoveredNode = null; }}
-          >
-            <Rect
-              width={w}
-              height={h}
-              fill={n.data.color}
-              fillOpacity={n.depth === 0 ? 0.12 : isLeaf ? 0.95 : 0.45}
-              stroke={isFocused ? "#fff" : n.depth === 0 ? "#444" : "#0b0d12"}
-              stroke-width={isFocused ? 2 : 1}
-              rx={3}
-              style="cursor: pointer;"
-            />
-            {#if n.depth > 0 && w > 28 && h > 16}
-              <text
-                x={w / 2}
-                y={isLeaf ? h / 2 : 10}
-                text-anchor="middle"
-                dominant-baseline="middle"
-                font-size={isLeaf ? 11 : 10}
-                font-weight={isLeaf ? 400 : 600}
-                fill="#fff"
-                pointer-events="none"
-              >
-                {n.data.label}{#if isLeaf}<tspan x={w / 2} dy="1.2em" font-size="10">{n.data.total.value.toFixed(0)}</tspan>{/if}
-              </text>
-            {/if}
-          </Group>
+          {#if n.depth > 0}
+            <Group
+              x={n.x0}
+              y={n.y0}
+              onclick={() => (focusedNode = n.data)}
+              onpointerenter={() => (hoveredNode = n.data)}
+              onpointerleave={() => { if (hoveredNode === n.data) hoveredNode = null; }}
+            >
+              <Rect
+                width={w}
+                height={h}
+                fill={n.data.color}
+                fillOpacity={isLeaf ? 0.95 : 0.5}
+                stroke={isFocused ? "#fff" : "#0b0d12"}
+                stroke-width={isFocused ? 2 : 1}
+                rx={2}
+                style="cursor: pointer;"
+              />
+              {#if w > 28 && h > 12}
+                <text
+                  x={w / 2}
+                  y={h / 2}
+                  text-anchor="middle"
+                  dominant-baseline="middle"
+                  font-size={isLeaf ? 11 : 10}
+                  font-weight={isLeaf ? 400 : 600}
+                  fill="#fff"
+                  pointer-events="none"
+                >
+                  {n.data.label}{#if isLeaf}<tspan x={w / 2} dy="1.2em" font-size="9">{n.data.total.value.toFixed(0)}</tspan>{/if}
+                </text>
+              {/if}
+            </Group>
+          {/if}
         {/each}
-      </Treemap>
+      </Partition>
     </Svg>
   </Chart>
   <div style="font-size: 10px; color: #9aa0a8; text-align: center; margin-top: -18px; pointer-events: none;">

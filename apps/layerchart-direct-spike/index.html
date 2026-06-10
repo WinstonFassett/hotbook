@@ -51,6 +51,30 @@
         <div class="demo"><lc-treemap-lc></lc-treemap-lc></div>
       </section>
       <section>
+        <h2>Sunburst — LayerChart &lt;Partition&gt; + &lt;Arc&gt;, same tree</h2>
+        <p class="note">
+          Partition laid out into polar coords <code>[0, 2π] × [0, R]</code>, rendered as nested arcs.
+          Same shared cells: scrubbing a slice here updates every other instance.
+        </p>
+        <div class="demo"><lc-sunburst-lc></lc-sunburst-lc></div>
+      </section>
+      <section>
+        <h2>Icicle — LayerChart &lt;Partition&gt; in cartesian, same tree</h2>
+        <p class="note">
+          Same Partition layout as the sunburst, rendered as stacked bars (depth flows top-to-bottom,
+          siblings span horizontally). Cartesian variant of the same data structure.
+        </p>
+        <div class="demo"><lc-icicle-lc></lc-icicle-lc></div>
+      </section>
+      <section>
+        <h2>Circle Pack — LayerChart &lt;Pack&gt; + &lt;Circle&gt;, same tree</h2>
+        <p class="note">
+          Hierarchy as nested circles via d3.pack. Different geometry, same gesture model — hover
+          + cmd/ctrl+wheel scrubs the targeted node; siblings repack on every change.
+        </p>
+        <div class="demo"><lc-pack-lc></lc-pack-lc></div>
+      </section>
+      <section>
         <h2>Instance B — Same web component, same underlying tree</h2>
         <p class="note">
           Both instances mount the same Svelte component, which imports the same module-scope tree
