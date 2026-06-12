@@ -38,8 +38,9 @@ import {
   sharedRows,
   type TreeNode,
 } from "./data";
-import { pinAxis, rectNonOverlap, separation } from "./cola-factories";
-import { hullOf } from "./hull";
+import { groupNonOverlap, pinAxis, rectNonOverlap, separation } from "./cola-factories";
+import { hullOfMixed } from "./hull";
+import type { Box } from "@bireactive";
 import { hullPad, nodeSize, renderEdge, renderHull, renderNode } from "./render";
 
 const W = 760;
@@ -165,6 +166,37 @@ export class MdColaAdapt extends Diagram {
       }
     }
 
+    // ── GROUP non-overlap ─────────────────────────────────────────
+    // Treat each container as a first-class GROUP: derive its bbox from
+    // descendant-leaf positions and require sibling GROUPs not to
+    // overlap. Recurse into the containment forest so every depth gets
+    // its own sibling-separation constraints.
+    //
+    // Uniform leaf half-size approximation — fine for this fixture where
+    // all leaves are similar size; a per-leaf size variant would be a
+    // small extension to groupNonOverlap.
+    const leafHW = 32;
+    const leafHH = 16;
+    const GROUP_PAD = 14;
+    const walkGroups = (nodes: TreeNode[]): void => {
+      // Pair every two sibling containers at this depth.
+      const siblingGroups = nodes.filter((n) => n.children.length > 0);
+      for (let i = 0; i < siblingGroups.length; i++) {
+        for (let j = i + 1; j < siblingGroups.length; j++) {
+          const aLeaves = [...descendantsOf(sharedRows, siblingGroups[i]!.id)]
+            .filter((d) => leafSet.has(d))
+            .map((d) => this.#positions.get(d)!);
+          const bLeaves = [...descendantsOf(sharedRows, siblingGroups[j]!.id)]
+            .filter((d) => leafSet.has(d))
+            .map((d) => this.#positions.get(d)!);
+          if (aLeaves.length === 0 || bLeaves.length === 0) continue;
+          cluster.add(groupNonOverlap(aLeaves, bLeaves, leafHW, leafHH, GROUP_PAD));
+        }
+      }
+      for (const n of siblingGroups) walkGroups(n.children);
+    };
+    walkGroups(containmentForest(sharedRows));
+
     for (const id of ids) {
       cluster.add(softTarget(this.#positions.get(id)!, [this.#cx, this.#cy], 6));
     }
@@ -183,17 +215,28 @@ export class MdColaAdapt extends Diagram {
     const nodeMount = mount(this.#nodesGfx);
     const edgeMount = mount(this.#edgesGfx);
 
-    const drawHulls = (nodes: TreeNode[]): void => {
+    // Recursive HULL: a parent's HULL wraps its *direct* leaves and its
+    // *child HULLs*. Build child-first so the parent can read its
+    // children's already-derived Box cells.
+    const drawHulls = (nodes: TreeNode[]): Box[] => {
+      const myHulls: Box[] = [];
       for (const n of nodes) {
         if (n.children.length === 0) continue;
-        const descLeaves = [...descendantsOf(sharedRows, n.id)].filter((id) => leafSet.has(id));
-        if (descLeaves.length === 0) continue;
-        const positions = descLeaves.map((id) => this.#positions.get(id)!);
-        const sizes = descLeaves.map((id) => nodeSize(byId.get(id)?.name.value ?? id));
-        const hullBox = hullOf(positions, sizes, hullPad(n.depth));
+        // Recurse first → child HULLs exist before we build this one.
+        const childHulls = drawHulls(n.children);
+        // Direct leaves only (not transitive — those are inside the
+        // child HULLs already).
+        const directLeaves = n.children
+          .filter((c) => c.children.length === 0)
+          .map((c) => c.id)
+          .filter((id) => leafSet.has(id));
+        const positions = directLeaves.map((id) => this.#positions.get(id)!);
+        const sizes = directLeaves.map((id) => nodeSize(byId.get(id)?.name.value ?? id));
+        const hullBox = hullOfMixed(positions, sizes, childHulls, hullPad(n.depth));
         renderHull(hullMount, hullBox, n.depth, byId.get(n.id)?.name.value ?? n.id);
-        drawHulls(n.children);
+        myHulls.push(hullBox);
       }
+      return myHulls;
     };
     drawHulls(containmentForest(sharedRows));
 

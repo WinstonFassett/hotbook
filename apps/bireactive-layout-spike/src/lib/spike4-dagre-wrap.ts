@@ -241,43 +241,133 @@ export class MdDagreWrap extends Diagram {
     }
     dagre.layout(g);
 
-    // Leaf positions
+    // Dagre returns tight subgraph rects (no per-container padding) and
+    // child positions are absolute. Two visual problems:
+    //   1. Each container's chip header (~24px tall) eats half the rect
+    //      when the rect is small — nested chips end up stacked on the
+    //      parent's chip.
+    //   2. Children sit right against their container's top edge — there
+    //      is no breathing room and the hierarchy reads as one flat soup.
+    //
+    // Fix: post-process by walking containers depth-first deepest-first,
+    // pushing each container's subtree DOWN by CHIP_HEAD and extending
+    // the container's rect upward by CHIP_HEAD so the chip sits above
+    // its children. Side padding is added the same way (uniform inset
+    // from each child's extent). Bottom-up means a parent picks up the
+    // already-expanded child rects when its own padding is computed.
+    const CHIP_HEAD = 22; // chip + a bit of breathing space below it
+    const SIDE_PAD = 10;
+    const BOT_PAD = 10;
+
+    interface NodeRect { x: number; y: number; w: number; h: number }
+    const rectOf: Map<string, NodeRect> = new Map();
     for (const id of leaves) {
       const n = g.node(id);
-      const nv = this.#nodes.get(id);
-      if (n && nv) nv.target.value = { x: n.x, y: n.y };
+      if (n) rectOf.set(id, { x: n.x - n.width / 2, y: n.y - n.height / 2, w: n.width, h: n.height });
     }
-    // Subgraph rects — dagre stores center + width/height on container
-    // nodes. Convert to top-left + size for the hull box.
+    for (const cid of containers) {
+      const n = g.node(cid);
+      if (n) rectOf.set(cid, { x: n.x - n.width / 2, y: n.y - n.height / 2, w: n.width, h: n.height });
+    }
+
+    // Build child-id index from sharedRows so we can walk subtrees.
+    const childrenOf = new Map<string, string[]>();
+    for (const r of sharedRows.items) {
+      const pid = r.parentId.value;
+      if (pid == null) continue;
+      if (!childrenOf.has(pid)) childrenOf.set(pid, []);
+      childrenOf.get(pid)!.push(r.id);
+    }
+
+    // Depth of each container — deepest first when applying padding.
+    const depthOf = new Map<string, number>();
+    const computeDepth = (id: string): number => {
+      if (depthOf.has(id)) return depthOf.get(id)!;
+      const kids = childrenOf.get(id) ?? [];
+      let d = 0;
+      for (const k of kids) {
+        if (containers.has(k)) d = Math.max(d, 1 + computeDepth(k));
+        else d = Math.max(d, 1);
+      }
+      depthOf.set(id, d);
+      return d;
+    };
+    for (const cid of containers) computeDepth(cid);
+    const orderedContainers = [...containers].sort((a, b) => (depthOf.get(b)! - depthOf.get(a)!));
+
+    // Collect all descendant ids of a container (leaves + nested containers).
+    const descIds = (cid: string): string[] => {
+      const out: string[] = [];
+      const queue = [...(childrenOf.get(cid) ?? [])];
+      while (queue.length) {
+        const id = queue.shift()!;
+        out.push(id);
+        const kids = childrenOf.get(id);
+        if (kids) queue.push(...kids);
+      }
+      return out;
+    };
+
+    for (const cid of orderedContainers) {
+      const all = descIds(cid);
+      if (all.length === 0) continue;
+      // Shift entire subtree down by CHIP_HEAD so the chip has room.
+      for (const id of all) {
+        const r = rectOf.get(id);
+        if (r) r.y += CHIP_HEAD;
+      }
+      // Recompute container rect = bounding box of children's (now padded)
+      // rects, plus side/bottom padding. Top of rect = childrenMinY - CHIP_HEAD
+      // so chip sits in the inset; uniform SIDE_PAD/BOT_PAD on other sides.
+      let cxmin = Number.POSITIVE_INFINITY;
+      let cymin = Number.POSITIVE_INFINITY;
+      let cxmax = Number.NEGATIVE_INFINITY;
+      let cymax = Number.NEGATIVE_INFINITY;
+      for (const id of (childrenOf.get(cid) ?? [])) {
+        const r = rectOf.get(id);
+        if (!r) continue;
+        cxmin = Math.min(cxmin, r.x);
+        cymin = Math.min(cymin, r.y);
+        cxmax = Math.max(cxmax, r.x + r.w);
+        cymax = Math.max(cymax, r.y + r.h);
+      }
+      const newRect: NodeRect = {
+        x: cxmin - SIDE_PAD,
+        y: cymin - CHIP_HEAD,
+        w: (cxmax - cxmin) + 2 * SIDE_PAD,
+        h: (cymax - cymin) + CHIP_HEAD + BOT_PAD,
+      };
+      rectOf.set(cid, newRect);
+    }
+
+    // Leaf target positions = centre of the (now padded) rect.
+    for (const id of leaves) {
+      const r = rectOf.get(id);
+      const nv = this.#nodes.get(id);
+      if (r && nv) nv.target.value = { x: r.x + r.w / 2, y: r.y + r.h / 2 };
+    }
+    // Container hull boxes.
     let xmin = Number.POSITIVE_INFINITY;
     let ymin = Number.POSITIVE_INFINITY;
     let xmax = Number.NEGATIVE_INFINITY;
     let ymax = Number.NEGATIVE_INFINITY;
     for (const cid of containers) {
-      const n = g.node(cid);
-      if (!n) continue;
+      const r = rectOf.get(cid);
+      if (!r) continue;
       const b = this.#hullBox.get(cid);
-      if (!b) continue;
-      b.value = {
-        x: n.x - n.width / 2,
-        y: n.y - n.height / 2,
-        w: n.width,
-        h: n.height,
-      };
-      xmin = Math.min(xmin, n.x - n.width / 2);
-      ymin = Math.min(ymin, n.y - n.height / 2);
-      xmax = Math.max(xmax, n.x + n.width / 2);
-      ymax = Math.max(ymax, n.y + n.height / 2);
+      if (b) b.value = { ...r };
+      xmin = Math.min(xmin, r.x);
+      ymin = Math.min(ymin, r.y);
+      xmax = Math.max(xmax, r.x + r.w);
+      ymax = Math.max(ymax, r.y + r.h);
     }
-    // Also include leaf rects in the extent — they can stick out past
-    // the outermost subgraph if the top-level row has no parent.
     for (const id of leaves) {
-      const n = g.node(id);
-      if (!n) continue;
-      xmin = Math.min(xmin, n.x - n.width / 2);
-      ymin = Math.min(ymin, n.y - n.height / 2);
-      xmax = Math.max(xmax, n.x + n.width / 2);
-      ymax = Math.max(ymax, n.y + n.height / 2);
+      const r = rectOf.get(id);
+      if (!r) continue;
+      xmin = Math.min(xmin, r.x);
+      ymin = Math.min(ymin, r.y);
+      xmax = Math.max(xmax, r.x + r.w);
+      ymax = Math.max(ymax, r.y + r.h);
     }
 
     // Fit-to-view: scale + translate so the whole compound layout fits

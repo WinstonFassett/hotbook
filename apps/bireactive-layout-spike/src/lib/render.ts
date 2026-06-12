@@ -49,7 +49,9 @@ export function nodeSize(name: string): NodeSize {
  *  instead of inflating with every level. */
 export function hullPad(depth: number): { top: number; bottom: number; left: number; right: number } {
   const sides = Math.max(8, 14 - depth * 3);
-  return { top: 32, bottom: sides, left: sides, right: sides };
+  // Chip is drawn ABOVE the hull (tab-style), so the hull itself only
+  // needs symmetric content padding on top.
+  return { top: sides, bottom: sides, left: sides, right: sides };
 }
 
 export interface NodeRenderOpts {

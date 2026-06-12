@@ -60,6 +60,64 @@ export function rectNonOverlap(a: Vec2, b: Vec2, halfW: number, halfH: number): 
   );
 }
 
+/** GROUP non-overlap: hard AABB separation between two GROUPs, where
+ *  each GROUP is represented by the bbox of its leaf positions plus a
+ *  uniform leaf half-size and a per-side padding. Both bboxes are
+ *  computed *inside* the residual from the live leaf positions, so the
+ *  constraint stays in sync as leaves move — no separate solver
+ *  variable for the bbox itself.
+ *
+ *  Residual encoding mirrors rectNonOverlap: positive when the two
+ *  group rects are separated on at least one axis. */
+export function groupNonOverlap(
+  leavesA: Vec2[],
+  leavesB: Vec2[],
+  leafHalfW: number,
+  leafHalfH: number,
+  pad: number,
+): Relation {
+  const nA = leavesA.length;
+  const deps = [...leavesA, ...leavesB];
+  return generic(
+    deps,
+    1,
+    (pos, out) => {
+      let aMinX = Infinity, aMinY = Infinity, aMaxX = -Infinity, aMaxY = -Infinity;
+      for (let i = 0; i < nA; i++) {
+        const x = pos[i]![0]!;
+        const y = pos[i]![1]!;
+        if (x < aMinX) aMinX = x;
+        if (x > aMaxX) aMaxX = x;
+        if (y < aMinY) aMinY = y;
+        if (y > aMaxY) aMaxY = y;
+      }
+      aMinX -= leafHalfW + pad;
+      aMaxX += leafHalfW + pad;
+      aMinY -= leafHalfH + pad;
+      aMaxY += leafHalfH + pad;
+      let bMinX = Infinity, bMinY = Infinity, bMaxX = -Infinity, bMaxY = -Infinity;
+      for (let i = nA; i < deps.length; i++) {
+        const x = pos[i]![0]!;
+        const y = pos[i]![1]!;
+        if (x < bMinX) bMinX = x;
+        if (x > bMaxX) bMaxX = x;
+        if (y < bMinY) bMinY = y;
+        if (y > bMaxY) bMaxY = y;
+      }
+      bMinX -= leafHalfW + pad;
+      bMaxX += leafHalfW + pad;
+      bMinY -= leafHalfH + pad;
+      bMaxY += leafHalfH + pad;
+      // Slack on each separating axis (positive when separated).
+      // sx = how far apart horizontally beyond touching.
+      const sx = Math.max(aMinX - bMaxX, bMinX - aMaxX);
+      const sy = Math.max(aMinY - bMaxY, bMinY - aMaxY);
+      out[0]! = Math.max(sx, sy);
+    },
+    { lambdaMax: [0] },
+  );
+}
+
 /** Anchor a cell to a target on one axis only (the other stays free).
  *  Useful for axis-aligned flow layouts. */
 export function pinAxis(a: Vec2, axis: "x" | "y", value: number, stiffness: number): Relation {
