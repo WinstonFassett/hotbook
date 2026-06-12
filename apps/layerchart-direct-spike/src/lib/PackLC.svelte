@@ -71,7 +71,7 @@
 
   const total = $derived.by(() => {
     void version;
-    return sharedTree.total.value;
+    return sharedTree.value.total.value;
   });
 </script>
 
@@ -88,13 +88,13 @@
       <Pack padding={2} let:nodes>
         {#each nodes as node (node.data)}
           {@const n = node as HierarchyCircularNode<BiNode>}
-          {@const isLeaf = !n.data.children}
+          {@const isLeaf = n.data.children.length === 0}
           {@const isFocused = focusedNode === n.data}
           <Circle
             cx={n.x}
             cy={n.y}
             r={n.r}
-            fill={n.data.color}
+            fill={n.data.value.color}
             fillOpacity={n.depth === 0 ? 0.12 : isLeaf ? 0.95 : 0.4}
             stroke={isFocused ? "#fff" : n.depth === 0 ? "#444" : "#0b0d12"}
             strokeWidth={isFocused ? 2 : 1}
@@ -112,7 +112,7 @@
               fill="#fff"
               pointer-events="none"
             >
-              {n.data.label}<tspan x={n.x} dy="1.2em" font-size="9">{n.data.total.value.toFixed(0)}</tspan>
+              {n.data.value.label}<tspan x={n.x} dy="1.2em" font-size="9">{n.data.value.total.value.toFixed(0)}</tspan>
             </text>
           {/if}
         {/each}
@@ -120,6 +120,6 @@
     </Svg>
   </Chart>
   <div style="font-size: 10px; color: #9aa0a8; text-align: center; margin-top: -18px; pointer-events: none;">
-    total: {total.toFixed(0)} · focused: {focusedNode?.label ?? "(none)"} · hover + cmd/ctrl+wheel · click + arrows/Tab
+    total: {total.toFixed(0)} · focused: {focusedNode?.value.label ?? "(none)"} · hover + cmd/ctrl+wheel · click + arrows/Tab
   </div>
 </div>

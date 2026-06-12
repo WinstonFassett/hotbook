@@ -73,7 +73,7 @@
 
   const total = $derived.by(() => {
     void version;
-    return sharedTree.total.value;
+    return sharedTree.value.total.value;
   });
 
   const radius = Math.min(width, height) / 2 - 4;
@@ -92,7 +92,7 @@
       <Partition size={[2 * Math.PI, radius]} let:nodes>
         {#each nodes as node (node.data)}
           {@const n = node as HierarchyRectangularNode<BiNode>}
-          {@const isLeaf = !n.data.children}
+          {@const isLeaf = n.data.children.length === 0}
           {@const isFocused = focusedNode === n.data}
           {#if n.depth > 0}
             <Arc
@@ -100,7 +100,7 @@
               endAngle={n.x1}
               innerRadius={n.y0}
               outerRadius={n.y1}
-              fill={n.data.color}
+              fill={n.data.value.color}
               fillOpacity={isLeaf ? 0.95 : 0.5}
               stroke={isFocused ? "#fff" : "#0b0d12"}
               strokeWidth={isFocused ? 2 : 1}
@@ -114,6 +114,6 @@
     </Svg>
   </Chart>
   <div style="font-size: 10px; color: #9aa0a8; text-align: center; margin-top: -18px; pointer-events: none;">
-    total: {total.toFixed(0)} · focused: {focusedNode?.label ?? "(none)"} · hover + cmd/ctrl+wheel · click + arrows/Tab
+    total: {total.toFixed(0)} · focused: {focusedNode?.value.label ?? "(none)"} · hover + cmd/ctrl+wheel · click + arrows/Tab
   </div>
 </div>

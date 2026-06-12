@@ -16,40 +16,40 @@ import { sharedTree, leaves, parentOf, type BiNode } from "./tree";
  */
 export function applyDelta(node: BiNode, delta: number) {
   const parent = parentOf(sharedTree, node);
-  if (!parent || !parent.children) return;
-  const siblings = parent.children.filter((c) => c !== node);
-  const cur = node.total.value;
+  if (!parent || parent.children.length === 0) return;
+  const siblings = parent.children.filter((c) => c !== node) as BiNode[];
+  const cur = node.value.total.value;
   const next = Math.max(0, cur + delta);
   const real = next - cur;
   if (real === 0) return;
-  node.total.value = next;
+  node.value.total.value = next;
   let remaining = real;
   if (real > 0) {
-    const pool = siblings.filter((s) => s.total.value > 0);
-    const poolSum = pool.reduce((a, b) => a + b.total.value, 0);
+    const pool = siblings.filter((s) => s.value.total.value > 0);
+    const poolSum = pool.reduce((a, b) => a + b.value.total.value, 0);
     if (poolSum > 0) {
       for (const sib of pool) {
-        const share = (sib.total.value / poolSum) * real;
-        const take = Math.min(sib.total.value, share);
-        sib.total.value -= take;
+        const share = (sib.value.total.value / poolSum) * real;
+        const take = Math.min(sib.value.total.value, share);
+        sib.value.total.value -= take;
         remaining -= take;
       }
       for (const sib of siblings) {
         if (remaining <= 0) break;
-        const take = Math.min(sib.total.value, remaining);
-        sib.total.value -= take;
+        const take = Math.min(sib.value.total.value, remaining);
+        sib.value.total.value -= take;
         remaining -= take;
       }
     }
   } else if (siblings.length > 0) {
-    const sibSum = siblings.reduce((a, b) => a + b.total.value, 0);
+    const sibSum = siblings.reduce((a, b) => a + b.value.total.value, 0);
     if (sibSum > 0) {
       for (const sib of siblings) {
-        const share = (sib.total.value / sibSum) * -real;
-        sib.total.value += share;
+        const share = (sib.value.total.value / sibSum) * -real;
+        sib.value.total.value += share;
       }
     } else {
-      for (const sib of siblings) sib.total.value += -real / siblings.length;
+      for (const sib of siblings) sib.value.total.value += -real / siblings.length;
     }
   }
 }
@@ -59,7 +59,7 @@ export function flatOrder(root: BiNode): BiNode[] {
   const out: BiNode[] = [];
   const walk = (n: BiNode) => {
     if (n !== root) out.push(n);
-    n.children?.forEach(walk);
+    (n.children as BiNode[]).forEach(walk);
   };
   walk(root);
   return out;
@@ -70,8 +70,8 @@ export function flatOrder(root: BiNode): BiNode[] {
  * the version signal so this re-runs whenever any leaf cell changes.
  */
 export function buildHierarchy() {
-  return hierarchy<BiNode>(sharedTree, (n) => n.children)
-    .sum((n) => (n.children ? 0 : n.total.value));
+  return hierarchy<BiNode>(sharedTree, (n) => n.children as BiNode[])
+    .sum((n) => (n.children.length > 0 ? 0 : n.value.total.value));
 }
 
 /**
@@ -82,7 +82,7 @@ export function buildHierarchy() {
 export function subscribeAllLeaves(onChange: () => void) {
   const allLeaves = leaves(sharedTree);
   return biEffect(() => {
-    for (const l of allLeaves) void l.total.value;
+    for (const l of allLeaves) void l.value.total.value;
     onChange();
   });
 }

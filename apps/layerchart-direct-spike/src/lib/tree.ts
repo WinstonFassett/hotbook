@@ -1,27 +1,26 @@
-// The writable hierarchy used by all demos. Same shape as the bireactive
-// spike's treemap — Num.lens at branches gives automatic sum aggregation
-// AND a sum-redistribute inverse for writes.
-//
-// Cells live module-scope so multiple component instances see the same
-// writable tree. This is the "shared cells = shared updates" property
-// that bireactive uniquely gives us — no event plumbing required.
+// The writable hierarchy used by all demos. Now expressed via bireactive's
+// TreeNode<T> + node() constructor (see inspo/bireactive/src/tree.ts), with
+// our payload (label/color/total) living in `value`. The Num.lens at each
+// branch gives sum aggregation AND a sum-redistribute inverse for writes —
+// the AGGREGATE pattern documented in bireactive/tree.
 
-import { Num, num, type Writable } from "bireactive";
+import { Num, num, treeNode, walkTree, leavesOf, type TreeNode, type Writable } from "bireactive";
 
-export interface BiNode {
+export interface NodeValue {
   label: string;
   color: string;
   total: Writable<Num>;
-  children?: BiNode[];
 }
 
+export type BiNode = TreeNode<NodeValue>;
+
 function leaf(label: string, value: number, color: string): BiNode {
-  return { label, color, total: num(value) };
+  return treeNode({ label, color, total: num(value) });
 }
 
 function group(label: string, color: string, children: BiNode[]): BiNode {
   const total = Num.lens(
-    children.map((c) => c.total),
+    children.map((c) => c.value.total),
     (vs: readonly number[]) => vs.reduce((a, b) => a + b, 0),
     (target, vs) => {
       const arr = vs as readonly number[];
@@ -31,7 +30,7 @@ function group(label: string, color: string, children: BiNode[]): BiNode {
       return arr.map((v) => v * scale) as never;
     },
   );
-  return { label, color, total, children };
+  return treeNode({ label, color, total }, children);
 }
 
 /** Build the shared portfolio tree once. */
@@ -57,21 +56,22 @@ export const sharedTree: BiNode = group("Portfolio", "#222", [
 
 /** All leaves, in source order. Useful for cmd+wheel scrub on focused leaf. */
 export function leaves(root: BiNode): BiNode[] {
-  const out: BiNode[] = [];
-  const walk = (n: BiNode) => {
-    if (!n.children) out.push(n);
-    else n.children.forEach(walk);
-  };
-  walk(root);
-  return out;
+  return leavesOf(root);
 }
 
-export function parentOf(root: BiNode, target: BiNode): BiNode | undefined {
-  if (!root.children) return undefined;
-  if (root.children.includes(target)) return root;
-  for (const c of root.children) {
-    const p = parentOf(c, target);
-    if (p) return p;
-  }
-  return undefined;
+// WeakMap parent index. Built lazily from the current tree shape. Bireactive's
+// TreeNode is structurally immutable; if the topology is rebuilt (network()),
+// rebuild the index. For now sharedTree is fixed-shape so a one-shot index is fine.
+const parentIndex = new WeakMap<BiNode, BiNode>();
+{
+  const indexFrom = (root: BiNode) => {
+    walkTree(root, (n) => {
+      for (const c of n.children) parentIndex.set(c as BiNode, n as BiNode);
+    });
+  };
+  indexFrom(sharedTree);
+}
+
+export function parentOf(_root: BiNode, target: BiNode): BiNode | undefined {
+  return parentIndex.get(target);
 }

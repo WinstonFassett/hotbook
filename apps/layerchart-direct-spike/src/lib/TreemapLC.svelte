@@ -69,7 +69,7 @@
 
   const total = $derived.by(() => {
     void version;
-    return sharedTree.total.value;
+    return sharedTree.value.total.value;
   });
 </script>
 
@@ -88,7 +88,7 @@
           {@const n = node as HierarchyRectangularNode<BiNode>}
           {@const w = Math.max(0, n.x1 - n.x0)}
           {@const h = Math.max(0, n.y1 - n.y0)}
-          {@const isLeaf = !n.data.children}
+          {@const isLeaf = n.data.children.length === 0}
           {@const isFocused = focusedNode === n.data}
           <Group
             x={n.x0}
@@ -100,7 +100,7 @@
             <Rect
               width={w}
               height={h}
-              fill={n.data.color}
+              fill={n.data.value.color}
               fillOpacity={n.depth === 0 ? 0.12 : isLeaf ? 0.95 : 0.45}
               stroke={isFocused ? "#fff" : n.depth === 0 ? "#444" : "#0b0d12"}
               stroke-width={isFocused ? 2 : 1}
@@ -118,7 +118,7 @@
                 fill="#fff"
                 pointer-events="none"
               >
-                {n.data.label}{#if isLeaf}<tspan x={w / 2} dy="1.2em" font-size="10">{n.data.total.value.toFixed(0)}</tspan>{/if}
+                {n.data.value.label}{#if isLeaf}<tspan x={w / 2} dy="1.2em" font-size="10">{n.data.value.total.value.toFixed(0)}</tspan>{/if}
               </text>
             {/if}
           </Group>
@@ -127,6 +127,6 @@
     </Svg>
   </Chart>
   <div style="font-size: 10px; color: #9aa0a8; text-align: center; margin-top: -18px; pointer-events: none;">
-    total: {total.toFixed(0)} · focused: {focusedNode?.label ?? "(none)"} · hover + cmd/ctrl+wheel · click + arrows/Tab
+    total: {total.toFixed(0)} · focused: {focusedNode?.value.label ?? "(none)"} · hover + cmd/ctrl+wheel · click + arrows/Tab
   </div>
 </div>
