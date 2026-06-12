@@ -42,6 +42,7 @@
   }
   import { effect as biEffect } from "bireactive";
   import { sharedTree, leaves, parentOf, type BiNode } from "./tree";
+  import { initialGestureState, type GestureSignalState, type ReparentProposal } from "./gestureSignal";
 
   let { width = 720, height = 360 }: { width?: number; height?: number } = $props();
 
@@ -61,7 +62,7 @@
   // via onDestroy.
   let allLeaves = leaves(sharedTree);
   const disposeBiEffect = biEffect(() => {
-    for (const l of allLeaves) void l.total.value;
+    for (const l of allLeaves) void l.value.total.value;
     version++;
   });
   onDestroy(disposeBiEffect);
@@ -71,8 +72,8 @@
 
   const tiles = $derived.by(() => {
     void version; // depend on version
-    const h = hierarchy<BiNode>(sharedTree, (n) => n.children)
-      .sum((n) => (n.children ? 0 : n.total.value));
+    const h = hierarchy<BiNode>(sharedTree, (n) => n.children as BiNode[])
+      .sum((n) => (n.children.length > 0 ? 0 : n.value.total.value));
     const laid = treemap<BiNode>()
       .tile(aspectTile(treemapSquarify, width, height))
       .size([width, height])
@@ -89,7 +90,7 @@
         x1: d.x1,
         y1: d.y1,
         depth: d.depth,
-        isLeaf: !d.data.children,
+        isLeaf: d.data.children.length === 0,
       });
     });
     return out;
@@ -110,42 +111,42 @@
 
   function applyDelta(node: BiNode, delta: number) {
     const parent = parentOf(sharedTree, node);
-    if (!parent || !parent.children) return;
-    const siblings = parent.children.filter((c) => c !== node);
-    const cur = node.total.value;
+    if (!parent || parent.children.length === 0) return;
+    const siblings = parent.children.filter((c) => c !== node) as BiNode[];
+    const cur = node.value.total.value;
     const next = Math.max(0, cur + delta);
     const real = next - cur;
     if (real === 0) return;
     // Writing to a branch's total goes through Num.lens, which redistributes
     // the branch's children proportionally — so groups scale naturally.
-    node.total.value = next;
+    node.value.total.value = next;
     let remaining = real;
     if (real > 0) {
-      const pool = siblings.filter((s) => s.total.value > 0);
-      const poolSum = pool.reduce((a, b) => a + b.total.value, 0);
+      const pool = siblings.filter((s) => s.value.total.value > 0);
+      const poolSum = pool.reduce((a, b) => a + b.value.total.value, 0);
       if (poolSum > 0) {
         for (const sib of pool) {
-          const share = (sib.total.value / poolSum) * real;
-          const take = Math.min(sib.total.value, share);
-          sib.total.value -= take;
+          const share = (sib.value.total.value / poolSum) * real;
+          const take = Math.min(sib.value.total.value, share);
+          sib.value.total.value -= take;
           remaining -= take;
         }
         for (const sib of siblings) {
           if (remaining <= 0) break;
-          const take = Math.min(sib.total.value, remaining);
-          sib.total.value -= take;
+          const take = Math.min(sib.value.total.value, remaining);
+          sib.value.total.value -= take;
           remaining -= take;
         }
       }
     } else if (siblings.length > 0) {
-      const sibSum = siblings.reduce((a, b) => a + b.total.value, 0);
+      const sibSum = siblings.reduce((a, b) => a + b.value.total.value, 0);
       if (sibSum > 0) {
         for (const sib of siblings) {
-          const share = (sib.total.value / sibSum) * -real;
-          sib.total.value += share;
+          const share = (sib.value.total.value / sibSum) * -real;
+          sib.value.total.value += share;
         }
       } else {
-        for (const sib of siblings) sib.total.value += -real / siblings.length;
+        for (const sib of siblings) sib.value.total.value += -real / siblings.length;
       }
     }
   }
@@ -202,7 +203,7 @@
     const out: BiNode[] = [];
     const walk = (n: BiNode) => {
       if (n !== root) out.push(n);
-      n.children?.forEach(walk);
+      (n.children as BiNode[]).forEach(walk);
     };
     walk(root);
     return out;
@@ -234,7 +235,136 @@
   // Show the total via a $derived too — proves the branch lens aggregates live.
   const total = $derived.by(() => {
     void version;
-    return sharedTree.total.value;
+    return sharedTree.value.total.value;
+  });
+
+  // ─── Drag-to-reparent (ghost-commit) ──────────────────────────────────────
+  //
+  // Ghost-commit gesture: pointer-down on a non-root tile starts a drag.
+  // A translucent ghost rect follows the cursor; the drop-target tile (a
+  // group node under the pointer that isn't a descendant of the dragged node)
+  // gets a highlighted stroke. On release we log the proposal and clear.
+  // No structural mutation yet — Path A spike. Esc cancels.
+  let gesture = $state.raw<GestureSignalState>(initialGestureState);
+  let lastProposalLog = $state<string>("");
+
+  function isAncestor(maybeAncestor: BiNode, target: BiNode): boolean {
+    let p: BiNode | undefined = target;
+    while (p) {
+      if (p === maybeAncestor) return true;
+      p = parentOf(sharedTree, p);
+    }
+    return false;
+  }
+
+  /** Hit-test a point against the current tile layout; return the deepest
+   *  tile whose rect contains the point. */
+  function tileAt(x: number, y: number): { node: BiNode; tile: typeof tiles[number] } | null {
+    let best: typeof tiles[number] | null = null;
+    for (const t of tiles) {
+      if (x >= t.x0 && x <= t.x1 && y >= t.y0 && y <= t.y1) {
+        if (!best || t.depth > best.depth) best = t;
+      }
+    }
+    return best ? { node: best.node, tile: best } : null;
+  }
+
+  /** Choose the proposed new parent: walk up from the hit tile until we find
+   *  a node that is (a) not the dragged node, (b) not a descendant of it,
+   *  and (c) a branch (has children) — or fall back to the root. */
+  function proposeParent(dragged: BiNode, x: number, y: number): { parent: BiNode; index: number } | null {
+    const hit = tileAt(x, y);
+    if (!hit) return null;
+    let candidate: BiNode | undefined = hit.node;
+    while (candidate) {
+      const isSelf = candidate === dragged;
+      const isDescendantOfDragged = isAncestor(dragged, candidate);
+      const isBranch = candidate.children.length > 0;
+      if (!isSelf && !isDescendantOfDragged && isBranch) {
+        // Insert at end for now; index-precision lands when we add gap-targeting.
+        return { parent: candidate, index: candidate.children.length };
+      }
+      candidate = parentOf(sharedTree, candidate);
+    }
+    return null;
+  }
+
+  function svgPoint(e: PointerEvent): { x: number; y: number } {
+    const svg = e.currentTarget as SVGSVGElement;
+    const r = svg.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+
+  function onPointerDown(e: PointerEvent, t: typeof tiles[number]) {
+    // Only left button, only non-root tiles, and not while the wheel-scrub
+    // modifier is held (that path stays for resize gestures).
+    if (e.button !== 0) return;
+    if (t.node === sharedTree) return;
+    if (e.metaKey || e.ctrlKey) return;
+    const p = svgPoint(e);
+    (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
+    gesture = {
+      active: true,
+      visual: "ghost",
+      writeMode: "commit",
+      proposal: null,
+      origin: { pointer: p, node: t.node },
+      pointer: p,
+    };
+    e.preventDefault();
+  }
+
+  function onPointerMove(e: PointerEvent) {
+    if (!gesture.active || !gesture.origin) return;
+    const p = svgPoint(e);
+    const draggedNode = gesture.origin.node;
+    // Require a small drag distance before showing the ghost, so plain clicks
+    // (focus + click-to-focus) still work without flashing a ghost.
+    const dx = p.x - gesture.origin.pointer.x;
+    const dy = p.y - gesture.origin.pointer.y;
+    if (dx * dx + dy * dy < 25) {
+      gesture = { ...gesture, pointer: p };
+      return;
+    }
+    const proposed = proposeParent(draggedNode, p.x, p.y);
+    const proposal: ReparentProposal | null = proposed
+      ? { kind: "reparent", node: draggedNode, newParent: proposed.parent, index: proposed.index }
+      : null;
+    gesture = { ...gesture, pointer: p, proposal };
+  }
+
+  function onPointerUp(_e: PointerEvent) {
+    if (!gesture.active) return;
+    if (gesture.proposal) {
+      const { node, newParent, index } = gesture.proposal;
+      lastProposalLog = `would reparent "${node.value.label}" under "${newParent.value.label}" at index ${index}`;
+      // Path A: log only. Real structural mutation lands in Path B.
+    } else if (gesture.origin) {
+      lastProposalLog = `no drop target — cancelled`;
+    }
+    gesture = initialGestureState;
+  }
+
+  function onWindowKeydownEsc(e: KeyboardEvent) {
+    if (e.key === "Escape" && gesture.active) {
+      gesture = initialGestureState;
+      lastProposalLog = "cancelled (Esc)";
+    }
+  }
+  $effect(() => {
+    window.addEventListener("keydown", onWindowKeydownEsc);
+    return () => window.removeEventListener("keydown", onWindowKeydownEsc);
+  });
+
+  // Find the current dragged tile (for the ghost rect geometry).
+  const draggedTile = $derived.by(() => {
+    if (!gesture.origin) return null;
+    return tiles.find((t) => t.node === gesture.origin!.node) ?? null;
+  });
+  // Find the current drop-target tile (for highlighting).
+  const dropTargetTile = $derived.by(() => {
+    if (!gesture.proposal) return null;
+    return tiles.find((t) => t.node === gesture.proposal!.newParent) ?? null;
   });
 </script>
 
@@ -246,26 +376,31 @@
   aria-label="treemap"
   onwheel={onWheel}
   onkeydown={onKeydown}
+  onpointermove={onPointerMove}
+  onpointerup={onPointerUp}
   style="outline: none; font-family: ui-sans-serif, system-ui, sans-serif;"
 >
   {#each tiles as t (t.node)}
     {@const w = Math.max(0, t.x1 - t.x0)}
     {@const h = Math.max(0, t.y1 - t.y0)}
     {@const isFocused = focusedNode === t.node}
+    {@const isDropTarget = dropTargetTile?.node === t.node}
+    {@const isDragged = gesture.active && draggedTile?.node === t.node}
     <rect
       x={t.x0}
       y={t.y0}
       width={w}
       height={h}
-      fill={t.node.color}
-      opacity={t.depth === 0 ? 0.12 : t.isLeaf ? 0.95 : 0.45}
-      stroke={isFocused ? "#fff" : t.depth === 0 ? "#444" : "#0b0d12"}
-      stroke-width={isFocused ? 2 : 1}
+      fill={t.node.value.color}
+      opacity={t.depth === 0 ? 0.12 : isDragged ? 0.35 : t.isLeaf ? 0.95 : 0.45}
+      stroke={isDropTarget ? "#9af542" : isFocused ? "#fff" : t.depth === 0 ? "#444" : "#0b0d12"}
+      stroke-width={isDropTarget ? 3 : isFocused ? 2 : 1}
       rx={3}
-      style="cursor: pointer;"
+      style="cursor: {gesture.active ? 'grabbing' : 'pointer'};"
       onclick={() => onTileClick(t)}
       onmouseenter={() => onTileEnter(t)}
       onmouseleave={() => onTileLeave(t)}
+      onpointerdown={(e) => onPointerDown(e, t)}
     />
     {#if t.depth > 0 && w > 28 && h > 16}
       <text
@@ -278,13 +413,38 @@
         fill="#fff"
         pointer-events="none"
       >
-        {t.node.label}{#if t.isLeaf}
-          <tspan x={t.x0 + w / 2} dy="1.2em" font-size="10">{t.node.total.value.toFixed(0)}</tspan>
+        {t.node.value.label}{#if t.isLeaf}
+          <tspan x={t.x0 + w / 2} dy="1.2em" font-size="10">{t.node.value.total.value.toFixed(0)}</tspan>
         {/if}
       </text>
     {/if}
   {/each}
+  {#if gesture.active && gesture.pointer && draggedTile && gesture.proposal}
+    {@const gw = Math.max(20, draggedTile.x1 - draggedTile.x0) / 2}
+    {@const gh = Math.max(14, draggedTile.y1 - draggedTile.y0) / 2}
+    <rect
+      x={gesture.pointer.x - gw / 2}
+      y={gesture.pointer.y - gh / 2}
+      width={gw}
+      height={gh}
+      fill={draggedTile.node.value.color}
+      opacity={0.65}
+      stroke="#9af542"
+      stroke-width={2}
+      stroke-dasharray="4 3"
+      rx={3}
+      pointer-events="none"
+    />
+    <text
+      x={gesture.pointer.x}
+      y={gesture.pointer.y + gh / 2 + 12}
+      text-anchor="middle"
+      font-size="10"
+      fill="#9af542"
+      pointer-events="none"
+    >→ {gesture.proposal.newParent.value.label}</text>
+  {/if}
   <text x={width / 2} y={height - 6} text-anchor="middle" font-size="10" fill="#9aa0a8">
-    total: {total.toFixed(0)} · focused: {focusedNode?.label ?? "(none)"} · hover + cmd/ctrl+wheel · click + arrows/Tab
+    total: {total.toFixed(0)} · focused: {focusedNode?.value.label ?? "(none)"} · drag tile to reparent · cmd/ctrl+wheel scrub · arrows/Tab{#if lastProposalLog} · {lastProposalLog}{/if}
   </text>
 </svg>
