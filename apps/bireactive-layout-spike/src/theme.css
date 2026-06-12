@@ -1,0 +1,10 @@
+/* Bireactive needs these CSS variables defined or strokes/labels are
+ * invisible. Defaults match the rest of vizform's surface (the index.html
+ * --fg/--bg/--accent already define the lab chrome). */
+:root {
+  --text-color: var(--fg);
+  --text-secondary: var(--muted);
+  --bg-color: var(--bg);
+  --bireactive-handle: var(--accent);
+  --border-color: var(--border);
+}
