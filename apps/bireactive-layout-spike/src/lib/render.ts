@@ -49,10 +49,16 @@ export function nodeSize(name: string): NodeSize {
  *  instead of inflating with every level. */
 export function hullPad(depth: number): { top: number; bottom: number; left: number; right: number } {
   const sides = Math.max(8, 14 - depth * 3);
-  // Chip is drawn ABOVE the hull (tab-style), so the hull itself only
-  // needs symmetric content padding on top.
-  return { top: sides, bottom: sides, left: sides, right: sides };
+  // Chip is drawn INSIDE the footprint's top region. The hull's top
+  // padding must reserve space for the chip so leaves don't slide
+  // under it. CHIP_HEIGHT_TOTAL = chip rect + a few px breathing room
+  // below it.
+  return { top: CHIP_HEIGHT_TOTAL, bottom: sides, left: sides, right: sides };
 }
+
+/** Vertical space the chip header consumes inside a GROUP's footprint.
+ *  GROUP chrome and renderHull MUST agree on this value. */
+export const CHIP_HEIGHT_TOTAL = 22;
 
 export interface NodeRenderOpts {
   label: string;

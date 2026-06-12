@@ -38,10 +38,9 @@ import {
   sharedRows,
   type TreeNode,
 } from "./data";
-import { groupNonOverlap, pinAxis, rectNonOverlap, separation } from "./cola-factories";
-import { hullOfMixed } from "./hull";
-import type { Box } from "@bireactive";
-import { hullPad, nodeSize, renderEdge, renderHull, renderNode } from "./render";
+import { boxInside, clampInside, pinAxis, rectMinimize, rectNonOverlap, rectsNonOverlap, separation, type SidePad } from "./cola-factories";
+import { groupNode, leafNode, type LayoutNode } from "./layout-node";
+import { CHIP_HEIGHT_TOTAL, nodeSize, renderEdge, renderHull, renderNode } from "./render";
 
 const W = 760;
 const H = 500;
@@ -166,47 +165,150 @@ export class MdColaAdapt extends Diagram {
       }
     }
 
-    // ── GROUP non-overlap ─────────────────────────────────────────
-    // Treat each container as a first-class GROUP: derive its bbox from
-    // descendant-leaf positions and require sibling GROUPs not to
-    // overlap. Recurse into the containment forest so every depth gets
-    // its own sibling-separation constraints.
+    // ── Build LayoutNode tree ─────────────────────────────────────
+    // Every layout participant — leaf or GROUP — gets a LayoutNode with
+    // a `footprint` Box that includes ALL the pixels it consumes,
+    // chrome included. The constraint system and the renderer both
+    // read from the same footprint, so what you see is what was solved
+    // for.
     //
-    // Uniform leaf half-size approximation — fine for this fixture where
-    // all leaves are similar size; a per-leaf size variant would be a
-    // small extension to groupNonOverlap.
+    // Uniform leaf half-size approximation — fine for this fixture
+    // where all leaves are similar size; the chrome (chipHeight, side,
+    // bottom) is the same as renderHull uses (CHIP_HEIGHT_TOTAL).
     const leafHW = 32;
     const leafHH = 16;
-    const GROUP_PAD = 14;
-    const walkGroups = (nodes: TreeNode[]): void => {
-      // Pair every two sibling containers at this depth.
-      const siblingGroups = nodes.filter((n) => n.children.length > 0);
-      for (let i = 0; i < siblingGroups.length; i++) {
-        for (let j = i + 1; j < siblingGroups.length; j++) {
-          const aLeaves = [...descendantsOf(sharedRows, siblingGroups[i]!.id)]
-            .filter((d) => leafSet.has(d))
-            .map((d) => this.#positions.get(d)!);
-          const bLeaves = [...descendantsOf(sharedRows, siblingGroups[j]!.id)]
-            .filter((d) => leafSet.has(d))
-            .map((d) => this.#positions.get(d)!);
-          if (aLeaves.length === 0 || bLeaves.length === 0) continue;
-          cluster.add(groupNonOverlap(aLeaves, bLeaves, leafHW, leafHH, GROUP_PAD));
+    const SIDE_PAD = 12;
+    const BOTTOM_PAD = 12;
+    const groupChrome = {
+      chipHeight: CHIP_HEIGHT_TOTAL,
+      sidePad: SIDE_PAD,
+      bottomPad: BOTTOM_PAD,
+    };
+    const inflateOfGroup: SidePad = {
+      top: CHIP_HEIGHT_TOTAL,
+      bottom: BOTTOM_PAD,
+      left: SIDE_PAD,
+      right: SIDE_PAD,
+    };
+
+    const buildLayoutTree = (treeNodes: TreeNode[]): LayoutNode[] => {
+      return treeNodes.map((n) => {
+        if (n.children.length === 0) {
+          const sz = nodeSize(byId.get(n.id)?.name.value ?? n.id);
+          return leafNode(n.id, this.#positions.get(n.id)!, sz);
+        }
+        return groupNode(n.id, buildLayoutTree(n.children), groupChrome);
+      });
+    };
+    const layoutRoots = buildLayoutTree(containmentForest(sharedRows));
+
+    // ── Rect as first-class solver variable ─────────────────────
+    // Each GROUP owns a writable outer Box. The solver moves it
+    // directly. Three constraints wire the hierarchy:
+    //   1. Sibling outer Boxes can't overlap (rectsNonOverlap).
+    //   2. Child outer Box must sit inside parent's content area
+    //      (boxInside with chrome inset).
+    //   3. Leaves must sit inside their direct parent's content area
+    //      (clampInside with leaf half-size).
+    // Plus a soft rectMinimize that pulls each outer toward a target
+    // size so it doesn't inflate beyond what containment requires.
+    const insetForBoxInside: SidePad = {
+      top: CHIP_HEIGHT_TOTAL,
+      bottom: BOTTOM_PAD,
+      left: SIDE_PAD,
+      right: SIDE_PAD,
+    };
+    // Walk and gather all GROUPs with their direct child-GROUPs and
+    // direct leaf-children so we can attach the right constraints.
+    const allGroups: LayoutNode[] = [];
+    const collectGroups = (n: LayoutNode): void => {
+      if (n.children.length === 0) return;
+      allGroups.push(n);
+      for (const c of n.children) collectGroups(c);
+    };
+    for (const r of layoutRoots) collectGroups(r);
+
+    // (1) Sibling rectsNonOverlap: same-parent pairs at every depth,
+    //     plus top-level pairs.
+    const walkSibPairs = (nodes: LayoutNode[]): void => {
+      const groups = nodes.filter((n) => n.children.length > 0);
+      for (let i = 0; i < groups.length; i++) {
+        for (let j = i + 1; j < groups.length; j++) {
+          cluster.add(rectsNonOverlap(groups[i]!.outer!, groups[j]!.outer!, 8));
         }
       }
-      for (const n of siblingGroups) walkGroups(n.children);
+      for (const g of groups) walkSibPairs(g.children);
     };
-    walkGroups(containmentForest(sharedRows));
+    walkSibPairs(layoutRoots);
 
-    for (const id of ids) {
-      cluster.add(softTarget(this.#positions.get(id)!, [this.#cx, this.#cy], 6));
+    // (2) Nested boxInside: child GROUP outer inside parent content.
+    for (const g of allGroups) {
+      for (const c of g.children) {
+        if (c.outer) {
+          cluster.add(boxInside(c.outer, g.outer!, insetForBoxInside));
+        }
+      }
     }
 
+    // (3) clampInside: each leaf inside its direct-parent GROUP's
+    //     content area. Find each leaf's parent GROUP.
+    const parentGroupOf = new Map<string, LayoutNode>();
+    for (const g of allGroups) {
+      for (const c of g.children) parentGroupOf.set(c.id, g);
+    }
+    for (const id of ids) {
+      const parent = parentGroupOf.get(id);
+      if (!parent || !parent.outer) continue;
+      cluster.add(
+        clampInside(this.#positions.get(id)!, parent.outer, leafHW, leafHH),
+      );
+    }
+
+    // (4) rectMinimize: pull each outer toward a minimal size. Target
+    //     = chrome + a small content allowance, so the rect shrinks
+    //     until containment pushes back.
+    for (const g of allGroups) {
+      const minW = 2 * SIDE_PAD + 60;
+      const minH = CHIP_HEIGHT_TOTAL + BOTTOM_PAD + 40;
+      cluster.add(rectMinimize(g.outer!, minW, minH, 2));
+    }
+
+    const collectLeafIdsLocal = (n: LayoutNode): string[] => {
+      if (n.children.length === 0) return [n.id];
+      const out: string[] = [];
+      for (const c of n.children) out.push(...collectLeafIdsLocal(c));
+      return out;
+    };
+
+    // Anchor top-level GROUPs (not individual leaves) toward viewport
+    // centre. Pulling individual leaves to centre would fight the
+    // rect-first-class hierarchy — leaves' positions are now determined
+    // by their parent GROUP's content area via clampInside, so the
+    // anchor must operate at the GROUP level. Using softTarget on the
+    // outer Box's centre requires a position-from-Box adapter; instead
+    // we just softly pull a representative leaf per top-level GROUP
+    // and let the rest of the GROUP follow via spring/repel/clamp.
+    for (const root of layoutRoots) {
+      if (root.children.length === 0) continue;
+      // Pull every leaf in the top-level GROUP toward viewport centre.
+      // The GROUP rect follows (via clampInside) and stays anchored.
+      // Stiffness matched to per-leaf scale so leaves don't all clump
+      // at the centre point — repel + non-overlap balance the spread.
+      const allLeaves = collectLeafIdsLocal(root);
+      for (const id of allLeaves) {
+        cluster.add(softTarget(this.#positions.get(id)!, [this.#cx, this.#cy], 6));
+      }
+    }
+
+    // Topological source pinning: keep things with no incoming edges
+    // near the top of their region. Lighter stiffness so it doesn't
+    // override the GROUP hierarchy.
     const incoming = new Map<string, number>();
     for (const id of ids) incoming.set(id, 0);
     for (const [, t] of edges) incoming.set(t, (incoming.get(t) ?? 0) + 1);
     for (const id of ids) {
       if ((incoming.get(id) ?? 0) === 0) {
-        cluster.add(pinAxis(this.#positions.get(id)!, "y", this.#cy - 160, 80));
+        cluster.add(pinAxis(this.#positions.get(id)!, "y", this.#cy - 160, 20));
       }
     }
 
@@ -215,30 +317,17 @@ export class MdColaAdapt extends Diagram {
     const nodeMount = mount(this.#nodesGfx);
     const edgeMount = mount(this.#edgesGfx);
 
-    // Recursive HULL: a parent's HULL wraps its *direct* leaves and its
-    // *child HULLs*. Build child-first so the parent can read its
-    // children's already-derived Box cells.
-    const drawHulls = (nodes: TreeNode[]): Box[] => {
-      const myHulls: Box[] = [];
+    // Hulls render directly from each GROUP LayoutNode's footprint.
+    // Same Box the constraint system used → chip and body sit exactly
+    // where the layout solved for them.
+    const drawHulls = (nodes: LayoutNode[], depth: number): void => {
       for (const n of nodes) {
         if (n.children.length === 0) continue;
-        // Recurse first → child HULLs exist before we build this one.
-        const childHulls = drawHulls(n.children);
-        // Direct leaves only (not transitive — those are inside the
-        // child HULLs already).
-        const directLeaves = n.children
-          .filter((c) => c.children.length === 0)
-          .map((c) => c.id)
-          .filter((id) => leafSet.has(id));
-        const positions = directLeaves.map((id) => this.#positions.get(id)!);
-        const sizes = directLeaves.map((id) => nodeSize(byId.get(id)?.name.value ?? id));
-        const hullBox = hullOfMixed(positions, sizes, childHulls, hullPad(n.depth));
-        renderHull(hullMount, hullBox, n.depth, byId.get(n.id)?.name.value ?? n.id);
-        myHulls.push(hullBox);
+        renderHull(hullMount, n.footprint, depth, byId.get(n.id)?.name.value ?? n.id);
+        drawHulls(n.children, depth + 1);
       }
-      return myHulls;
     };
-    drawHulls(containmentForest(sharedRows));
+    drawHulls(layoutRoots, 0);
 
     const shapeOf = new Map<string, Shape>();
     for (const id of ids) {
