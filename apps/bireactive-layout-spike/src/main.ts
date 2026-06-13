@@ -10,12 +10,14 @@ import { MdPropSugiyama } from "./lib/spike1-prop-sugiyama";
 import { MdForceAdapt } from "./lib/spike3-force-adapt";
 import { MdDagreWrap } from "./lib/spike4-dagre-wrap";
 import { MdColaAdapt } from "./lib/spike2-cola-adapt";
+import { MdNestedLayered } from "./lib/spike5-nested-layered";
 import { mountControls } from "./lib/controls";
 
 MdPropSugiyama.define();
 MdForceAdapt.define();
 MdDagreWrap.define();
 MdColaAdapt.define();
+MdNestedLayered.define();
 
 interface SpikeDef {
   id: string;
@@ -59,6 +61,15 @@ const spikes: SpikeDef[] = [
       "Adds two CoLa-specific constraint factories on top of bireactive's existing spring/repel/gap: separation(axis, gap) and rectNonOverlap. Small demo with clustered nodes + axis-aligned separation. Foundation for a future bireactive-cola package.",
     mount: root => {
       root.innerHTML = '<md-cola-adapt style="--d-w: 620"></md-cola-adapt>';
+    },
+  },
+  {
+    id: "spike5",
+    label: "5 · Nested-layered (recursive)",
+    blurb:
+      "layered() solved per group, recursively. Each child group appears to its parent's solve as a fat node sized by its inner extent + chrome. Same primitive at every nesting level — no compound engine, no post-process. Cross-containment edges render leaf-to-leaf but only influence layout at their LCA.",
+    mount: root => {
+      root.innerHTML = '<md-nested-layered style="--d-w: 760"></md-nested-layered>';
     },
   },
 ];
