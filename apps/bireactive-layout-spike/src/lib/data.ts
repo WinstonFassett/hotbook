@@ -27,6 +27,9 @@ export interface Row {
   parentId: Writable<Cell<string | null>>; // containment parent (nullable = top-level)
   index: Writable<Cell<number>>; // sibling order within the parent
   name: Writable<Cell<string>>;
+  /** Per-group layout direction. null = inherit from parent (or diagram
+   *  default at the root). Only meaningful when the row is a container. */
+  direction: Writable<Cell<"TB" | "LR" | null>>;
 }
 
 export const parentIdOf = (r: Row) => r.parentId;
@@ -43,6 +46,7 @@ export function makeRow(
     parentId: cell<string | null>(parentId),
     index: cell(index),
     name: cell(name),
+    direction: cell<"TB" | "LR" | null>(null),
   };
 }
 

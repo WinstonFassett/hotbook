@@ -110,10 +110,13 @@ export class MdNestedLayered extends Diagram {
 
     this.#persist.push(
       effect(() => {
-        void sharedRows.items;
+        const rows = sharedRows.items;
         void sharedEdges.items;
         void sharedSelection.value;
         void direction.value;
+        // Subscribe to per-row direction so layout reflows when the
+        // sidebar toggles a group's direction override.
+        for (const r of rows) void r.direction.value;
         this.#buildAll();
         this.#applyLayout();
       }),
@@ -310,8 +313,20 @@ export class MdNestedLayered extends Diagram {
       // single leaf would otherwise force every pair of layers in this
       // group apart by the giant's height; tight spacing only does
       // that for the one pair that actually needs it.
+      // Resolve direction for this group: walk up parent chain to find
+      // the nearest explicit per-group direction; fall back to the
+      // diagram-level default. Root (null groupId) always uses default.
+      const resolveDir = (id: string | null): "TB" | "LR" => {
+        let cur: string | null = id;
+        while (cur != null) {
+          const explicit = byId.get(cur)?.direction.value;
+          if (explicit != null) return explicit;
+          cur = byId.get(cur)?.parentId.value ?? null;
+        }
+        return direction.value;
+      };
       const place = layeredTight(g, {
-        direction: direction.value,
+        direction: resolveDir(groupId),
         sizeOf,
         layerPad: 40,
         nodeGap: 28,
