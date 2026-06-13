@@ -63,26 +63,17 @@ export function makeEdge(from: string, to: string): Edge {
 // edges that cross containment.
 
 const SEED_ROWS: Row[] = [
-  // Top level containers
   makeRow("frontend", null, 0, "frontend"),
-  makeRow("backend", null, 1, "backend"),
-
-  // Inside "frontend"
-  makeRow("auth", "frontend", 0, "auth"),
-  makeRow("dash", "frontend", 1, "dash"),
-  makeRow("web", "frontend", 2, "web"),
-
-  // Inside "backend" — itself contains a sub-container "data"
-  makeRow("services", "backend", 0, "services"),
-  makeRow("data", "backend", 1, "data"),
-
-  // Inside "services"
-  makeRow("users", "services", 0, "users"),
-  makeRow("orgs", "services", 1, "orgs"),
-  makeRow("billing", "services", 2, "billing"),
-
-  // Inside "data" (nested two levels deep)
-  makeRow("pg", "data", 0, "pg"),
+  makeRow("backend", "billing", 1, "backend"),
+  makeRow("auth", "web", 0, "auth"),
+  makeRow("dash", "web", 1, "dash"),
+  makeRow("web", null, 2, "web"),
+  makeRow("services", "orgs", 0, "services"),
+  makeRow("data", "users", 1, "data"),
+  makeRow("users", "orgs", 0, "users"),
+  makeRow("orgs", "auth", 1, "orgs"),
+  makeRow("billing", "dash", 2, "billing"),
+  makeRow("pg", null, 0, "pg"),
   makeRow("redis", "data", 1, "redis"),
 ];
 

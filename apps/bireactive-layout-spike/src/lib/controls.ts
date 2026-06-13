@@ -134,6 +134,32 @@ const ACTIONS: Action[] = [
       sharedRows.remove(victim);
     },
   },
+  {
+    id: "log",
+    label: "log",
+    run: () => {
+      const fmt = (s: string | null): string =>
+        s === null ? "null" : JSON.stringify(s);
+      const rowLines = sharedRows.items.map(
+        (r) =>
+          `  makeRow(${JSON.stringify(r.id)}, ${fmt(r.parentId.value)}, ${r.index.value}, ${JSON.stringify(r.name.value)}),`,
+      );
+      const edgeLines = sharedEdges.items.map(
+        (e) => `  makeEdge(${JSON.stringify(e.from.value)}, ${JSON.stringify(e.to.value)}),`,
+      );
+      const out = [
+        "const SEED_ROWS: Row[] = [",
+        ...rowLines,
+        "];",
+        "",
+        "const SEED_EDGES: Edge[] = [",
+        ...edgeLines,
+        "];",
+      ].join("\n");
+      console.log(out);
+      void navigator.clipboard?.writeText(out).catch(() => {});
+    },
+  },
 ];
 
 /** Mount the shared controls into `host`. Returns a disposer. */
