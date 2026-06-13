@@ -45,7 +45,7 @@ import {
   type TreeNode,
 } from "./data";
 import { measure, type Measured } from "./measure";
-import { renderHull, renderNode } from "./render";
+import { FONT_PX, renderHull, renderNode } from "./render";
 
 const W = 760;
 const H = 540;
@@ -357,14 +357,15 @@ export class MdNestedLayered extends Diagram {
     }
 
     // Fit-to-view: scale + translate so the whole compound layout fits.
-    // Cap zoom-in at MAX_ZOOM (em-relative) so small graphs scale up to
-    // readable but not "huge text in viewport". MAX_ZOOM = 2.0 means
-    // labels can grow up to 2× their natural rendered size.
+    // Em-based max-zoom: cap so that the leaf font (FONT_PX) never renders
+    // larger than MAX_READABLE_PX on screen. Small graphs zoom up to
+    // readable; larger ones stay <=1.0 and fit.
     const rootSize = solveResult.get(null)!.size;
     const margin = 16;
     const availW = W - 2 * margin;
     const availH = H - 2 * margin - 24;
-    const MAX_ZOOM = 2.0;
+    const MAX_READABLE_PX = 24;
+    const MAX_ZOOM = MAX_READABLE_PX / FONT_PX;
     const scale = Math.min(
       MAX_ZOOM,
       availW / Math.max(1, rootSize.w),

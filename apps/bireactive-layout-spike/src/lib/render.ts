@@ -26,7 +26,7 @@ import {
 // for ASCII labels; if it underestimates, the label still renders, just
 // might overflow — preferable to async measurement during layout.
 const CHAR_W = 0.62;
-const FONT_PX = 11.5;
+export const FONT_PX = 11.5;
 const PAD_X = 14;
 const NODE_H = 28;
 
