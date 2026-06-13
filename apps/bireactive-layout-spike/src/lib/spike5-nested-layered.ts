@@ -32,7 +32,8 @@ import {
   type Vec,
   type Writable,
 } from "@bireactive";
-import { extent, type Graph, layered, type Placement } from "@bireactive/propagators";
+import { extent, type Graph, type Placement } from "@bireactive/propagators";
+import { layeredTight } from "./layered-tight";
 
 import {
   containmentForest,
@@ -284,21 +285,16 @@ export class MdNestedLayered extends Diagram {
         nodes: kids,
         edges: edgesAtLevel.get(groupId) ?? [],
       };
-      // `layered` measures `layerGap` centre-to-centre, not edge-to-edge.
-      // If any child is taller than the gap, sibling hulls geometrically
-      // overlap. Compute the layer gap from the tallest child this level
-      // owns (TB direction = height; LR would use width). Same trick as
-      // inspo/bireactive/site/elements/md-subgraphs.ts.
+      // `layeredTight` is our local fork of inspo's `layered()` with
+      // per-pair layer spacing. A giant solved-group rect next to a
+      // single leaf would otherwise force every pair of layers in this
+      // group apart by the giant's height; tight spacing only does
+      // that for the one pair that actually needs it.
       const direction = "TB" as const;
-      let maxAlong = 0;
-      for (const k of kids) {
-        const sz = sizeOf(k);
-        maxAlong = Math.max(maxAlong, direction === "TB" ? sz.h : sz.w);
-      }
-      const place = layered(g, {
+      const place = layeredTight(g, {
         direction,
         sizeOf,
-        layerGap: maxAlong + 40,
+        layerPad: 40,
         nodeGap: 28,
       });
       const innerSize = extent(place);
