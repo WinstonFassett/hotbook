@@ -284,10 +284,21 @@ export class MdNestedLayered extends Diagram {
         nodes: kids,
         edges: edgesAtLevel.get(groupId) ?? [],
       };
+      // `layered` measures `layerGap` centre-to-centre, not edge-to-edge.
+      // If any child is taller than the gap, sibling hulls geometrically
+      // overlap. Compute the layer gap from the tallest child this level
+      // owns (TB direction = height; LR would use width). Same trick as
+      // inspo/bireactive/site/elements/md-subgraphs.ts.
+      const direction = "TB" as const;
+      let maxAlong = 0;
+      for (const k of kids) {
+        const sz = sizeOf(k);
+        maxAlong = Math.max(maxAlong, direction === "TB" ? sz.h : sz.w);
+      }
       const place = layered(g, {
-        direction: "TB",
+        direction,
         sizeOf,
-        layerGap: 60,
+        layerGap: maxAlong + 40,
         nodeGap: 28,
       });
       const innerSize = extent(place);
