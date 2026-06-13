@@ -357,12 +357,16 @@ export class MdNestedLayered extends Diagram {
     }
 
     // Fit-to-view: scale + translate so the whole compound layout fits.
+    // Cap zoom-in at MAX_ZOOM (em-relative) so small graphs scale up to
+    // readable but not "huge text in viewport". MAX_ZOOM = 2.0 means
+    // labels can grow up to 2× their natural rendered size.
     const rootSize = solveResult.get(null)!.size;
     const margin = 16;
     const availW = W - 2 * margin;
     const availH = H - 2 * margin - 24;
+    const MAX_ZOOM = 2.0;
     const scale = Math.min(
-      1.0,
+      MAX_ZOOM,
       availW / Math.max(1, rootSize.w),
       availH / Math.max(1, rootSize.h),
     );

@@ -99,7 +99,7 @@ export function measure(rows: Coll<Row>, edges: Coll<Edge>): Measured {
       out.groups.set(r.id, {
         kind: "group",
         pad: {
-          top: CHIP_HEIGHT_TOTAL,
+          top: CHIP_HEIGHT_TOTAL + 8,
           bottom: side,
           left: side,
           right: side,
