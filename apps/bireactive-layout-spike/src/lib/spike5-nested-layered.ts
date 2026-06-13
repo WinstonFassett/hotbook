@@ -47,6 +47,7 @@ import {
 } from "./data";
 import { measure, type Measured } from "./measure";
 import { FONT_PX, renderHull, renderNode } from "./render";
+import { sharedSelection, select, clearSelection, type Selection } from "./selection";
 
 const W = 760;
 const H = 540;
@@ -111,6 +112,7 @@ export class MdNestedLayered extends Diagram {
       effect(() => {
         void sharedRows.items;
         void sharedEdges.items;
+        void sharedSelection.value;
         this.#buildAll();
         this.#applyLayout();
       }),
@@ -123,6 +125,12 @@ export class MdNestedLayered extends Diagram {
         { size: 10, fill: "var(--text-secondary)" },
       ),
     );
+
+    // Click on empty diagram surface = deselect. Handlers on shapes
+    // call stopPropagation so this only fires when nothing was hit.
+    const onBgClick = (): void => clearSelection();
+    this.addEventListener("click", onBgClick);
+    this.#persist.push(() => this.removeEventListener("click", onBgClick));
   }
 
   #buildAll(): void {
@@ -158,6 +166,8 @@ export class MdNestedLayered extends Diagram {
       if (!this.#hullBox.has(id)) this.#hullBox.set(id, box(0, 0, 0, 0));
     }
 
+    const sel = sharedSelection.value;
+
     // Render hulls outermost first so nested ones paint on top.
     const hullMount = mount(this.#hullsGfx);
     const forest = containmentForest(sharedRows);
@@ -166,7 +176,10 @@ export class MdNestedLayered extends Diagram {
         if (n.children.length === 0) continue;
         const hb = this.#hullBox.get(n.id);
         if (!hb) continue;
-        renderHull(hullMount, hb, n.depth, byId.get(n.id)?.name.value ?? n.id);
+        const shapes = renderHull(hullMount, hb, n.depth, byId.get(n.id)?.name.value ?? n.id);
+        // Both the panel rect AND the chip rect select the group, so
+        // clicking the label-chip works as expected.
+        for (const sh of shapes) markSelectable(sh, "group", n.id, sel);
         drawHulls(n.children);
       }
     };
@@ -182,6 +195,7 @@ export class MdNestedLayered extends Diagram {
         draggable: false,
       });
       shapeOf.set(id, shape);
+      markSelectable(shape, "node", id, sel);
       this.#teardown.push(
         this.anim.start(spring(nv.pos, nv.target, { omega: 9, zeta: 0.85, precision: 0 })),
       );
@@ -195,10 +209,15 @@ export class MdNestedLayered extends Diagram {
       const ds = [...descendantsOf(sharedRows, id)].filter((d) => shapeOf.has(d));
       return ds[0] ? shapeOf.get(ds[0])! : null;
     };
-    for (const [u, v] of flatGraph(sharedRows, sharedEdges).edges) {
+    for (const e of sharedEdges.items) {
+      const u = e.from.value;
+      const v = e.to.value;
       const su = resolveAnchor(u);
       const sv = resolveAnchor(v);
-      if (su && sv) edgeMount(arrow(su, sv, { thin: true, opacity: 0.65 }));
+      if (su && sv) {
+        const a = edgeMount(arrow(su, sv, { thin: true, opacity: 0.65 }));
+        markSelectable(a, "edge", e.id, sel);
+      }
     }
   }
 
@@ -378,4 +397,52 @@ export class MdNestedLayered extends Diagram {
       this.#fitted = true;
     }
   }
+}
+
+// Wire a shape as a click-to-select target. Sets the cursor, calls
+// `select(kind,id)` and stops propagation so the diagram-level
+// background-click handler doesn't immediately clear. When the shape
+// is currently selected, paint a stroke ring via CSS-var overrides
+// (refined later via theme.css).
+function markSelectable(
+  shape: Shape,
+  kind: Selection["kind"],
+  id: string,
+  current: Selection | null,
+): void {
+  const el = (shape as unknown as { el?: SVGElement }).el;
+  if (!el) return;
+  el.style.cursor = "pointer";
+  el.dataset.selectable = kind;
+  el.dataset.selectId = id;
+  const isSelected = current && current.kind === kind && current.id === id;
+  if (isSelected) {
+    el.dataset.selected = "true";
+    // Provisional visual: bold accent ring + glow. Refine via theme later.
+    el.setAttribute("stroke", "#f59e0b");
+    el.setAttribute("stroke-width", "2.5");
+    el.style.filter = "drop-shadow(0 0 4px rgba(245,158,11,0.6))";
+  } else {
+    // Hover affordance. CSS inside shadow root can't reach here from
+    // the global theme.css, so wire it inline.
+    const origStroke = el.getAttribute("stroke");
+    const origWidth = el.getAttribute("stroke-width");
+    const origFilter = el.style.filter;
+    el.addEventListener("mouseenter", () => {
+      el.setAttribute("stroke", "#fbbf24");
+      el.setAttribute("stroke-width", "1.5");
+      el.style.filter = "drop-shadow(0 0 2px rgba(251,191,36,0.6))";
+    });
+    el.addEventListener("mouseleave", () => {
+      if (origStroke != null) el.setAttribute("stroke", origStroke);
+      else el.removeAttribute("stroke");
+      if (origWidth != null) el.setAttribute("stroke-width", origWidth);
+      else el.removeAttribute("stroke-width");
+      el.style.filter = origFilter;
+    });
+  }
+  el.addEventListener("click", (e: Event) => {
+    e.stopPropagation();
+    select(kind, id);
+  });
 }

@@ -12,6 +12,7 @@ import { MdDagreWrap } from "./lib/spike4-dagre-wrap";
 import { MdColaAdapt } from "./lib/spike2-cola-adapt";
 import { MdNestedLayered } from "./lib/spike5-nested-layered";
 import { mountControls } from "./lib/controls";
+import { mountSidebar } from "./lib/sidebar";
 
 MdPropSugiyama.define();
 MdForceAdapt.define();
@@ -90,11 +91,16 @@ function show(id: string): void {
     <section class="spike active" id="sect-${spike.id}">
       <h2>${spike.label}</h2>
       <p class="blurb">${spike.blurb}</p>
-      <div class="stage" id="stage-${spike.id}"></div>
+      <div class="layout" style="display:flex;gap:16px;align-items:flex-start">
+        <div class="stage" id="stage-${spike.id}" style="flex:1;min-width:0"></div>
+        <div id="sidebar-${spike.id}"></div>
+      </div>
     </section>
   `;
   const stage = document.getElementById(`stage-${spike.id}`)!;
   spike.mount(stage);
+  const sidebarHost = document.getElementById(`sidebar-${spike.id}`)!;
+  mountSidebar(sidebarHost);
   history.replaceState(null, "", `#${spike.id}`);
 }
 

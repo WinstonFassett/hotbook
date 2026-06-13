@@ -85,7 +85,11 @@ export function renderNode(
     opacity: 0.92,
   });
   s(r);
-  s(labelShape(posCell, opts.label, { size: FONT_PX, bold: true, fill: "white" }));
+  const lbl = s(labelShape(posCell, opts.label, { size: FONT_PX, bold: true, fill: "white" }));
+  // Labels render on top — disable pointer events so clicks fall
+  // through to the rect underneath.
+  const lblEl = (lbl as unknown as { el?: SVGElement }).el;
+  if (lblEl) lblEl.style.pointerEvents = "none";
   let dispose = (): void => {};
   if (opts.draggable) {
     dispose = drag(r, posCell, opts.dragging);
@@ -117,7 +121,7 @@ export function renderHull(
   hullBox: Box,
   depth: number,
   label: string,
-): void {
+): Shape[] {
   const FILL_OPACITY = [0.05, 0.09, 0.13, 0.17];
   const CHIP_OPACITY = [0.22, 0.32, 0.42, 0.52];
   const fillOp = FILL_OPACITY[Math.min(depth, FILL_OPACITY.length - 1)]!;
@@ -125,7 +129,7 @@ export function renderHull(
   const cornerR = Math.max(6, 12 - depth * 2);
 
   // Panel
-  s(
+  const panel = s(
     rect(hullBox, {
       fill: "var(--accent)",
       opacity: fillOp,
@@ -153,7 +157,7 @@ export function renderHull(
     return { x: b.x + INSET_X, y: b.y + INSET_Y, w: chipW, h: CHIP_H };
   });
 
-  s(
+  const chip = s(
     rect(chipBox, {
       fill: "var(--accent)",
       opacity: chipOp,
@@ -172,7 +176,7 @@ export function renderHull(
     };
   });
 
-  s(
+  const chipLbl = s(
     labelShape(labelPos, label, {
       size: CHIP_FONT,
       bold: true,
@@ -180,4 +184,8 @@ export function renderHull(
       opacity: 0.92,
     }),
   );
+  const chipLblEl = (chipLbl as unknown as { el?: SVGElement }).el;
+  if (chipLblEl) chipLblEl.style.pointerEvents = "none";
+
+  return [panel, chip];
 }
