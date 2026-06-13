@@ -35,7 +35,9 @@ import {
   sharedRows,
   type TreeNode,
 } from "./data";
-import { renderEdge, renderHull, renderNode, nodeSize } from "./render";
+import { renderEdge, renderHull, renderNode } from "./render";
+import { measure } from "./measure";
+import { applyGroupChrome, type NodeRect } from "./project";
 
 const W = 760;
 const H = 500;
@@ -187,6 +189,12 @@ export class MdDagreWrap extends Diagram {
     const leaves = leafIds(sharedRows);
     if (leaves.length === 0) return;
 
+    // Shared footprint snapshot — every engine in this app reads from
+    // the same source of truth. Dagre is chrome-blind (no per-subgraph
+    // padding), so we declare ONLY leaf sizes here and let `applyGroupChrome`
+    // (the project phase) stamp in chip+pad later.
+    const measured = measure(sharedRows, sharedEdges);
+
     // Compound dagre: register every container with setParent so dagre
     // lays out subgraph boxes natively. Edges still go between leaves
     // (cross-containment edges are projected to a descendant leaf so
@@ -213,10 +221,11 @@ export class MdDagreWrap extends Diagram {
     });
     g.setDefaultEdgeLabel(() => ({}));
 
-    // Register leaves with their measured size.
+    // Register leaves with their measured size (from shared `measure()`).
     for (const id of leaves) {
-      const sz = nodeSize(byId.get(id)?.name.value ?? id);
-      g.setNode(id, { width: sz.w, height: sz.h });
+      const fp = measured.leaves.get(id);
+      if (!fp) continue;
+      g.setNode(id, { width: fp.w, height: fp.h });
     }
     // Register containers — dagre allocates subgraph rect for these.
     // We give them a small placeholder size; dagre expands to fit kids.
@@ -241,25 +250,11 @@ export class MdDagreWrap extends Diagram {
     }
     dagre.layout(g);
 
-    // Dagre returns tight subgraph rects (no per-container padding) and
-    // child positions are absolute. Two visual problems:
-    //   1. Each container's chip header (~24px tall) eats half the rect
-    //      when the rect is small — nested chips end up stacked on the
-    //      parent's chip.
-    //   2. Children sit right against their container's top edge — there
-    //      is no breathing room and the hierarchy reads as one flat soup.
-    //
-    // Fix: post-process by walking containers depth-first deepest-first,
-    // pushing each container's subtree DOWN by CHIP_HEAD and extending
-    // the container's rect upward by CHIP_HEAD so the chip sits above
-    // its children. Side padding is added the same way (uniform inset
-    // from each child's extent). Bottom-up means a parent picks up the
-    // already-expanded child rects when its own padding is computed.
-    const CHIP_HEAD = 22; // chip + a bit of breathing space below it
-    const SIDE_PAD = 10;
-    const BOT_PAD = 10;
-
-    interface NodeRect { x: number; y: number; w: number; h: number }
+    // Dagre returns tight subgraph rects (no per-container padding) — it
+    // doesn't know about chip headers. Hand the raw rects to the shared
+    // project phase, which walks groups deepest-first and stamps in the
+    // chrome declared by `measure()`. All constants (chip height, side
+    // pad) live in measure.ts — not duplicated here.
     const rectOf: Map<string, NodeRect> = new Map();
     for (const id of leaves) {
       const n = g.node(id);
@@ -270,7 +265,7 @@ export class MdDagreWrap extends Diagram {
       if (n) rectOf.set(cid, { x: n.x - n.width / 2, y: n.y - n.height / 2, w: n.width, h: n.height });
     }
 
-    // Build child-id index from sharedRows so we can walk subtrees.
+    // Child-id index from sharedRows, passed to project phase.
     const childrenOf = new Map<string, string[]>();
     for (const r of sharedRows.items) {
       const pid = r.parentId.value;
@@ -279,66 +274,7 @@ export class MdDagreWrap extends Diagram {
       childrenOf.get(pid)!.push(r.id);
     }
 
-    // Depth of each container — deepest first when applying padding.
-    const depthOf = new Map<string, number>();
-    const computeDepth = (id: string): number => {
-      if (depthOf.has(id)) return depthOf.get(id)!;
-      const kids = childrenOf.get(id) ?? [];
-      let d = 0;
-      for (const k of kids) {
-        if (containers.has(k)) d = Math.max(d, 1 + computeDepth(k));
-        else d = Math.max(d, 1);
-      }
-      depthOf.set(id, d);
-      return d;
-    };
-    for (const cid of containers) computeDepth(cid);
-    const orderedContainers = [...containers].sort((a, b) => (depthOf.get(b)! - depthOf.get(a)!));
-
-    // Collect all descendant ids of a container (leaves + nested containers).
-    const descIds = (cid: string): string[] => {
-      const out: string[] = [];
-      const queue = [...(childrenOf.get(cid) ?? [])];
-      while (queue.length) {
-        const id = queue.shift()!;
-        out.push(id);
-        const kids = childrenOf.get(id);
-        if (kids) queue.push(...kids);
-      }
-      return out;
-    };
-
-    for (const cid of orderedContainers) {
-      const all = descIds(cid);
-      if (all.length === 0) continue;
-      // Shift entire subtree down by CHIP_HEAD so the chip has room.
-      for (const id of all) {
-        const r = rectOf.get(id);
-        if (r) r.y += CHIP_HEAD;
-      }
-      // Recompute container rect = bounding box of children's (now padded)
-      // rects, plus side/bottom padding. Top of rect = childrenMinY - CHIP_HEAD
-      // so chip sits in the inset; uniform SIDE_PAD/BOT_PAD on other sides.
-      let cxmin = Number.POSITIVE_INFINITY;
-      let cymin = Number.POSITIVE_INFINITY;
-      let cxmax = Number.NEGATIVE_INFINITY;
-      let cymax = Number.NEGATIVE_INFINITY;
-      for (const id of (childrenOf.get(cid) ?? [])) {
-        const r = rectOf.get(id);
-        if (!r) continue;
-        cxmin = Math.min(cxmin, r.x);
-        cymin = Math.min(cymin, r.y);
-        cxmax = Math.max(cxmax, r.x + r.w);
-        cymax = Math.max(cymax, r.y + r.h);
-      }
-      const newRect: NodeRect = {
-        x: cxmin - SIDE_PAD,
-        y: cymin - CHIP_HEAD,
-        w: (cxmax - cxmin) + 2 * SIDE_PAD,
-        h: (cymax - cymin) + CHIP_HEAD + BOT_PAD,
-      };
-      rectOf.set(cid, newRect);
-    }
+    applyGroupChrome({ rectOf, childrenOf, groupIds: containers, measured });
 
     // Leaf target positions = centre of the (now padded) rect.
     for (const id of leaves) {
