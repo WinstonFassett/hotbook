@@ -12,14 +12,18 @@ import {
   arrow,
   Box,
   type Cell,
+  derive,
   drag,
+  effect,
   label as labelShape,
   type Mount,
+  pathD,
   rect,
   type Shape,
   Vec,
   type Writable,
 } from "@bireactive";
+import { edgeStyle, type EdgeStyle } from "./diagram-settings";
 
 // Heuristic glyph width (SVG can't measure synchronously). 0.6 of the
 // font size matches bireactive's own `tokens.charWidth`. Good enough
@@ -102,6 +106,89 @@ export function renderNode(
  *  centre — proper cleanliness regardless of node size. */
 export function renderEdge(s: Mount, from: Shape, to: Shape): Shape {
   return s(arrow(from, to, { thin: true, opacity: 0.7 }));
+}
+
+/** Render an edge using the current diagram-level edge style (straight /
+ *  curved / elbow). The style cell is reactive — the path's `d` re-derives
+ *  when the user toggles styles, and (importantly) when node positions
+ *  change via the spring layer.
+ *
+ *  - straight: existing arrow().
+ *  - curved: cubic bezier with control points pulled along the dominant
+ *    axis. Symmetric, smooth, no inflection.
+ *  - elbow: two-segment polyline with a rounded corner (quadratic curve
+ *    at the bend). Direction picks the axis with more travel. */
+export function renderEdgeStyled(s: Mount, from: Shape, to: Shape): Shape {
+  const ARROW_MARKER = "url(#bireactive-arrow)";
+  const ARROW_W = 10;
+  const ARROW_GAP = 4;
+
+  // Reactive boundary points and the d-string for curved / elbow paths.
+  const d = derive(() => {
+    const style: EdgeStyle = edgeStyle.value;
+    if (style === "straight") return ""; // unused — straight uses arrow()
+
+    const aBase = from.boundary(to.center).value;
+    const bBase = to.boundary(from.center).value;
+    const dx = bBase.x - aBase.x;
+    const dy = bBase.y - aBase.y;
+    const len = Math.hypot(dx, dy) || 1;
+    // Pull start point a hair off the source and shorten the end so the
+    // arrow marker sits nicely on the target border (mirrors arrow()).
+    const ux = dx / len;
+    const uy = dy / len;
+    const aP = { x: aBase.x + ux * ARROW_GAP, y: aBase.y + uy * ARROW_GAP };
+    const bP = {
+      x: bBase.x - ux * (ARROW_GAP + ARROW_W),
+      y: bBase.y - uy * (ARROW_GAP + ARROW_W),
+    };
+
+    if (style === "curved") {
+      // Cubic with control points offset along dominant axis. Strength
+      // ~40% of axis distance produces a gentle S-less curve.
+      const horiz = Math.abs(dx) >= Math.abs(dy);
+      const k = 0.45;
+      const c1 = horiz
+        ? { x: aP.x + (bP.x - aP.x) * k, y: aP.y }
+        : { x: aP.x, y: aP.y + (bP.y - aP.y) * k };
+      const c2 = horiz
+        ? { x: bP.x - (bP.x - aP.x) * k, y: bP.y }
+        : { x: bP.x, y: bP.y - (bP.y - aP.y) * k };
+      return `M ${aP.x} ${aP.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${bP.x} ${bP.y}`;
+    }
+
+    // elbow: leave along dominant axis, turn, finish along the other.
+    // Round the corner with a quadratic curve segment of radius R.
+    const horizFirst = Math.abs(dx) >= Math.abs(dy);
+    const elbow = horizFirst
+      ? { x: bP.x, y: aP.y }
+      : { x: aP.x, y: bP.y };
+    const R = Math.min(14, Math.abs(dx) / 2, Math.abs(dy) / 2);
+    // Approach + depart points around the elbow corner.
+    const ap = horizFirst
+      ? { x: elbow.x - Math.sign(dx) * R, y: elbow.y }
+      : { x: elbow.x, y: elbow.y - Math.sign(dy) * R };
+    const dp = horizFirst
+      ? { x: elbow.x, y: elbow.y + Math.sign(dy) * R }
+      : { x: elbow.x + Math.sign(dx) * R, y: elbow.y };
+    return `M ${aP.x} ${aP.y} L ${ap.x} ${ap.y} Q ${elbow.x} ${elbow.y} ${dp.x} ${dp.y} L ${bP.x} ${bP.y}`;
+  });
+
+  // We render BOTH arrow() (for straight, with its analytic gap math)
+  // and a pathD (for curved / elbow). Visibility flips by edgeStyle.
+  const arrowShape = arrow(from, to, { thin: true, opacity: 0.7 });
+  const p = pathD(d, { thin: true, stroke: "var(--text-color)", opacity: 0.7 });
+  (p as unknown as { el: SVGElement }).el.setAttribute("marker-end", ARROW_MARKER);
+  s(arrowShape);
+  s(p);
+  const arrowEl = (arrowShape as unknown as { el: SVGElement }).el;
+  const pEl = (p as unknown as { el: SVGElement }).el;
+  effect(() => {
+    const straight = edgeStyle.value === "straight";
+    arrowEl.style.display = straight ? "" : "none";
+    pEl.style.display = straight ? "none" : "";
+  });
+  return p;
 }
 
 /** Render a container "hull" as a filled tinted panel with a chip-style

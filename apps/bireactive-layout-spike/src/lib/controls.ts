@@ -5,6 +5,7 @@
 // layout on each tab.
 
 import { descendantsOf, makeEdge, makeRow, sharedEdges, sharedRows, leafIds, containerIds, flatGraph } from "./data";
+import { edgeStyle, type EdgeStyle } from "./diagram-settings";
 
 let counter = 100; // start above the seed ids so we don't collide
 
@@ -181,6 +182,31 @@ export function mountControls(host: HTMLElement): () => void {
     btn.textContent = a.label;
     wrap.appendChild(btn);
   }
+
+  // Diagram-level: edge style selector.
+  const sep = document.createElement("span");
+  sep.style.cssText = "color:var(--muted);margin:0 4px";
+  sep.textContent = "·";
+  wrap.appendChild(sep);
+
+  const styleLbl = document.createElement("label");
+  styleLbl.style.cssText = "display:inline-flex;align-items:center;gap:4px;color:var(--muted);font-size:12px";
+  styleLbl.textContent = "edges:";
+  const styleSel = document.createElement("select");
+  styleSel.style.cssText = "font:inherit;padding:2px 4px;background:transparent;color:var(--fg);border:1px solid var(--border);border-radius:4px";
+  for (const v of ["straight", "curved", "elbow"] as EdgeStyle[]) {
+    const opt = document.createElement("option");
+    opt.value = v;
+    opt.textContent = v;
+    if (v === edgeStyle.value) opt.selected = true;
+    styleSel.appendChild(opt);
+  }
+  styleSel.addEventListener("change", () => {
+    edgeStyle.value = styleSel.value as EdgeStyle;
+  });
+  styleLbl.appendChild(styleSel);
+  wrap.appendChild(styleLbl);
+
   const status = document.createElement("span");
   status.className = "status";
   status.style.cssText = "color:var(--muted);margin-left:8px";

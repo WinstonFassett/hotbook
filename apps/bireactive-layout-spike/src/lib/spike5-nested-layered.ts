@@ -17,7 +17,6 @@
 // constraints per crossed layer.
 
 import {
-  arrow,
   box,
   type Box as BoxT,
   Diagram,
@@ -46,7 +45,7 @@ import {
   type TreeNode,
 } from "./data";
 import { measure, type Measured } from "./measure";
-import { FONT_PX, renderHull, renderNode } from "./render";
+import { FONT_PX, renderEdgeStyled, renderHull, renderNode } from "./render";
 import { sharedSelection, select, clearSelection, type Selection } from "./selection";
 
 const W = 760;
@@ -215,7 +214,7 @@ export class MdNestedLayered extends Diagram {
       const su = resolveAnchor(u);
       const sv = resolveAnchor(v);
       if (su && sv) {
-        const a = edgeMount(arrow(su, sv, { thin: true, opacity: 0.65 }));
+        const a = renderEdgeStyled(edgeMount, su, sv);
         markSelectable(a, "edge", e.id, sel);
       }
     }
