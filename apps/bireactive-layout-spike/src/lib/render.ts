@@ -117,8 +117,18 @@ export function renderEdge(s: Mount, from: Shape, to: Shape): Shape {
  *  - curved: cubic bezier with control points pulled along the dominant
  *    axis. Symmetric, smooth, no inflection.
  *  - elbow: two-segment polyline with a rounded corner (quadratic curve
- *    at the bend). Direction picks the axis with more travel. */
-export function renderEdgeStyled(s: Mount, from: Shape, to: Shape): Shape {
+ *    at the bend). Direction picks the axis with more travel.
+ *
+ *  If `label` is provided (non-empty), renders a chip-style rect with
+ *  the text at the edge midpoint. The label rect is a "first-class"
+ *  participant in the no-overlap story (P1); layout integration is
+ *  the next step. */
+export function renderEdgeStyled(
+  s: Mount,
+  from: Shape,
+  to: Shape,
+  label?: Cell<string>,
+): Shape {
   const ARROW_MARKER = "url(#bireactive-arrow)";
   const ARROW_W = 10;
   const ARROW_GAP = 4;
@@ -188,7 +198,96 @@ export function renderEdgeStyled(s: Mount, from: Shape, to: Shape): Shape {
     arrowEl.style.display = straight ? "" : "none";
     pEl.style.display = straight ? "none" : "";
   });
-  return p;
+
+  // Invisible thick hit-target overlay so clicks on/near the edge select.
+  // Mirrors the same d-string as the visible path; a constant straight
+  // hit-line for the straight mode.
+  const dHit = derive(() => {
+    if (edgeStyle.value === "straight") {
+      const a = from.boundary(to.center).value;
+      const b = to.boundary(from.center).value;
+      return `M ${a.x} ${a.y} L ${b.x} ${b.y}`;
+    }
+    return d.value;
+  });
+  // stroke: a real color with alpha 0 so SVG hit-test actually fires
+  // on the stroke (transparent / no-stroke is unhittable by default).
+  const hit = pathD(dHit, { stroke: "#000", strokeWidth: 18 });
+  s(hit);
+  const hitEl = (hit as unknown as { el?: SVGElement }).el;
+  if (hitEl) {
+    hitEl.style.pointerEvents = "stroke";
+    hitEl.querySelectorAll("path").forEach((p) => {
+      const pe = p as SVGElement;
+      pe.style.pointerEvents = "stroke";
+      pe.setAttribute("stroke-opacity", "0");
+    });
+  }
+
+  if (label) {
+    renderEdgeLabel(s, from, to, label);
+  }
+  return hit;
+}
+
+/** Label sizing matches the chip aesthetic in `renderHull` — a small
+ *  rounded rect sized to the text. */
+const EDGE_LABEL_FONT = 10.5;
+const EDGE_LABEL_PAD_X = 6;
+const EDGE_LABEL_PAD_Y = 3;
+const EDGE_LABEL_H = EDGE_LABEL_FONT + EDGE_LABEL_PAD_Y * 2;
+
+/** Width an edge label rect needs given its text. Matches the glyph
+ *  heuristic in `nodeSize` so layout math and rendering agree. */
+export function edgeLabelSize(text: string): NodeSize {
+  if (!text) return { w: 0, h: 0 };
+  const textW = Math.ceil(text.length * EDGE_LABEL_FONT * CHAR_W);
+  return { w: textW + EDGE_LABEL_PAD_X * 2, h: EDGE_LABEL_H };
+}
+
+function renderEdgeLabel(s: Mount, from: Shape, to: Shape, label: Cell<string>): void {
+  // Geometric midpoint between source/target centres. Independent of
+  // edge-style so the label sits consistently regardless of straight /
+  // curved / elbow rendering. Refine later if needed.
+  const mid = Vec.derive(() => {
+    const a = from.center.value;
+    const b = to.center.value;
+    return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  });
+
+  // Label rect — only visible when text is non-empty.
+  const sz = Box.derive(() => {
+    const sized = edgeLabelSize(label.value);
+    const m = mid.value;
+    return { x: m.x - sized.w / 2, y: m.y - sized.h / 2, w: sized.w, h: sized.h };
+  });
+
+  const bg = s(
+    rect(sz, {
+      fill: "var(--bg-color, var(--bg))",
+      stroke: "var(--text-color)",
+      strokeWidth: 1,
+      strokeOpacity: 0.35,
+      opacity: 0.95,
+      corner: 4,
+    }),
+  );
+  const txt = s(
+    labelShape(mid, label, {
+      size: EDGE_LABEL_FONT,
+      bold: false,
+      fill: "var(--text-color)",
+    }),
+  );
+  const txtEl = (txt as unknown as { el?: SVGElement }).el;
+  if (txtEl) txtEl.style.pointerEvents = "none";
+  // Toggle visibility based on whether label is non-empty.
+  const bgEl = (bg as unknown as { el?: SVGElement }).el;
+  effect(() => {
+    const has = label.value.length > 0;
+    if (bgEl) bgEl.style.display = has ? "" : "none";
+    if (txtEl) txtEl.style.display = has ? "" : "none";
+  });
 }
 
 /** Render a container "hull" as a filled tinted panel with a chip-style

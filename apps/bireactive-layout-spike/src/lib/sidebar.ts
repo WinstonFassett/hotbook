@@ -47,8 +47,20 @@ export function mountSidebar(host: HTMLElement): () => void {
       wrap.innerHTML = `
         <div style="font-weight:600;margin-bottom:8px">edge · ${escape(e.id)}</div>
         <div style="color:var(--muted);margin-bottom:8px">${escape(e.from.value)} → ${escape(e.to.value)}</div>
+        <label style="display:block;margin-bottom:8px">
+          <div style="color:var(--muted);font-size:11px">label</div>
+          <input data-field="label" value="${escape(e.label.value)}"
+            placeholder="(none)"
+            style="width:100%;padding:4px 6px;font:inherit;border:1px solid var(--border);background:transparent;color:var(--fg);border-radius:4px"/>
+        </label>
         <button data-act="delete" style="margin-top:8px">delete edge</button>
       `;
+      const inp = wrap.querySelector<HTMLInputElement>('[data-field="label"]');
+      if (inp) {
+        inp.addEventListener("input", () => {
+          e.label.value = inp.value;
+        });
+      }
       bindDelete(wrap, () => {
         sharedEdges.remove(e);
         clearSelection();

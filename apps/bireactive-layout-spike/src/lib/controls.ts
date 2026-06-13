@@ -145,9 +145,12 @@ const ACTIONS: Action[] = [
         (r) =>
           `  makeRow(${JSON.stringify(r.id)}, ${fmt(r.parentId.value)}, ${r.index.value}, ${JSON.stringify(r.name.value)}),`,
       );
-      const edgeLines = sharedEdges.items.map(
-        (e) => `  makeEdge(${JSON.stringify(e.from.value)}, ${JSON.stringify(e.to.value)}),`,
-      );
+      const edgeLines = sharedEdges.items.map((e) => {
+        const lbl = e.label.value;
+        return lbl
+          ? `  makeEdge(${JSON.stringify(e.from.value)}, ${JSON.stringify(e.to.value)}, ${JSON.stringify(lbl)}),`
+          : `  makeEdge(${JSON.stringify(e.from.value)}, ${JSON.stringify(e.to.value)}),`;
+      });
       const out = [
         "const SEED_ROWS: Row[] = [",
         ...rowLines,

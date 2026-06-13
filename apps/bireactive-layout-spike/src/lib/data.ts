@@ -52,10 +52,16 @@ export interface Edge {
   id: string;
   from: Writable<Cell<string>>;
   to: Writable<Cell<string>>;
+  label: Writable<Cell<string>>;
 }
 
-export function makeEdge(from: string, to: string): Edge {
-  return { id: `${from}->${to}`, from: cell(from), to: cell(to) };
+export function makeEdge(from: string, to: string, label = ""): Edge {
+  return {
+    id: `${from}->${to}`,
+    from: cell(from),
+    to: cell(to),
+    label: cell(label),
+  };
 }
 
 // ── seed ─────────────────────────────────────────────────────────────

@@ -216,7 +216,7 @@ export class MdNestedLayered extends Diagram {
       const su = resolveAnchor(u);
       const sv = resolveAnchor(v);
       if (su && sv) {
-        const a = renderEdgeStyled(edgeMount, su, sv);
+        const a = renderEdgeStyled(edgeMount, su, sv, e.label);
         markSelectable(a, "edge", e.id, sel);
       }
     }
