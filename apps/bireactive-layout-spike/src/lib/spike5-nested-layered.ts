@@ -44,6 +44,7 @@ import {
   sharedRows,
   type TreeNode,
 } from "./data";
+import { direction } from "./diagram-settings";
 import { measure, type Measured } from "./measure";
 import { FONT_PX, renderEdgeStyled, renderHull, renderNode } from "./render";
 import { sharedSelection, select, clearSelection, type Selection } from "./selection";
@@ -112,6 +113,7 @@ export class MdNestedLayered extends Diagram {
         void sharedRows.items;
         void sharedEdges.items;
         void sharedSelection.value;
+        void direction.value;
         this.#buildAll();
         this.#applyLayout();
       }),
@@ -308,9 +310,8 @@ export class MdNestedLayered extends Diagram {
       // single leaf would otherwise force every pair of layers in this
       // group apart by the giant's height; tight spacing only does
       // that for the one pair that actually needs it.
-      const direction = "TB" as const;
       const place = layeredTight(g, {
-        direction,
+        direction: direction.value,
         sizeOf,
         layerPad: 40,
         nodeGap: 28,

@@ -5,7 +5,7 @@
 // layout on each tab.
 
 import { descendantsOf, makeEdge, makeRow, sharedEdges, sharedRows, leafIds, containerIds, flatGraph } from "./data";
-import { edgeStyle, type EdgeStyle } from "./diagram-settings";
+import { direction, edgeStyle, type Direction, type EdgeStyle } from "./diagram-settings";
 
 let counter = 100; // start above the seed ids so we don't collide
 
@@ -206,6 +206,24 @@ export function mountControls(host: HTMLElement): () => void {
   });
   styleLbl.appendChild(styleSel);
   wrap.appendChild(styleLbl);
+
+  const dirLbl = document.createElement("label");
+  dirLbl.style.cssText = "display:inline-flex;align-items:center;gap:4px;color:var(--muted);font-size:12px;margin-left:6px";
+  dirLbl.textContent = "dir:";
+  const dirSel = document.createElement("select");
+  dirSel.style.cssText = "font:inherit;padding:2px 4px;background:transparent;color:var(--fg);border:1px solid var(--border);border-radius:4px";
+  for (const v of ["TB", "LR"] as Direction[]) {
+    const opt = document.createElement("option");
+    opt.value = v;
+    opt.textContent = v;
+    if (v === direction.value) opt.selected = true;
+    dirSel.appendChild(opt);
+  }
+  dirSel.addEventListener("change", () => {
+    direction.value = dirSel.value as Direction;
+  });
+  dirLbl.appendChild(dirSel);
+  wrap.appendChild(dirLbl);
 
   const status = document.createElement("span");
   status.className = "status";
