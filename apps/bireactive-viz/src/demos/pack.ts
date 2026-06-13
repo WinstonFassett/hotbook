@@ -1,0 +1,324 @@
+// Pack — bireactive port of LayerChart's <Pack> shape (d3 circle-packing),
+// mirroring the treemap.ts pattern: forward layout is d3-pack over a snapshot
+// of writable Num leaves; backward write is a bireactive lens onto those leaves.
+// Drill-in tweens the chart-context focus to a node's bounding box.
+
+import {
+  Anchor,
+  Diagram,
+  derive,
+  drag,
+  label,
+  type Mount,
+  num,
+  circle,
+  Vec,
+  Num,
+  type Writable,
+} from "bireactive";
+import { hierarchy, pack as d3pack } from "d3-hierarchy";
+import { chartContext, project } from "../kit/chart-context";
+
+const W = 760;
+const H = 420;
+const PAD = 3;
+const TX = 20;
+const TY = 40;
+const TW = W - 40;
+const TH = H - 90;
+
+interface Node {
+  label: string;
+  color: string;
+  total: Writable<Num>;
+  children?: Node[];
+}
+
+function leaf(label: string, value: number, color: string): Node {
+  return { label, color, total: num(value) };
+}
+
+function groupNode(label: string, color: string, children: Node[]): Node {
+  const total = Num.lens(
+    children.map(c => c.total),
+    (vs: readonly number[]) => vs.reduce((a, b) => a + b, 0),
+    (target, vs) => {
+      const arr = vs as readonly number[];
+      const cur = arr.reduce((a, b) => a + b, 0);
+      if (cur === 0) return arr.map(() => target / arr.length) as never;
+      const scale = target / cur;
+      return arr.map(v => v * scale) as never;
+    },
+  );
+  return { label, color, total, children };
+}
+
+function makeTree(): Node {
+  return groupNode("Portfolio", "#222", [
+    groupNode("Tech", "#5b8def", [
+      leaf("AAPL", 35, "#86acf5"),
+      leaf("MSFT", 28, "#86acf5"),
+      leaf("NVDA", 22, "#86acf5"),
+    ]),
+    groupNode("Finance", "#7ed321", [
+      leaf("JPM", 18, "#a6df5e"),
+      leaf("BRK", 14, "#a6df5e"),
+    ]),
+    groupNode("Energy", "#f5a623", [
+      leaf("XOM", 10, "#f7be5a"),
+      leaf("SHEL", 8, "#f7be5a"),
+    ]),
+    groupNode("Health", "#e25c5c", [
+      leaf("JNJ", 9, "#ec8a8a"),
+      leaf("PFE", 6, "#ec8a8a"),
+    ]),
+  ]);
+}
+
+interface Disc { node: Node; x: number; y: number; r: number; depth: number }
+
+function computeLayout(root: Node, width: number, height: number): Disc[] {
+  const h = hierarchy<Node>(root, n => n.children)
+    .sum(n => (n.children ? 0 : n.total.value));
+
+  const laid = d3pack<Node>()
+    .size([width, height])
+    .padding(PAD)(h);
+
+  const discs: Disc[] = [];
+  laid.each(d => {
+    discs.push({
+      node: d.data,
+      x: d.x,
+      y: d.y,
+      r: d.r,
+      depth: d.depth,
+    });
+  });
+  return discs;
+}
+
+function parentOf(root: Node, target: Node): Node | undefined {
+  if (!root.children) return undefined;
+  if (root.children.includes(target)) return root;
+  for (const c of root.children) {
+    const found = parentOf(c, target);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+export class MdPack extends Diagram {
+  protected scene(s: Mount): void {
+    const view = this.view(W, H);
+    const tree = makeTree();
+
+    const ctx = chartContext(TW, TH);
+
+    const drillStack: { x0: number; y0: number; x1: number; y1: number }[] = [];
+
+    s(
+      label(view.top.down(20), "pack · click a branch to drill in · Esc to pop · drag a leaf to reapportion", { size: 11, bold: true, align: Anchor.Center }),
+      label(view.bottom.up(28), derive(() => `total: ${tree.total.value.toFixed(0)} · drill depth: ${drillStack.length}`), { size: 10, align: Anchor.Center }),
+      label(view.bottom.up(12), "R16: focus domain tweens on commit (snap for now; spring next iteration)", { size: 9, fill: "#9aa0a8", align: Anchor.Center }),
+    );
+
+    const layout = derive(() => {
+      const discs = computeLayout(tree, TW, TH);
+      const byNode = new Map<Node, Disc>();
+      for (const d of discs) byNode.set(d.node, d);
+      return byNode;
+    });
+
+    const discFor = (node: Node) =>
+      derive(() => layout.value.get(node) ?? { node, x: 0, y: 0, r: 0, depth: 0 });
+
+    const allNodes: { node: Node; isLeaf: boolean; depth: number }[] = [];
+    const walk = (n: Node, depth: number): void => {
+      allNodes.push({ node: n, isLeaf: !n.children, depth });
+      n.children?.forEach(c => walk(c, depth + 1));
+    };
+    walk(tree, 0);
+
+    const drillTo = (d: Disc) => {
+      drillStack.push({
+        x0: ctx.focus.x0.value,
+        y0: ctx.focus.y0.value,
+        x1: ctx.focus.x1.value,
+        y1: ctx.focus.y1.value,
+      });
+      ctx.zoomTo({ x0: d.x - d.r, y0: d.y - d.r, x1: d.x + d.r, y1: d.y + d.r });
+    };
+    const popDrill = () => {
+      const prev = drillStack.pop();
+      if (prev) ctx.zoomTo(prev);
+      else ctx.reset();
+    };
+
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && drillStack.length > 0) {
+        popDrill();
+        e.preventDefault();
+      }
+    });
+
+    for (const { node, isLeaf, depth } of allNodes) {
+      const d = discFor(node);
+      const cx = derive(() =>
+        TX + project(d.value.x, ctx.focus.x0.value, ctx.focus.x1.value, 0, TW),
+      );
+      const cy = derive(() =>
+        TY + project(d.value.y, ctx.focus.y0.value, ctx.focus.y1.value, 0, TH),
+      );
+      const r = derive(() => {
+        const sx = TW / (ctx.focus.x1.value - ctx.focus.x0.value);
+        return d.value.r * sx;
+      });
+
+      s(
+        circle(
+          Vec.derive(() => ({ x: cx.value, y: cy.value })),
+          r,
+          {
+            fill: node.color,
+            opacity: depth === 0 ? 0.12 : isLeaf ? 0.95 : 0.35,
+            stroke: depth === 0 ? "#444" : "#0b0d12",
+            thin: true,
+          },
+        ),
+      );
+
+      if (depth > 0) {
+        const labelText = isLeaf
+          ? derive(() => `${node.label}\n${node.total.value.toFixed(0)}`)
+          : derive(() => node.label);
+        s(
+          label(
+            Vec.derive(() => ({
+              x: cx.value,
+              y: isLeaf ? cy.value : cy.value - r.value + 10,
+            })),
+            labelText,
+            {
+              size: isLeaf ? 11 : 10,
+              align: Anchor.Center,
+              fill: "#fff",
+              bold: !isLeaf,
+              opacity: derive(() => (r.value > 14 ? 1 : 0)),
+            },
+          ),
+        );
+      }
+
+      if (!isLeaf && depth > 0) {
+        const branchHit = s(
+          circle(
+            Vec.derive(() => ({ x: cx.value, y: cy.value })),
+            r,
+            { fill: "transparent", stroke: "transparent" },
+          ),
+        );
+        branchHit.el.style.cursor = "zoom-in";
+        branchHit.el.addEventListener("click", (e) => {
+          e.stopPropagation();
+          drillTo(d.value);
+        });
+      }
+
+      if (isLeaf) {
+        const hit = s(
+          circle(
+            Vec.derive(() => ({ x: cx.value, y: cy.value })),
+            r,
+            { fill: "transparent", stroke: "transparent" },
+          ),
+        );
+        hit.el.setAttribute("tabindex", "0");
+        hit.el.style.outline = "none";
+        hit.el.style.cursor = "move";
+
+        const parent = parentOf(tree, node);
+
+        const drillParent = (e: Event) => {
+          e.stopPropagation();
+          if (!parent) return;
+          const pt = layout.value.get(parent);
+          if (pt) drillTo(pt);
+        };
+        hit.el.addEventListener("click", (e) => {
+          if ((e as MouseEvent).shiftKey) drillParent(e);
+        });
+        hit.el.addEventListener("dblclick", drillParent);
+        const siblings = parent?.children?.filter(c => c !== node) ?? [];
+
+        const apply = (delta: number) => {
+          const cur = node.total.value;
+          const next = Math.max(0, cur + delta);
+          const real = next - cur;
+          if (real === 0) return;
+          node.total.value = next;
+          let remaining = real;
+          const pool = siblings.filter(s => s.total.value > 0);
+          const poolSum = pool.reduce((a, b) => a + b.total.value, 0);
+          if (real > 0 && poolSum > 0) {
+            for (const sib of pool) {
+              const share = (sib.total.value / poolSum) * real;
+              const take = Math.min(sib.total.value, share);
+              sib.total.value -= take;
+              remaining -= take;
+            }
+            for (const sib of siblings) {
+              if (remaining <= 0) break;
+              const take = Math.min(sib.total.value, remaining);
+              sib.total.value -= take;
+              remaining -= take;
+            }
+          } else if (real < 0 && siblings.length > 0) {
+            const sibSum = siblings.reduce((a, b) => a + b.total.value, 0);
+            if (sibSum > 0) {
+              for (const sib of siblings) {
+                const share = (sib.total.value / sibSum) * (-real);
+                sib.total.value += share;
+              }
+            } else {
+              for (const sib of siblings) sib.total.value += -real / siblings.length;
+            }
+          }
+        };
+
+        hit.el.addEventListener("keydown", (ev: Event) => {
+          const e = ev as KeyboardEvent;
+          const step = e.shiftKey ? 5 : 1;
+          if (e.key === "ArrowUp" || e.key === "ArrowRight") { apply(+step); e.preventDefault(); }
+          else if (e.key === "ArrowDown" || e.key === "ArrowLeft") { apply(-step); e.preventDefault(); }
+        });
+        hit.el.addEventListener("wheel", (ev: Event) => {
+          const e = ev as WheelEvent;
+          if (!e.altKey) return;
+          e.preventDefault();
+          const step = e.shiftKey ? 5 : 1;
+          apply(e.deltaY < 0 ? +step : -step);
+        }, { passive: false });
+
+        let dragStartValue = 0;
+        let dragStartY = 0;
+        const dragKnob = Vec.lens(
+          [node.total] as const,
+          () => ({ x: cx.value, y: cy.value }),
+          (target, [_v]) => {
+            const dy = dragStartY - target.y;
+            const pxPerUnit = Math.max(0.5, (r.value * 2 || 4) / Math.max(1, dragStartValue));
+            const delta = dy / pxPerUnit;
+            const next = Math.max(0, dragStartValue + delta);
+            return [next] as never;
+          },
+        );
+        hit.el.addEventListener("pointerdown", () => {
+          dragStartValue = node.total.value;
+          dragStartY = cy.value;
+        }, true);
+        drag(hit, dragKnob);
+      }
+    }
+  }
+}
