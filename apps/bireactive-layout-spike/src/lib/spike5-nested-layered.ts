@@ -25,6 +25,8 @@ import {
   label,
   type Mount,
   mount,
+  num,
+  type Num,
   type Shape,
   spring,
   vec,
@@ -58,7 +60,26 @@ const BOTTOM = 28;
 interface NodeView {
   pos: Writable<Vec>;
   target: Writable<Vec>;
+  /** 0..1 enter-scale. Springs from 0 → 1 on first appearance so leaves
+   *  grow in place rather than fly from a fixed seed point. */
+  scale: Writable<Num>;
 }
+
+interface HullView {
+  /** Live (animated) hull rect. Read by renderHull. */
+  box: Writable<BoxT>;
+  /** Layout-computed target. #applyLayout writes here; a spring pulls
+   *  `box` toward it for FLIP-like motion across re-layouts. */
+  target: Writable<BoxT>;
+  /** 0..1 entry fade — springs 0 → 1 on first appearance. */
+  opacity: Writable<Num>;
+}
+
+// Spring tunings. Position spring matches the existing leaf-pos spring
+// so FLIP-style hull motion feels consistent. Scale/opacity are snappier
+// per user request — if grow-in reads too aggressive, swap to POS_SPRING.
+const POS_SPRING = { omega: 9, zeta: 0.85, precision: 0 } as const;
+const ENTRY_SPRING = { omega: 14, zeta: 0.9, precision: 0 } as const;
 
 interface SolveResult {
   /** Placements of each direct child of g, in g's local frame.
@@ -74,9 +95,9 @@ export class MdNestedLayered extends Diagram {
   #teardown: Array<() => void> = [];
   #persist: Array<() => void> = [];
   #nodes = new Map<string, NodeView>();
-  // Hull box per group — written by the projection walk. Reactive so
-  // renderHull repaints when the springs settle.
-  #hullBox = new Map<string, Writable<BoxT>>();
+  // Hull state per group. `target` is what #applyLayout writes; `box`
+  // animates toward it via a spring; `opacity` fades in on first appear.
+  #hulls = new Map<string, HullView>();
   #gfx!: Shape;
   #hullsGfx!: Shape;
   #edgesGfx!: Shape;
@@ -117,8 +138,9 @@ export class MdNestedLayered extends Diagram {
         // Subscribe to per-row direction so layout reflows when the
         // sidebar toggles a group's direction override.
         for (const r of rows) void r.direction.value;
-        this.#buildAll();
+        this.#syncMaps();
         this.#applyLayout();
+        this.#buildAll();
       }),
     );
 
@@ -137,6 +159,57 @@ export class MdNestedLayered extends Diagram {
     this.#persist.push(() => this.removeEventListener("click", onBgClick));
   }
 
+  /** Track ids that are newly inserted this re-build, so #buildAll can
+   *  seed their visible pos/box from the freshly-computed target after
+   *  #applyLayout runs. Cleared at the end of #buildAll. */
+  #newLeaves = new Set<string>();
+  #newHulls = new Set<string>();
+
+  /** Phase 1: reconcile the node/hull maps to match the live row set.
+   *  Runs BEFORE #applyLayout so layout can read every leaf's target
+   *  cell. New entries get placeholder targets — #buildAll seeds the
+   *  visible pos/box from those targets after layout writes them. */
+  #syncMaps(): void {
+    const leaves = leafIds(sharedRows);
+    const live = new Set(leaves);
+    for (const id of [...this.#nodes.keys()]) {
+      if (!live.has(id)) this.#nodes.delete(id);
+    }
+    this.#newLeaves.clear();
+    for (const id of leaves) {
+      if (!this.#nodes.has(id)) {
+        // Placeholder pos; #buildAll will rewrite it to the target
+        // computed by #applyLayout so the node grows in place.
+        this.#nodes.set(id, {
+          pos: vec(0, 0),
+          target: vec(0, 0),
+          scale: num(0),
+        });
+        this.#newLeaves.add(id);
+      }
+    }
+
+    const allGroups = new Set<string>();
+    for (const r of sharedRows.items) {
+      const pid = r.parentId.value;
+      if (pid != null) allGroups.add(pid);
+    }
+    for (const id of [...this.#hulls.keys()]) {
+      if (!allGroups.has(id)) this.#hulls.delete(id);
+    }
+    this.#newHulls.clear();
+    for (const id of allGroups) {
+      if (!this.#hulls.has(id)) {
+        this.#hulls.set(id, {
+          box: box(0, 0, 0, 0),
+          target: box(0, 0, 0, 0),
+          opacity: num(0),
+        });
+        this.#newHulls.add(id);
+      }
+    }
+  }
+
   #buildAll(): void {
     for (const d of this.#teardown) d();
     this.#teardown = [];
@@ -146,28 +219,21 @@ export class MdNestedLayered extends Diagram {
 
     const byId = rowsById(sharedRows);
     const leaves = leafIds(sharedRows);
-    const live = new Set(leaves);
 
-    for (const id of [...this.#nodes.keys()]) {
-      if (!live.has(id)) this.#nodes.delete(id);
+    // Seed entering leaves: visible pos starts AT the target so the
+    // rect grows in place via the scale spring (instead of flying in
+    // from a fixed seed point). For existing leaves, pos stays where
+    // the position spring last left it so re-layout keeps animating
+    // smoothly from the prior position.
+    for (const id of this.#newLeaves) {
+      const nv = this.#nodes.get(id);
+      if (nv) nv.pos.value = nv.target.peek();
     }
-    for (const id of leaves) {
-      if (!this.#nodes.has(id)) {
-        this.#nodes.set(id, { pos: vec(W / 2, H / 2), target: vec(W / 2, H / 2) });
-      }
-    }
-
-    // Reactive hull boxes for each container.
-    const allGroups = new Set<string>();
-    for (const r of sharedRows.items) {
-      const pid = r.parentId.value;
-      if (pid != null) allGroups.add(pid);
-    }
-    for (const id of [...this.#hullBox.keys()]) {
-      if (!allGroups.has(id)) this.#hullBox.delete(id);
-    }
-    for (const id of allGroups) {
-      if (!this.#hullBox.has(id)) this.#hullBox.set(id, box(0, 0, 0, 0));
+    // Same for entering hulls: snap visible box to target so the panel
+    // fades in at its final position (no FLIP from origin).
+    for (const id of this.#newHulls) {
+      const hv = this.#hulls.get(id);
+      if (hv) hv.box.value = hv.target.peek();
     }
 
     const sel = sharedSelection.value;
@@ -178,12 +244,27 @@ export class MdNestedLayered extends Diagram {
     const drawHulls = (nodes: TreeNode[]): void => {
       for (const n of nodes) {
         if (n.children.length === 0) continue;
-        const hb = this.#hullBox.get(n.id);
-        if (!hb) continue;
-        const shapes = renderHull(hullMount, hb, n.depth, byId.get(n.id)?.name.value ?? n.id);
+        const hv = this.#hulls.get(n.id);
+        if (!hv) continue;
+        const shapes = renderHull(
+          hullMount,
+          hv.box,
+          n.depth,
+          byId.get(n.id)?.name.value ?? n.id,
+          hv.opacity,
+        );
         // Both the panel rect AND the chip rect select the group, so
         // clicking the label-chip works as expected.
         for (const sh of shapes) markSelectable(sh, "group", n.id, sel);
+        // FLIP-like: spring `box` toward `target` so re-layouts animate.
+        this.#teardown.push(
+          this.anim.start(spring(hv.box, hv.target, POS_SPRING)),
+        );
+        // Entry fade — pulls toward 1. For existing hulls opacity is
+        // already 1 so this is a no-op spring; cheap.
+        this.#teardown.push(
+          this.anim.start(spring(hv.opacity, 1, ENTRY_SPRING)),
+        );
         drawHulls(n.children);
       }
     };
@@ -197,13 +278,18 @@ export class MdNestedLayered extends Diagram {
       const { shape } = renderNode(nodeMount, nv.pos, {
         label: byId.get(id)?.name.value ?? id,
         draggable: false,
+        scale: nv.scale,
       });
       shapeOf.set(id, shape);
       markSelectable(shape, "node", id, sel);
       this.#teardown.push(
-        this.anim.start(spring(nv.pos, nv.target, { omega: 9, zeta: 0.85, precision: 0 })),
+        this.anim.start(spring(nv.pos, nv.target, POS_SPRING)),
+        this.anim.start(spring(nv.scale, 1, ENTRY_SPRING)),
       );
     }
+
+    this.#newLeaves.clear();
+    this.#newHulls.clear();
 
     // Edges: render leaf-to-leaf; for endpoints that are containers,
     // route to the first descendant leaf (same projection as spikes 1/4).
@@ -375,11 +461,13 @@ export class MdNestedLayered extends Diagram {
     };
     placeChildren(null, 0, 0);
 
-    // Write hull boxes (group rects) and leaf targets (centres).
+    // Write hull targets (group rects) and leaf targets (centres).
+    // The visible `hv.box` is a separate signal that the spring in
+    // #buildAll pulls toward `hv.target` — FLIP across re-layouts.
     for (const [id, r] of absRect) {
       if (isGroup(id)) {
-        const hb = this.#hullBox.get(id);
-        if (hb) hb.value = { x: r.x, y: r.y, w: r.w, h: r.h };
+        const hv = this.#hulls.get(id);
+        if (hv) hv.target.value = { x: r.x, y: r.y, w: r.w, h: r.h };
       } else {
         const nv = this.#nodes.get(id);
         if (nv) nv.target.value = { x: r.x + r.w / 2, y: r.y + r.h / 2 };

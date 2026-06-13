@@ -70,6 +70,9 @@ export interface NodeRenderOpts {
   dragging?: Writable<Cell<boolean>>;
   /** Visual variant. Default 'leaf'. Container = lighter, label-on-fill. */
   variant?: "leaf" | "container";
+  /** Optional 0..1 scale for enter animations. Width/height multiply by
+   *  this; rect stays centered on `posCell`. Defaults to 1 (no scaling). */
+  scale?: Cell<number>;
 }
 
 /** Render a single node: a rect sized to the label, with the label
@@ -81,7 +84,10 @@ export function renderNode(
   opts: NodeRenderOpts,
 ): { shape: Shape; size: NodeSize; dispose: () => void } {
   const sz = nodeSize(opts.label);
-  const r = rect(posCell, sz.w, sz.h, {
+  const scale = opts.scale;
+  const w = scale ? derive(() => sz.w * scale.value) : sz.w;
+  const h = scale ? derive(() => sz.h * scale.value) : sz.h;
+  const r = rect(posCell, w, h, {
     fill: "var(--accent)",
     stroke: "var(--text-color)",
     thin: true,
@@ -307,6 +313,7 @@ export function renderHull(
   hullBox: Box,
   depth: number,
   label: string,
+  opacity?: Cell<number>,
 ): Shape[] {
   const FILL_OPACITY = [0.05, 0.09, 0.13, 0.17];
   const CHIP_OPACITY = [0.22, 0.32, 0.42, 0.52];
@@ -314,14 +321,22 @@ export function renderHull(
   const chipOp = CHIP_OPACITY[Math.min(depth, CHIP_OPACITY.length - 1)]!;
   const cornerR = Math.max(6, 12 - depth * 2);
 
+  // Multiply each shape's static opacity by the optional entry opacity
+  // (used for fade-in of brand-new groups). Without `opacity`, behaviour
+  // is identical to before.
+  const fillOpC = opacity ? derive(() => fillOp * opacity.value) : fillOp;
+  const chipOpC = opacity ? derive(() => chipOp * opacity.value) : chipOp;
+  const strokeOpC = opacity ? derive(() => 0.18 * opacity.value) : 0.18;
+  const labelOpC = opacity ? derive(() => 0.92 * opacity.value) : 0.92;
+
   // Panel
   const panel = s(
     rect(hullBox, {
       fill: "var(--accent)",
-      opacity: fillOp,
+      opacity: fillOpC,
       stroke: "var(--accent)",
       strokeWidth: 1,
-      strokeOpacity: 0.18,
+      strokeOpacity: strokeOpC,
       corner: cornerR,
     }),
   );
@@ -346,7 +361,7 @@ export function renderHull(
   const chip = s(
     rect(chipBox, {
       fill: "var(--accent)",
-      opacity: chipOp,
+      opacity: chipOpC,
       stroke: "var(--accent)",
       strokeWidth: 0,
       corner: 4,
@@ -367,7 +382,7 @@ export function renderHull(
       size: CHIP_FONT,
       bold: true,
       fill: "var(--text-color)",
-      opacity: 0.92,
+      opacity: labelOpC,
     }),
   );
   const chipLblEl = (chipLbl as unknown as { el?: SVGElement }).el;
