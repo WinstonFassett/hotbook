@@ -96,12 +96,25 @@ export function sankeyScene(
   const hovered = cell<number | null>(null);
   const focused = cell<number | null>(null);
   const wheelLocked = { current: null as number | null };
+  const ribbonEls = new Map<Element, number>();
 
   installGestureRelease(() => { wheelLocked.current = null; hovered.value = null; tooltipVis.value = false; });
 
+  const hitTestRibbon = (clientX: number, clientY: number): number | null => {
+    const el = document.elementFromPoint(clientX, clientY);
+    if (!el) return null;
+    const direct = ribbonEls.get(el);
+    if (direct !== undefined) return direct;
+    // walk up in case browser reports a child element
+    const parent = ribbonEls.get(el.parentElement as Element);
+    return parent !== undefined ? parent : null;
+  };
+
   host.addEventListener("wheel", ((e: WheelEvent) => {
     if (!(e.metaKey || e.ctrlKey)) return;
-    if (wheelLocked.current === null) wheelLocked.current = hovered.value ?? focused.value;
+    if (wheelLocked.current === null) {
+      wheelLocked.current = hovered.value ?? focused.value ?? hitTestRibbon(e.clientX, e.clientY);
+    }
     const idx = wheelLocked.current;
     if (idx === null) return;
     e.preventDefault();
@@ -164,6 +177,7 @@ export function sankeyScene(
     });
 
     const ribbon = s(pathD(d, { stroke, strokeWidth: sw, opacity, cap: "butt" }));
+    ribbonEls.set(ribbon.el, idx);
     ribbon.el.style.cursor = "pointer";
     ribbon.el.addEventListener("pointerenter", (e) => {
       if (wheelLocked.current !== null) return;
