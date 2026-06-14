@@ -22,14 +22,14 @@ export class MdSankeySimple extends Diagram {
   protected scene(s: Mount): void {
     const W = 560, H = 340;
     const view = this.view(W + 120, H + 48);
-    const { focused, linkValues, nodeColorProp, linkColorMode } = sankeyScene(this, s, {
+    const { focused, hovered, linkValues, nodeColorProp, linkColorMode } = sankeyScene(this, s, {
       W, H, nodeIds: SIMPLE_NODES, linkDefs: SIMPLE_LINKS, labelSize: 11, stringIds: true,
     });
     renderColorControls(s, view, nodeColorProp, linkColorMode);
     s(label(view.bottom.up(40), derive(() => {
-      const f = focused.value;
-      if (f === null) return "click ribbon to focus · cmd+wheel or ↑↓ to edit · Tab to cycle";
-      const lv = linkValues[f]!;
+      const i = focused.value ?? hovered.value;
+      if (i === null) return "click ribbon to focus · cmd+wheel or ↑↓ to edit · Tab to cycle";
+      const lv = linkValues[i]!;
       return `${lv.source}→${lv.target}: ${lv.value.value.toFixed(1)} · ↑↓ / cmd+wheel · Tab`;
     }), { size: 10, align: Anchor.Center, fill: "#9aa0a8" }));
   }
@@ -85,15 +85,15 @@ export class MdSankeyComplex extends Diagram {
   protected scene(s: Mount): void {
     const W = 800, H = 560;
     const view = this.view(W + 180, H + 48);
-    const { focused, linkValues, nodeColorProp, linkColorMode } = sankeyScene(this, s, {
+    const { focused, hovered, linkValues, nodeColorProp, linkColorMode } = sankeyScene(this, s, {
       W, H, nodeIds: COMPLEX_NODES, linkDefs: COMPLEX_LINKS,
       nodePadding: 4, interp: interpolateWarm, labelSize: 9, stringIds: false,
     });
     renderColorControls(s, view, nodeColorProp, linkColorMode);
     s(label(view.bottom.up(40), derive(() => {
-      const f = focused.value;
-      if (f === null) return "click ribbon to focus · cmd+wheel or ↑↓ to edit · Tab to cycle";
-      const lv = linkValues[f]!;
+      const i = focused.value ?? hovered.value;
+      if (i === null) return "click ribbon to focus · cmd+wheel or ↑↓ to edit · Tab to cycle";
+      const lv = linkValues[i]!;
       const src = typeof lv.source === "number" ? COMPLEX_NODES[lv.source] : lv.source;
       const tgt = typeof lv.target === "number" ? COMPLEX_NODES[lv.target] : lv.target;
       return `${src} → ${tgt}: ${lv.value.value.toFixed(1)} · ↑↓ / cmd+wheel · Tab`;
@@ -224,15 +224,16 @@ export class MdSankeyHierarchy extends Diagram {
     const W = 680, H = 500;
     const view = this.view(W + 160, H + 48);
     const { nodeIds, linkDefs } = hierarchyToSankey(FLARE_TREE);
-    const { focused, linkValues, nodeColorProp, linkColorMode } = sankeyScene(this, s, {
+    const { focused, hovered, linkValues, nodeColorProp, linkColorMode } = sankeyScene(this, s, {
       W, H, nodeIds, linkDefs,
       nodePadding: 3, interp: interpolateRainbow, labelSize: 8, stringIds: true,
+      stepFn: (v, shift) => Math.max(1, Math.round(v * (shift ? 0.25 : 0.1))),
     });
     renderColorControls(s, view, nodeColorProp, linkColorMode);
     s(label(view.bottom.up(40), derive(() => {
-      const f = focused.value;
-      if (f === null) return "hierarchy → sankey · click ribbon to focus · cmd+wheel or ↑↓ to edit";
-      const lv = linkValues[f]!;
+      const i = focused.value ?? hovered.value;
+      if (i === null) return "hierarchy → sankey · click ribbon to focus · cmd+wheel or ↑↓ to edit";
+      const lv = linkValues[i]!;
       return `${lv.source} → ${lv.target}: ${lv.value.value.toFixed(0)} · ↑↓ / cmd+wheel`;
     }), { size: 10, align: Anchor.Center, fill: "#9aa0a8" }));
   }

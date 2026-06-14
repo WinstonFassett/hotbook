@@ -55,6 +55,8 @@ export interface SankeySceneOptions {
   // Reactive color mode cells (optional — pass pre-created cells to share across UI)
   nodeColorProp?: ReturnType<typeof cell<NodeColorProp>>;
   linkColorMode?: ReturnType<typeof cell<LinkColorMode>>;
+  // Custom step size fn — defaults to 1 (shift=5). Use e.g. v => v * 0.1 for proportional.
+  stepFn?: (currentVal: number, shift: boolean) => number;
 }
 
 export function sankeyScene(
@@ -67,6 +69,7 @@ export function sankeyScene(
     nodeWidth = 10, nodePadding = 6,
     interp = interpolateCool, labelSize = 10,
   } = opts;
+  const stepFn = opts.stepFn ?? ((v: number, shift: boolean) => shift ? 5 : 1);
 
   const stringIds = opts.stringIds ?? (typeof linkDefs[0]?.source === "string");
   const nodeColorProp = opts.nodeColorProp ?? cell<NodeColorProp>("layer");
@@ -118,8 +121,8 @@ export function sankeyScene(
     const idx = wheelLocked.current;
     if (idx === null) return;
     e.preventDefault();
-    const step = e.shiftKey ? 5 : 1;
     const v = linkValues[idx]!.value;
+    const step = stepFn(v.value, e.shiftKey);
     v.value = Math.max(0.01, v.value + (e.deltaY < 0 ? +step : -step));
   }) as EventListener, { passive: false });
 
@@ -133,8 +136,8 @@ export function sankeyScene(
     }
     const idx = focused.value;
     if (idx === null) return;
-    const step = e.shiftKey ? 5 : 1;
     const v = linkValues[idx]!.value;
+    const step = stepFn(v.value, e.shiftKey);
     if (e.key === "ArrowUp" || e.key === "ArrowRight") { v.value = Math.max(0.01, v.value + step); e.preventDefault(); }
     else if (e.key === "ArrowDown" || e.key === "ArrowLeft") { v.value = Math.max(0.01, v.value - step); e.preventDefault(); }
   }) as EventListener);
@@ -232,7 +235,7 @@ export function sankeyScene(
   ));
   tlbl.el.style.pointerEvents = "none";
 
-  return { focused, linkValues, layout, nodeColorProp, linkColorMode };
+  return { focused, hovered, linkValues, layout, nodeColorProp, linkColorMode };
 }
 
 // ---------------------------------------------------------------------------
