@@ -10,7 +10,7 @@ import { MdScatterChartLC } from "./demos/scatter-chart";
 import { MdPieChartLC } from "./demos/pie-chart";
 import { MdRadarChartLC } from "./demos/radar-chart";
 import { MdConcentricArcLC } from "./demos/concentric-arc";
-import { MdSankeyLC } from "./demos/sankey";
+import { MdSankeySimple, MdSankeyComplex } from "./demos/sankey";
 
 const experiments: Array<{ id: string; title: string; tag: string; ctor: typeof Diagram }> = [
   { id: "line-chart", title: "LineChart", tag: "v-line-chart", ctor: MdLineChartLC },
@@ -24,7 +24,8 @@ const experiments: Array<{ id: string; title: string; tag: string; ctor: typeof 
   { id: "treemap", title: "Treemap (squarified)", tag: "v-treemap", ctor: MdTreemapLC },
   { id: "icicle", title: "Icicle (Partition vertical)", tag: "v-icicle", ctor: MdIcicleLC },
   { id: "sunburst", title: "Sunburst (Partition polar)", tag: "v-sunburst", ctor: MdSunburstLC },
-  { id: "sankey", title: "Sankey", tag: "v-sankey", ctor: MdSankeyLC },
+  { id: "sankey-simple", title: "Sankey (simple, editable)", tag: "v-sankey-simple", ctor: MdSankeySimple },
+  { id: "sankey-complex", title: "Sankey (UK energy, color modes + tooltip)", tag: "v-sankey-complex", ctor: MdSankeyComplex },
 ];
 
 for (const e of experiments) {
