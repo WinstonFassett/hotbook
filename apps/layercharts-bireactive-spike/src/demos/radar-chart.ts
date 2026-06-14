@@ -126,6 +126,7 @@ export class MdRadarChartLC extends Diagram {
       const d = (data.value as Spoke[])[i]!;
 
       const dotPos = Vec.derive(() => {
+        void data.value;
         const a = angle(i);
         const r = yScale.value(d.value);
         return { x: CX + Math.cos(a) * r, y: CY + Math.sin(a) * r };
@@ -201,8 +202,7 @@ export class MdRadarChartLC extends Diagram {
     this.addEventListener("pointerup", () => { dragTarget = null; });
     this.addEventListener("pointercancel", () => { dragTarget = null; });
 
-    // Gestures on host element.
-    this.addEventListener("wheel", (e) => {
+    svgEl.addEventListener("wheel", (e) => {
       const we = e as WheelEvent;
       if (!(we.metaKey || we.ctrlKey)) return;
       if (!wheelLocked.current) wheelLocked.current = hover.value ?? selected.value;
@@ -234,6 +234,7 @@ export class MdRadarChartLC extends Diagram {
     s(label(
       vec(W / 2, 20),
       derive(() => {
+        void data.value;
         const p = selected.value ?? hover.value;
         if (!p) return "Radar — click dot · ←/→ nav · ↑/↓ edit · cmd+wheel";
         return `${p.name}  ${p.value}`;
