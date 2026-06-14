@@ -1,194 +1,7 @@
-import {
-  Anchor,
-  Diagram,
-  cell,
-  derive,
-  label,
-  pathD,
-  rect,
-  Vec,
-  type Mount,
-} from "bireactive";
-import {
-  sankey as d3sankey,
-  sankeyJustify,
-  sankeyLinkHorizontal,
-  type SankeyGraph,
-} from "d3-sankey";
-import { scaleSequential } from "d3-scale";
-import { interpolateCool, interpolateWarm } from "d3-scale-chromatic";
-import { installGestureRelease } from "../lib/interaction";
-
-const linkPath = sankeyLinkHorizontal();
-
-function nodeColorScale(nodes: any[], prop: string, interp: (t: number) => string) {
-  const vals = nodes.map((n) => n[prop] as number);
-  const lo = Math.min(...vals), hi = Math.max(...vals);
-  const scale = scaleSequential(interp).domain([lo, hi === lo ? lo + 1 : hi]);
-  return nodes.map((n) => scale(n[prop] as number));
-}
-
-// ---------------------------------------------------------------------------
-// Shared scene builder — both takes use this
-// ---------------------------------------------------------------------------
-
-interface LinkDef { source: string | number; target: string | number; init: number }
-
-function sankeyScene(
-  host: Diagram,
-  s: Mount,
-  opts: {
-    W: number; H: number;
-    nodeIds: string[];
-    linkDefs: LinkDef[];
-    nodeWidth?: number;
-    nodePadding?: number;
-    interp?: (t: number) => string;
-    labelSize?: number;
-  }
-) {
-  const { W, H, nodeIds, linkDefs, nodeWidth = 10, nodePadding = 6, interp = interpolateCool, labelSize = 10 } = opts;
-
-  // Detect whether links use string names or numeric indices
-  const useStringIds = typeof linkDefs[0]?.source === "string";
-
-  host.tabIndex = 0;
-  host.style.outline = "none";
-
-  const linkValues = linkDefs.map((l) => ({ ...l, value: cell(l.init) }));
-
-  const engine = d3sankey<{},{ source: string | number; target: string | number }>()
-    .nodeId(useStringIds ? ((_d: any, i: number) => nodeIds[i]!) : ((_d: any, i: number) => i))
-    .nodeAlign(sankeyJustify)
-    .nodeWidth(nodeWidth)
-    .nodePadding(nodePadding)
-    .extent([[0, 0], [W, H]]);
-
-  const layout = derive(() => engine(({
-    nodes: nodeIds.map(() => ({})),
-    links: linkValues.map((l) => ({ source: l.source, target: l.target, value: Math.max(0.01, l.value.value) })),
-  }) as SankeyGraph<{},{}>));
-
-  const nodeColors = derive(() => {
-    const nodes = layout.value.nodes as any[];
-    return nodeColorScale(nodes, "layer", interp);
-  });
-
-  const hovered = cell<number | null>(null);
-  const focused = cell<number | null>(null);
-  const wheelLocked = { current: null as number | null };
-
-  installGestureRelease(() => { wheelLocked.current = null; });
-
-  host.addEventListener("wheel", ((e: WheelEvent) => {
-    if (!(e.metaKey || e.ctrlKey)) return;
-    if (wheelLocked.current === null) wheelLocked.current = hovered.value ?? focused.value;
-    const idx = wheelLocked.current;
-    if (idx === null) return;
-    e.preventDefault();
-    const step = e.shiftKey ? 5 : 1;
-    const v = linkValues[idx]!.value;
-    v.value = Math.max(0.01, v.value + (e.deltaY < 0 ? +step : -step));
-  }) as EventListener, { passive: false });
-
-  host.addEventListener("keydown", ((e: KeyboardEvent) => {
-    if (e.key === "Tab") {
-      const cur = focused.value;
-      focused.value = e.shiftKey
-        ? ((cur ?? 0) - 1 + linkValues.length) % linkValues.length
-        : ((cur ?? -1) + 1) % linkValues.length;
-      e.preventDefault(); return;
-    }
-    const idx = focused.value;
-    if (idx === null) return;
-    const step = e.shiftKey ? 5 : 1;
-    const v = linkValues[idx]!.value;
-    if (e.key === "ArrowUp" || e.key === "ArrowRight") { v.value = Math.max(0.01, v.value + step); e.preventDefault(); }
-    else if (e.key === "ArrowDown" || e.key === "ArrowLeft") { v.value = Math.max(0.01, v.value - step); e.preventDefault(); }
-  }) as EventListener);
-
-  // Tooltip
-  const svgEl = (host as any).svg as SVGSVGElement;
-  const toSVG = (e: PointerEvent) => {
-    const r = svgEl.getBoundingClientRect();
-    const vb = svgEl.viewBox?.baseVal;
-    const sx = vb && vb.width ? vb.width / r.width : 1;
-    const sy = vb && vb.height ? vb.height / r.height : 1;
-    return { x: (e.clientX - r.left) * sx, y: (e.clientY - r.top) * sy };
-  };
-  const tooltipText = cell("");
-  const tooltipAt = cell({ x: 0, y: 0 });
-  const tooltipVis = cell(false);
-
-  // Links
-  for (let i = 0; i < linkDefs.length; i++) {
-    const idx = i;
-    const srcIdx = typeof linkDefs[i]!.source === "number"
-      ? linkDefs[i]!.source as number
-      : nodeIds.indexOf(linkDefs[i]!.source as string);
-
-    const d = derive(() => linkPath(layout.value.links[idx] as any) ?? "");
-    const sw = derive(() => (layout.value.links[idx] as any).width ?? 1);
-    const stroke = derive(() => focused.value === idx ? "#fff" : nodeColors.value[srcIdx] ?? "#6ab0f5");
-    const opacity = derive(() => {
-      const h = hovered.value, f = focused.value;
-      if (h === null && f === null) return 0.15;
-      return (h ?? f) === idx ? 0.55 : 0.04;
-    });
-
-    const ribbon = s(pathD(d, { stroke, strokeWidth: sw, opacity, cap: "butt" }));
-    ribbon.el.style.cursor = "pointer";
-    ribbon.el.addEventListener("pointerenter", (e) => {
-      hovered.value = idx;
-      const lk = layout.value.links[idx] as any;
-      tooltipText.value = `${nodeIds[lk.source.index]} → ${nodeIds[lk.target.index]}: ${lk.value.toFixed(1)}`;
-      tooltipAt.value = toSVG(e as PointerEvent); tooltipVis.value = true;
-    });
-    ribbon.el.addEventListener("pointermove", (e) => { tooltipAt.value = toSVG(e as PointerEvent); });
-    ribbon.el.addEventListener("pointerleave", () => { if (hovered.value === idx) { hovered.value = null; tooltipVis.value = false; } });
-    ribbon.el.addEventListener("click", () => { focused.value = focused.value === idx ? null : idx; });
-  }
-
-  // Nodes
-  for (let i = 0; i < nodeIds.length; i++) {
-    const name = nodeIds[i]!;
-    const n = derive(() => layout.value.nodes[i] as any);
-    const x0 = derive(() => n.value.x0 ?? 0);
-    const y0 = derive(() => n.value.y0 ?? 0);
-    const x1 = derive(() => n.value.x1 ?? 0);
-    const y1 = derive(() => n.value.y1 ?? 0);
-    const nw = derive(() => x1.value - x0.value);
-    const nh = derive(() => y1.value - y0.value);
-    const fill = derive(() => nodeColors.value[i] ?? "#6ab0f5");
-    const isSink = derive(() => (n.value.height ?? 0) === 0);
-
-    const tile = s(rect(x0, y0, nw, nh, { fill }));
-    tile.el.addEventListener("pointerenter", (e) => {
-      tooltipText.value = `${name}: ${(n.value.value ?? 0).toFixed(1)}`;
-      tooltipAt.value = toSVG(e as PointerEvent); tooltipVis.value = true;
-    });
-    tile.el.addEventListener("pointermove", (e) => { tooltipAt.value = toSVG(e as PointerEvent); });
-    tile.el.addEventListener("pointerleave", () => { tooltipVis.value = false; });
-
-    const lx = derive(() => isSink.value ? x0.value - 4 : x1.value + 4);
-    const ly = derive(() => y0.value + nh.value / 2);
-    s(label(Vec.derive(() => ({ x: lx.value, y: ly.value })), name, {
-      size: labelSize,
-      align: derive(() => isSink.value ? Anchor.Right : Anchor.Left),
-      fill: "#cdd5e0",
-    }));
-  }
-
-  // Tooltip overlay
-  const tlbl = s(label(
-    Vec.derive(() => ({ x: tooltipAt.value.x + 10, y: tooltipAt.value.y - 10 })),
-    tooltipText,
-    { size: 11, fill: "#fff", align: Anchor.Left, opacity: derive(() => tooltipVis.value ? 1 : 0) },
-  ));
-  tlbl.el.style.pointerEvents = "none";
-
-  return { focused, linkValues, layout };
-}
+import { Anchor, Diagram, derive, label, type Mount } from "bireactive";
+import { interpolateCool, interpolateWarm, interpolateRainbow } from "d3-scale-chromatic";
+import { hierarchy } from "d3-hierarchy";
+import { sankeyScene, renderColorControls, type LinkDef } from "../lib/sankey";
 
 // ---------------------------------------------------------------------------
 // Take 1: Simple editable graph
@@ -208,11 +21,12 @@ const SIMPLE_LINKS: LinkDef[] = [
 export class MdSankeySimple extends Diagram {
   protected scene(s: Mount): void {
     const W = 560, H = 340;
-    const view = this.view(W + 120, H + 24);
-    const { focused, linkValues } = sankeyScene(this, s, {
-      W, H, nodeIds: SIMPLE_NODES, linkDefs: SIMPLE_LINKS, labelSize: 11,
+    const view = this.view(W + 120, H + 48);
+    const { focused, linkValues, nodeColorProp, linkColorMode } = sankeyScene(this, s, {
+      W, H, nodeIds: SIMPLE_NODES, linkDefs: SIMPLE_LINKS, labelSize: 11, stringIds: true,
     });
-    s(label(view.bottom.up(10), derive(() => {
+    renderColorControls(s, view, nodeColorProp, linkColorMode);
+    s(label(view.bottom.up(40), derive(() => {
       const f = focused.value;
       if (f === null) return "click ribbon to focus · cmd+wheel or ↑↓ to edit · Tab to cycle";
       const lv = linkValues[f]!;
@@ -270,18 +84,156 @@ const COMPLEX_LINKS: LinkDef[] = [
 export class MdSankeyComplex extends Diagram {
   protected scene(s: Mount): void {
     const W = 800, H = 560;
-    const view = this.view(W + 180, H + 24);
-    const { focused, linkValues } = sankeyScene(this, s, {
+    const view = this.view(W + 180, H + 48);
+    const { focused, linkValues, nodeColorProp, linkColorMode } = sankeyScene(this, s, {
       W, H, nodeIds: COMPLEX_NODES, linkDefs: COMPLEX_LINKS,
-      nodePadding: 4, interp: interpolateWarm, labelSize: 9,
+      nodePadding: 4, interp: interpolateWarm, labelSize: 9, stringIds: false,
     });
-    s(label(view.bottom.up(10), derive(() => {
+    renderColorControls(s, view, nodeColorProp, linkColorMode);
+    s(label(view.bottom.up(40), derive(() => {
       const f = focused.value;
       if (f === null) return "click ribbon to focus · cmd+wheel or ↑↓ to edit · Tab to cycle";
       const lv = linkValues[f]!;
       const src = typeof lv.source === "number" ? COMPLEX_NODES[lv.source] : lv.source;
       const tgt = typeof lv.target === "number" ? COMPLEX_NODES[lv.target] : lv.target;
       return `${src} → ${tgt}: ${lv.value.value.toFixed(1)} · ↑↓ / cmd+wheel · Tab`;
+    }), { size: 10, align: Anchor.Center, fill: "#9aa0a8" }));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Take 3: Hierarchy take — d3-hierarchy tree flattened to sankey parent→child
+// ---------------------------------------------------------------------------
+
+interface HNode { name: string; value?: number; children?: HNode[] }
+
+const FLARE_TREE: HNode = {
+  name: "flare",
+  children: [
+    { name: "analytics", children: [
+      { name: "cluster", children: [
+        { name: "AgglomerativeCluster", value: 3938 },
+        { name: "CommunityStructure", value: 3812 },
+        { name: "HierarchicalCluster", value: 6714 },
+        { name: "MergeEdge", value: 743 },
+      ]},
+      { name: "graph", children: [
+        { name: "BetweennessCentrality", value: 3534 },
+        { name: "LinkDistance", value: 5731 },
+        { name: "MaxFlowMinCut", value: 7840 },
+        { name: "ShortestPaths", value: 5914 },
+        { name: "SpanningTree", value: 3416 },
+      ]},
+      { name: "optimization", children: [
+        { name: "AspectRatioBanker", value: 7074 },
+      ]},
+    ]},
+    { name: "animate", children: [
+      { name: "Easing", value: 17010 },
+      { name: "FunctionSequence", value: 5842 },
+      { name: "interpolate", children: [
+        { name: "ArrayInterpolator", value: 1983 },
+        { name: "ColorInterpolator", value: 2047 },
+        { name: "DateInterpolator", value: 1375 },
+        { name: "Interpolator", value: 8746 },
+        { name: "MatrixInterpolator", value: 2202 },
+        { name: "NumberInterpolator", value: 1382 },
+        { name: "ObjectInterpolator", value: 1629 },
+        { name: "StringInterpolator", value: 2397 },
+        { name: "SubstringInterpolator", value: 698 },
+      ]},
+      { name: "ISchedulable", value: 1041 },
+      { name: "Scheduler", value: 5297 },
+      { name: "Sequence", value: 5575 },
+      { name: "Transition", value: 9201 },
+      { name: "Transitioner", value: 19975 },
+      { name: "TransitionEvent", value: 1116 },
+      { name: "Tween", value: 6006 },
+    ]},
+    { name: "data", children: [
+      { name: "converters", children: [
+        { name: "Converters", value: 721 },
+        { name: "DelimitedTextConverter", value: 4294 },
+        { name: "GraphMLConverter", value: 9800 },
+        { name: "IDataConverter", value: 1314 },
+        { name: "JSONConverter", value: 2220 },
+      ]},
+      { name: "DataField", value: 1759 },
+      { name: "DataSchema", value: 2165 },
+      { name: "DataSet", value: 586 },
+      { name: "DataSource", value: 3331 },
+      { name: "DataTable", value: 772 },
+      { name: "DataUtil", value: 3322 },
+    ]},
+    { name: "display", children: [
+      { name: "DirtySprite", value: 8833 },
+      { name: "LineSprite", value: 1732 },
+      { name: "RectSprite", value: 4595 },
+      { name: "TextSprite", value: 1093 },
+    ]},
+    { name: "flex", children: [
+      { name: "FlexSprite", value: 4554 },
+    ]},
+    { name: "physics", children: [
+      { name: "DragForce", value: 1082 },
+      { name: "GravityForce", value: 1336 },
+      { name: "IForce", value: 319 },
+      { name: "NBodyForce", value: 10498 },
+      { name: "Particle", value: 2822 },
+      { name: "Simulation", value: 9983 },
+      { name: "Spring", value: 2213 },
+      { name: "SpringForce", value: 1681 },
+    ]},
+  ],
+};
+
+// Convert a d3-hierarchy tree into {nodeIds, linkDefs} for sankeyScene
+function hierarchyToSankey(root: HNode): { nodeIds: string[]; linkDefs: LinkDef[] } {
+  const nodeIds: string[] = [];
+  const seen = new Map<string, string>();
+  const linkDefs: LinkDef[] = [];
+
+  function uniqueName(name: string): string {
+    if (!seen.has(name)) { seen.set(name, name); return name; }
+    let i = 2;
+    while (seen.has(`${name} (${i})`)) i++;
+    const u = `${name} (${i})`;
+    seen.set(u, u);
+    return u;
+  }
+
+  function walk(node: HNode, parentId: string | null) {
+    const id = uniqueName(node.name);
+    nodeIds.push(id);
+    if (parentId !== null) {
+      // Use leaf value or sum of children (rough estimate — will reflow via sankey anyway)
+      const init = node.value ?? 1000;
+      linkDefs.push({ source: parentId, target: id, init });
+    }
+    for (const child of node.children ?? []) {
+      walk(child, id);
+    }
+  }
+
+  walk(root, null);
+  return { nodeIds, linkDefs };
+}
+
+export class MdSankeyHierarchy extends Diagram {
+  protected scene(s: Mount): void {
+    const W = 680, H = 500;
+    const view = this.view(W + 160, H + 48);
+    const { nodeIds, linkDefs } = hierarchyToSankey(FLARE_TREE);
+    const { focused, linkValues, nodeColorProp, linkColorMode } = sankeyScene(this, s, {
+      W, H, nodeIds, linkDefs,
+      nodePadding: 3, interp: interpolateRainbow, labelSize: 8, stringIds: true,
+    });
+    renderColorControls(s, view, nodeColorProp, linkColorMode);
+    s(label(view.bottom.up(40), derive(() => {
+      const f = focused.value;
+      if (f === null) return "hierarchy → sankey · click ribbon to focus · cmd+wheel or ↑↓ to edit";
+      const lv = linkValues[f]!;
+      return `${lv.source} → ${lv.target}: ${lv.value.value.toFixed(0)} · ↑↓ / cmd+wheel`;
     }), { size: 10, align: Anchor.Center, fill: "#9aa0a8" }));
   }
 }
