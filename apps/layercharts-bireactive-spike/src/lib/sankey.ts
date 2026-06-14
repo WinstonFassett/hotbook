@@ -98,10 +98,10 @@ export function sankeyScene(
 
   const hovered = cell<number | null>(null);
   const focused = cell<number | null>(null);
-  const wheelLocked = { current: null as number | null };
+  const wheelLocked = cell<number | null>(null);
   const ribbonEls = new Map<Element, number>();
 
-  installGestureRelease(() => { wheelLocked.current = null; hovered.value = null; tooltipVis.value = false; });
+  installGestureRelease(() => { wheelLocked.value = null; hovered.value = null; tooltipVis.value = false; });
 
   const hitTestRibbon = (clientX: number, clientY: number): number | null => {
     const shadow = (host as any).shadowRoot as ShadowRoot | null;
@@ -115,10 +115,10 @@ export function sankeyScene(
 
   host.addEventListener("wheel", ((e: WheelEvent) => {
     if (!(e.metaKey || e.ctrlKey)) return;
-    if (wheelLocked.current === null) {
-      wheelLocked.current = hovered.value ?? focused.value ?? hitTestRibbon(e.clientX, e.clientY);
+    if (wheelLocked.value === null) {
+      wheelLocked.value = hovered.value ?? focused.value ?? hitTestRibbon(e.clientX, e.clientY);
     }
-    const idx = wheelLocked.current;
+    const idx = wheelLocked.value;
     if (idx === null) return;
     e.preventDefault();
     const v = linkValues[idx]!.value;
@@ -184,7 +184,7 @@ export function sankeyScene(
     if (ribbon.el.firstElementChild) ribbonEls.set(ribbon.el.firstElementChild, idx);
     ribbon.el.style.cursor = "pointer";
     ribbon.el.addEventListener("pointerenter", (e) => {
-      if (wheelLocked.current !== null) return;
+      if (wheelLocked.value !== null) return;
       hovered.value = idx;
       const lk = layout.value.links[idx] as any;
       const srcName = nodeIds[(lk.source as any).index ?? lk.source] ?? String(lk.source);
@@ -192,8 +192,8 @@ export function sankeyScene(
       tooltipText.value = `${srcName} → ${tgtName}: ${lk.value.toFixed(1)}`;
       tooltipAt.value = toSVG(e as PointerEvent); tooltipVis.value = true;
     });
-    ribbon.el.addEventListener("pointermove", (e) => { if (wheelLocked.current === null) tooltipAt.value = toSVG(e as PointerEvent); });
-    ribbon.el.addEventListener("pointerleave", () => { if (wheelLocked.current !== null) return; if (hovered.value === idx) { hovered.value = null; tooltipVis.value = false; } });
+    ribbon.el.addEventListener("pointermove", (e) => { if (wheelLocked.value === null) tooltipAt.value = toSVG(e as PointerEvent); });
+    ribbon.el.addEventListener("pointerleave", () => { if (wheelLocked.value !== null) return; if (hovered.value === idx) { hovered.value = null; tooltipVis.value = false; } });
     ribbon.el.addEventListener("click", () => { focused.value = focused.value === idx ? null : idx; });
   }
 
@@ -235,7 +235,7 @@ export function sankeyScene(
   ));
   tlbl.el.style.pointerEvents = "none";
 
-  return { focused, hovered, linkValues, layout, nodeColorProp, linkColorMode };
+  return { focused, hovered, wheelLocked, linkValues, layout, nodeColorProp, linkColorMode };
 }
 
 // ---------------------------------------------------------------------------
