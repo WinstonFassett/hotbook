@@ -5,10 +5,16 @@ import { MdIcicleLC } from "./demos/icicle";
 import { MdSunburstLC } from "./demos/sunburst";
 import { MdLineChartLC } from "./demos/line-chart";
 import { MdAreaChartLC } from "./demos/area-chart";
+import { MdBarChartLC } from "./demos/bar-chart";
+import { MdScatterChartLC } from "./demos/scatter-chart";
+import { MdPieChartLC } from "./demos/pie-chart";
 
 const experiments: Array<{ id: string; title: string; tag: string; ctor: typeof Diagram }> = [
-  { id: "line-chart", title: "LineChart (Cartesian port, v1)", tag: "v-line-chart", ctor: MdLineChartLC },
-  { id: "area-chart", title: "AreaChart (Cartesian port, v1)", tag: "v-area-chart", ctor: MdAreaChartLC },
+  { id: "line-chart", title: "LineChart", tag: "v-line-chart", ctor: MdLineChartLC },
+  { id: "area-chart", title: "AreaChart", tag: "v-area-chart", ctor: MdAreaChartLC },
+  { id: "bar-chart", title: "BarChart", tag: "v-bar-chart", ctor: MdBarChartLC },
+  { id: "scatter-chart", title: "ScatterChart", tag: "v-scatter-chart", ctor: MdScatterChartLC },
+  { id: "pie-chart", title: "PieChart", tag: "v-pie-chart", ctor: MdPieChartLC },
   { id: "pack", title: "Pack (circle packing)", tag: "v-pack", ctor: MdPack },
   { id: "treemap", title: "Treemap (squarified)", tag: "v-treemap", ctor: MdTreemapLC },
   { id: "icicle", title: "Icicle (Partition vertical)", tag: "v-icicle", ctor: MdIcicleLC },
