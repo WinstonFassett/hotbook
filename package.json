@@ -6,6 +6,15 @@
     "apps/*"
   ],
   "scripts": {
-    "build": "npm run build -w packages/vizform-core && npm run build -w packages/vizform-react && npm run build -w apps/sliceboard"
+    "build": "npm run build -w packages/vizform-vanilla-d3 && npm run build -w packages/vizform-react-d3 && npm run build -w apps/sliceboard",
+    "dev:sliceboard": "npm run dev -w apps/sliceboard",
+    "dev:vanilla-bireactive": "npm run dev -w apps/vanilla-bireactive-spike",
+    "dev:svelte-layerchart": "npm run dev -w apps/svelte-layerchart-spike",
+    "dev:vanilla-bireactive-layercharts": "npm run dev -w apps/vanilla-bireactive-layercharts-spike",
+    "dev:vanilla-bireactive-native-layout": "npm run dev -w apps/vanilla-bireactive-native-layout-spike",
+    "dev": "concurrently -n sliceboard,vanilla-bireactive,svelte-layerchart,vanilla-bireactive-layercharts,vanilla-bireactive-native-layout \"npm run dev -w apps/sliceboard\" \"npm run dev -w apps/vanilla-bireactive-spike\" \"npm run dev -w apps/svelte-layerchart-spike\" \"npm run dev -w apps/vanilla-bireactive-layercharts-spike\" \"npm run dev -w apps/vanilla-bireactive-native-layout-spike\""
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.3"
   }
 }

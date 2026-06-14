@@ -1,0 +1,20 @@
+{
+  "name": "bireactive-spike",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "portless vanilla-bireactive vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@types/d3-hierarchy": "^3.1.7",
+    "bireactive": "^0.2.4",
+    "d3-hierarchy": "^3.1.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "vite": "^6.3.5"
+  }
+}

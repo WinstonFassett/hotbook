@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>layerchart-direct · Path A spike</title>
+    <style>
+      :root {
+        --bg: #0e1116;
+        --panel: #161a22;
+        --ink: #e6e6e6;
+        --dim: #9aa0a8;
+        --rule: #232a36;
+        --accent: #5b8def;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; background: var(--bg); color: var(--ink); font-family: ui-sans-serif, system-ui, sans-serif; }
+      header { padding: 18px 24px 8px; border-bottom: 1px solid var(--rule); }
+      header h1 { margin: 0; font-size: 16px; font-weight: 600; }
+      header .sub { margin: 4px 0 0; color: var(--dim); font-size: 12px; }
+      main { display: grid; gap: 18px; padding: 18px 24px; max-width: 1200px; margin: 0 auto; }
+      section { background: var(--panel); border: 1px solid var(--rule); border-radius: 10px; padding: 14px 16px; }
+      section > h2 { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
+      section > p.note { margin: 0 0 10px; color: var(--dim); font-size: 12px; }
+      .demo { display: flex; justify-content: center; background: #0b0d12; border-radius: 6px; padding: 8px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>layerchart-direct · Path A spike</h1>
+      <p class="sub">Svelte 5 + bireactive · two web-component instances over a shared writable tree</p>
+    </header>
+    <main>
+      <section>
+        <h2>Instance A — Treemap (web component)</h2>
+        <p class="note">
+          Hover a tile and hold cmd/ctrl+wheel to scrub — the gesture target locks while the modifier is held,
+          so re-layout (or shrinking to zero) can't break the gesture. Click to focus, then Tab/Shift+Tab to walk
+          cells, arrow keys to nudge value (±1, shift ±5). Works on groups too — the Num.lens redistributes
+          children proportionally and sibling totals re-derive automatically.
+        </p>
+        <div class="demo"><lc-treemap-demo></lc-treemap-demo></div>
+      </section>
+      <section>
+        <h2>Instance C — Real LayerChart &lt;Chart&gt; + &lt;Treemap&gt;, same tree</h2>
+        <p class="note">
+          Same shared bireactive tree, but the layout is run by the actual LayerChart components
+          consumed from npm — not our local d3.treemap call. Proves the Path A bet: LayerChart's
+          hierarchy vocabulary works when the data underneath is writable cells. Same gestures.
+        </p>
+        <div class="demo"><lc-treemap-lc></lc-treemap-lc></div>
+      </section>
+      <section>
+        <h2>Sunburst — LayerChart &lt;Partition&gt; + &lt;Arc&gt;, same tree</h2>
+        <p class="note">
+          Partition laid out into polar coords <code>[0, 2π] × [0, R]</code>, rendered as nested arcs.
+          Same shared cells: scrubbing a slice here updates every other instance.
+        </p>
+        <div class="demo"><lc-sunburst-lc></lc-sunburst-lc></div>
+      </section>
+      <section>
+        <h2>Icicle — LayerChart &lt;Partition&gt; in cartesian, same tree</h2>
+        <p class="note">
+          Same Partition layout as the sunburst, rendered as stacked bars (depth flows top-to-bottom,
+          siblings span horizontally). Cartesian variant of the same data structure.
+        </p>
+        <div class="demo"><lc-icicle-lc></lc-icicle-lc></div>
+      </section>
+      <section>
+        <h2>Circle Pack — LayerChart &lt;Pack&gt; + &lt;Circle&gt;, same tree</h2>
+        <p class="note">
+          Hierarchy as nested circles via d3.pack. Different geometry, same gesture model — hover
+          + cmd/ctrl+wheel scrubs the targeted node; siblings repack on every change.
+        </p>
+        <div class="demo"><lc-pack-lc></lc-pack-lc></div>
+      </section>
+      <section>
+        <h2>Sankey — LayerChart &lt;Sankey&gt; + &lt;Link&gt; + &lt;Rect&gt;</h2>
+        <p class="note">
+          Flow graph via d3-sankey. Nodes rendered as rects, ribbons via sankeyLinkHorizontal.
+          Hover a node to highlight its connected links.
+        </p>
+        <div class="demo"><lc-sankey-lc></lc-sankey-lc></div>
+      </section>
+      <section>
+        <h2>Instance B — Same web component, same underlying tree</h2>
+        <p class="note">
+          Both instances mount the same Svelte component, which imports the same module-scope tree
+          from <code>tree.ts</code>. Editing a tile in one instance updates the other in real time —
+          proving cross-instance reactivity via shared bireactive cells, with zero event plumbing
+          between the components.
+        </p>
+        <div class="demo"><lc-treemap-demo></lc-treemap-demo></div>
+      </section>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

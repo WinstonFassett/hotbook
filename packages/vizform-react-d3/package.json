@@ -1,0 +1,46 @@
+{
+  "name": "@winstonfassett/vizform-react-d3",
+  "version": "0.1.0",
+  "description": "vizform React D3 adapter \u2014 thin wrappers over vizform-vanilla-d3 for use in React apps and APITable.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/WinstonFassett/vizform.git",
+    "directory": "packages/vizform-react-d3"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "main": "./dist/vizform-react-d3.umd.cjs",
+  "module": "./dist/vizform-react-d3.js",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/vizform-react-d3.js",
+      "require": "./dist/vizform-react-d3.umd.cjs"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "vite build",
+    "watch": "vite build --watch"
+  },
+  "peerDependencies": {
+    "react": ">=17"
+  },
+  "dependencies": {
+    "@winstonfassett/vizform-vanilla-d3": "*"
+  },
+  "devDependencies": {
+    "@types/react": "^18.0.0",
+    "@vitejs/plugin-react": "^4.0.0",
+    "react": "^18.0.0",
+    "typescript": "^5.9.3",
+    "vite": "^6.0.0",
+    "vite-plugin-dts": "^4.0.0"
+  }
+}

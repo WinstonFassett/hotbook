@@ -1,4 +1,4 @@
-import type { PNode } from '@winstonfassett/vizform-react'
+import type { PNode } from '@winstonfassett/vizform-react-d3'
 import type { LayoutItem } from 'react-grid-layout'
 
 export type { PNode }

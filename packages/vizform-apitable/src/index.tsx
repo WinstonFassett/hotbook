@@ -11,8 +11,8 @@ import {
   useViewMeta,
   FieldType,
 } from '@apitable/widget-sdk'
-import { Viz, HViz, pickColor } from '@winstonfassett/vizform-react'
-import type { Goal, GoalTree, ViewMode } from '@winstonfassett/vizform-react'
+import { Viz, HViz, pickColor } from '@winstonfassett/vizform-react-d3'
+import type { Goal, GoalTree, ViewMode } from '@winstonfassett/vizform-react-d3'
 
 const NUMERIC_TYPES = new Set<string>([
   FieldType.Number,
