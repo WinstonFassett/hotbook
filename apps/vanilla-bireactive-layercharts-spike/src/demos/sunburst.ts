@@ -19,12 +19,13 @@ const H = 480;
 const R = Math.min(W, H) / 2 - 4;
 
 export class MdSunburstLC extends Diagram {
+  externalRoot?: BiNode
   protected scene(s: Mount): void {
     const view = this.view(W, H);
     this.tabIndex = 0;
     this.style.outline = "none";
 
-    const root = portfolio();
+    const root = this.externalRoot ?? portfolio();
     const parentIdx = buildParentIndex(root);
     const parentOf = (n: BiNode) => parentIdx.get(n);
 

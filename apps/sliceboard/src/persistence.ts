@@ -38,6 +38,18 @@ export type TileKind =
   | 'h-treemap'
   | 'h-icicle'
   | 'h-radial'
+  // bireactive LC-port charts
+  | 'br-lc-bar'
+  | 'br-lc-line'
+  | 'br-lc-area'
+  | 'br-lc-scatter'
+  | 'br-lc-pie'
+  | 'br-lc-radar'
+  | 'br-lc-concentric-arc'
+  | 'br-lc-pack'
+  | 'br-lc-treemap'
+  | 'br-lc-icicle'
+  | 'br-lc-sunburst'
 
 export interface Tile {
   id: string

@@ -22,12 +22,13 @@ function makeData(): Point[] {
 }
 
 export class MdScatterChartLC extends Diagram {
+  externalData?: { x: number; y: number }[]
   protected scene(s: Mount): void {
     this.view(W, H);
     this.tabIndex = 0;
     this.style.outline = "none";
 
-    const data = cell<readonly Point[]>(makeData());
+    const data = cell<readonly Point[]>((this.externalData as Point[]) ?? makeData());
 
     const ctx = chartContext<Point>({
       width: W, height: H, data,

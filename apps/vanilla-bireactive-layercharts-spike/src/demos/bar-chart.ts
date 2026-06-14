@@ -21,12 +21,13 @@ function makeData(): Bar[] {
 }
 
 export class MdBarChartLC extends Diagram {
+  externalData?: { label: string; value: number }[]
   protected scene(s: Mount): void {
     this.view(W, H);
     this.tabIndex = 0;
     this.style.outline = "none";
 
-    const data = cell<readonly Bar[]>(makeData());
+    const data = cell<readonly Bar[]>((this.externalData as Bar[]) ?? makeData());
 
     const PAD = { top: 16, right: 24, bottom: 36, left: 48 };
     const plotX = PAD.left;

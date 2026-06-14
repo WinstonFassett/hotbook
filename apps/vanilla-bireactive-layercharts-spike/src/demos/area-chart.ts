@@ -29,12 +29,13 @@ function makeSeries(): Point[] {
 }
 
 export class MdAreaChartLC extends Diagram {
+  externalData?: { date: Date; value: number }[]
   protected scene(s: Mount): void {
     this.view(W, H);
     this.tabIndex = 0;
     this.style.outline = "none";
 
-    const data = cell<readonly Point[]>(makeSeries());
+    const data = cell<readonly Point[]>((this.externalData as Point[]) ?? makeSeries());
 
     const ctx = chartContext<Point>({
       width: W, height: H, data,

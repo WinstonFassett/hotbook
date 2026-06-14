@@ -8,6 +8,10 @@ import { Treemap } from './viz/Treemap'
 import { Icicle } from './viz/Icicle'
 import { Sunburst } from './viz/Sunburst'
 import {
+  BrLcBar, BrLcLine, BrLcArea, BrLcScatter, BrLcPie, BrLcRadar, BrLcConcentricArc,
+  BrLcPack, BrLcTreemap, BrLcIcicle, BrLcSunburst,
+} from './viz/br/BrLcCharts'
+import {
   initWorkspace, saveWorkspace,
   createDataset, createDashboard, updateDataset, updateDashboard,
   addTile, removeTile, deleteDashboard, deleteDataset,
@@ -20,15 +24,31 @@ import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
 import './App.css'
 
-const TILE_KINDS: TileKind[] = ['treetable', 'h-treemap', 'h-icicle', 'h-radial', 'treemap', 'radial', 'bands']
+const TILE_KINDS: TileKind[] = [
+  'treetable', 'h-treemap', 'h-icicle', 'h-radial', 'treemap', 'radial', 'bands',
+  'br-lc-bar', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie',
+  'br-lc-radar', 'br-lc-concentric-arc',
+  'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst',
+]
 const TILE_LABELS: Record<TileKind, string> = {
-  'treetable': 'Table',
-  'h-treemap': 'H-Treemap',
-  'h-icicle': 'Icicle',
-  'h-radial': 'Sunburst',
-  'treemap': 'Treemap',
-  'radial': 'Radial',
-  'bands': 'Bands',
+  'treetable':           'Table (D3)',
+  'h-treemap':           'H-Treemap (D3)',
+  'h-icicle':            'Icicle (D3)',
+  'h-radial':            'Sunburst (D3)',
+  'treemap':             'Treemap (D3)',
+  'radial':              'Radial (D3)',
+  'bands':               'Bands (D3)',
+  'br-lc-bar':           'Bar (BR-LC)',
+  'br-lc-line':          'Line (BR-LC)',
+  'br-lc-area':          'Area (BR-LC)',
+  'br-lc-scatter':       'Scatter (BR-LC)',
+  'br-lc-pie':           'Pie (BR-LC)',
+  'br-lc-radar':         'Radar (BR-LC)',
+  'br-lc-concentric-arc':'ConcentricArc (BR-LC)',
+  'br-lc-pack':          'Pack (BR-LC)',
+  'br-lc-treemap':       'Treemap (BR-LC)',
+  'br-lc-icicle':        'Icicle (BR-LC)',
+  'br-lc-sunburst':      'Sunburst (BR-LC)',
 }
 
 // ─── Tile content ─────────────────────────────────────────────────────────────
@@ -57,6 +77,21 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodeReorder }: { ti
   if (tile.kind === 'treetable') {
     return <HTreetable nodes={nodes} measureKey={mk} />
   }
+
+  // ── BR-LC flat charts ────────────────────────────────────────────────────
+  if (tile.kind === 'br-lc-bar')            return <BrLcBar nodes={nodes} measureKey={mk} />
+  if (tile.kind === 'br-lc-line')           return <BrLcLine nodes={nodes} measureKey={mk} />
+  if (tile.kind === 'br-lc-area')           return <BrLcArea nodes={nodes} measureKey={mk} />
+  if (tile.kind === 'br-lc-scatter')        return <BrLcScatter nodes={nodes} xKey={mk} yKey={mk} />
+  if (tile.kind === 'br-lc-pie')            return <BrLcPie nodes={nodes} measureKey={mk} />
+  if (tile.kind === 'br-lc-radar')          return <BrLcRadar nodes={nodes} measureKey={mk} />
+  if (tile.kind === 'br-lc-concentric-arc') return <BrLcConcentricArc nodes={nodes} measureKey={mk} />
+
+  // ── BR-LC hierarchical charts ────────────────────────────────────────────
+  if (tile.kind === 'br-lc-pack')           return <BrLcPack nodes={nodes} measureKey={mk} />
+  if (tile.kind === 'br-lc-treemap')        return <BrLcTreemap nodes={nodes} measureKey={mk} />
+  if (tile.kind === 'br-lc-icicle')         return <BrLcIcicle nodes={nodes} measureKey={mk} />
+  if (tile.kind === 'br-lc-sunburst')       return <BrLcSunburst nodes={nodes} measureKey={mk} />
 
   // For flat viz with groupBy, assign color by group dim value
   const groupColorMap = new Map<string, string>()
@@ -92,8 +127,8 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodeReorder }: { ti
 
 // ─── Tile wrapper ─────────────────────────────────────────────────────────────
 
-const HIER_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial'])
-const VIZ_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial', 'treemap', 'radial', 'bands'])
+const HIER_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial', 'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst'])
+const VIZ_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial', 'treemap', 'radial', 'bands', 'br-lc-bar', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie', 'br-lc-radar', 'br-lc-concentric-arc', 'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst'])
 
 function TileCard({
   tile, ds, measureKey, onRemove, onMeasureChange, onDepthChange, onSortChange, onGroupByChange, onNodeUpdate, onNodeReorder, availableMeasures,

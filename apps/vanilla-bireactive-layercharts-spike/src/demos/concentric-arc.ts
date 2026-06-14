@@ -45,12 +45,13 @@ const TWO_PI = 2 * Math.PI;
 const START = 0; // d3Arc: 0 = top (12 o'clock), clockwise
 
 export class MdConcentricArcLC extends Diagram {
+  externalData?: { label: string; value: number }[]
   protected scene(s: Mount): void {
     this.view(W, H);
     this.tabIndex = 0;
     this.style.outline = "none";
 
-    const data = cell<readonly Ring[]>(makeData());
+    const data = cell<readonly Ring[]>((this.externalData as unknown as Ring[]) ?? makeData());
     const hover = cell<Ring | null>(null);
     const selected = cell<Ring | null>(null);
 

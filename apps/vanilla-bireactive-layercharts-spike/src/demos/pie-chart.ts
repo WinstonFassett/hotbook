@@ -28,12 +28,13 @@ function makeData(): Slice[] {
 }
 
 export class MdPieChartLC extends Diagram {
+  externalData?: { label: string; value: number }[]
   protected scene(s: Mount): void {
     this.view(W, H);
     this.tabIndex = 0;
     this.style.outline = "none";
 
-    const data = cell<readonly Slice[]>(makeData());
+    const data = cell<readonly Slice[]>((this.externalData as Slice[]) ?? makeData());
 
     const hover = cell<Slice | null>(null);
     const selected = cell<Slice | null>(null);
