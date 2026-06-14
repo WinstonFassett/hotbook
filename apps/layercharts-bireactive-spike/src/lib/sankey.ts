@@ -124,6 +124,11 @@ export function sankeyScene(
     const v = linkValues[idx]!.value;
     const step = stepFn(v.value, e.shiftKey);
     v.value = Math.max(0.01, v.value + (e.deltaY < 0 ? +step : -step));
+    // keep tooltip live during gesture
+    const lk = layout.value.links[idx] as any;
+    const sn = nodeIds[(lk.source as any).index ?? lk.source] ?? String(lk.source);
+    const tn = nodeIds[(lk.target as any).index ?? lk.target] ?? String(lk.target);
+    tooltipText.value = `${sn} → ${tn}: ${v.value.toFixed(1)}`;
   }) as EventListener, { passive: false });
 
   host.addEventListener("keydown", ((e: KeyboardEvent) => {
