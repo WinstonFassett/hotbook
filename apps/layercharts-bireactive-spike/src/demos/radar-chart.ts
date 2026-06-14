@@ -44,7 +44,7 @@ export class MdRadarChartLC extends Diagram {
     };
 
     const wheelLocked = { current: null as Spoke | null };
-    installGestureRelease(() => { wheelLocked.current = null; });
+    installGestureRelease(() => { wheelLocked.current = null; hover.value = null; });
 
     // x: scaleBand over category names → angle at band center
     // y: scaleLinear 0–100 → radius 0–R_MAX
@@ -142,8 +142,8 @@ export class MdRadarChartLC extends Diagram {
 
       const dot = s(circle(dotPos, dotR, { fill: COLOR, stroke: dotStroke, strokeWidth: dotStrokeW }));
       dot.el.style.cursor = "ns-resize";
-      dot.el.addEventListener("pointerenter", () => { hover.value = d; });
-      dot.el.addEventListener("pointerleave", () => { if (hover.value === d) hover.value = null; });
+      dot.el.addEventListener("pointerenter", () => { if (!wheelLocked.current) hover.value = d; });
+      dot.el.addEventListener("pointerleave", () => { if (!wheelLocked.current && hover.value === d) hover.value = null; });
       dot.el.addEventListener("click", () => { selected.value = selected.value === d ? null : d; });
     }
 

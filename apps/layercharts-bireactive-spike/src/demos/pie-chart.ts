@@ -44,7 +44,7 @@ export class MdPieChartLC extends Diagram {
     };
 
     const wheelLocked = { current: null as Slice | null };
-    installGestureRelease(() => { wheelLocked.current = null; });
+    installGestureRelease(() => { wheelLocked.current = null; hover.value = null; });
 
     // Pie layout (reactive).
     const arcs = derive(() => {
@@ -74,8 +74,8 @@ export class MdPieChartLC extends Diagram {
         opacity,
       }));
       sector.el.style.cursor = "pointer";
-      sector.el.addEventListener("pointerenter", () => { hover.value = d; });
-      sector.el.addEventListener("pointerleave", () => { if (hover.value === d) hover.value = null; });
+      sector.el.addEventListener("pointerenter", () => { if (!wheelLocked.current) hover.value = d; });
+      sector.el.addEventListener("pointerleave", () => { if (!wheelLocked.current && hover.value === d) hover.value = null; });
       sector.el.addEventListener("click", () => { selected.value = selected.value === d ? null : d; });
 
       // Slice label at midpoint angle.

@@ -40,11 +40,11 @@ export function attachCartesianGestures<TData>(
   };
 
   const wheelLocked = { current: null as TData | null };
-  const releaseDispose = installGestureRelease(() => { wheelLocked.current = null; });
+  const releaseDispose = installGestureRelease(() => { wheelLocked.current = null; state.hover.value = null; });
 
   let dragTarget: TData | null = null;
 
-  const onPointerLeave = () => { state.hover.value = null; };
+  const onPointerLeave = () => { if (wheelLocked.current) return; state.hover.value = null; };
 
   const onClick = (e: Event) => {
     const { x } = localPoint(e as PointerEvent);
@@ -106,6 +106,7 @@ export function attachCartesianGestures<TData>(
       mutateDatum(dragTarget, ys.invert(y) - (ctx.yAcc(dragTarget) as number));
       return;
     }
+    if (wheelLocked.current) return;
     const { x } = localPoint(pe);
     if (x < ctx.plotX || x > ctx.plotX + ctx.plotWidth) { state.hover.value = null; return; }
     state.hover.value = findAtPixel(x);

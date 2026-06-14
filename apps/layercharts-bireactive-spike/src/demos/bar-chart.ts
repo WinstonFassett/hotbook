@@ -91,11 +91,11 @@ export class MdBarChartLC extends Diagram {
     };
 
     const wheelLocked = { current: null as Bar | null };
-    installGestureRelease(() => { wheelLocked.current = null; });
+    installGestureRelease(() => { wheelLocked.current = null; hover.value = null; });
 
     let dragTarget: Bar | null = null;
 
-    this.addEventListener("pointerleave", () => { hover.value = null; });
+    this.addEventListener("pointerleave", () => { if (!wheelLocked.current) hover.value = null; });
     this.addEventListener("click", (e) => {
       const { x } = localPoint(e as PointerEvent);
       const pt = findAtPixel(x);
@@ -148,6 +148,7 @@ export class MdBarChartLC extends Diagram {
         mutateDatum(dragTarget, ys.invert(y) - dragTarget.value);
         return;
       }
+      if (wheelLocked.current) return;
       const { x } = localPoint(pe);
       hover.value = findAtPixel(x);
     });
@@ -179,8 +180,8 @@ export class MdBarChartLC extends Diagram {
       );
       const tile = s(rect(barX, barY, barW, barH, { fill, corner: 2 }));
       tile.el.style.cursor = "pointer";
-      tile.el.addEventListener("pointerenter", () => { hover.value = d; });
-      tile.el.addEventListener("pointerleave", () => { if (hover.value === d) hover.value = null; });
+      tile.el.addEventListener("pointerenter", () => { if (!wheelLocked.current) hover.value = d; });
+      tile.el.addEventListener("pointerleave", () => { if (!wheelLocked.current && hover.value === d) hover.value = null; });
       tile.el.addEventListener("click", () => { selected.value = selected.value === d ? null : d; });
     }
 

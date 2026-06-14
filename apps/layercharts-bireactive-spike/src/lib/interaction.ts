@@ -76,3 +76,18 @@ export function installGestureRelease(release: () => void): () => void {
     window.removeEventListener("blur", onBlur);
   };
 }
+
+// Wraps a wheelLocked ref so hover handlers can check isLocked() and bail.
+export function makeGestureLock<T>(): {
+  lock: { current: T | null };
+  isLocked: () => boolean;
+  release: () => void;
+  installRelease: (onRelease?: () => void) => () => void;
+} {
+  const lock = { current: null as T | null };
+  const isLocked = () => lock.current !== null;
+  const release = (onRelease?: () => void) => { lock.current = null; onRelease?.(); };
+  const installRelease = (onRelease?: () => void) =>
+    installGestureRelease(() => release(onRelease));
+  return { lock, isLocked, release: () => release(), installRelease };
+}
