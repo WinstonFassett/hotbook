@@ -154,6 +154,20 @@ export class MdBarChartLC extends Diagram {
     this.addEventListener("pointerup", () => { dragTarget = null; });
     this.addEventListener("pointercancel", () => { dragTarget = null; });
 
+    // Column hover highlight — full-height rect that slides to the active column.
+    const hlTarget = derive(() => hover.value ?? selected.value);
+    const hlX = derive(() => {
+      const t = hlTarget.value;
+      return t ? (xBand.value(t.label) ?? 0) - (xBand.value.step() - xBand.value.bandwidth()) / 2 : -9999;
+    });
+    const hlW = derive(() => xBand.value.step());
+    const hlRect = s(rect(hlX, plotY, hlW, plotH, {
+      fill: "#ffffff",
+      opacity: derive(() => hlTarget.value ? 0.06 : 0),
+    }));
+    hlRect.el.style.transition = "x 0.15s ease, opacity 0.1s ease";
+    hlRect.el.style.pointerEvents = "none";
+
     // Draw bars.
     for (const d of data.value as Bar[]) {
       const barX = derive(() => xBand.value(d.label) ?? 0);

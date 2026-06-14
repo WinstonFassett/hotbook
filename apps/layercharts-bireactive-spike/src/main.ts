@@ -8,6 +8,8 @@ import { MdAreaChartLC } from "./demos/area-chart";
 import { MdBarChartLC } from "./demos/bar-chart";
 import { MdScatterChartLC } from "./demos/scatter-chart";
 import { MdPieChartLC } from "./demos/pie-chart";
+import { MdRadarChartLC } from "./demos/radar-chart";
+import { MdConcentricArcLC } from "./demos/concentric-arc";
 
 const experiments: Array<{ id: string; title: string; tag: string; ctor: typeof Diagram }> = [
   { id: "line-chart", title: "LineChart", tag: "v-line-chart", ctor: MdLineChartLC },
@@ -15,6 +17,8 @@ const experiments: Array<{ id: string; title: string; tag: string; ctor: typeof 
   { id: "bar-chart", title: "BarChart", tag: "v-bar-chart", ctor: MdBarChartLC },
   { id: "scatter-chart", title: "ScatterChart", tag: "v-scatter-chart", ctor: MdScatterChartLC },
   { id: "pie-chart", title: "PieChart", tag: "v-pie-chart", ctor: MdPieChartLC },
+  { id: "radar-chart", title: "RadarChart (Radial Line)", tag: "v-radar-chart", ctor: MdRadarChartLC },
+  { id: "concentric-arc", title: "ConcentricArc", tag: "v-concentric-arc", ctor: MdConcentricArcLC },
   { id: "pack", title: "Pack (circle packing)", tag: "v-pack", ctor: MdPack },
   { id: "treemap", title: "Treemap (squarified)", tag: "v-treemap", ctor: MdTreemapLC },
   { id: "icicle", title: "Icicle (Partition vertical)", tag: "v-icicle", ctor: MdIcicleLC },
