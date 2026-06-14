@@ -66,9 +66,7 @@ export function subscribeAllLeaves(root: BiNode, onChange: () => void): () => vo
 
 export function installGestureRelease(release: () => void): () => void {
   const onKeyup = (e: KeyboardEvent) => {
-    if (e.key === "Meta" || e.key === "Control" || (!e.metaKey && !e.ctrlKey)) {
-      release();
-    }
+    if (e.key === "Meta" || e.key === "Control") release();
   };
   const onBlur = () => release();
   window.addEventListener("keyup", onKeyup);

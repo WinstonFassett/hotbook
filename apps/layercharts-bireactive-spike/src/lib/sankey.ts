@@ -97,7 +97,7 @@ export function sankeyScene(
   const focused = cell<number | null>(null);
   const wheelLocked = { current: null as number | null };
 
-  installGestureRelease(() => { wheelLocked.current = null; });
+  installGestureRelease(() => { wheelLocked.current = null; hovered.value = null; tooltipVis.value = false; });
 
   host.addEventListener("wheel", ((e: WheelEvent) => {
     if (!(e.metaKey || e.ctrlKey)) return;
@@ -166,6 +166,7 @@ export function sankeyScene(
     const ribbon = s(pathD(d, { stroke, strokeWidth: sw, opacity, cap: "butt" }));
     ribbon.el.style.cursor = "pointer";
     ribbon.el.addEventListener("pointerenter", (e) => {
+      if (wheelLocked.current !== null) return;
       hovered.value = idx;
       const lk = layout.value.links[idx] as any;
       const srcName = nodeIds[(lk.source as any).index ?? lk.source] ?? String(lk.source);
@@ -173,8 +174,8 @@ export function sankeyScene(
       tooltipText.value = `${srcName} → ${tgtName}: ${lk.value.toFixed(1)}`;
       tooltipAt.value = toSVG(e as PointerEvent); tooltipVis.value = true;
     });
-    ribbon.el.addEventListener("pointermove", (e) => { tooltipAt.value = toSVG(e as PointerEvent); });
-    ribbon.el.addEventListener("pointerleave", () => { if (hovered.value === idx) { hovered.value = null; tooltipVis.value = false; } });
+    ribbon.el.addEventListener("pointermove", (e) => { if (wheelLocked.current === null) tooltipAt.value = toSVG(e as PointerEvent); });
+    ribbon.el.addEventListener("pointerleave", () => { if (wheelLocked.current !== null) return; if (hovered.value === idx) { hovered.value = null; tooltipVis.value = false; } });
     ribbon.el.addEventListener("click", () => { focused.value = focused.value === idx ? null : idx; });
   }
 
