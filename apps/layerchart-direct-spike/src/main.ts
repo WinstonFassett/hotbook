@@ -5,3 +5,4 @@ import "./lib/TreemapLC.svelte";
 import "./lib/SunburstLC.svelte";
 import "./lib/IcicleLC.svelte";
 import "./lib/PackLC.svelte";
+import "./lib/SankeyLC.svelte";
