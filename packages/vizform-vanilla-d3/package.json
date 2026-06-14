@@ -30,6 +30,7 @@
     "watch": "vite build --watch"
   },
   "dependencies": {
+    "@winstonfassett/vizform-core": "*",
     "@types/d3-scale": "^4.0.9",
     "d3-drag": "^3.0.0",
     "d3-ease": "^3.0.1",

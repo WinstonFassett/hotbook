@@ -3,4 +3,5 @@ export type {
   VizConfig, HVizConfig, VizCallbacks, HVizCallbacks,
   VizFormEvent, VizFormChangeEvent, VizFormClickEvent, Cleanup,
   PNode, Rollup, Measurement,
-} from '@winstonfassett/vizform-core'
+} from './types'
+export { PALETTE, pickColor } from './colors'
