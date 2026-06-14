@@ -101,11 +101,11 @@ export function sankeyScene(
   installGestureRelease(() => { wheelLocked.current = null; hovered.value = null; tooltipVis.value = false; });
 
   const hitTestRibbon = (clientX: number, clientY: number): number | null => {
-    const el = document.elementFromPoint(clientX, clientY);
+    const shadow = (host as any).shadowRoot as ShadowRoot | null;
+    const el = shadow ? shadow.elementFromPoint(clientX, clientY) : document.elementFromPoint(clientX, clientY);
     if (!el) return null;
     const direct = ribbonEls.get(el);
     if (direct !== undefined) return direct;
-    // walk up in case browser reports a child element
     const parent = ribbonEls.get(el.parentElement as Element);
     return parent !== undefined ? parent : null;
   };
@@ -178,6 +178,7 @@ export function sankeyScene(
 
     const ribbon = s(pathD(d, { stroke, strokeWidth: sw, opacity, cap: "butt" }));
     ribbonEls.set(ribbon.el, idx);
+    if (ribbon.el.firstElementChild) ribbonEls.set(ribbon.el.firstElementChild, idx);
     ribbon.el.style.cursor = "pointer";
     ribbon.el.addEventListener("pointerenter", (e) => {
       if (wheelLocked.current !== null) return;
