@@ -16,6 +16,9 @@ import {
   num,
   circle,
   pathD,
+  spring,
+  untracked,
+  vec,
   Vec,
 } from "bireactive";
 import { hierarchy, tree as d3tree } from "d3-hierarchy";
@@ -201,11 +204,53 @@ export class MdTree extends Diagram {
     // record; placed-lookup is reactive (returns undefined when collapsed
     // hides this node, in which case we render at zero opacity).
     const allNodes: Node[] = [];
-    const walk = (n: Node): void => {
+    const parentOf = new Map<Node, Node | null>();
+    const walk = (n: Node, parent: Node | null): void => {
       allNodes.push(n);
-      n.children?.forEach(walk);
+      parentOf.set(n, parent);
+      n.children?.forEach(c => walk(c, n));
     };
-    walk(tree);
+    walk(tree, null);
+
+    // visible(n) = true iff none of n's ancestors are in `collapsed`.
+    // Tracks `version` so it re-runs on toggle.
+    const visibleOf = (n: Node) => {
+      void version.value;
+      let a = parentOf.get(n) ?? null;
+      while (a) {
+        if (collapsed.has(a)) return false;
+        a = parentOf.get(a) ?? null;
+      }
+      return true;
+    };
+
+    // Highest collapsed ancestor — the branch root descendants should
+    // animate into. Null if no ancestor is collapsed.
+    const collapseAnchor = (n: Node): Node | null => {
+      let a = parentOf.get(n) ?? null;
+      let anchor: Node | null = null;
+      while (a) {
+        if (collapsed.has(a)) anchor = a;
+        a = parentOf.get(a) ?? null;
+      }
+      return anchor;
+    };
+
+    // Per-node writable cells driven by springs that track derived targets.
+    const POS_SPRING = { omega: 14, zeta: 0.95, precision: 0.01 };
+    const OPACITY_SPRING = { omega: 18, zeta: 1, precision: 0.001 };
+
+    interface NodeVis {
+      pos: ReturnType<typeof vec>;
+      opacity: ReturnType<typeof num>;
+    }
+    const visOf = new Map<Node, NodeVis>();
+
+    // Project a Placed → screen coords (reads zoom focus).
+    const screenOf = (p: Placed) => ({
+      x: TX + project(p.x, ctx.focus.x0.value, ctx.focus.x1.value, 0, TW),
+      y: TY + project(p.y, ctx.focus.y0.value, ctx.focus.y1.value, 0, TH),
+    });
 
     const drillTo = (placedRoot: Placed) => {
       // Compute bounding box of subtree from current layout. Walk node's
@@ -259,36 +304,53 @@ export class MdTree extends Diagram {
     };
     collectEdges(tree);
 
-    for (const e of allEdges) {
-      const d = derive(() => {
+    // Initialize per-node writable cells. For positions, seed from the
+    // initial layout so springs don't sweep in from (0,0) on first mount.
+    untracked(() => {
+      const lay = layout.value;
+      for (const node of allNodes) {
+        const p = lay.byNode.get(node);
+        const init = p ? screenOf(p) : { x: TX, y: TY };
+        visOf.set(node, { pos: vec(init.x, init.y), opacity: num(p ? 1 : 0) });
+      }
+    });
+
+    // Drive each node's pos/opacity toward derived targets via springs.
+    // Targets re-read `collapsed` (via version) and `ctx.focus`.
+    for (const node of allNodes) {
+      const v = visOf.get(node)!;
+      const targetPos = Vec.derive(() => {
         const lay = layout.value;
-        const src = lay.byNode.get(e.source);
-        const tgt = lay.byNode.get(e.target);
-        if (!src || !tgt) return "";
-        const sx = TX + project(src.x, ctx.focus.x0.value, ctx.focus.x1.value, 0, TW);
-        const sy = TY + project(src.y, ctx.focus.y0.value, ctx.focus.y1.value, 0, TH);
-        const tx = TX + project(tgt.x, ctx.focus.x0.value, ctx.focus.x1.value, 0, TW);
-        const ty = TY + project(tgt.y, ctx.focus.y0.value, ctx.focus.y1.value, 0, TH);
-        return linkPath(sx, sy, tx, ty, ORIENTATION);
+        const p = lay.byNode.get(node);
+        if (p) return screenOf(p);
+        // Collapsed-away: collapse into the highest collapsed ancestor.
+        const anchor = collapseAnchor(node);
+        const ap = anchor ? lay.byNode.get(anchor) : null;
+        if (ap) return screenOf(ap);
+        return { x: TX, y: TY };
       });
-      s(pathD(d, { stroke: "#666", thin: true }));
+      const targetOpacity = derive(() => (visibleOf(node) ? 1 : 0));
+      this.anim.start(spring(v.pos, targetPos, POS_SPRING));
+      this.anim.start(spring(v.opacity, targetOpacity, OPACITY_SPRING));
+    }
+
+    // --- Links pass first (paint under nodes) ---
+    for (const e of allEdges) {
+      const sv = visOf.get(e.source)!;
+      const tv = visOf.get(e.target)!;
+      const d = derive(() => {
+        const sp = sv.pos.value;
+        const tp = tv.pos.value;
+        return linkPath(sp.x, sp.y, tp.x, tp.y, ORIENTATION);
+      });
+      // Link visible only when BOTH endpoints are visible.
+      const linkOpacity = derive(() => Math.min(sv.opacity.value, tv.opacity.value));
+      s(pathD(d, { stroke: "#666", thin: true, opacity: linkOpacity }));
     }
 
     // --- Nodes pass ---
     for (const node of allNodes) {
-      const placed = derive(() => layout.value.byNode.get(node));
-
-      const cx = derive(() => {
-        const p = placed.value;
-        if (!p) return TX;
-        return TX + project(p.x, ctx.focus.x0.value, ctx.focus.x1.value, 0, TW);
-      });
-      const cy = derive(() => {
-        const p = placed.value;
-        if (!p) return TY;
-        return TY + project(p.y, ctx.focus.y0.value, ctx.focus.y1.value, 0, TH);
-      });
-      const visible = derive(() => (placed.value ? 1 : 0));
+      const v = visOf.get(node)!;
       const hasChildren = !!(node.children && node.children.length > 0);
 
       const fillColor = derive(() => {
@@ -297,16 +359,12 @@ export class MdTree extends Diagram {
       });
 
       s(
-        circle(
-          Vec.derive(() => ({ x: cx.value, y: cy.value })),
-          NODE_R,
-          {
-            fill: fillColor,
-            stroke: "#0b0d12",
-            thin: true,
-            opacity: visible,
-          },
-        ),
+        circle(v.pos, NODE_R, {
+          fill: fillColor,
+          stroke: "#0b0d12",
+          thin: true,
+          opacity: v.opacity,
+        }),
       );
 
       // Label — horizontal: right of leaves, left of branches.
@@ -317,7 +375,10 @@ export class MdTree extends Diagram {
       const labelDy = ORIENTATION === "horizontal" ? 0 : NODE_R + 10;
       s(
         label(
-          Vec.derive(() => ({ x: cx.value + labelOffset, y: cy.value + labelDy })),
+          Vec.derive(() => {
+            const p = v.pos.value;
+            return { x: p.x + labelOffset, y: p.y + labelDy };
+          }),
           node.label,
           {
             size: 10,
@@ -325,7 +386,7 @@ export class MdTree extends Diagram {
               ? (isLeaf ? Anchor.Left : Anchor.Right)
               : Anchor.Center,
             fill: "#e6e8ec",
-            opacity: visible,
+            opacity: v.opacity,
           },
         ),
       );
@@ -333,11 +394,11 @@ export class MdTree extends Diagram {
       // Hit target for branches: click toggles collapse; shift-click drills.
       if (hasChildren) {
         const hit = s(
-          circle(
-            Vec.derive(() => ({ x: cx.value, y: cy.value })),
-            NODE_R + 6,
-            { fill: "transparent", stroke: "transparent", opacity: visible },
-          ),
+          circle(v.pos, NODE_R + 6, {
+            fill: "transparent",
+            stroke: "transparent",
+            opacity: v.opacity,
+          }),
         );
         hit.el.style.cursor = "pointer";
         hit.el.addEventListener("click", (ev) => {

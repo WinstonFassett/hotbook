@@ -7,7 +7,9 @@
 import { Diagram } from "bireactive";
 import { MdTreemap } from "./demos/treemap";
 import { MdPack } from "./demos/pack";
+import { MdPackDrill } from "./demos/pack-drill";
 import { MdIcicle, MdSunburst } from "./demos/partition";
+import { MdIcicleDrill, MdSunburstDrill } from "./demos/partition-drill";
 import { MdTree } from "./demos/tree";
 
 const experiments: Array<{
@@ -44,6 +46,27 @@ const experiments: Array<{
     note: "Port of LayerChart <Partition> shape laid out polar: size=[2π, R], x0/x1 are angles and y0/y1 are radii. Rendered with bireactive's annularSector; ctx.focus is reused as a [angle, radius] window so drill-in zooms an arc to the full disc. Drag-to-reapportion deferred for first iteration; arrows/Alt+wheel edit leaf values.",
     tag: "v-sunburst",
     ctor: MdSunburst,
+  },
+  {
+    id: "pack-drill",
+    title: "Pack with drill-in (re-layout on subtree)",
+    note: "Drill-in re-layouts the subtree to fill the viewport; Esc pops.",
+    tag: "v-pack-drill",
+    ctor: MdPackDrill,
+  },
+  {
+    id: "icicle-drill",
+    title: "Icicle with drill-in (re-layout on subtree)",
+    note: "Drill-in re-layouts the subtree to fill the viewport; Esc pops.",
+    tag: "v-icicle-drill",
+    ctor: MdIcicleDrill,
+  },
+  {
+    id: "sunburst-drill",
+    title: "Sunburst with drill-in (re-layout on subtree)",
+    note: "Drill-in re-layouts the subtree to fill the disc (no polar focus projection); Esc pops.",
+    tag: "v-sunburst-drill",
+    ctor: MdSunburstDrill,
   },
   {
     id: "tree",
