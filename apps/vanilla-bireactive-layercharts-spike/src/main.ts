@@ -11,6 +11,7 @@ import { MdPieChartLC } from "./demos/pie-chart";
 import { MdRadarChartLC } from "./demos/radar-chart";
 import { MdConcentricArcLC } from "./demos/concentric-arc";
 import { MdSankeySimple, MdSankeyComplex, MdSankeyHierarchy } from "./demos/sankey";
+import { MdTreeChart } from "./demos/tree-chart";
 
 const experiments: Array<{ id: string; title: string; tag: string; ctor: typeof Diagram }> = [
   { id: "line-chart", title: "LineChart", tag: "v-line-chart", ctor: MdLineChartLC },
@@ -27,6 +28,7 @@ const experiments: Array<{ id: string; title: string; tag: string; ctor: typeof 
   { id: "sankey-simple", title: "Sankey (simple, editable)", tag: "v-sankey-simple", ctor: MdSankeySimple },
   { id: "sankey-complex", title: "Sankey (UK energy)", tag: "v-sankey-complex", ctor: MdSankeyComplex },
   { id: "sankey-hierarchy", title: "Sankey (hierarchy → flow)", tag: "v-sankey-hierarchy", ctor: MdSankeyHierarchy },
+  { id: "tree-chart", title: "Tree (node-link dendrogram)", tag: "v-tree-chart", ctor: MdTreeChart },
 ];
 
 for (const e of experiments) {

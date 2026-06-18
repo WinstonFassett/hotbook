@@ -13,6 +13,8 @@ import { MdPack } from '@br-lc/demos/pack'
 import { MdTreemapLC } from '@br-lc/demos/treemap'
 import { MdIcicleLC } from '@br-lc/demos/icicle'
 import { MdSunburstLC } from '@br-lc/demos/sunburst'
+import { MdSankeySimple } from '@br-lc/demos/sankey'
+import { MdTreeChart } from '@br-lc/demos/tree-chart'
 
 // Register custom elements once
 const TAGS = [
@@ -27,6 +29,8 @@ const TAGS = [
   ['v-br-treemap',        MdTreemapLC],
   ['v-br-icicle',         MdIcicleLC],
   ['v-br-sunburst',       MdSunburstLC],
+  ['v-br-sankey',         MdSankeySimple],
+  ['v-br-tree',           MdTreeChart],
 ] as const
 
 for (const [tag, cls] of TAGS) {
@@ -111,7 +115,10 @@ interface ScatterProps {
 
 export function BrLcScatter({ nodes, xKey, yKey }: ScatterProps) {
   const leaves = nodes.filter(n => !nodes.some(m => m.parentId === n.id))
-  const data = leaves.map(n => ({ x: n.measures[xKey] ?? 0, y: n.measures[yKey] ?? 0 }))
+  const data = leaves.map((n, i) => ({
+    x: xKey === '_index' ? i : (n.measures[xKey] ?? 0),
+    y: n.measures[yKey] ?? 0,
+  }))
   const ref = useBrElement<MdScatterChartLC>('v-br-scatter', el => { el.externalData = data }, [JSON.stringify(data)])
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }
@@ -164,5 +171,30 @@ export function BrLcIcicle({ nodes, measureKey }: HierProps) {
 export function BrLcSunburst({ nodes, measureKey }: HierProps) {
   const root = buildBiTree(nodes, measureKey)
   const ref = useBrElement<MdSunburstLC>('v-br-sunburst', el => { if (root) el.externalRoot = root }, [measureKey, nodes.map(n => `${n.id}:${n.measures[measureKey]}`).join(',')])
+  return <div ref={ref} style={{ width: '100%', height: '100%' }} />
+}
+
+export function BrLcTree({ nodes, measureKey }: HierProps) {
+  const root = buildBiTree(nodes, measureKey)
+  const ref = useBrElement<MdTreeChart>('v-br-tree', el => { if (root) el.externalRoot = root }, [measureKey, nodes.map(n => `${n.id}:${n.measures[measureKey]}`).join(',')])
+  return <div ref={ref} style={{ width: '100%', height: '100%' }} />
+}
+
+// ─── Sankey (hierarchy edges) ──────────────────────────────────────────────────
+
+export function BrLcSankey({ nodes, measureKey }: FlatProps) {
+  const nameById = new Map(nodes.map(n => [n.id, n.name]))
+  const nodeNames = [...new Set(nodes.map(n => n.name))]
+  const nodeNameSet = new Set(nodeNames)
+  const links = nodes
+    .filter(n => n.parentId !== null && nameById.has(n.parentId))
+    .map(n => ({
+      source: nameById.get(n.parentId!)!,
+      target: n.name,
+      value: n.measures[measureKey] ?? 0,
+    }))
+    .filter(l => nodeNameSet.has(l.source) && nodeNameSet.has(l.target))
+  const data = { nodes: nodeNames, links }
+  const ref = useBrElement<MdSankeySimple>('v-br-sankey', el => { el.externalData = data }, [JSON.stringify(data)])
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }

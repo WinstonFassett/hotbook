@@ -50,12 +50,16 @@ export type TileKind =
   | 'br-lc-treemap'
   | 'br-lc-icicle'
   | 'br-lc-sunburst'
+  | 'br-lc-sankey'
+  | 'br-lc-tree'
 
 export interface Tile {
   id: string
   kind: TileKind
   title?: string
   measureKey?: string
+  xKey?: string
+  yKey?: string
   groupBy?: string
   depth?: number
   sortBy?: 'index' | 'value'

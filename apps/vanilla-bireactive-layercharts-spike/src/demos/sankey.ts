@@ -19,11 +19,17 @@ const SIMPLE_LINKS: LinkDef[] = [
 ];
 
 export class MdSankeySimple extends Diagram {
+  externalData?: { nodes: string[]; links: { source: string; target: string; value: number }[] }
+
   protected scene(s: Mount): void {
-    const W = 560, H = 340;
+    const ext = this.externalData
+    const nodeIds = ext ? ext.nodes : SIMPLE_NODES
+    const linkDefs: LinkDef[] = ext ? ext.links.map(l => ({ source: l.source, target: l.target, init: l.value })) : SIMPLE_LINKS
+    const nodePadding = ext ? Math.max(1, Math.min(6, Math.floor(300 / nodeIds.length))) : 6
+    const W = 560, H = ext ? Math.max(340, nodeIds.length * (8 + nodePadding)) : 340;
     const view = this.view(W + 120, H + 48);
     const { focused, hovered, wheelLocked, linkValues, nodeColorProp, linkColorMode } = sankeyScene(this, s, {
-      W, H, nodeIds: SIMPLE_NODES, linkDefs: SIMPLE_LINKS, labelSize: 11, stringIds: true,
+      W, H, nodeIds, linkDefs, labelSize: 11, stringIds: true, nodePadding,
     });
     renderColorControls(s, view, nodeColorProp, linkColorMode);
     s(label(view.bottom.up(40), derive(() => {
