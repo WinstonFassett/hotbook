@@ -32,7 +32,7 @@ export class MdSankeySimple extends Diagram {
       W, H, nodeIds, linkDefs, labelSize: 11, stringIds: true, nodePadding,
     });
     renderColorControls(s, view, nodeColorProp, linkColorMode);
-    s(label(view.bottom.up(40), derive(() => {
+    if (!this.hasAttribute('no-source')) s(label(view.bottom.up(40), derive(() => {
       const i = focused.value ?? wheelLocked.value ?? hovered.value;
       if (i === null) return "click ribbon to focus · cmd+wheel or ↑↓ to edit · Tab to cycle";
       const lv = linkValues[i]!;

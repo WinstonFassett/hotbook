@@ -137,7 +137,7 @@ export class MdTreeChart extends Diagram {
       );
     }
 
-    s(
+    if (!this.hasAttribute('no-source')) s(
       label(
         view.bottom.up(10),
         derive(() => {

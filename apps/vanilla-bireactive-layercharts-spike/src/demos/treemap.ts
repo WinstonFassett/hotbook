@@ -89,7 +89,7 @@ export class MdTreemapLC extends Diagram {
       }
     }
 
-    s(label(view.bottom.up(10), derive(() => {
+    if (!this.hasAttribute('no-source')) s(label(view.bottom.up(10), derive(() => {
       const f = state.focused.value;
       return `total: ${root.value.total.value.toFixed(0)} · focused: ${f?.value.label ?? "(none)"} · hover + cmd/ctrl+wheel · click + arrows/Tab`;
     }), { size: 10, align: Anchor.Center, fill: "#9aa0a8" }));
