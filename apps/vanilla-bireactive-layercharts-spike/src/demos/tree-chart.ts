@@ -14,6 +14,7 @@ import { buildHierarchy } from "../lib/interaction";
 import { buildParentIndex, type BiNode } from "../lib/tree";
 import { portfolio, walkWithDepth } from "../lib/portfolio";
 import { attachChartGestures, type SelectionState } from "../lib/gestures";
+import { FILL_STYLE } from "../lib/host-size";
 
 const W = 560;
 const H = 400;
@@ -23,7 +24,7 @@ const PAD_LEFT = 60;
 const PAD_RIGHT = 60;
 
 export class MdTreeChart extends Diagram {
-  static styles = `text { pointer-events: none; }`
+  static styles = `text { pointer-events: none; }${FILL_STYLE}`
   externalRoot?: BiNode;
   protected scene(s: Mount): void {
     const root = this.externalRoot ?? portfolio();
@@ -48,6 +49,8 @@ export class MdTreeChart extends Diagram {
       wheelLocked: { current: null },
     };
     attachChartGestures(this, { root, parentOf, state });
+    const hoverCell = cell<BiNode | null>(null);
+    state.hoverCell = hoverCell;
 
     // tree() layout: assigns .x (0..1) and .y (depth) per node
     const layout = derive(() => {
@@ -88,27 +91,26 @@ export class MdTreeChart extends Diagram {
 
       const r = isLeaf ? 6 : 5;
       const stroke = derive(() =>
-        state.focused.value === node ? "#fff" : node.value.color,
+        state.focused.value === node ? "#fff"
+        : hoverCell.value === node ? "#c8cdd6"
+        : "#0b0d12",
       );
+      const strokeWidth = derive(() => (state.focused.value === node || hoverCell.value === node ? 2 : 1));
 
       const circ = s(
         circle(cx, r, {
           fill: node.value.color,
           opacity: isLeaf ? 0.95 : 0.7,
           stroke,
-          thin: true,
+          strokeWidth,
         }),
       );
       circ.el.style.cursor = "pointer";
       circ.el.addEventListener("click", () => {
         state.focused.value = node;
       });
-      circ.el.addEventListener("pointerenter", () => {
-        state.hovered.current = node;
-      });
-      circ.el.addEventListener("pointerleave", () => {
-        if (state.hovered.current === node) state.hovered.current = null;
-      });
+      circ.el.addEventListener("pointerenter", () => { state.hovered.current = node; hoverCell.value = node; state.emitHover?.(node); });
+      circ.el.addEventListener("pointerleave", () => { if (state.hovered.current === node) { state.hovered.current = null; hoverCell.value = null; state.emitHover?.(null); } });
 
       // Label: leaves get value appended; root gets label only
       const text = derive(() => {

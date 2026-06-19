@@ -13,6 +13,7 @@ import { buildHierarchy } from "../lib/interaction";
 import { buildParentIndex, type BiNode } from "../lib/tree";
 import { portfolio, walkWithDepth } from "../lib/portfolio";
 import { attachChartGestures, type SelectionState } from "../lib/gestures";
+import { useHostSize, FILL_STYLE } from "../lib/host-size";
 
 const W = 720;
 const H = 360;
@@ -21,10 +22,11 @@ const PAD_INNER = 2;
 const PAD_TOP = 16;
 
 export class MdTreemapLC extends Diagram {
-  static styles = `text { pointer-events: none; }`
+  static styles = `text { pointer-events: none; }${FILL_STYLE}`
   externalRoot?: BiNode
   protected scene(s: Mount): void {
-    const view = this.view(W, H);
+    const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
+    const view = this.view(Wc, Hc);
     this.tabIndex = 0;
     this.style.outline = "none";
 
@@ -38,12 +40,14 @@ export class MdTreemapLC extends Diagram {
       wheelLocked: { current: null },
     };
     attachChartGestures(this, { root, parentOf, state });
+    const hoverCell = cell<BiNode | null>(null);
+    state.hoverCell = hoverCell;
 
     const layout = derive(() => {
       const h = buildHierarchy(root);
       treemap<BiNode>()
         .tile(treemapSquarify)
-        .size([W, H])
+        .size([Wc.value, Hc.value])
         .paddingOuter(PAD_OUTER)
         .paddingInner(PAD_INNER)
         .paddingTop(PAD_TOP)
@@ -59,20 +63,23 @@ export class MdTreemapLC extends Diagram {
       const w = derive(() => Math.max(0, (layout.value.get(node)?.x1 ?? 0) - (layout.value.get(node)?.x0 ?? 0)));
       const h = derive(() => Math.max(0, (layout.value.get(node)?.y1 ?? 0) - (layout.value.get(node)?.y0 ?? 0)));
       const stroke = derive(() =>
-        state.focused.value === node ? "#fff" : depth === 0 ? "#444" : "#0b0d12",
+        state.focused.value === node ? "#fff"
+        : hoverCell.value === node ? "#c8cdd6"
+        : depth === 0 ? "#444" : "#0b0d12",
       );
+      const strokeWidth = derive(() => (state.focused.value === node || hoverCell.value === node ? 2 : 1));
 
       const tile = s(rect(x, y, w, h, {
         fill: node.value.color,
         opacity: depth === 0 ? 0.12 : isLeaf ? 0.95 : 0.45,
         stroke,
-        thin: true,
+        strokeWidth,
         corner: 3,
       }));
       tile.el.style.cursor = "pointer";
       tile.el.addEventListener("click", () => { state.focused.value = node; });
-      tile.el.addEventListener("pointerenter", () => { state.hovered.current = node; });
-      tile.el.addEventListener("pointerleave", () => { if (state.hovered.current === node) state.hovered.current = null; });
+      tile.el.addEventListener("pointerenter", () => { state.hovered.current = node; hoverCell.value = node; state.emitHover?.(node); });
+      tile.el.addEventListener("pointerleave", () => { if (state.hovered.current === node) { state.hovered.current = null; hoverCell.value = null; state.emitHover?.(null); } });
 
       if (depth > 0) {
         const text = derive(() => {

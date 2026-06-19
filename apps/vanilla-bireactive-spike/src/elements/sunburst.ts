@@ -127,7 +127,7 @@ function attachNudge(
     }
   });
   el.addEventListener("wheel", (e: WheelEvent) => {
-    if (!e.altKey) return;
+    if (!(e.metaKey || e.ctrlKey)) return;
     e.preventDefault();
     const dir = e.deltaY < 0 ? +1 : -1;
     apply(dir * (e.shiftKey ? big : step));

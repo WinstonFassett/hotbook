@@ -2,10 +2,11 @@
 // Mirrors LC's radial Chart + scaleBand for x (angle per category).
 // Grid: polygon rings at radius ticks + spoke lines. Points on polygon are clickable/editable.
 
-import { Anchor, cell, circle, derive, Diagram, label, line, type Mount, pathD, Vec, vec } from "bireactive";
+import { Anchor, cell, circle, derive, Diagram, effect as biEffect, label, line, type Mount, pathD, Vec, vec } from "bireactive";
 import { scaleBand, scaleLinear } from "d3-scale";
 import { curveLinearClosed, lineRadial } from "d3-shape";
 import { installGestureRelease } from "../lib/interaction";
+import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 
 const W = 640;
 const H = 640;
@@ -212,7 +213,7 @@ export class MdRadarChartLC extends Diagram {
 
     svgEl.addEventListener("wheel", (e) => {
       const we = e as WheelEvent;
-      if (!(we.metaKey || we.ctrlKey || we.altKey)) return;
+      if (!(we.metaKey || we.ctrlKey)) return;
       if (!wheelLocked.current) wheelLocked.current = hover.value ?? selected.value;
       const t = wheelLocked.current;
       if (!t) return;
@@ -249,5 +250,18 @@ export class MdRadarChartLC extends Diagram {
       }),
       { size: 11, align: Anchor.Center, opacity: 0.7 },
     ));
+
+    // Cross-tile hover/select sync bridge.
+    const ORDER = data.value as Spoke[];
+    const idxOf = (d: Spoke | null) => { if (d == null) return null; const i = ORDER.indexOf(d); return i < 0 ? null : String(i); };
+    const datumAt = (key: string | null) => { if (key == null) return null; const i = Number(key); return Number.isInteger(i) && i >= 0 && i < ORDER.length ? ORDER[i]! : null; };
+    let applyingExternal = false;
+    const bridge = makeBridge({
+      setHover: (key) => { applyingExternal = true; hover.value = datumAt(key); applyingExternal = false; },
+      setSelect: (key) => { applyingExternal = true; selected.value = datumAt(key); applyingExternal = false; },
+    });
+    (this as unknown as ElementWithBridge).brSync = bridge;
+    biEffect(() => { const h = hover.value; if (applyingExternal) return; bridge.emitHover(idxOf(h)); });
+    biEffect(() => { const sel = selected.value; if (applyingExternal) return; bridge.emitSelect(idxOf(sel)); });
   }
 }

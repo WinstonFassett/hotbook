@@ -219,7 +219,7 @@ export class MdBudgetTree extends Diagram {
         });
         tile.el.addEventListener("wheel", (ev: Event) => {
           const e = ev as WheelEvent;
-          if (!e.altKey) return;
+          if (!(e.metaKey || e.ctrlKey)) return;
           e.preventDefault();
           const step = e.shiftKey ? 25 : 5;
           apply(e.deltaY < 0 ? +step : -step);
@@ -305,7 +305,7 @@ export class MdBudgetTree extends Diagram {
       });
       pillShape.el.addEventListener("wheel", (ev: Event) => {
         const e = ev as WheelEvent;
-        if (!e.altKey) return;
+        if (!(e.metaKey || e.ctrlKey)) return;
         e.preventDefault();
         const step = e.shiftKey ? 25 : 5;
         const delta = e.deltaY < 0 ? +step : -step;

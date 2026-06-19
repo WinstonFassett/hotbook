@@ -128,7 +128,7 @@ export class VizRenderer {
       const opts = this.latestOpts
       if (!opts) return
       if (opts.unitKind === 'order') return
-      if (!event.altKey) return
+      if (!(event.metaKey || event.ctrlKey)) return
       const hit = document.elementFromPoint(event.clientX, event.clientY) as Element | null
       const atomG = hit?.closest('g.goal-atom') as SVGGElement | null
       if (!atomG || atomG.classList.contains('phantom')) return

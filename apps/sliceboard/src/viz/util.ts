@@ -41,7 +41,7 @@ export function useAltScroll(
     const el = ref.current
     if (!el) return
     const handler = (e: WheelEvent) => {
-      if (!e.altKey) return
+      if (!(e.metaKey || e.ctrlKey)) return
       const hit = document.elementFromPoint(e.clientX, e.clientY) as Element | null
       const cell = hit?.closest(cellSelector) as SVGElement | null
       if (!cell) return

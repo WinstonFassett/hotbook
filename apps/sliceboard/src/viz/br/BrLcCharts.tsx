@@ -4,6 +4,81 @@ import type { Cell, Writable } from 'bireactive'
 import type { PNode } from '../../persistence'
 import { buildBiTree } from './tree'
 import type { BiNode } from './tree'
+import { hudStore } from '../../store'
+
+// Cross-tile sync bridge exposed by BR-LC custom elements (apps/.../lib/hud-bridge.ts).
+interface BrSyncBridge {
+  setExternalHover(id: string | null): void
+  setExternalSelect(id: string | null): void
+  onHover(cb: (id: string | null) => void): () => void
+  onSelect(cb: (id: string | null) => void): () => void
+}
+interface ElWithBrSync extends HTMLElement { brSync?: BrSyncBridge }
+
+// Wire a mounted BR-LC element to the sliceboard hudStore in both directions:
+//   • element hover/select  → hudStore  (so other tiles highlight)
+//   • hudStore hover/select → element   (so this tile reflects others)
+// Echo-suppressed on both sides (the element bridge guards inbound writes; here
+// we skip pushing a value the element just reported). Returns a disposer.
+function bindHudSync(el: ElWithBrSync): () => void {
+  const bridge = el.brSync
+  if (!bridge) return () => {}
+  // Last value we pushed IN from the store, to avoid bouncing the element's
+  // echo of it straight back to the store.
+  let lastInHover: string | null = null
+  let lastInSelect: string | null = null
+
+  const offHover = bridge.onHover(id => { if (id !== lastInHover) hudStore.setHover(id) })
+  const offSelect = bridge.onSelect(id => { if (id !== lastInSelect) hudStore.setSelection(id) })
+
+  const unsub = hudStore.subscribe(() => {
+    const s = hudStore.getSnapshot()
+    if (s.hoverId !== lastInHover) { lastInHover = s.hoverId; bridge.setExternalHover(s.hoverId) }
+    if (s.selectionId !== lastInSelect) { lastInSelect = s.selectionId; bridge.setExternalSelect(s.selectionId) }
+  })
+  // Seed current store state into the freshly mounted element.
+  const s0 = hudStore.getSnapshot()
+  lastInHover = s0.hoverId; lastInSelect = s0.selectionId
+  bridge.setExternalHover(s0.hoverId)
+  bridge.setExternalSelect(s0.selectionId)
+
+  return () => { offHover(); offSelect(); unsub() }
+}
+
+// Flat-chart variant: the element's bridge keys on datum INDEX (flat datums
+// have no id), so translate index ↔ PNode id through the parallel `ids[]` the
+// wrapper already holds. `idsRef` is read live so it tracks data reshapes.
+function bindHudSyncFlat(el: ElWithBrSync, idsRef: { current: string[] }): () => void {
+  const bridge = el.brSync
+  if (!bridge) return () => {}
+  const idToIdx = (id: string | null): string | null => {
+    if (id == null) return null
+    const i = idsRef.current.indexOf(id)
+    return i < 0 ? null : String(i)
+  }
+  const idxToId = (key: string | null): string | null => {
+    if (key == null) return null
+    const i = Number(key)
+    return Number.isInteger(i) ? idsRef.current[i] ?? null : null
+  }
+  let lastInHover: string | null = null
+  let lastInSelect: string | null = null
+
+  const offHover = bridge.onHover(key => { const id = idxToId(key); if (id !== lastInHover) hudStore.setHover(id) })
+  const offSelect = bridge.onSelect(key => { const id = idxToId(key); if (id !== lastInSelect) hudStore.setSelection(id) })
+
+  const unsub = hudStore.subscribe(() => {
+    const s = hudStore.getSnapshot()
+    if (s.hoverId !== lastInHover) { lastInHover = s.hoverId; bridge.setExternalHover(idToIdx(s.hoverId)) }
+    if (s.selectionId !== lastInSelect) { lastInSelect = s.selectionId; bridge.setExternalSelect(idToIdx(s.selectionId)) }
+  })
+  const s0 = hudStore.getSnapshot()
+  lastInHover = s0.hoverId; lastInSelect = s0.selectionId
+  bridge.setExternalHover(idToIdx(s0.hoverId))
+  bridge.setExternalSelect(idToIdx(s0.selectionId))
+
+  return () => { offHover(); offSelect(); unsub() }
+}
 
 import { MdBarChartLC } from '@br-lc/demos/bar-chart'
 import { MdLineChartLC } from '@br-lc/demos/line-chart'
@@ -133,6 +208,9 @@ function useLiveFlatElement<D>(
     elRef.current = el
     lastRef.current = specRef.current.values.slice()
 
+    // Cross-tile hover/select sync (index ↔ id via the live spec.ids).
+    const unbindHud = bindHudSyncFlat(el as ElWithBrSync, { get current() { return specRef.current.ids } })
+
     // Edit-out: when the element's own gesture changes a value, push to store.
     disposeRef.current = biEffect(() => {
       const arr = el.dataCell.value
@@ -156,6 +234,7 @@ function useLiveFlatElement<D>(
     })
 
     return () => {
+      unbindHud()
       disposeRef.current?.()
       disposeRef.current = undefined
       if (container.contains(el)) container.removeChild(el)
@@ -354,7 +433,23 @@ function useLiveHierElement(
     container.appendChild(el)
     elRef.current = el
 
+    // Cross-tile hover/select sync: appending connected the element, so its
+    // scene() ran and installed `brSync`. Bind it to the hudStore both ways.
+    const unbindHud = bindHudSync(el as ElWithBrSync)
+
     // Edit-out: leaf total changes (gesture redistribution) → store.
+    //
+    // Group resizes flow through a Num.lens that rescales children
+    // *proportionally* — producing fractional leaf values (e.g. 31 → 30.65).
+    // The store is integer-rounded, so without quantizing here the tree would
+    // render the fractional frame and then snap when the store echo applies the
+    // rounded value back in — visible jitter on every group-edit tick.
+    //
+    // Fix: quantize the live leaf cells to integers *synchronously* the moment
+    // an edit is detected, so render, store, and tree all agree and there is no
+    // fractional intermediate. Writing a leaf cell is safe (leaves are plain
+    // cells, not lenses); the write re-runs this effect once, finds everything
+    // already integer, and converges with no further writes.
     disposeRef.current = biEffect(() => {
       const last = lastRef.current
       const cb = onUpdateRef.current
@@ -362,6 +457,9 @@ function useLiveHierElement(
       const byId = new Map(nodesRef.current.map(n => [n.id, n]))
       for (const leaf of leaves) {
         const v = Math.round(leaf.value.total.value)
+        // Snap the live cell to the integer the store will hold, killing the
+        // fractional render frame (no-op once already integer).
+        if (leaf.value.total.value !== v) leaf.value.total.value = v
         if (v !== last.get(leaf.value.id)) {
           last.set(leaf.value.id, v)
           const node = byId.get(leaf.value.id)
@@ -372,6 +470,7 @@ function useLiveHierElement(
     })
 
     return () => {
+      unbindHud()
       disposeRef.current?.()
       disposeRef.current = undefined
       if (container.contains(el)) container.removeChild(el)

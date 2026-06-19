@@ -2,9 +2,10 @@
 // Interaction: click to select, ↑/↓ edit value, cmd+wheel edit, Tab/Shift+Tab nav.
 // Drag not applicable (no y-pixel continuum); wheel edits selected/hovered slice.
 
-import { Anchor, annularSector, cell, derive, Diagram, label, type Mount, Vec, vec } from "bireactive";
+import { Anchor, annularSector, cell, derive, Diagram, effect as biEffect, label, type Mount, Vec, vec } from "bireactive";
 import { pie, type PieArcDatum } from "d3-shape";
 import { installGestureRelease } from "../lib/interaction";
+import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 
 const W = 720;
 const H = 360;
@@ -106,7 +107,7 @@ export class MdPieChartLC extends Diagram {
     // Gestures.
     this.addEventListener("wheel", (e) => {
       const we = e as WheelEvent;
-      if (!(we.metaKey || we.ctrlKey || we.altKey)) return;
+      if (!(we.metaKey || we.ctrlKey)) return;
       if (!wheelLocked.current) wheelLocked.current = hover.value ?? selected.value;
       const t = wheelLocked.current;
       if (!t) return;
@@ -143,5 +144,18 @@ export class MdPieChartLC extends Diagram {
       }),
       { size: 11, align: Anchor.Center, opacity: 0.7 },
     ));
+
+    // Cross-tile hover/select sync bridge.
+    const ORDER = data.value as Slice[];
+    const idxOf = (d: Slice | null) => { if (d == null) return null; const i = ORDER.indexOf(d); return i < 0 ? null : String(i); };
+    const datumAt = (key: string | null) => { if (key == null) return null; const i = Number(key); return Number.isInteger(i) && i >= 0 && i < ORDER.length ? ORDER[i]! : null; };
+    let applyingExternal = false;
+    const bridge = makeBridge({
+      setHover: (key) => { applyingExternal = true; hover.value = datumAt(key); applyingExternal = false; },
+      setSelect: (key) => { applyingExternal = true; selected.value = datumAt(key); applyingExternal = false; },
+    });
+    (this as unknown as ElementWithBridge).brSync = bridge;
+    biEffect(() => { const h = hover.value; if (applyingExternal) return; bridge.emitHover(idxOf(h)); });
+    biEffect(() => { const sel = selected.value; if (applyingExternal) return; bridge.emitSelect(idxOf(sel)); });
   }
 }

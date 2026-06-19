@@ -4,7 +4,9 @@
 import { installGestureRelease } from "./interaction";
 import type { ChartContext } from "./chart-context";
 import { bisector } from "d3-array";
+import { effect as biEffect } from "bireactive";
 import type { Cell, Writable } from "bireactive";
+import { makeBridge, type ElementWithBridge } from "./hud-bridge";
 
 export interface CartesianGestureState<TData> {
   hover: Writable<Cell<TData | null>>;
@@ -55,7 +57,7 @@ export function attachCartesianGestures<TData>(
 
   const onWheel = (e: Event) => {
     const we = e as WheelEvent;
-    if (!(we.metaKey || we.ctrlKey || we.altKey)) return;
+    if (!(we.metaKey || we.ctrlKey)) return;
     if (!wheelLocked.current) wheelLocked.current = state.hover.value ?? state.selected.value;
     const target = wheelLocked.current;
     if (!target) return;
@@ -127,6 +129,39 @@ export function attachCartesianGestures<TData>(
   host.addEventListener("pointerup", onPointerUp);
   host.addEventListener("pointercancel", onPointerUp);
 
+  // ── Cross-tile sync bridge ──────────────────────────────────────────────
+  // Flat datums carry no PNode id, so the bridge keys on the datum's index in
+  // `order()`; the React wrapper maps index ↔ PNode id via its parallel `ids[]`.
+  const idxOf = (d: TData | null): string | null => {
+    if (d == null) return null;
+    const i = order().indexOf(d);
+    return i < 0 ? null : String(i);
+  };
+  const datumAt = (key: string | null): TData | null => {
+    if (key == null) return null;
+    const i = Number(key);
+    const rows = order();
+    return Number.isInteger(i) && i >= 0 && i < rows.length ? rows[i]! : null;
+  };
+
+  let applyingExternal = false;
+  const bridge = makeBridge({
+    setHover: (key) => { applyingExternal = true; state.hover.value = datumAt(key); applyingExternal = false; },
+    setSelect: (key) => { applyingExternal = true; state.selected.value = datumAt(key); applyingExternal = false; },
+  });
+  (host as ElementWithBridge).brSync = bridge;
+
+  const hoverDispose = biEffect(() => {
+    const h = state.hover.value;
+    if (applyingExternal) return;
+    bridge.emitHover(idxOf(h));
+  });
+  const selectDispose = biEffect(() => {
+    const sel = state.selected.value;
+    if (applyingExternal) return;
+    bridge.emitSelect(idxOf(sel));
+  });
+
   return () => {
     host.removeEventListener("pointerleave", onPointerLeave);
     host.removeEventListener("click", onClick);
@@ -137,6 +172,9 @@ export function attachCartesianGestures<TData>(
     host.removeEventListener("pointerup", onPointerUp);
     host.removeEventListener("pointercancel", onPointerUp);
     releaseDispose();
+    hoverDispose();
+    selectDispose();
+    (host as ElementWithBridge).brSync = undefined;
   };
 }
 

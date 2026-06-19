@@ -2,9 +2,10 @@
 // Full-360° track per ring, rounded ends, value arc on top.
 // Click ring to select · Tab/←/→ nav · ↑/↓ edit · cmd+wheel.
 
-import { Anchor, cell, derive, Diagram, group, label, mount, type Mount, pathD, vec, Vec } from "bireactive";
+import { Anchor, cell, derive, Diagram, effect as biEffect, group, label, mount, type Mount, pathD, vec, Vec } from "bireactive";
 import { arc as d3Arc } from "d3-shape";
 import { installGestureRelease } from "../lib/interaction";
+import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 
 const W = 640;
 const H = 640;
@@ -138,7 +139,7 @@ export class MdConcentricArcLC extends Diagram {
 
     svgEl.addEventListener("wheel", (e) => {
       const we = e as WheelEvent;
-      if (!(we.metaKey || we.ctrlKey || we.altKey)) return;
+      if (!(we.metaKey || we.ctrlKey)) return;
       const t = selected.value ?? hover.value ?? wheelLocked.current;
       if (!t) return;
       we.preventDefault();
@@ -195,5 +196,18 @@ export class MdConcentricArcLC extends Diagram {
       if (!p) return "ConcentricArc — hover · click ring · Tab/←/→ nav · ↑/↓ edit · wheel";
       return `${p.label}  ${p.value}%`;
     }), { size: 11, align: Anchor.Center, opacity: 0.7 }));
+
+    // Cross-tile hover/select sync bridge.
+    const ORDER = data.value as Ring[];
+    const idxOf = (d: Ring | null) => { if (d == null) return null; const i = ORDER.indexOf(d); return i < 0 ? null : String(i); };
+    const datumAt = (key: string | null) => { if (key == null) return null; const i = Number(key); return Number.isInteger(i) && i >= 0 && i < ORDER.length ? ORDER[i]! : null; };
+    let applyingExternal = false;
+    const bridge = makeBridge({
+      setHover: (key) => { applyingExternal = true; hover.value = datumAt(key); applyingExternal = false; },
+      setSelect: (key) => { applyingExternal = true; selected.value = datumAt(key); applyingExternal = false; },
+    });
+    (this as unknown as ElementWithBridge).brSync = bridge;
+    biEffect(() => { const h = hover.value; if (applyingExternal) return; bridge.emitHover(idxOf(h)); });
+    biEffect(() => { const sel = selected.value; if (applyingExternal) return; bridge.emitSelect(idxOf(sel)); });
   }
 }

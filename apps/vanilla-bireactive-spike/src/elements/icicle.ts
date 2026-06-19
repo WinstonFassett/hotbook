@@ -113,7 +113,7 @@ function attachNudge(el: SVGElement, cell: Writable<Num>, neighbor: Writable<Num
     else if (e.key === "ArrowDown" || e.key === "ArrowLeft") { apply(-k); e.preventDefault(); }
   });
   el.addEventListener("wheel", (e: WheelEvent) => {
-    if (!e.altKey) return;
+    if (!(e.metaKey || e.ctrlKey)) return;
     e.preventDefault();
     const dir = e.deltaY < 0 ? +1 : -1;
     apply(dir * (e.shiftKey ? big : step));
