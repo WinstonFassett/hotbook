@@ -27,6 +27,31 @@ import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
 import './App.css'
 
+// Group-coherent coloring, shared by every hierarchy chart (first-gen + BR-LC)
+// so the whole board reads the same way: each top-level group gets one vibrant
+// PALETTE hue and all its descendants inherit it. Datasets often carry scattered
+// per-node colors (a group rose, its child violet) which looked incoherent and
+// differed chart-to-chart; this overwrites them with the grouped look the flat
+// Viz already had. `nodeColor`/`pnodeColor` resolve a node by walking up to the
+// nearest colored ancestor, so coloring every node directly here is sufficient.
+function colorByGroup(nodes: PNode[]): PNode[] {
+  const byId = new Map(nodes.map(n => [n.id, n]))
+  const rootOf = (n: PNode): PNode => {
+    let cur = n
+    while (cur.parentId && byId.has(cur.parentId)) cur = byId.get(cur.parentId)!
+    return cur
+  }
+  // Stable hue per top-level group, by document order of the roots.
+  const hueByRoot = new Map<string, string>()
+  let gi = 0
+  for (const n of nodes) {
+    if (!n.parentId || !byId.has(n.parentId)) {
+      if (!hueByRoot.has(n.id)) hueByRoot.set(n.id, pickColor(gi++))
+    }
+  }
+  return nodes.map(n => ({ ...n, color: hueByRoot.get(rootOf(n).id) ?? n.color }))
+}
+
 const TILE_KINDS: TileKind[] = [
   'treetable', 'h-treemap', 'h-icicle', 'h-radial', 'treemap', 'radial', 'bands',
   'br-lc-bar', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie',
@@ -74,7 +99,7 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
 
   const depth = tile.depth ?? 2
   const sortBy = tile.sortBy ?? 'index'
-  const nodes = tile.groupBy ? applyGroupBy(ds.rows, tile.groupBy) : ds.rows
+  const nodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.rows, tile.groupBy) : ds.rows)
 
   if (tile.kind === 'h-treemap') {
     return <Treemap nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} onUpdate={onNodeUpdate} />
@@ -113,16 +138,12 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
   if (tile.kind === 'svelte-br-lc-treemap')  return <SvelteLcTreemap nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
   if (tile.kind === 'svelte-treemap-demo')   return <SvelteTreemapDemo />
 
-  // For flat viz with groupBy, assign color by group dim value
-  const groupColorMap = new Map<string, string>()
-  if (tile.groupBy) {
-    const vals = [...new Set(ds.rows.map(r => r.dims[tile.groupBy!] ?? ''))].filter(Boolean)
-    vals.forEach((v, i) => groupColorMap.set(v, pickColor(i * 3)))
-  }
+  // Flat Viz uses the same group-coherent colors as every other chart: `nodes`
+  // is already colored by `colorByGroup` (each leaf carries its group's hue), so
+  // just read `n.color` — no separate per-tile recolor that would diverge.
   const goals: Goal[] = leavesOf(nodes).map((n, idx) => {
-    const groupColor = tile.groupBy ? groupColorMap.get(n.dims[tile.groupBy] ?? '') : undefined
     return {
-      id: n.id, name: n.name, color: groupColor ?? n.color ?? pickColor(idx),
+      id: n.id, name: n.name, color: n.color ?? pickColor(idx),
       measurements: { ...n.measures, _index: idx },
       archived: false, tags: [], urgent: false, important: false,
       createdAt: '', updatedAt: '',
