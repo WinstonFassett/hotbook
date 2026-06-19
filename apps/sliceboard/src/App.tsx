@@ -159,6 +159,8 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
         sortUnit={sortBy === 'index' ? '_index' : mk}
         sortUnitKind={sortBy === 'index' ? 'order' : 'size'}
         frame={undefined}
+        hoverId={hoverId} selectionId={selectionId}
+        onHover={onHover} onSelect={onSelect}
         onUpdate={(id, patch) => { if (patch.measurements) onNodeUpdate(id, patch.measurements as PNode['measures']) }}
         onReorder={onNodeReorder}
       />

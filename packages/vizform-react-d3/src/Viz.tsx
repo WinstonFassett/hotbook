@@ -13,9 +13,13 @@ interface Props {
   onUpdate: (id: string, patch: Partial<Goal>) => void
   onReorder?: (orderedIds: string[]) => void
   onGoalClick?: (goal: Goal) => void
+  hoverId?: string | null
+  selectionId?: string | null
+  onHover?: (id: string | null) => void
+  onSelect?: (id: string) => void
 }
 
-export function Viz({ goals, mode, activeUnit, unitKind, sortUnit, sortUnitKind, frame, onUpdate, onReorder, onGoalClick }: Props) {
+export function Viz({ goals, mode, activeUnit, unitKind, sortUnit, sortUnitKind, frame, onUpdate, onReorder, onGoalClick, hoverId, selectionId, onHover, onSelect }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
   const rendererRef = useRef<VizRenderer | null>(null)
@@ -38,14 +42,16 @@ export function Viz({ goals, mode, activeUnit, unitKind, sortUnit, sortUnitKind,
     return () => { rendererRef.current?.destroy(); rendererRef.current = null }
   }, [])
 
-  // Alt-key affordance: show wheel-adjust cursor while modifier is held
+  // Cmd/Ctrl affordance: arm the wheel-adjust cursor while the edit modifier is
+  // held — matches the actual wheel-edit gate (metaKey || ctrlKey). Consumed by
+  // the `[data-edit-armed] .viz-svg` cursor rule.
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Alt') el.dataset.altArmed = e.type === 'keydown' ? 'true' : ''
+      if (e.key === 'Meta' || e.key === 'Control') el.dataset.editArmed = e.type === 'keydown' ? 'true' : ''
     }
-    const onBlur = () => { el.dataset.altArmed = '' }
+    const onBlur = () => { el.dataset.editArmed = '' }
     window.addEventListener('keydown', onKey)
     window.addEventListener('keyup', onKey)
     window.addEventListener('blur', onBlur)
@@ -58,8 +64,8 @@ export function Viz({ goals, mode, activeUnit, unitKind, sortUnit, sortUnitKind,
 
   useEffect(() => {
     if (!rendererRef.current || size.w === 0 || size.h === 0) return
-    rendererRef.current.render({ goals, w: size.w, h: size.h, mode, activeUnit, unitKind, sortUnit, sortUnitKind, frame, onUpdate, onReorder, onGoalClick })
-  }, [goals, mode, activeUnit, unitKind, sortUnit, sortUnitKind, frame, size, onUpdate, onReorder, onGoalClick])
+    rendererRef.current.render({ goals, w: size.w, h: size.h, mode, activeUnit, unitKind, sortUnit, sortUnitKind, frame, onUpdate, onReorder, onGoalClick, hoverId, selectionId, onHover, onSelect })
+  }, [goals, mode, activeUnit, unitKind, sortUnit, sortUnitKind, frame, size, onUpdate, onReorder, onGoalClick, hoverId, selectionId, onHover, onSelect])
 
   const active = goals.filter(g => !g.archived)
 

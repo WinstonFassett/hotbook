@@ -401,3 +401,10 @@
 .sb-menu-action-btn.danger {
   color: #c44;
 }
+
+/* Flat Viz wheel-edit affordance: while cmd/ctrl is held, the atoms show the
+   vertical-resize cursor so the wheel-to-adjust gesture is discoverable.
+   `data-edit-armed` is set by Viz.tsx on the container. */
+[data-edit-armed="true"] .viz-svg .goal-atom path.shape {
+  cursor: ns-resize;
+}

@@ -88,6 +88,11 @@ export interface VizRenderOptions {
   onUpdate: (id: string, patch: Partial<Goal>) => void
   onReorder?: (orderedIds: string[]) => void
   onGoalClick?: (goal: Goal) => void
+  // HUD wiring (cross-tile hover/select). Highlight is keyed by goal id.
+  hoverId?: string | null
+  selectionId?: string | null
+  onHover?: (id: string | null) => void
+  onSelect?: (id: string) => void
 }
 
 export class VizRenderer {
@@ -181,7 +186,7 @@ export class VizRenderer {
   }
 
   render(opts: VizRenderOptions) {
-    const { goals, w, h, mode, activeUnit, unitKind, sortUnit, sortUnitKind, frame, onUpdate, onReorder, onGoalClick } = opts
+    const { goals, w, h, mode, activeUnit, unitKind, sortUnit, sortUnitKind, frame, onUpdate, onReorder, onGoalClick, hoverId, selectionId, onHover, onSelect } = opts
     this.latestGoals = goals
     this.latestOpts = opts
 
@@ -282,6 +287,7 @@ export class VizRenderer {
         event.stopPropagation()
         const goal = previewGoals.find(g => g.id === d.id)
         if (goal) onGoalClick?.(goal)
+        onSelect?.(d.id)
       })
 
     // During settle sequence after radial reorder, use ghost positions as
@@ -424,6 +430,19 @@ export class VizRenderer {
       .transition().duration(exitDur).ease(easeQuadIn)
       .style('opacity', 0)
       .remove()
+
+    // ── HUD: hover/select highlight + cross-tile sync ──────────────────
+    // Stroke convention matches the first-gen hierarchical charts (Sunburst/
+    // Icicle): selection → --pv-ink, hover → --pv-ink-muted, else none.
+    allAtoms.select<SVGPathElement>('path.shape')
+      .attr('stroke', d => d.isPhantom ? 'none'
+        : selectionId === d.id ? 'var(--pv-ink)'
+        : hoverId === d.id ? 'var(--pv-ink-muted)'
+        : 'none')
+      .attr('stroke-width', d => (!d.isPhantom && (selectionId === d.id || hoverId === d.id)) ? 1.5 : 0)
+    allAtoms
+      .on('pointerenter.hud', (_ev, d) => { if (!d.isPhantom) onHover?.(d.id) })
+      .on('pointerleave.hud', () => onHover?.(null))
 
     // ── Chrome ──────────────────────────────────────────────────────
     const targetChromeG: typeof chromeG | null =
