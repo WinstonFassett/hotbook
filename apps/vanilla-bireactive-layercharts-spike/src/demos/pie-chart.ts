@@ -117,7 +117,11 @@ export class MdPieChartLC extends Diagram {
 
     this.addEventListener("keydown", (e) => {
       const ke = e as KeyboardEvent;
-      if (ke.key === "Escape") { selected.value = null; ke.preventDefault(); return; }
+      if (ke.key === "Escape") {
+        // No drag here: clear selection, else fall through (don't preventDefault).
+        if (selected.value != null) { selected.value = null; ke.preventDefault(); }
+        return;
+      }
       const rows = data.value as Slice[];
       const cur = selected.value;
       const i = cur ? rows.indexOf(cur) : -1;

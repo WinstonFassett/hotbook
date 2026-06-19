@@ -132,6 +132,11 @@ export function sankeyScene(
   }) as EventListener, { passive: false });
 
   host.addEventListener("keydown", ((e: KeyboardEvent) => {
+    if (e.key === "Escape") {
+      // No drag here: clear focus, else fall through (don't preventDefault).
+      if (focused.value !== null) { focused.value = null; e.preventDefault(); }
+      return;
+    }
     if (e.key === "Tab") {
       const cur = focused.value;
       focused.value = e.shiftKey

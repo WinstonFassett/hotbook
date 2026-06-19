@@ -161,16 +161,20 @@ export class VizRenderer {
     this.cancelCallback = onCancel
     this.escapeHandler = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
+      // Drag-cancel wins over any idle Esc-to-clear-selection handler upstream.
+      e.preventDefault()
+      e.stopPropagation()
       this._cancelResizeDrag()
     }
-    document.addEventListener('keydown', this.escapeHandler)
+    // Capture phase so this fires before a bubble-phase app-level Esc handler.
+    document.addEventListener('keydown', this.escapeHandler, true)
   }
 
   private _endResizeDrag() {
     this.dragOrderSnapshot = null
     this.cancelCallback = null
     if (this.escapeHandler) {
-      document.removeEventListener('keydown', this.escapeHandler)
+      document.removeEventListener('keydown', this.escapeHandler, true)
       this.escapeHandler = null
     }
   }

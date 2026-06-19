@@ -440,6 +440,22 @@ function DashboardPicker({
 export function App() {
   const [ws, setWs] = useState<Workspace>(() => initWorkspace())
 
+  // Unified idle Esc: clear the current selection across every tile. Runs in the
+  // bubble phase, so a chart's own Esc (e.g. gen-1 VizRenderer's capture-phase
+  // drag-cancel) takes precedence and stops propagation before this fires — a
+  // drag-in-progress reverts instead of clearing selection. Does NOT touch focus
+  // (drill state) — Esc clears selection, not navigation.
+  useEffect(() => {
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      if (hudStore.getSnapshot().selectionId == null) return // nothing to clear → let Esc fall through
+      e.preventDefault()
+      hudStore.setSelection(null)
+    }
+    window.addEventListener('keydown', onEsc)
+    return () => window.removeEventListener('keydown', onEsc)
+  }, [])
+
   function commit(next: Workspace) {
     setWs(next)
     saveWorkspace(next)

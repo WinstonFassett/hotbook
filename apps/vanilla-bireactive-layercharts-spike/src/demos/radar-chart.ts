@@ -180,6 +180,18 @@ export class MdRadarChartLC extends Diagram {
       return bestDiff < Math.PI / rows.length ? best : null;
     };
     let dragTarget: Spoke | null = null;
+    // Pre-gesture value so Esc reverts the drag (gen-1 parity).
+    let dragStartValue = 0;
+    let dragPointerId = -1;
+    const cancelDrag = () => {
+      if (!dragTarget) return;
+      mutateDatum(dragTarget, dragStartValue - dragTarget.value);
+      if (dragPointerId >= 0 && (this as any).hasPointerCapture?.(dragPointerId)) {
+        (this as any).releasePointerCapture(dragPointerId);
+      }
+      dragTarget = null;
+      dragPointerId = -1;
+    };
 
     this.addEventListener("pointerdown", (e) => {
       const pe = e as PointerEvent;
@@ -194,6 +206,8 @@ export class MdRadarChartLC extends Diagram {
       const dy = y - (CY + Math.sin(a) * r);
       if (Math.sqrt(dx*dx + dy*dy) > 20) return;
       dragTarget = spoke;
+      dragStartValue = spoke.value;
+      dragPointerId = pe.pointerId;
       selected.value = spoke;
       (this as any).setPointerCapture(pe.pointerId);
       pe.preventDefault();
@@ -208,8 +222,8 @@ export class MdRadarChartLC extends Diagram {
       const newVal = Math.max(0, Math.min(100, yScale.value.invert(dist)));
       mutateDatum(dragTarget, newVal - dragTarget.value);
     });
-    this.addEventListener("pointerup", () => { dragTarget = null; });
-    this.addEventListener("pointercancel", () => { dragTarget = null; });
+    this.addEventListener("pointerup", () => { dragTarget = null; dragPointerId = -1; });
+    this.addEventListener("pointercancel", () => { dragTarget = null; dragPointerId = -1; });
 
     svgEl.addEventListener("wheel", (e) => {
       const we = e as WheelEvent;
@@ -223,7 +237,12 @@ export class MdRadarChartLC extends Diagram {
 
     this.addEventListener("keydown", (e) => {
       const ke = e as KeyboardEvent;
-      if (ke.key === "Escape") { selected.value = null; ke.preventDefault(); return; }
+      if (ke.key === "Escape") {
+        // cancel drag → revert; else clear selection; else fall through.
+        if (dragTarget) { cancelDrag(); ke.preventDefault(); }
+        else if (selected.value != null) { selected.value = null; ke.preventDefault(); }
+        return;
+      }
       const rows = data.value as Spoke[];
       const cur = selected.value;
       const i = cur ? rows.indexOf(cur) : -1;

@@ -45,6 +45,22 @@ export function attachCartesianGestures<TData>(
   const releaseDispose = installGestureRelease(() => { wheelLocked.current = null; state.hover.value = null; });
 
   let dragTarget: TData | null = null;
+  // Value of the dragged datum at gesture start, so Esc can revert it (matches
+  // gen-1 VizRenderer's _cancelResizeDrag — abort the drag AND undo its change).
+  let dragStartValue = 0;
+  let dragPointerId = -1;
+
+  const cancelDrag = () => {
+    if (!dragTarget) return;
+    // Restore to the pre-gesture value via a delta back to start.
+    mutateDatum(dragTarget, dragStartValue - (ctx.yAcc(dragTarget) as number));
+    if (dragPointerId >= 0 && (host as any).hasPointerCapture?.(dragPointerId)) {
+      (host as any).releasePointerCapture(dragPointerId);
+    }
+    dragTarget = null;
+    dragPointerId = -1;
+    host.style.cursor = "";
+  };
 
   const onPointerLeave = () => { if (wheelLocked.current) return; state.hover.value = null; };
 
@@ -68,7 +84,14 @@ export function attachCartesianGestures<TData>(
 
   const onKeydown = (e: Event) => {
     const ke = e as KeyboardEvent;
-    if (ke.key === "Escape") { state.selected.value = null; ke.preventDefault(); return; }
+    if (ke.key === "Escape") {
+      // Unified Esc contract: cancel an in-progress drag (revert to start),
+      // else clear selection, else fall through (don't preventDefault) so Esc
+      // can still close a menu/overlay when this chart has nothing to dismiss.
+      if (dragTarget) { cancelDrag(); ke.preventDefault(); }
+      else if (state.selected.value != null) { state.selected.value = null; ke.preventDefault(); }
+      return;
+    }
     const rows = order();
     if (rows.length === 0) return;
     const cur = state.selected.value;
@@ -95,6 +118,8 @@ export function attachCartesianGestures<TData>(
     if (!pt) return;
     if (Math.abs(y - yPixel(pt)) > 12) return;
     dragTarget = pt;
+    dragStartValue = ctx.yAcc(pt) as number;
+    dragPointerId = pe.pointerId;
     state.selected.value = pt;
     host.style.cursor = "ns-resize";
     (host as any).setPointerCapture(pe.pointerId);
@@ -118,7 +143,7 @@ export function attachCartesianGestures<TData>(
     host.style.cursor = pt && Math.abs(y - yPixel(pt)) <= 12 ? "ns-resize" : "";
   };
 
-  const onPointerUp = () => { dragTarget = null; host.style.cursor = ""; };
+  const onPointerUp = () => { dragTarget = null; dragPointerId = -1; host.style.cursor = ""; };
 
   host.addEventListener("pointerleave", onPointerLeave);
   host.addEventListener("click", onClick);

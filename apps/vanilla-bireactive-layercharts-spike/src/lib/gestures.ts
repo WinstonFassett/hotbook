@@ -37,6 +37,12 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
   };
 
   const onKeydown = (e: KeyboardEvent) => {
+    if (e.key === "Escape") {
+      // No continuous drag here (wheel/arrow only): clear selection, else fall
+      // through (don't preventDefault) so Esc can dismiss other overlays.
+      if (state.focused.value != null) { state.focused.value = null; e.preventDefault(); }
+      return;
+    }
     if (e.key === "Tab") {
       const order = flatOrder(root);
       if (order.length === 0) return;

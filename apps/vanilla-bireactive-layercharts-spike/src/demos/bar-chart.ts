@@ -107,6 +107,18 @@ export class MdBarChartLC extends Diagram {
     installGestureRelease(() => { wheelLocked.current = null; hover.value = null; });
 
     let dragTarget: Bar | null = null;
+    // Pre-gesture value so Esc reverts the drag (gen-1 parity).
+    let dragStartValue = 0;
+    let dragPointerId = -1;
+    const cancelDrag = () => {
+      if (!dragTarget) return;
+      mutateDatum(dragTarget, dragStartValue - dragTarget.value);
+      if (dragPointerId >= 0 && (this as any).hasPointerCapture?.(dragPointerId)) {
+        (this as any).releasePointerCapture(dragPointerId);
+      }
+      dragTarget = null;
+      dragPointerId = -1;
+    };
 
     this.addEventListener("pointerleave", () => { if (!wheelLocked.current) hover.value = null; });
     this.addEventListener("click", (e) => {
@@ -125,7 +137,12 @@ export class MdBarChartLC extends Diagram {
     }, { passive: false });
     this.addEventListener("keydown", (e) => {
       const ke = e as KeyboardEvent;
-      if (ke.key === "Escape") { selected.value = null; ke.preventDefault(); return; }
+      if (ke.key === "Escape") {
+        // cancel drag → revert; else clear selection; else fall through.
+        if (dragTarget) { cancelDrag(); ke.preventDefault(); }
+        else if (selected.value != null) { selected.value = null; ke.preventDefault(); }
+        return;
+      }
       const rows = data.value as Bar[];
       const cur = selected.value;
       const i = cur ? rows.indexOf(cur) : -1;
@@ -149,6 +166,8 @@ export class MdBarChartLC extends Diagram {
       const topY = (ctx.yScale.value as any)(pt.value);
       if (Math.abs(y - topY) > 12) return;
       dragTarget = pt;
+      dragStartValue = pt.value;
+      dragPointerId = pe.pointerId;
       selected.value = pt;
       (this as any).setPointerCapture(pe.pointerId);
       pe.preventDefault();
@@ -165,8 +184,8 @@ export class MdBarChartLC extends Diagram {
       const { x } = localPoint(pe);
       hover.value = findAtPixel(x);
     });
-    this.addEventListener("pointerup", () => { dragTarget = null; });
-    this.addEventListener("pointercancel", () => { dragTarget = null; });
+    this.addEventListener("pointerup", () => { dragTarget = null; dragPointerId = -1; });
+    this.addEventListener("pointercancel", () => { dragTarget = null; dragPointerId = -1; });
 
     // Column hover highlight — full-height rect that slides to the active column.
     const hlTarget = derive(() => hover.value ?? selected.value);
