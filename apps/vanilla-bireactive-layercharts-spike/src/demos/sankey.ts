@@ -19,6 +19,7 @@ const SIMPLE_LINKS: LinkDef[] = [
 ];
 
 export class MdSankeySimple extends Diagram {
+  static styles = `text { pointer-events: none; }`
   externalData?: { nodes: string[]; links: { source: string; target: string; value: number }[] }
 
   protected scene(s: Mount): void {

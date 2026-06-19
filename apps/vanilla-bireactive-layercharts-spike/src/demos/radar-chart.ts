@@ -29,13 +29,20 @@ function makeData(): Spoke[] {
 }
 
 export class MdRadarChartLC extends Diagram {
-  externalData?: { label: string; value: number }[]
+  static styles = `text { pointer-events: none; }`
+  readonly dataCell = cell<readonly Spoke[]>(makeData());
+  set externalData(v: { label: string; value: number }[] | undefined) {
+    if (v) this.dataCell.value = v as unknown as Spoke[];
+  }
+  get externalData(): { label: string; value: number }[] | undefined {
+    return this.dataCell.value as unknown as { label: string; value: number }[];
+  }
   protected scene(s: Mount): void {
     this.view(W, H);
     this.tabIndex = 0;
     this.style.outline = "none";
 
-    const data = cell<readonly Spoke[]>((this.externalData as unknown as Spoke[]) ?? makeData());
+    const data = this.dataCell;
     const hover = cell<Spoke | null>(null);
     const selected = cell<Spoke | null>(null);
 

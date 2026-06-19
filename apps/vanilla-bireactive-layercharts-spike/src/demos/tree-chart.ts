@@ -23,6 +23,7 @@ const PAD_LEFT = 60;
 const PAD_RIGHT = 60;
 
 export class MdTreeChart extends Diagram {
+  static styles = `text { pointer-events: none; }`
   externalRoot?: BiNode;
   protected scene(s: Mount): void {
     const root = this.externalRoot ?? portfolio();

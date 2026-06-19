@@ -28,13 +28,20 @@ function makeData(): Slice[] {
 }
 
 export class MdPieChartLC extends Diagram {
-  externalData?: { label: string; value: number }[]
+  static styles = `text { pointer-events: none; }`
+  readonly dataCell = cell<readonly Slice[]>(makeData());
+  set externalData(v: { label: string; value: number }[] | undefined) {
+    if (v) this.dataCell.value = v as Slice[];
+  }
+  get externalData(): { label: string; value: number }[] | undefined {
+    return this.dataCell.value as Slice[];
+  }
   protected scene(s: Mount): void {
     this.view(W, H);
     this.tabIndex = 0;
     this.style.outline = "none";
 
-    const data = cell<readonly Slice[]>((this.externalData as Slice[]) ?? makeData());
+    const data = this.dataCell;
 
     const hover = cell<Slice | null>(null);
     const selected = cell<Slice | null>(null);

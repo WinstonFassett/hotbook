@@ -2,6 +2,8 @@ import { num, treeNode, walkTree, leavesOf, Num, type TreeNode, type Writable } 
 import type { PNode } from '../../persistence'
 
 export interface NodeValue {
+  /** Backing PNode id, so chart edits can map back to the store. */
+  id: string
   label: string
   color: string
   total: Writable<Num>
@@ -9,11 +11,11 @@ export interface NodeValue {
 
 export type BiNode = TreeNode<NodeValue>
 
-export function biLeaf(label: string, value: number, color: string): BiNode {
-  return treeNode({ label, color, total: num(value) })
+export function biLeaf(id: string, label: string, value: number, color: string): BiNode {
+  return treeNode({ id, label, color, total: num(value) })
 }
 
-export function biGroup(label: string, color: string, children: BiNode[]): BiNode {
+export function biGroup(id: string, label: string, color: string, children: BiNode[]): BiNode {
   const total = Num.lens(
     children.map(c => c.value.total),
     (vs: readonly number[]) => vs.reduce((a, b) => a + b, 0),
@@ -25,7 +27,7 @@ export function biGroup(label: string, color: string, children: BiNode[]): BiNod
       return arr.map(v => v * scale) as never
     },
   )
-  return treeNode({ label, color, total }, children)
+  return treeNode({ id, label, color, total }, children)
 }
 
 export function buildParentIndex(root: BiNode): WeakMap<BiNode, BiNode> {
@@ -71,15 +73,15 @@ export function buildBiTree(nodes: PNode[], measureKey: string): BiNode | null {
       .filter(c => c.parentId === n.id)
       .sort((a, b) => a.index - b.index)
     if (kids.length === 0) {
-      return biLeaf(n.name, n.measures[measureKey] ?? 1, color)
+      return biLeaf(n.id, n.name, n.measures[measureKey] ?? 1, color)
     }
-    return biGroup(n.name, color, kids.map(build))
+    return biGroup(n.id, n.name, color, kids.map(build))
   }
 
   const roots = nodes.filter(n => n.parentId === null).sort((a, b) => a.index - b.index)
   if (roots.length === 0) return null
   if (roots.length === 1) return build(roots[0]!)
-  return biGroup('root', FALLBACK_COLOR, roots.map(build))
+  return biGroup('__root__', 'root', FALLBACK_COLOR, roots.map(build))
 }
 
 export function buildFlatBiData(nodes: PNode[], measureKey: string): Array<{ label: string; value: number }> {

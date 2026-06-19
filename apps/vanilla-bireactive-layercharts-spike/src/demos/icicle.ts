@@ -18,6 +18,7 @@ const W = 720;
 const H = 360;
 
 export class MdIcicleLC extends Diagram {
+  static styles = `text { pointer-events: none; }`
   externalRoot?: BiNode
   protected scene(s: Mount): void {
     const view = this.view(W, H);

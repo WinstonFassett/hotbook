@@ -21,13 +21,24 @@ function makeData(): Bar[] {
 }
 
 export class MdBarChartLC extends Diagram {
-  externalData?: { label: string; value: number }[]
+  // Labels/axes must never intercept pointer events — they sit on top of the
+  // data marks and would otherwise block the hover/wheel hit-test.
+  static styles = `text { pointer-events: none; }`
+  /** Live data cell. Assigning `externalData` writes into it, updating the
+   *  chart in place (no remount). Set before connect for the initial scene. */
+  readonly dataCell = cell<readonly Bar[]>(makeData());
+  set externalData(v: { label: string; value: number }[] | undefined) {
+    if (v) this.dataCell.value = v as Bar[];
+  }
+  get externalData(): { label: string; value: number }[] | undefined {
+    return this.dataCell.value as Bar[];
+  }
   protected scene(s: Mount): void {
     this.view(W, H);
     this.tabIndex = 0;
     this.style.outline = "none";
 
-    const data = cell<readonly Bar[]>((this.externalData as Bar[]) ?? makeData());
+    const data = this.dataCell;
 
     const PAD = { top: 16, right: 24, bottom: 36, left: 48 };
     const plotX = PAD.left;

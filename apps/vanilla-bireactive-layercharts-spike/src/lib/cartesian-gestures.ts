@@ -94,6 +94,7 @@ export function attachCartesianGestures<TData>(
     if (Math.abs(y - yPixel(pt)) > 12) return;
     dragTarget = pt;
     state.selected.value = pt;
+    host.style.cursor = "ns-resize";
     (host as any).setPointerCapture(pe.pointerId);
     pe.preventDefault();
   };
@@ -107,12 +108,15 @@ export function attachCartesianGestures<TData>(
       return;
     }
     if (wheelLocked.current) return;
-    const { x } = localPoint(pe);
-    if (x < ctx.plotX || x > ctx.plotX + ctx.plotWidth) { state.hover.value = null; return; }
-    state.hover.value = findAtPixel(x);
+    const { x, y } = localPoint(pe);
+    if (x < ctx.plotX || x > ctx.plotX + ctx.plotWidth) { state.hover.value = null; host.style.cursor = ""; return; }
+    const pt = findAtPixel(x);
+    state.hover.value = pt;
+    // Show the vertical-drag cursor when the pointer is near a draggable marker.
+    host.style.cursor = pt && Math.abs(y - yPixel(pt)) <= 12 ? "ns-resize" : "";
   };
 
-  const onPointerUp = () => { dragTarget = null; };
+  const onPointerUp = () => { dragTarget = null; host.style.cursor = ""; };
 
   host.addEventListener("pointerleave", onPointerLeave);
   host.addEventListener("click", onClick);

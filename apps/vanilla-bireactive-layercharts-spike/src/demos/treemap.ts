@@ -21,6 +21,7 @@ const PAD_INNER = 2;
 const PAD_TOP = 16;
 
 export class MdTreemapLC extends Diagram {
+  static styles = `text { pointer-events: none; }`
   externalRoot?: BiNode
   protected scene(s: Mount): void {
     const view = this.view(W, H);

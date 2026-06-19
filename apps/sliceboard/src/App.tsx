@@ -81,21 +81,21 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodeReorder }: { ti
   }
 
   // ── BR-LC flat charts ────────────────────────────────────────────────────
-  if (tile.kind === 'br-lc-bar')            return <BrLcBar nodes={nodes} measureKey={mk} />
-  if (tile.kind === 'br-lc-line')           return <BrLcLine nodes={nodes} measureKey={mk} />
-  if (tile.kind === 'br-lc-area')           return <BrLcArea nodes={nodes} measureKey={mk} />
-  if (tile.kind === 'br-lc-scatter')        return <BrLcScatter nodes={nodes} xKey={tile.xKey ?? '_index'} yKey={tile.yKey ?? mk} />
-  if (tile.kind === 'br-lc-pie')            return <BrLcPie nodes={nodes} measureKey={mk} />
-  if (tile.kind === 'br-lc-radar')          return <BrLcRadar nodes={nodes} measureKey={mk} />
-  if (tile.kind === 'br-lc-concentric-arc') return <BrLcConcentricArc nodes={nodes} measureKey={mk} />
+  if (tile.kind === 'br-lc-bar')            return <BrLcBar nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} />
+  if (tile.kind === 'br-lc-line')           return <BrLcLine nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} />
+  if (tile.kind === 'br-lc-area')           return <BrLcArea nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} />
+  if (tile.kind === 'br-lc-scatter')        return <BrLcScatter nodes={nodes} xKey={tile.xKey ?? '_index'} yKey={tile.yKey ?? mk} onUpdate={onNodeUpdate} />
+  if (tile.kind === 'br-lc-pie')            return <BrLcPie nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} />
+  if (tile.kind === 'br-lc-radar')          return <BrLcRadar nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} />
+  if (tile.kind === 'br-lc-concentric-arc') return <BrLcConcentricArc nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} />
 
   // ── BR-LC hierarchical charts ────────────────────────────────────────────
-  if (tile.kind === 'br-lc-pack')           return <BrLcPack nodes={nodes} measureKey={mk} />
-  if (tile.kind === 'br-lc-treemap')        return <BrLcTreemap nodes={nodes} measureKey={mk} />
-  if (tile.kind === 'br-lc-icicle')         return <BrLcIcicle nodes={nodes} measureKey={mk} />
-  if (tile.kind === 'br-lc-sunburst')       return <BrLcSunburst nodes={nodes} measureKey={mk} />
+  if (tile.kind === 'br-lc-pack')           return <BrLcPack nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} />
+  if (tile.kind === 'br-lc-treemap')        return <BrLcTreemap nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} />
+  if (tile.kind === 'br-lc-icicle')         return <BrLcIcicle nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} />
+  if (tile.kind === 'br-lc-sunburst')       return <BrLcSunburst nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} />
   if (tile.kind === 'br-lc-sankey')         return <BrLcSankey nodes={nodes} measureKey={mk} />
-  if (tile.kind === 'br-lc-tree')           return <BrLcTree nodes={nodes} measureKey={mk} />
+  if (tile.kind === 'br-lc-tree')           return <BrLcTree nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} />
 
   // For flat viz with groupBy, assign color by group dim value
   const groupColorMap = new Map<string, string>()

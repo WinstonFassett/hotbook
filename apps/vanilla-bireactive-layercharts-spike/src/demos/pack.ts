@@ -19,6 +19,7 @@ const H = 480;
 const PAD = 2;
 
 export class MdPack extends Diagram {
+  static styles = `text { pointer-events: none; }`
   externalRoot?: BiNode
   protected scene(s: Mount): void {
     const view = this.view(W, H);

@@ -19,6 +19,7 @@ const H = 480;
 const R = Math.min(W, H) / 2 - 4;
 
 export class MdSunburstLC extends Diagram {
+  static styles = `text { pointer-events: none; }`
   externalRoot?: BiNode
   protected scene(s: Mount): void {
     const view = this.view(W, H);
