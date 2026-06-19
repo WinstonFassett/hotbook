@@ -123,6 +123,16 @@ export class VizRenderer {
 
   private wheelHandler: ((e: WheelEvent) => void) | null = null
 
+  // Wheel-edit gesture state. A gesture is the span where ONE goal is locked:
+  // it BEGINS on the first Ctrl+wheel tick (locking goalId + snapshotting the
+  // pre-gesture value + arming Ctrl+Esc revert via _startResizeDrag), and ENDS
+  // on either COMMIT (Ctrl released / blur — keep the edits) or CANCEL (Escape —
+  // restore the snapshot). Mirrors the spike's makeWheelGesture, but reuses this
+  // renderer's own _startResizeDrag/_endResizeDrag Esc primitive so the
+  // publishable package stays self-contained. The unit is fixed at begin.
+  private wheelDrag: { goalId: string; snapshotValue: number; unit: string } | null = null
+  private wheelReleaseTeardown: (() => void) | null = null
+
   constructor(svgEl: SVGSVGElement) {
     this.svgEl = svgEl
     this._setupWheelHandler()
@@ -133,7 +143,14 @@ export class VizRenderer {
       const opts = this.latestOpts
       if (!opts) return
       if (opts.unitKind === 'order') return
-      if (!(event.metaKey || event.ctrlKey)) return
+      // Ctrl ONLY (not Cmd): mid-wheel, Cmd+Esc never reaches the page on macOS
+      // so the gesture couldn't be cancelled; Ctrl+Esc does. Ctrl+wheel does not
+      // trigger browser zoom here.
+      if (!event.ctrlKey) {
+        // Ctrl let go between ticks (no keyup seen, e.g. focus lost) — commit.
+        if (this.wheelDrag) this._commitWheelDrag()
+        return
+      }
       const hit = document.elementFromPoint(event.clientX, event.clientY) as Element | null
       const atomG = hit?.closest('g.goal-atom') as SVGGElement | null
       if (!atomG || atomG.classList.contains('phantom')) return
@@ -141,17 +158,74 @@ export class VizRenderer {
       if (!id) return
       event.preventDefault()
       event.stopPropagation()
-      const goal = this.latestGoals.find(g => g.id === id && !g.archived)
+
+      // One gesture edits exactly one goal: begin on the first tick, then stay
+      // locked to it even if the wheel drifts over a sibling.
+      if (!this.wheelDrag) this._beginWheelDrag(id)
+      const drag = this.wheelDrag
+      if (!drag) return
+
+      const goal = this.latestGoals.find(g => g.id === drag.goalId && !g.archived)
       if (!goal) return
       const step = event.shiftKey ? 5 : 1
       const dir = event.deltaY < 0 ? +1 : -1
-      const cur = Math.max(0, goal.measurements[opts.activeUnit] ?? DEFAULT_SIZE)
+      const cur = Math.max(0, goal.measurements[drag.unit] ?? DEFAULT_SIZE)
       const next = Math.max(1, cur + dir * step)
       if (next !== cur) {
-        opts.onUpdate(goal.id, { measurements: { ...goal.measurements, [opts.activeUnit]: next } })
+        opts.onUpdate(goal.id, { measurements: { ...goal.measurements, [drag.unit]: next } })
       }
     }
     this.svgEl.addEventListener('wheel', this.wheelHandler, { passive: false })
+  }
+
+  private _beginWheelDrag(id: string) {
+    const opts = this.latestOpts
+    if (!opts) return
+    const goal = this.latestGoals.find(g => g.id === id && !g.archived)
+    if (!goal) return
+    const unit = opts.activeUnit
+    const snapshotValue = Math.max(0, goal.measurements[unit] ?? DEFAULT_SIZE)
+    this.wheelDrag = { goalId: id, snapshotValue, unit }
+    // Arm the gesture-scoped capture-phase Ctrl+Esc revert. _cancelResizeDrag
+    // (and _commitWheelDrag) call _endResizeDrag, which removes it. Passing the
+    // current atoms freezes sort order so the chart doesn't resequence mid-edit.
+    const atoms = this.prevAtoms.size > 0 ? [...this.prevAtoms.values()] : []
+    this._startResizeDrag(atoms, () => this._restoreWheelSnapshot())
+    // Commit on Ctrl-up / window blur. Capture phase mirrors the Esc handler.
+    const onKeyup = (e: KeyboardEvent) => { if (e.key === 'Control' || e.key === 'Meta') this._commitWheelDrag() }
+    const onBlur = () => this._commitWheelDrag()
+    window.addEventListener('keyup', onKeyup, true)
+    window.addEventListener('blur', onBlur, true)
+    this.wheelReleaseTeardown = () => {
+      window.removeEventListener('keyup', onKeyup, true)
+      window.removeEventListener('blur', onBlur, true)
+    }
+  }
+
+  // Restore the pre-gesture value. Invoked by _cancelResizeDrag's revert cb
+  // (i.e. Ctrl+Esc). Does NOT tear down listeners — _cancelResizeDrag already
+  // calls _endResizeDrag, and we clear our own here.
+  private _restoreWheelSnapshot() {
+    const drag = this.wheelDrag
+    const opts = this.latestOpts
+    if (drag && opts) {
+      const goal = this.latestGoals.find(g => g.id === drag.goalId && !g.archived)
+      if (goal) opts.onUpdate(goal.id, { measurements: { ...goal.measurements, [drag.unit]: drag.snapshotValue } })
+    }
+    this._clearWheelReleaseListeners()
+    this.wheelDrag = null
+  }
+
+  // Commit (keep edits) and tear down the gesture. Idempotent.
+  private _commitWheelDrag() {
+    if (!this.wheelDrag) return
+    this.wheelDrag = null
+    this._clearWheelReleaseListeners()
+    this._endResizeDrag()
+  }
+
+  private _clearWheelReleaseListeners() {
+    if (this.wheelReleaseTeardown) { this.wheelReleaseTeardown(); this.wheelReleaseTeardown = null }
   }
 
   private cancelCallback: (() => void) | null = null
@@ -1044,5 +1118,8 @@ export class VizRenderer {
       this.svgEl.removeEventListener('wheel', this.wheelHandler)
       this.wheelHandler = null
     }
+    // Tear down any live wheel gesture so its window listeners don't leak.
+    this._clearWheelReleaseListeners()
+    if (this.wheelDrag) { this.wheelDrag = null; this._endResizeDrag() }
   }
 }
