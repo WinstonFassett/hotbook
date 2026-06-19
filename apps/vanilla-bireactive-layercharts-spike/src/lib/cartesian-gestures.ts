@@ -55,7 +55,7 @@ export function attachCartesianGestures<TData>(
 
   const onWheel = (e: Event) => {
     const we = e as WheelEvent;
-    if (!(we.metaKey || we.ctrlKey)) return;
+    if (!(we.metaKey || we.ctrlKey || we.altKey)) return;
     if (!wheelLocked.current) wheelLocked.current = state.hover.value ?? state.selected.value;
     const target = wheelLocked.current;
     if (!target) return;

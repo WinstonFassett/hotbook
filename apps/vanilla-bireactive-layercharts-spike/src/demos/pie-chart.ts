@@ -13,7 +13,7 @@ const CY = H / 2;
 const R_OUTER = 140;
 const R_INNER = 0; // set > 0 for donut
 
-const PALETTE = ["#5b8def", "#e05c5c", "#f0a742", "#4cba6e", "#b76de0", "#44c4c4", "#e07db7", "#9acd52"];
+const PALETTE = ['#e08888', '#d4a86c', '#ccc060', '#7ec87e', '#60c4c0', '#7aaae8', '#b090e0', '#8899b4'];
 
 interface Slice {
   label: string;
@@ -106,7 +106,7 @@ export class MdPieChartLC extends Diagram {
     // Gestures.
     this.addEventListener("wheel", (e) => {
       const we = e as WheelEvent;
-      if (!(we.metaKey || we.ctrlKey)) return;
+      if (!(we.metaKey || we.ctrlKey || we.altKey)) return;
       if (!wheelLocked.current) wheelLocked.current = hover.value ?? selected.value;
       const t = wheelLocked.current;
       if (!t) return;

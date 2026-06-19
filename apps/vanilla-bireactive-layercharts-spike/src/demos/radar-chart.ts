@@ -14,7 +14,7 @@ const CY = H / 2;
 
 const TICKS = [0, 25, 50, 75, 100];
 const R_MAX = 220;
-const COLOR = "#5b8def";
+const COLOR = "#7aaae8";
 
 interface Spoke {
   name: string;
@@ -212,7 +212,7 @@ export class MdRadarChartLC extends Diagram {
 
     svgEl.addEventListener("wheel", (e) => {
       const we = e as WheelEvent;
-      if (!(we.metaKey || we.ctrlKey)) return;
+      if (!(we.metaKey || we.ctrlKey || we.altKey)) return;
       if (!wheelLocked.current) wheelLocked.current = hover.value ?? selected.value;
       const t = wheelLocked.current;
       if (!t) return;

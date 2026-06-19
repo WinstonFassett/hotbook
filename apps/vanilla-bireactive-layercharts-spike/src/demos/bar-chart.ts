@@ -8,7 +8,7 @@ import { installGestureRelease } from "../lib/interaction";
 
 const W = 720;
 const H = 360;
-const COLOR = "#5b8def";
+const COLOR = "#7aaae8";
 
 interface Bar {
   label: string;
@@ -115,7 +115,7 @@ export class MdBarChartLC extends Diagram {
     });
     this.addEventListener("wheel", (e) => {
       const we = e as WheelEvent;
-      if (!(we.metaKey || we.ctrlKey)) return;
+      if (!(we.metaKey || we.ctrlKey || we.altKey)) return;
       if (!wheelLocked.current) wheelLocked.current = hover.value ?? selected.value;
       const t = wheelLocked.current;
       if (!t) return;
@@ -188,7 +188,7 @@ export class MdBarChartLC extends Diagram {
       const barY = derive(() => (ctx.yScale.value as any)(d.value));
       const barH = derive(() => Math.max(0, plotY + plotH - barY.value));
       const fill = derive(() =>
-        selected.value === d ? "#fff" : hover.value === d ? "#7fa8f5" : COLOR
+        selected.value === d ? "#fff" : hover.value === d ? "#a4c0f0" : COLOR
       );
       const tile = s(rect(barX, barY, barW, barH, { fill, corner: 2 }));
       tile.el.style.cursor = "pointer";

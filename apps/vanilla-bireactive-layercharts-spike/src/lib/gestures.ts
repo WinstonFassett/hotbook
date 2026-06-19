@@ -18,7 +18,7 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
   const { root, parentOf, state } = setup;
 
   const onWheel = (e: WheelEvent) => {
-    if (!(e.metaKey || e.ctrlKey)) return;
+    if (!(e.metaKey || e.ctrlKey || e.altKey)) return;
     if (!state.wheelLocked.current) state.wheelLocked.current = state.hovered.current ?? state.focused.value;
     const target = state.wheelLocked.current;
     if (!target || target === root) return;

@@ -538,7 +538,8 @@ export function applyGroupBy(rows: PNode[], dimKey: string): PNode[] {
     if (!groups.has(val)) {
       const gid = `__grp__${dimKey}__${val}`
       groups.set(val, gid)
-      groupNodes.push({ id: gid, parentId: null, index: gi++, name: val, measures: {}, dims: {} })
+      groupNodes.push({ id: gid, parentId: null, index: gi, name: val, measures: {}, dims: {}, color: PALETTE[gi % PALETTE.length] })
+      gi++
     }
   }
 

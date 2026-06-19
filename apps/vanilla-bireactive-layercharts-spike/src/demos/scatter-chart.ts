@@ -7,7 +7,7 @@ import { attachCartesianGestures, makeBisectFinder } from "../lib/cartesian-gest
 
 const W = 720;
 const H = 360;
-const COLOR = "#5b8def";
+const COLOR = "#7aaae8";
 
 interface Point {
   x: number;
@@ -70,7 +70,7 @@ export class MdScatterChartLC extends Diagram {
     for (const d of data.value as Point[]) {
       const pos = Vec.derive(() => ({ x: ctx.xGet.value(d), y: ctx.yGet.value(d) }));
       const fill = derive(() =>
-        selected.value === d ? "#fff" : hover.value === d ? "#7fa8f5" : COLOR
+        selected.value === d ? "#fff" : hover.value === d ? "#a4c0f0" : COLOR
       );
       const dot = s(circle(pos, 5, { fill, stroke: "#0b0d12", strokeWidth: 1 }));
       dot.el.style.cursor = "pointer";

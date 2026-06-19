@@ -138,7 +138,7 @@ export class MdConcentricArcLC extends Diagram {
 
     svgEl.addEventListener("wheel", (e) => {
       const we = e as WheelEvent;
-      if (!(we.metaKey || we.ctrlKey)) return;
+      if (!(we.metaKey || we.ctrlKey || we.altKey)) return;
       const t = selected.value ?? hover.value ?? wheelLocked.current;
       if (!t) return;
       we.preventDefault();

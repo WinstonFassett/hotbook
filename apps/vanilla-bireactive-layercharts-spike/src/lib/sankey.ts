@@ -114,7 +114,7 @@ export function sankeyScene(
   };
 
   host.addEventListener("wheel", ((e: WheelEvent) => {
-    if (!(e.metaKey || e.ctrlKey)) return;
+    if (!(e.metaKey || e.ctrlKey || e.altKey)) return;
     if (wheelLocked.value === null) {
       wheelLocked.value = hovered.value ?? focused.value ?? hitTestRibbon(e.clientX, e.clientY);
     }

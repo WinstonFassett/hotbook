@@ -51,7 +51,7 @@ export class MdLineChartLC extends Diagram {
 
     axis(s, ctx, { placement: "bottom" });
     axis(s, ctx, { placement: "left" });
-    s(spline(ctx, { stroke: "#5b8def", strokeWidth: 2 }));
+    s(spline(ctx, { stroke: "#7aaae8", strokeWidth: 2 }));
 
     const hover = cell<Point | null>(null);
     const selected = cell<Point | null>(null);
@@ -92,7 +92,7 @@ export class MdLineChartLC extends Diagram {
 
     s(
       line(hoverX, hoverBottom, { thin: true, dashed: true, opacity: hoverOpacity, stroke: "#888" }),
-      circle(hoverPoint, 4, { fill: "#5b8def", stroke: "#fff", strokeWidth: 2, opacity: hoverOpacity }),
+      circle(hoverPoint, 4, { fill: "#7aaae8", stroke: "#fff", strokeWidth: 2, opacity: hoverOpacity }),
     );
 
     // Selection marker.
