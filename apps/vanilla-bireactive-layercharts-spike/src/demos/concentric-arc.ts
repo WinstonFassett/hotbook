@@ -4,7 +4,7 @@
 
 import { Anchor, cell, derive, Diagram, effect as biEffect, group, label, mount, type Mount, pathD, vec, Vec } from "bireactive";
 import { arc as d3Arc } from "d3-shape";
-import { installGestureRelease } from "../lib/interaction";
+import { makeWheelGesture } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 
 const W = 640;
@@ -68,8 +68,13 @@ export class MdConcentricArcLC extends Diagram {
       data.value = [...data.value];
     };
 
-    const wheelLocked = { current: null as Ring | null };
-    installGestureRelease(() => { wheelLocked.current = null; });
+    const wheel = makeWheelGesture<Ring>({
+      snapshot: (d) => d.value,
+      restore: (d, v) => mutateDatum(d, v - d.value),
+    });
+    // Last ring the pointer was over — kept past pointerleave so a wheel edit can
+    // still target it for a moment after the cursor exits the ring band.
+    let lastRing: Ring | null = null;
 
     // All arcs rendered in a group translated to center.
     const g = s(group({ translate: vec(CX, CY) }));
@@ -139,8 +144,9 @@ export class MdConcentricArcLC extends Diagram {
 
     svgEl.addEventListener("wheel", (e) => {
       const we = e as WheelEvent;
-      if (!(we.metaKey || we.ctrlKey)) return;
-      const t = selected.value ?? hover.value ?? wheelLocked.current;
+      if (!we.ctrlKey) return;
+      wheel.begin(selected.value ?? hover.value ?? lastRing);
+      const t = wheel.target;
       if (!t) return;
       we.preventDefault();
       mutateDatum(t, we.deltaY < 0 ? (we.shiftKey ? 5 : 1) : (we.shiftKey ? -5 : -1));
@@ -163,11 +169,11 @@ export class MdConcentricArcLC extends Diagram {
         if (dist >= rInner - 4 && dist <= rOuter + 4) { hit = rows[i]!; break; }
       }
       if (!selected.value) hover.value = hit;
-      wheelLocked.current = hit;
+      lastRing = hit;
     });
     this.addEventListener("pointerleave", () => {
       hover.value = null;
-      // Keep wheelLocked until gesture release so wheel still works just after leaving.
+      // Keep lastRing until gesture release so wheel still works just after leaving.
     });
 
     this.addEventListener("keydown", (e) => {

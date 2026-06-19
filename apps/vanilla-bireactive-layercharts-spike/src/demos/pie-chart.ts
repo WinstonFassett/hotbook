@@ -4,7 +4,7 @@
 
 import { Anchor, annularSector, cell, derive, Diagram, effect as biEffect, label, type Mount, Vec, vec } from "bireactive";
 import { pie, type PieArcDatum } from "d3-shape";
-import { installGestureRelease } from "../lib/interaction";
+import { makeWheelGesture } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 
 const W = 720;
@@ -52,8 +52,11 @@ export class MdPieChartLC extends Diagram {
       data.value = [...data.value];
     };
 
-    const wheelLocked = { current: null as Slice | null };
-    installGestureRelease(() => { wheelLocked.current = null; hover.value = null; });
+    const wheel = makeWheelGesture<Slice>({
+      snapshot: (d) => d.value,
+      restore: (d, v) => mutateDatum(d, v - d.value),
+      onEnd: () => { hover.value = null; },
+    });
 
     // Pie layout (reactive).
     const arcs = derive(() => {
@@ -83,8 +86,8 @@ export class MdPieChartLC extends Diagram {
         opacity,
       }));
       sector.el.style.cursor = "pointer";
-      sector.el.addEventListener("pointerenter", () => { if (!wheelLocked.current) hover.value = d; });
-      sector.el.addEventListener("pointerleave", () => { if (!wheelLocked.current && hover.value === d) hover.value = null; });
+      sector.el.addEventListener("pointerenter", () => { if (!wheel.active) hover.value = d; });
+      sector.el.addEventListener("pointerleave", () => { if (!wheel.active && hover.value === d) hover.value = null; });
       sector.el.addEventListener("click", () => { selected.value = selected.value === d ? null : d; });
 
       // Slice label at midpoint angle.
@@ -107,9 +110,9 @@ export class MdPieChartLC extends Diagram {
     // Gestures.
     this.addEventListener("wheel", (e) => {
       const we = e as WheelEvent;
-      if (!(we.metaKey || we.ctrlKey)) return;
-      if (!wheelLocked.current) wheelLocked.current = hover.value ?? selected.value;
-      const t = wheelLocked.current;
+      if (!we.ctrlKey) return;
+      wheel.begin(hover.value ?? selected.value);
+      const t = wheel.target;
       if (!t) return;
       we.preventDefault();
       mutateDatum(t, we.deltaY < 0 ? (we.shiftKey ? 5 : 1) : (we.shiftKey ? -5 : -1));

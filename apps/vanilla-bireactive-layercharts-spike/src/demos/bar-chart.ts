@@ -4,7 +4,7 @@ import { Anchor, cell, derive, Diagram, effect as biEffect, label, line, type Mo
 import { scaleBand } from "d3-scale";
 import { axis } from "../lib/axis";
 import { chartContext } from "../lib/chart-context";
-import { installGestureRelease } from "../lib/interaction";
+import { makeWheelGesture } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 
 const W = 720;
@@ -103,8 +103,11 @@ export class MdBarChartLC extends Diagram {
       data.value = [...data.value];
     };
 
-    const wheelLocked = { current: null as Bar | null };
-    installGestureRelease(() => { wheelLocked.current = null; hover.value = null; });
+    const wheel = makeWheelGesture<Bar>({
+      snapshot: (d) => d.value,
+      restore: (d, v) => mutateDatum(d, v - d.value),
+      onEnd: () => { hover.value = null; },
+    });
 
     let dragTarget: Bar | null = null;
     // Pre-gesture value so Esc reverts the drag (gen-1 parity).
@@ -120,7 +123,7 @@ export class MdBarChartLC extends Diagram {
       dragPointerId = -1;
     };
 
-    this.addEventListener("pointerleave", () => { if (!wheelLocked.current) hover.value = null; });
+    this.addEventListener("pointerleave", () => { if (!wheel.active) hover.value = null; });
     this.addEventListener("click", (e) => {
       const { x } = localPoint(e as PointerEvent);
       const pt = findAtPixel(x);
@@ -128,9 +131,9 @@ export class MdBarChartLC extends Diagram {
     });
     this.addEventListener("wheel", (e) => {
       const we = e as WheelEvent;
-      if (!(we.metaKey || we.ctrlKey)) return;
-      if (!wheelLocked.current) wheelLocked.current = hover.value ?? selected.value;
-      const t = wheelLocked.current;
+      if (!we.ctrlKey) return;
+      wheel.begin(hover.value ?? selected.value);
+      const t = wheel.target;
       if (!t) return;
       we.preventDefault();
       mutateDatum(t, we.deltaY < 0 ? (we.shiftKey ? 5 : 1) : (we.shiftKey ? -5 : -1));
@@ -180,7 +183,7 @@ export class MdBarChartLC extends Diagram {
         mutateDatum(dragTarget, ys.invert(y) - dragTarget.value);
         return;
       }
-      if (wheelLocked.current) return;
+      if (wheel.active) return;
       const { x } = localPoint(pe);
       hover.value = findAtPixel(x);
     });
@@ -212,8 +215,8 @@ export class MdBarChartLC extends Diagram {
       );
       const tile = s(rect(barX, barY, barW, barH, { fill, corner: 2 }));
       tile.el.style.cursor = "pointer";
-      tile.el.addEventListener("pointerenter", () => { if (!wheelLocked.current) hover.value = d; });
-      tile.el.addEventListener("pointerleave", () => { if (!wheelLocked.current && hover.value === d) hover.value = null; });
+      tile.el.addEventListener("pointerenter", () => { if (!wheel.active) hover.value = d; });
+      tile.el.addEventListener("pointerleave", () => { if (!wheel.active && hover.value === d) hover.value = null; });
       tile.el.addEventListener("click", () => { selected.value = selected.value === d ? null : d; });
     }
 

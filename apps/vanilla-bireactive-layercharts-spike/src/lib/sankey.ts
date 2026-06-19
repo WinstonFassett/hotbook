@@ -17,7 +17,7 @@ import {
 } from "d3-sankey";
 import { scaleSequential } from "d3-scale";
 import { interpolateCool } from "d3-scale-chromatic";
-import { installGestureRelease } from "./interaction";
+import { makeWheelGesture } from "./interaction";
 
 export const linkPath = sankeyLinkHorizontal();
 
@@ -98,10 +98,17 @@ export function sankeyScene(
 
   const hovered = cell<number | null>(null);
   const focused = cell<number | null>(null);
+  // Reactive mirror of the active wheel target, so the demo's value label can
+  // show the link being edited mid-gesture (the gesture object itself is plain).
   const wheelLocked = cell<number | null>(null);
   const ribbonEls = new Map<Element, number>();
 
-  installGestureRelease(() => { wheelLocked.value = null; hovered.value = null; tooltipVis.value = false; });
+  // Wheel edits a link by index; snapshot/restore the one link cell's value.
+  const wheel = makeWheelGesture<number>({
+    snapshot: (idx) => linkValues[idx]!.value.value,
+    restore: (idx, v) => { linkValues[idx]!.value.value = v; },
+    onEnd: () => { wheelLocked.value = null; hovered.value = null; tooltipVis.value = false; },
+  });
 
   const hitTestRibbon = (clientX: number, clientY: number): number | null => {
     const shadow = (host as any).shadowRoot as ShadowRoot | null;
@@ -114,12 +121,11 @@ export function sankeyScene(
   };
 
   host.addEventListener("wheel", ((e: WheelEvent) => {
-    if (!(e.metaKey || e.ctrlKey)) return;
-    if (wheelLocked.value === null) {
-      wheelLocked.value = hovered.value ?? focused.value ?? hitTestRibbon(e.clientX, e.clientY);
-    }
-    const idx = wheelLocked.value;
+    if (!e.ctrlKey) return;
+    wheel.begin(hovered.value ?? focused.value ?? hitTestRibbon(e.clientX, e.clientY));
+    const idx = wheel.target;
     if (idx === null) return;
+    wheelLocked.value = idx;
     e.preventDefault();
     const v = linkValues[idx]!.value;
     const step = stepFn(v.value, e.shiftKey);
@@ -194,7 +200,7 @@ export function sankeyScene(
     if (ribbon.el.firstElementChild) ribbonEls.set(ribbon.el.firstElementChild, idx);
     ribbon.el.style.cursor = "pointer";
     ribbon.el.addEventListener("pointerenter", (e) => {
-      if (wheelLocked.value !== null) return;
+      if (wheel.active) return;
       hovered.value = idx;
       const lk = layout.value.links[idx] as any;
       const srcName = nodeIds[(lk.source as any).index ?? lk.source] ?? String(lk.source);
@@ -202,8 +208,8 @@ export function sankeyScene(
       tooltipText.value = `${srcName} → ${tgtName}: ${lk.value.toFixed(1)}`;
       tooltipAt.value = toSVG(e as PointerEvent); tooltipVis.value = true;
     });
-    ribbon.el.addEventListener("pointermove", (e) => { if (wheelLocked.value === null) tooltipAt.value = toSVG(e as PointerEvent); });
-    ribbon.el.addEventListener("pointerleave", () => { if (wheelLocked.value !== null) return; if (hovered.value === idx) { hovered.value = null; tooltipVis.value = false; } });
+    ribbon.el.addEventListener("pointermove", (e) => { if (!wheel.active) tooltipAt.value = toSVG(e as PointerEvent); });
+    ribbon.el.addEventListener("pointerleave", () => { if (wheel.active) return; if (hovered.value === idx) { hovered.value = null; tooltipVis.value = false; } });
     ribbon.el.addEventListener("click", () => { focused.value = focused.value === idx ? null : idx; });
   }
 

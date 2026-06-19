@@ -5,7 +5,7 @@
 import { Anchor, cell, circle, derive, Diagram, effect as biEffect, label, line, type Mount, pathD, Vec, vec } from "bireactive";
 import { scaleBand, scaleLinear } from "d3-scale";
 import { curveLinearClosed, lineRadial } from "d3-shape";
-import { installGestureRelease } from "../lib/interaction";
+import { makeWheelGesture } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 
 const W = 640;
@@ -52,8 +52,11 @@ export class MdRadarChartLC extends Diagram {
       data.value = [...data.value];
     };
 
-    const wheelLocked = { current: null as Spoke | null };
-    installGestureRelease(() => { wheelLocked.current = null; hover.value = null; });
+    const wheel = makeWheelGesture<Spoke>({
+      snapshot: (d) => d.value,
+      restore: (d, v) => mutateDatum(d, v - d.value),
+      onEnd: () => { hover.value = null; },
+    });
 
     // x: scaleBand over category names → angle at band center
     // y: scaleLinear 0–100 → radius 0–R_MAX
@@ -151,8 +154,8 @@ export class MdRadarChartLC extends Diagram {
 
       const dot = s(circle(dotPos, dotR, { fill: COLOR, stroke: dotStroke, strokeWidth: dotStrokeW }));
       dot.el.style.cursor = "ns-resize";
-      dot.el.addEventListener("pointerenter", () => { if (!wheelLocked.current) hover.value = d; });
-      dot.el.addEventListener("pointerleave", () => { if (!wheelLocked.current && hover.value === d) hover.value = null; });
+      dot.el.addEventListener("pointerenter", () => { if (!wheel.active) hover.value = d; });
+      dot.el.addEventListener("pointerleave", () => { if (!wheel.active && hover.value === d) hover.value = null; });
       dot.el.addEventListener("click", () => { selected.value = selected.value === d ? null : d; });
     }
 
@@ -227,9 +230,9 @@ export class MdRadarChartLC extends Diagram {
 
     svgEl.addEventListener("wheel", (e) => {
       const we = e as WheelEvent;
-      if (!(we.metaKey || we.ctrlKey)) return;
-      if (!wheelLocked.current) wheelLocked.current = hover.value ?? selected.value;
-      const t = wheelLocked.current;
+      if (!we.ctrlKey) return;
+      wheel.begin(hover.value ?? selected.value);
+      const t = wheel.target;
       if (!t) return;
       we.preventDefault();
       mutateDatum(t, we.deltaY < 0 ? (we.shiftKey ? 5 : 1) : (we.shiftKey ? -5 : -1));

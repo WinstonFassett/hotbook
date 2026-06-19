@@ -1,7 +1,7 @@
 // Shared interaction layer for cartesian (x-bisect) charts.
 // Mirrors attachChartGestures for hierarchical charts.
 
-import { installGestureRelease } from "./interaction";
+import { makeWheelGesture } from "./interaction";
 import type { ChartContext } from "./chart-context";
 import { bisector } from "d3-array";
 import { effect as biEffect } from "bireactive";
@@ -41,8 +41,11 @@ export function attachCartesianGestures<TData>(
     return { x: (e.clientX - rect.left) * sx, y: (e.clientY - rect.top) * sy };
   };
 
-  const wheelLocked = { current: null as TData | null };
-  const releaseDispose = installGestureRelease(() => { wheelLocked.current = null; state.hover.value = null; });
+  const wheel = makeWheelGesture<TData>({
+    snapshot: (d) => ctx.yAcc(d) as number,
+    restore: (d, v) => mutateDatum(d, v - (ctx.yAcc(d) as number)),
+    onEnd: () => { state.hover.value = null; },
+  });
 
   let dragTarget: TData | null = null;
   // Value of the dragged datum at gesture start, so Esc can revert it (matches
@@ -62,7 +65,7 @@ export function attachCartesianGestures<TData>(
     host.style.cursor = "";
   };
 
-  const onPointerLeave = () => { if (wheelLocked.current) return; state.hover.value = null; };
+  const onPointerLeave = () => { if (wheel.active) return; state.hover.value = null; };
 
   const onClick = (e: Event) => {
     const { x } = localPoint(e as PointerEvent);
@@ -73,9 +76,9 @@ export function attachCartesianGestures<TData>(
 
   const onWheel = (e: Event) => {
     const we = e as WheelEvent;
-    if (!(we.metaKey || we.ctrlKey)) return;
-    if (!wheelLocked.current) wheelLocked.current = state.hover.value ?? state.selected.value;
-    const target = wheelLocked.current;
+    if (!we.ctrlKey) return;
+    wheel.begin(state.hover.value ?? state.selected.value);
+    const target = wheel.target;
     if (!target) return;
     we.preventDefault();
     const step = we.shiftKey ? 5 : 1;
@@ -134,7 +137,7 @@ export function attachCartesianGestures<TData>(
       mutateDatum(dragTarget, ys.invert(y) - (ctx.yAcc(dragTarget) as number));
       return;
     }
-    if (wheelLocked.current) return;
+    if (wheel.active) return;
     const { x, y } = localPoint(pe);
     if (x < ctx.plotX || x > ctx.plotX + ctx.plotWidth) { state.hover.value = null; host.style.cursor = ""; return; }
     const pt = findAtPixel(x);
@@ -196,7 +199,7 @@ export function attachCartesianGestures<TData>(
     host.removeEventListener("pointermove", onPointerMove);
     host.removeEventListener("pointerup", onPointerUp);
     host.removeEventListener("pointercancel", onPointerUp);
-    releaseDispose();
+    wheel.dispose();
     hoverDispose();
     selectDispose();
     (host as ElementWithBridge).brSync = undefined;

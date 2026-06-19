@@ -73,10 +73,10 @@ export function subscribeAllLeaves(root: BiNode, onChange: () => void): () => vo
   });
 }
 
+/** Commit a gesture when the edit modifier (Meta/Ctrl) is released or focus is
+ *  lost. The returned dispose removes the listeners. */
 export function installGestureRelease(release: () => void): () => void {
-  const onKeyup = (e: KeyboardEvent) => {
-    if (e.key === "Meta" || e.key === "Control") release();
-  };
+  const onKeyup = (e: KeyboardEvent) => { if (e.key === "Meta" || e.key === "Control") release(); };
   const onBlur = () => release();
   window.addEventListener("keyup", onKeyup);
   window.addEventListener("blur", onBlur);
@@ -86,17 +86,88 @@ export function installGestureRelease(release: () => void): () => void {
   };
 }
 
-// Wraps a wheelLocked ref so hover handlers can check isLocked() and bail.
-export function makeGestureLock<T>(): {
-  lock: { current: T | null };
-  isLocked: () => boolean;
-  release: () => void;
-  installRelease: (onRelease?: () => void) => () => void;
-} {
-  const lock = { current: null as T | null };
-  const isLocked = () => lock.current !== null;
-  const release = (onRelease?: () => void) => { lock.current = null; onRelease?.(); };
-  const installRelease = (onRelease?: () => void) =>
-    installGestureRelease(() => release(onRelease));
-  return { lock, isLocked, release: () => release(), installRelease };
+/**
+ * A wheel-edit gesture (cmd/ctrl + wheel). The gesture is the span where a
+ * target is locked: it BEGINS on the first cmd+wheel tick and ENDS on either
+ * COMMIT (modifier released / blur — keep the edits) or CANCEL (Escape — revert
+ * to the snapshot taken at begin).
+ *
+ * The end-of-gesture listeners (Meta/Ctrl-up + blur to commit, Escape to cancel)
+ * exist ONLY for the duration of the gesture — installed at begin, removed at
+ * end — exactly like gen-1 VizRenderer's _startResizeDrag/_endResizeDrag. There
+ * is no global handler armed while idle: when no gesture is live, Escape is not
+ * touched and falls through to the chart's own keydown (clear selection, etc).
+ *
+ * The Escape and release listeners are on `window` (capture phase) because the
+ * chart element is NOT focused during cmd+wheel, so a per-element keydown never
+ * fires. Charts vary only in WHAT they lock and HOW they snapshot/restore it.
+ *
+ *   const g = makeWheelGesture<Datum>({
+ *     snapshot: (d) => d.value,            // capture revert state at begin
+ *     restore:  (d, s) => setValue(d, s),  // applied on cancel
+ *     onEnd:    () => { hover.value = null }, // optional, runs on any end
+ *   })
+ *   // in onWheel: g.begin(hover ?? selected); const t = g.target; if (!t) return; ...
+ *   g.active     // true while a gesture is live (guard hover/pointer handlers)
+ */
+export interface WheelGesture<T> {
+  /** Currently-locked target, or null when idle. */
+  readonly target: T | null;
+  /** True while a gesture is live (i.e. its end-listeners are installed). */
+  readonly active: boolean;
+  /** Lock a target and capture its revert snapshot. No-op if already locked. */
+  begin(target: T | null): void;
+  /** End the gesture, force-cancelling (revert) if still live. For teardown. */
+  dispose(): void;
+}
+
+export function makeWheelGesture<T>(opts: {
+  snapshot: (target: T) => unknown;
+  restore: (target: T, snap: any) => void;
+  onEnd?: () => void;
+}): WheelGesture<T> {
+  let target: T | null = null;
+  let snap: unknown = undefined;
+  let teardown: (() => void) | null = null;
+
+  // Remove the gesture-scoped listeners and clear state. Idempotent.
+  const end = () => {
+    if (teardown) { teardown(); teardown = null; }
+    target = null;
+    snap = undefined;
+    opts.onEnd?.();
+  };
+
+  const commit = () => { if (target !== null) end(); };
+  const cancel = (): boolean => {
+    if (target === null) return false;
+    opts.restore(target, snap);
+    end();
+    return true;
+  };
+
+  return {
+    get target() { return target; },
+    get active() { return target !== null; },
+    begin(t) {
+      if (target !== null || t == null) return;
+      target = t;
+      snap = opts.snapshot(t);
+      // Install end-of-gesture listeners for the lifetime of THIS gesture only.
+      const onKeyup = (e: KeyboardEvent) => { if (e.key === "Meta" || e.key === "Control") commit(); };
+      const onBlur = () => commit();
+      const onKeydown = (e: KeyboardEvent) => {
+        if (e.key === "Escape" && cancel()) { e.preventDefault(); e.stopPropagation(); }
+      };
+      window.addEventListener("keyup", onKeyup);
+      window.addEventListener("blur", onBlur);
+      window.addEventListener("keydown", onKeydown, true);
+      teardown = () => {
+        window.removeEventListener("keyup", onKeyup);
+        window.removeEventListener("blur", onBlur);
+        window.removeEventListener("keydown", onKeydown, true);
+      };
+    },
+    dispose() { cancel(); },
+  };
 }

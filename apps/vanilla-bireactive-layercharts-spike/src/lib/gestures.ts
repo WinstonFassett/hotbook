@@ -1,4 +1,4 @@
-import { applyDelta, flatOrder, installGestureRelease } from "./interaction";
+import { applyDelta, flatOrder, makeWheelGesture } from "./interaction";
 import { walkTree, effect as biEffect } from "bireactive";
 import type { BiNode } from "./tree";
 import type { Writable, Cell } from "bireactive";
@@ -26,10 +26,29 @@ export interface ChartGestureSetup {
 export function attachChartGestures(host: HTMLElement | SVGElement, setup: ChartGestureSetup): () => void {
   const { root, parentOf, state } = setup;
 
+  // applyDelta redistributes a node's change across its siblings, so a revert
+  // must restore the target AND every sibling — snapshot all their totals.
+  const wheel = makeWheelGesture<BiNode>({
+    snapshot: (node) => {
+      const parent = parentOf(node);
+      const group = parent ? (parent.children as BiNode[]) : [node];
+      return group.map((n) => ({ node: n, value: n.value.total.value }));
+    },
+    restore: (_node, snap: Array<{ node: BiNode; value: number }>) => {
+      for (const s of snap) s.node.value.total.value = s.value;
+    },
+    onEnd: () => { state.wheelLocked.current = null; },
+  });
+
   const onWheel = (e: WheelEvent) => {
-    if (!(e.metaKey || e.ctrlKey)) return;
-    if (!state.wheelLocked.current) state.wheelLocked.current = state.hovered.current ?? state.focused.value;
-    const target = state.wheelLocked.current;
+    if (!e.ctrlKey) return;
+    if (!wheel.active) {
+      const t = state.hovered.current ?? state.focused.value;
+      if (!t || t === root) return;
+      wheel.begin(t);
+      state.wheelLocked.current = wheel.target;
+    }
+    const target = wheel.target;
     if (!target || target === root) return;
     e.preventDefault();
     const step = e.shiftKey ? 5 : 1;
@@ -68,9 +87,6 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
 
   host.addEventListener("wheel", onWheel as EventListener, { passive: false });
   host.addEventListener("keydown", onKeydown as EventListener);
-  const releaseDispose = installGestureRelease(() => {
-    state.wheelLocked.current = null;
-  });
 
   // ── Cross-tile sync bridge ──────────────────────────────────────────────
   // Index nodes by PNode id so external ids resolve to BiNodes.
@@ -111,7 +127,7 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
   return () => {
     host.removeEventListener("wheel", onWheel as EventListener);
     host.removeEventListener("keydown", onKeydown as EventListener);
-    releaseDispose();
+    wheel.dispose();
     focusDispose();
     state.emitHover = undefined;
     (host as ElementWithBridge).brSync = undefined;
