@@ -99,7 +99,10 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
 
   const depth = tile.depth ?? 2
   const sortBy = tile.sortBy ?? 'index'
-  const nodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.rows, tile.groupBy) : ds.rows)
+  const rawNodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.rows, tile.groupBy) : ds.rows)
+  const nodes = sortBy === 'value'
+    ? [...rawNodes].sort((a, b) => (b.measures[mk] ?? 0) - (a.measures[mk] ?? 0))
+    : rawNodes
 
   if (tile.kind === 'h-treemap') {
     return <Treemap nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} onUpdate={onNodeUpdate} />
@@ -172,8 +175,8 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
 
 // Kinds where depth selector is wired and has effect (h-* only)
 const HIER_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial'])
-// Kinds where Order/Value sort selector is wired and has effect
-const VIZ_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial', 'treemap', 'radial', 'bands', 'br-lc-bar', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie', 'br-lc-radar', 'br-lc-concentric-arc'])
+// Kinds where Order/Value sort selector is shown (pre-sort applied to nodes before passing in)
+const VIZ_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial', 'treemap', 'radial', 'bands', 'br-lc-bar', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie', 'br-lc-radar', 'br-lc-concentric-arc', 'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree', 'svelte-br-lc-sunburst', 'svelte-br-lc-icicle', 'svelte-br-lc-pack', 'svelte-br-lc-treemap'])
 // Kinds that accept groupBy to add hierarchy to flat data
 const GROUPBY_KINDS = new Set<TileKind>(['br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree', 'svelte-br-lc-sunburst', 'svelte-br-lc-icicle', 'svelte-br-lc-pack'])
 
