@@ -78,7 +78,6 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
     setHover: (id) => {
       applyingExternal = true;
       const node = id ? byId.get(id) ?? null : null;
-      state.hovered.current = node;
       if (state.hoverCell) state.hoverCell.value = node;
       applyingExternal = false;
     },

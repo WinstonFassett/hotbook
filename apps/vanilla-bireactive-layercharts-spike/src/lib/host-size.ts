@@ -29,15 +29,20 @@ const observers = new WeakMap<HTMLElement, ResizeObserver>();
 // Override the base `Diagram` `:host`/`svg` rules so the chart fills its tile
 // instead of pinning to `max-width: calc(--d-w * 1px)` / `height: auto`. Add to
 // each demo's `static styles` (it's a string template; concatenate).
+//
+// svg height is intentionally `auto` — the viewBox aspect ratio handles it.
+// Setting height:100% would feed the svg's own height back into the RO,
+// creating an infinite resize loop in non-height-constrained containers.
 export const FILL_STYLE = `
-  :host { display:block; width:100%; height:100%; max-width:none; margin:0; }
-  svg { display:block; width:100%; height:100%; }
+  :host { display:block; width:100%; max-width:none; margin:0; }
+  svg { display:block; width:100%; height:auto; }
 `;
 
 export function useHostSize(
   host: HTMLElement,
   fallback: { width: number; height: number },
 ): HostSize {
+  const aspect = fallback.height / fallback.width;
   const w = cell(fallback.width);
   const h = cell(fallback.height);
 
@@ -46,19 +51,21 @@ export function useHostSize(
   if (typeof ResizeObserver !== "undefined") {
     const ro = new ResizeObserver(([e]) => {
       if (!e) return;
-      const { width, height } = e.contentRect;
-      const nw = Math.max(1, Math.floor(width));
-      const nh = Math.max(1, Math.floor(height));
-      if (nw !== w.value) w.value = nw;
-      if (nh !== h.value) h.value = nh;
+      const nw = Math.max(1, Math.floor(e.contentRect.width));
+      if (nw === w.value) return;
+      w.value = nw;
+      h.value = Math.max(1, Math.round(nw * aspect));
     });
     ro.observe(host);
     observers.set(host, ro);
 
     // Seed immediately from current layout so the first frame isn't fallback.
     const r = host.getBoundingClientRect();
-    if (r.width > 0) w.value = Math.max(1, Math.floor(r.width));
-    if (r.height > 0) h.value = Math.max(1, Math.floor(r.height));
+    if (r.width > 0) {
+      const nw = Math.max(1, Math.floor(r.width));
+      w.value = nw;
+      h.value = Math.max(1, Math.round(nw * aspect));
+    }
   }
 
   return { w, h };
