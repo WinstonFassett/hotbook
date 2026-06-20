@@ -1,7 +1,11 @@
 import { defineConfig, type PluginOption } from 'vite'
 import react from '@vitejs/plugin-react'
-import { svelte } from '@sveltejs/vite-plugin-svelte'
 import path from 'path'
+
+let sveltePlugin: ((opts: unknown) => PluginOption) | null = null
+try {
+  sveltePlugin = (await import('@sveltejs/vite-plugin-svelte')).svelte as (opts: unknown) => PluginOption
+} catch { /* svelte not available in this env */ }
 
 let webdevPlugin: (() => PluginOption) | null = null
 try {
@@ -19,7 +23,7 @@ export default defineConfig({
     // customElement: true so <svelte:options customElement="…"> actually emits a
     // web component (otherwise the option is ignored, $host() is null at runtime,
     // and onDestroy crashes). Every .svelte we consume here is a custom element.
-    svelte({ extensions: ['.svelte'], compilerOptions: { customElement: true } }),
+    sveltePlugin?.({ extensions: ['.svelte'], compilerOptions: { customElement: true } }),
     webdevPlugin?.(),
   ],
   resolve: {
