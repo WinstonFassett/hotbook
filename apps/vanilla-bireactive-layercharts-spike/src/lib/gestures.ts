@@ -1,5 +1,5 @@
 import { applyDelta, flatOrder, makeWheelGesture } from "./interaction";
-import { walkTree, effect as biEffect } from "bireactive";
+import { walkTree, effect as biEffect, batch } from "bireactive";
 import type { BiNode } from "./tree";
 import type { Writable, Cell } from "bireactive";
 import { makeBridge, type ElementWithBridge } from "./hud-bridge";
@@ -35,7 +35,7 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
       return group.map((n) => ({ node: n, value: n.value.total.value }));
     },
     restore: (_node, snap: Array<{ node: BiNode; value: number }>) => {
-      for (const s of snap) s.node.value.total.value = s.value;
+      batch(() => { for (const s of snap) s.node.value.total.value = s.value; });
     },
     onEnd: () => { state.wheelLocked.current = null; },
   });
