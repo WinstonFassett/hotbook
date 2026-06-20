@@ -1,8 +1,12 @@
-import { defineConfig } from 'vite'
+import { defineConfig, type PluginOption } from 'vite'
 import react from '@vitejs/plugin-react'
 import { svelte } from '@sveltejs/vite-plugin-svelte'
-import { webdev } from '@winstonfassett/webdev-vite'
 import path from 'path'
+
+let webdevPlugin: (() => PluginOption) | null = null
+try {
+  webdevPlugin = (await import('@winstonfassett/webdev-vite')).webdev as () => PluginOption
+} catch { /* not available in all envs (CI/prod) */ }
 
 export default defineConfig({
   // The svelte plugin compiles the Svelte-LayerChart spike's *.svelte source
@@ -16,7 +20,7 @@ export default defineConfig({
     // web component (otherwise the option is ignored, $host() is null at runtime,
     // and onDestroy crashes). Every .svelte we consume here is a custom element.
     svelte({ extensions: ['.svelte'], compilerOptions: { customElement: true } }),
-    webdev(),
+    webdevPlugin?.(),
   ],
   resolve: {
     // Resolve the workspace vizform-*-d3 packages to their TS source (their
