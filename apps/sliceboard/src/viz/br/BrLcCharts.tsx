@@ -408,7 +408,7 @@ interface ElWithRoot extends HTMLElement {
   externalRoot?: BiNode
 }
 
-function useLiveHierElement(
+export function useLiveHierElement(
   tag: string,
   nodes: PNode[],
   measureKey: string,

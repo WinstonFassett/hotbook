@@ -7,6 +7,9 @@
 import { Num, num, treeNode, walkTree, leavesOf, type TreeNode, type Writable } from "bireactive";
 
 export interface NodeValue {
+  /** Backing PNode id when fed live data from sliceboard. Undefined for the
+   *  standalone module-scope sharedTree. The HUD cross-tile bridge keys on it. */
+  id?: string;
   label: string;
   color: string;
   total: Writable<Num>;
@@ -59,19 +62,22 @@ export function leaves(root: BiNode): BiNode[] {
   return leavesOf(root);
 }
 
-// WeakMap parent index. Built lazily from the current tree shape. Bireactive's
-// TreeNode is structurally immutable; if the topology is rebuilt (network()),
-// rebuild the index. For now sharedTree is fixed-shape so a one-shot index is fine.
-const parentIndex = new WeakMap<BiNode, BiNode>();
-{
-  const indexFrom = (root: BiNode) => {
-    walkTree(root, (n) => {
-      for (const c of n.children) parentIndex.set(c as BiNode, n as BiNode);
-    });
-  };
-  indexFrom(sharedTree);
+// Build a parent index for an arbitrary root. Bireactive's TreeNode is
+// structurally immutable, so a one-shot index per root is correct; rebuild only
+// if the topology is rebuilt. Each chart that gets an injected externalRoot
+// builds its own index from that root (the module sharedTree below is just the
+// standalone fallback case).
+export function buildParentIndex(root: BiNode): WeakMap<BiNode, BiNode> {
+  const idx = new WeakMap<BiNode, BiNode>();
+  walkTree(root, (n) => {
+    for (const c of n.children) idx.set(c as BiNode, n as BiNode);
+  });
+  return idx;
 }
 
+// Parent index for the standalone module-scope sharedTree.
+const sharedParentIndex = buildParentIndex(sharedTree);
+
 export function parentOf(_root: BiNode, target: BiNode): BiNode | undefined {
-  return parentIndex.get(target);
+  return sharedParentIndex.get(target);
 }

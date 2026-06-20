@@ -12,6 +12,9 @@ import {
   BrLcPack, BrLcTreemap, BrLcIcicle, BrLcSunburst, BrLcSankey, BrLcTree,
 } from './viz/br/BrLcCharts'
 import {
+  SvelteLcSunburst, SvelteLcIcicle, SvelteLcPack, SvelteLcTreemap, SvelteTreemapDemo,
+} from './viz/br/SvelteLcCharts'
+import {
   initWorkspace, saveWorkspace,
   createDataset, createDashboard, updateDataset, updateDashboard,
   addTile, removeTile, deleteDashboard, deleteDataset,
@@ -29,6 +32,7 @@ const TILE_KINDS: TileKind[] = [
   'br-lc-bar', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie',
   'br-lc-radar', 'br-lc-concentric-arc',
   'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree',
+  'svelte-br-lc-sunburst', 'svelte-br-lc-icicle', 'svelte-br-lc-pack', 'svelte-br-lc-treemap', 'svelte-treemap-demo',
 ]
 const TILE_LABELS: Record<TileKind, string> = {
   'treetable':           'Table (D3)',
@@ -51,6 +55,11 @@ const TILE_LABELS: Record<TileKind, string> = {
   'br-lc-sunburst':      'Sunburst (BR-LC)',
   'br-lc-sankey':        'Sankey (BR-LC)',
   'br-lc-tree':          'Tree (BR-LC)',
+  'svelte-br-lc-sunburst':'Sunburst (Svelte BR-LC)',
+  'svelte-br-lc-icicle': 'Icicle (Svelte BR-LC)',
+  'svelte-br-lc-pack':   'Pack (Svelte BR-LC)',
+  'svelte-br-lc-treemap':'Treemap (Svelte BR-LC)',
+  'svelte-treemap-demo': 'Treemap (Svelte demo)',
 }
 
 // ─── Tile content ─────────────────────────────────────────────────────────────
@@ -97,6 +106,13 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
   if (tile.kind === 'br-lc-sankey')         return <BrLcSankey nodes={nodes} measureKey={mk} />
   if (tile.kind === 'br-lc-tree')           return <BrLcTree nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
 
+  // ── Svelte LayerChart charts (real Svelte+LayerChart, live data + sync) ────
+  if (tile.kind === 'svelte-br-lc-sunburst') return <SvelteLcSunburst nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
+  if (tile.kind === 'svelte-br-lc-icicle')   return <SvelteLcIcicle nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
+  if (tile.kind === 'svelte-br-lc-pack')     return <SvelteLcPack nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
+  if (tile.kind === 'svelte-br-lc-treemap')  return <SvelteLcTreemap nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
+  if (tile.kind === 'svelte-treemap-demo')   return <SvelteTreemapDemo />
+
   // For flat viz with groupBy, assign color by group dim value
   const groupColorMap = new Map<string, string>()
   if (tile.groupBy) {
@@ -131,8 +147,8 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
 
 // ─── Tile wrapper ─────────────────────────────────────────────────────────────
 
-const HIER_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial', 'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-tree'])
-const VIZ_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial', 'treemap', 'radial', 'bands', 'br-lc-bar', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie', 'br-lc-radar', 'br-lc-concentric-arc', 'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree'])
+const HIER_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial', 'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-tree', 'svelte-br-lc-sunburst', 'svelte-br-lc-icicle', 'svelte-br-lc-pack', 'svelte-br-lc-treemap'])
+const VIZ_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial', 'treemap', 'radial', 'bands', 'br-lc-bar', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie', 'br-lc-radar', 'br-lc-concentric-arc', 'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree', 'svelte-br-lc-sunburst', 'svelte-br-lc-icicle', 'svelte-br-lc-pack', 'svelte-br-lc-treemap', 'svelte-treemap-demo'])
 
 function TileCard({
   tile, ds, measureKey, onRemove, onMeasureChange, onXKeyChange, onYKeyChange, onDepthChange, onSortChange, onGroupByChange, onNodeUpdate, onNodesUpdate, onNodeReorder, availableMeasures,

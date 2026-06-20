@@ -52,6 +52,12 @@ export type TileKind =
   | 'br-lc-sunburst'
   | 'br-lc-sankey'
   | 'br-lc-tree'
+  // Svelte LayerChart adaptation (real Svelte+LayerChart, live data + sync)
+  | 'svelte-br-lc-sunburst'
+  | 'svelte-br-lc-icicle'
+  | 'svelte-br-lc-pack'
+  | 'svelte-br-lc-treemap'
+  | 'svelte-treemap-demo'
 
 export interface Tile {
   id: string

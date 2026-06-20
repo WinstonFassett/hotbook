@@ -6,16 +6,24 @@
 
 import { hierarchy } from "d3-hierarchy";
 import { effect as biEffect } from "bireactive";
-import { sharedTree, leaves, parentOf, type BiNode } from "./tree";
+import { leaves, type BiNode } from "./tree";
 
 /**
  * Redistribute a value change across the tree so the parent total is preserved.
  * Writes to a branch node go through its Num.lens (children rescale
  * proportionally); siblings of the target absorb the delta either by
  * proportional shrink (growing the target) or proportional grow (shrinking it).
+ *
+ * `parentOf` resolves a node's parent in the active tree (the parent index is
+ * per-root: standalone uses the module sharedTree index, injected roots build
+ * their own — see tree.ts::buildParentIndex).
  */
-export function applyDelta(node: BiNode, delta: number) {
-  const parent = parentOf(sharedTree, node);
+export function applyDelta(
+  node: BiNode,
+  delta: number,
+  parentOf: (n: BiNode) => BiNode | undefined,
+) {
+  const parent = parentOf(node);
   if (!parent || parent.children.length === 0) return;
   const siblings = parent.children.filter((c) => c !== node) as BiNode[];
   const cur = node.value.total.value;
@@ -66,21 +74,21 @@ export function flatOrder(root: BiNode): BiNode[] {
 }
 
 /**
- * Build a d3 hierarchy snapshot of the shared bireactive tree. Caller passes
+ * Build a d3 hierarchy snapshot of the given bireactive tree. Caller passes
  * the version signal so this re-runs whenever any leaf cell changes.
  */
-export function buildHierarchy() {
-  return hierarchy<BiNode>(sharedTree, (n) => n.children as BiNode[])
+export function buildHierarchy(root: BiNode) {
+  return hierarchy<BiNode>(root, (n) => n.children as BiNode[])
     .sum((n) => (n.children.length > 0 ? 0 : n.value.total.value));
 }
 
 /**
- * Subscribe to every leaf's total. Returns the dispose function. Use inside
- * onDestroy. The caller passes a callback that should bump a Svelte $state
- * value, which downstream $derived.by reads to re-run.
+ * Subscribe to every leaf's total in the given tree. Returns the dispose
+ * function. Use inside onDestroy. The caller passes a callback that should bump
+ * a Svelte $state value, which downstream $derived.by reads to re-run.
  */
-export function subscribeAllLeaves(onChange: () => void) {
-  const allLeaves = leaves(sharedTree);
+export function subscribeAllLeaves(root: BiNode, onChange: () => void) {
+  const allLeaves = leaves(root);
   return biEffect(() => {
     for (const l of allLeaves) void l.value.total.value;
     onChange();

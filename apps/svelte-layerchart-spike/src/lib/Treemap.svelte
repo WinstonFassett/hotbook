@@ -23,8 +23,9 @@
 -->
 
 <script lang="ts">
-  import { onDestroy } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import { hierarchy, treemap, treemapSquarify } from "d3-hierarchy";
+  import { observeHostSize } from "./host-size";
   // Match LayerChart's tile wrapping so subtree orientation decisions agree
   // with Instance C. Squarify operates against the outer chart aspect ratio,
   // then children are rescaled into their actual sub-rect. This is what
@@ -45,6 +46,17 @@
   import { initialGestureState, type GestureSignalState, type ReparentProposal } from "./gestureSignal";
 
   let { width = 720, height = 360 }: { width?: number; height?: number } = $props();
+
+  // Effective canvas size: fixed props standalone; tracks the tile when mounted
+  // as a sliceboard custom element (observeHostSize in onMount below).
+  let cw = $state(width);
+  let ch = $state(height);
+  let disposeSize: (() => void) | undefined;
+  onMount(() => {
+    const host = $host() as HTMLElement | undefined;
+    if (host) disposeSize = observeHostSize(host, height / width, (nw, nh) => { cw = nw; ch = nh; });
+  });
+  onDestroy(() => disposeSize?.());
 
   // Bridge bireactive → Svelte 5 reactivity. The pattern: a $state version
   // number that we bump whenever any cell read inside our effect changes.
@@ -75,8 +87,8 @@
     const h = hierarchy<BiNode>(sharedTree, (n) => n.children as BiNode[])
       .sum((n) => (n.children.length > 0 ? 0 : n.value.total.value));
     const laid = treemap<BiNode>()
-      .tile(aspectTile(treemapSquarify, width, height))
-      .size([width, height])
+      .tile(aspectTile(treemapSquarify, cw, ch))
+      .size([cw, ch])
       .paddingOuter(4)
       .paddingInner(2)
       .paddingTop(16)
@@ -369,8 +381,8 @@
 </script>
 
 <svg
-  {width}
-  {height}
+  width={cw}
+  height={ch}
   tabindex="0"
   role="application"
   aria-label="treemap"
@@ -444,7 +456,12 @@
       pointer-events="none"
     >→ {gesture.proposal.newParent.value.label}</text>
   {/if}
-  <text x={width / 2} y={height - 6} text-anchor="middle" font-size="10" fill="#9aa0a8">
+  <text x={cw / 2} y={ch - 6} text-anchor="middle" font-size="10" fill="#9aa0a8">
     total: {total.toFixed(0)} · focused: {focusedNode?.value.label ?? "(none)"} · drag tile to reparent · cmd/ctrl+wheel scrub · arrows/Tab{#if lastProposalLog} · {lastProposalLog}{/if}
   </text>
 </svg>
+
+<style>
+  /* Fill the tile WIDTH; height follows aspect (see SunburstLC for why not 100%). */
+  :host { display: block; width: 100%; overflow: hidden; }
+</style>
