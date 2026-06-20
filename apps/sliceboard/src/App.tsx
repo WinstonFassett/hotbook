@@ -16,7 +16,7 @@ import {
   createDataset, createDashboard, updateDataset, updateDashboard,
   addTile, removeTile, deleteDashboard, deleteDataset,
   activeDataset, activeDashboard, dashboardsForDataset,
-  updateRow, reorderLeaves, applyGroupBy,
+  updateRow, updateRows, reorderLeaves, applyGroupBy,
 } from './persistence'
 import type { Workspace, Dataset, Dashboard, Tile, TileKind, PNode } from './persistence'
 import { hudStore, resetHudForDataset, useHudStore } from './store'
@@ -55,7 +55,7 @@ const TILE_LABELS: Record<TileKind, string> = {
 
 // ─── Tile content ─────────────────────────────────────────────────────────────
 
-function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodeReorder }: { tile: Tile; ds: Dataset; measureKey: string; onNodeUpdate: (rowId: string, measures: PNode['measures']) => void; onNodeReorder: (orderedIds: string[]) => void }) {
+function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNodeReorder }: { tile: Tile; ds: Dataset; measureKey: string; onNodeUpdate: (rowId: string, measures: PNode['measures']) => void; onNodesUpdate: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void; onNodeReorder: (orderedIds: string[]) => void }) {
   const mk = tile.measureKey ?? measureKey
   const hud = useHudStore()
   const { hoverId, selectionId, focusId } = hud
@@ -90,12 +90,12 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodeReorder }: { ti
   if (tile.kind === 'br-lc-concentric-arc') return <BrLcConcentricArc nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} />
 
   // ── BR-LC hierarchical charts ────────────────────────────────────────────
-  if (tile.kind === 'br-lc-pack')           return <BrLcPack nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} />
-  if (tile.kind === 'br-lc-treemap')        return <BrLcTreemap nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} />
-  if (tile.kind === 'br-lc-icicle')         return <BrLcIcicle nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} />
-  if (tile.kind === 'br-lc-sunburst')       return <BrLcSunburst nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} />
+  if (tile.kind === 'br-lc-pack')           return <BrLcPack nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
+  if (tile.kind === 'br-lc-treemap')        return <BrLcTreemap nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
+  if (tile.kind === 'br-lc-icicle')         return <BrLcIcicle nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
+  if (tile.kind === 'br-lc-sunburst')       return <BrLcSunburst nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
   if (tile.kind === 'br-lc-sankey')         return <BrLcSankey nodes={nodes} measureKey={mk} />
-  if (tile.kind === 'br-lc-tree')           return <BrLcTree nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} />
+  if (tile.kind === 'br-lc-tree')           return <BrLcTree nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
 
   // For flat viz with groupBy, assign color by group dim value
   const groupColorMap = new Map<string, string>()
@@ -135,7 +135,7 @@ const HIER_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial', 'br-l
 const VIZ_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial', 'treemap', 'radial', 'bands', 'br-lc-bar', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie', 'br-lc-radar', 'br-lc-concentric-arc', 'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree'])
 
 function TileCard({
-  tile, ds, measureKey, onRemove, onMeasureChange, onXKeyChange, onYKeyChange, onDepthChange, onSortChange, onGroupByChange, onNodeUpdate, onNodeReorder, availableMeasures,
+  tile, ds, measureKey, onRemove, onMeasureChange, onXKeyChange, onYKeyChange, onDepthChange, onSortChange, onGroupByChange, onNodeUpdate, onNodesUpdate, onNodeReorder, availableMeasures,
 }: {
   tile: Tile
   ds: Dataset
@@ -148,6 +148,7 @@ function TileCard({
   onSortChange: (sortBy: 'index' | 'value') => void
   onGroupByChange: (key: string | undefined) => void
   onNodeUpdate: (rowId: string, measures: PNode['measures']) => void
+  onNodesUpdate: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
   onNodeReorder: (orderedIds: string[]) => void
   availableMeasures: { key: string; label: string }[]
 }) {
@@ -235,7 +236,7 @@ function TileCard({
         </div>
       </div>
       <div className={`tile-body${tile.kind === 'bands' ? ' tile-body--scroll' : ''}`}>
-        <TileContent tile={tile} ds={ds} measureKey={measureKey} onNodeUpdate={onNodeUpdate} onNodeReorder={onNodeReorder} />
+        <TileContent tile={tile} ds={ds} measureKey={measureKey} onNodeUpdate={onNodeUpdate} onNodesUpdate={onNodesUpdate} onNodeReorder={onNodeReorder} />
       </div>
     </div>
   )
@@ -491,6 +492,14 @@ export function App() {
     commit(updateRow(ws, ds.id, rowId, { measures }))
   }, [ws, ds])
 
+  // Batch variant: a single gesture tick may change several leaves at once
+  // (parent resize redistributes across siblings). Commit them together so they
+  // don't clobber each other through the stale-workspace closure.
+  const handleNodesUpdate = useCallback((updates: Array<{ id: string; measures: PNode['measures'] }>) => {
+    if (!ds) return
+    commit(updateRows(ws, ds.id, updates.map(u => ({ id: u.id, patch: { measures: u.measures } }))))
+  }, [ws, ds])
+
   const handleNodeReorder = useCallback((orderedIds: string[]) => {
     if (!ds) return
     commit(reorderLeaves(ws, ds.id, orderedIds))
@@ -553,6 +562,7 @@ export function App() {
             onTileSort={handleTileSort}
             onTileGroupBy={handleTileGroupBy}
             onNodeUpdate={handleNodeUpdate}
+            onNodesUpdate={handleNodesUpdate}
             onNodeReorder={handleNodeReorder}
           />
         ) : null}
@@ -561,7 +571,7 @@ export function App() {
   )
 }
 
-function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeasure, onTileXKey, onTileYKey, onTileDepth, onTileSort, onTileGroupBy, onNodeUpdate, onNodeReorder }: {
+function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeasure, onTileXKey, onTileYKey, onTileDepth, onTileSort, onTileGroupBy, onNodeUpdate, onNodesUpdate, onNodeReorder }: {
   dash: Dashboard
   ds: Dataset
   measures: { key: string; label: string }[]
@@ -574,6 +584,7 @@ function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeas
   onTileSort: (tileId: string, sortBy: 'index' | 'value') => void
   onTileGroupBy: (tileId: string, key: string | undefined) => void
   onNodeUpdate: (rowId: string, measures: PNode['measures']) => void
+  onNodesUpdate: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
   onNodeReorder: (orderedIds: string[]) => void
 }) {
   const { width, containerRef, mounted } = useContainerWidth()
@@ -603,6 +614,7 @@ function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeas
                 onSortChange={s => onTileSort(tile.id, s)}
                 onGroupByChange={k => onTileGroupBy(tile.id, k)}
                 onNodeUpdate={onNodeUpdate}
+                onNodesUpdate={onNodesUpdate}
                 onNodeReorder={onNodeReorder}
               />
             </div>

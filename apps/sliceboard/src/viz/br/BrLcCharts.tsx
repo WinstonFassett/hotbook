@@ -6,6 +6,18 @@ import { buildBiTree } from './tree'
 import type { BiNode } from './tree'
 import { hudStore } from '../../store'
 
+// Values flow through the tree as exact floats (parent resize redistributes
+// proportionally, producing fractional leaf values like 60.79). We do NOT
+// quantize to integers — that would destroy sub-unit sibling deltas and turn
+// parent resize additive. Echo suppression therefore compares with an epsilon
+// rather than rounding, and the React apply-in dep key is keyed on a stable
+// rounded-to-precision string only so float noise doesn't thrash re-renders.
+const EPS = 1e-6
+const near = (a: number, b: number) => Math.abs(a - b) < EPS
+/** Stable string key for a value, for React deps — quantized to kill float
+ *  noise but fine-grained enough that real fractional edits still differ. */
+const vkey = (v: number) => (Math.round(v * 1000) / 1000).toString()
+
 // Cross-tile sync bridge exposed by BR-LC custom elements (apps/.../lib/hud-bridge.ts).
 interface BrSyncBridge {
   setExternalHover(id: string | null): void
@@ -187,10 +199,10 @@ function useLiveFlatElement<D>(
   const containerRef = useRef<HTMLDivElement>(null)
   const elRef = useRef<ElWithDataCell<D> | null>(null)
   const disposeRef = useRef<(() => void) | undefined>(undefined)
-  // `last[i]` = the rounded value we consider already in sync with the store for
-  // datum i. The edit-out subscription emits only when a value diverges from it;
-  // the apply-in effect updates it when it pushes a store change in, so a store
-  // echo of the element's own edit doesn't bounce back out.
+  // `last[i]` = the exact value we consider already in sync with the store for
+  // datum i. The edit-out subscription emits only when a value diverges from it
+  // (epsilon compare); the apply-in effect updates it when it pushes a store
+  // change in, so a store echo of the element's own edit doesn't bounce back out.
   const lastRef = useRef<number[]>(spec.values.slice())
   // Latest spec/nodes/onUpdate for the (stable) edit-out subscription to read.
   const specRef = useRef(spec); specRef.current = spec
@@ -217,12 +229,12 @@ function useLiveFlatElement<D>(
       const s = specRef.current
       const cb = onUpdateRef.current
       const last = lastRef.current
-      if (!cb) { for (let i = 0; i < arr.length; i++) last[i] = Math.round(s.readValue(arr[i]!)); return }
+      if (!cb) { for (let i = 0; i < arr.length; i++) last[i] = s.readValue(arr[i]!); return }
       const byId = new Map(nodesRef.current.map(n => [n.id, n]))
       const pending: Array<[string, PNode['measures']]> = []
       for (let i = 0; i < arr.length; i++) {
-        const v = Math.round(s.readValue(arr[i]!))
-        if (v !== last[i]) {
+        const v = s.readValue(arr[i]!)
+        if (!near(v, last[i]!)) {
           last[i] = v
           const node = byId.get(s.ids[i]!)
           if (node) pending.push([node.id, { ...node.measures, [s.measureKey]: v }])
@@ -254,7 +266,7 @@ function useLiveFlatElement<D>(
     let changed = false
     for (let i = 0; i < arr.length && i < spec.values.length; i++) {
       const target = spec.values[i]!
-      if (Math.round(spec.readValue(arr[i]!)) !== target) {
+      if (!near(spec.readValue(arr[i]!), target)) {
         spec.writeValue(arr[i]!, target)
         last[i] = target
         changed = true
@@ -284,7 +296,7 @@ export function BrLcBar({ nodes, measureKey, onUpdate }: FlatProps) {
   const ids = leaves.map(n => n.id)
   const ref = useLiveFlatElement<{ label: string; value: number }>({
     tag: 'v-br-bar', ids, measureKey,
-    values: leaves.map(n => Math.round(n.measures[measureKey] ?? 0)),
+    values: leaves.map(n => n.measures[measureKey] ?? 0),
     shapeKey: `${measureKey}|${ids.join(',')}|${leaves.map(n => n.name).join(',')}`,
     build: () => leaves.map(n => ({ label: n.name, value: n.measures[measureKey] ?? 1 })),
     readValue: d => d.value, writeValue: (d, v) => { d.value = v },
@@ -297,7 +309,7 @@ export function BrLcPie({ nodes, measureKey, onUpdate }: FlatProps) {
   const ids = leaves.map(n => n.id)
   const ref = useLiveFlatElement<{ label: string; value: number }>({
     tag: 'v-br-pie', ids, measureKey,
-    values: leaves.map(n => Math.round(n.measures[measureKey] ?? 0)),
+    values: leaves.map(n => n.measures[measureKey] ?? 0),
     shapeKey: `${measureKey}|${ids.join(',')}|${leaves.map(n => n.name).join(',')}`,
     build: () => leaves.map(n => ({ label: n.name, value: n.measures[measureKey] ?? 1 })),
     readValue: d => d.value, writeValue: (d, v) => { d.value = v },
@@ -310,7 +322,7 @@ export function BrLcRadar({ nodes, measureKey, onUpdate }: FlatProps) {
   const ids = leaves.map(n => n.id)
   const ref = useLiveFlatElement<{ name: string; value: number }>({
     tag: 'v-br-radar', ids, measureKey,
-    values: leaves.map(n => Math.round(n.measures[measureKey] ?? 0)),
+    values: leaves.map(n => n.measures[measureKey] ?? 0),
     shapeKey: `${measureKey}|${ids.join(',')}|${leaves.map(n => n.name).join(',')}`,
     build: () => leaves.map(n => ({ name: n.name, value: n.measures[measureKey] ?? 1 })),
     readValue: d => d.value, writeValue: (d, v) => { d.value = v },
@@ -324,9 +336,9 @@ export function BrLcConcentricArc({ nodes, measureKey, onUpdate }: FlatProps) {
   const palette = ['#e05c5c', '#f0a742', '#4cba6e', '#5b8def', '#b76de0', '#44c4c4']
   const ref = useLiveFlatElement<{ label: string; color: string; value: number }>({
     tag: 'v-br-concentric-arc', ids, measureKey,
-    values: leaves.map(n => Math.min(100, Math.round(n.measures[measureKey] ?? 0))),
+    values: leaves.map(n => Math.min(100, n.measures[measureKey] ?? 0)),
     shapeKey: `${measureKey}|${ids.join(',')}|${leaves.map(n => n.name).join(',')}`,
-    build: () => leaves.map((n, i) => ({ label: n.name, color: palette[i % 6]!, value: Math.min(100, Math.round(n.measures[measureKey] ?? 0)) })),
+    build: () => leaves.map((n, i) => ({ label: n.name, color: palette[i % 6]!, value: Math.min(100, n.measures[measureKey] ?? 0) })),
     readValue: d => d.value, writeValue: (d, v) => { d.value = Math.min(100, v) },
   }, nodes, onUpdate)
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
@@ -346,7 +358,7 @@ export function BrLcScatter({ nodes, xKey, yKey, onUpdate }: ScatterProps) {
   const ids = leaves.map(n => n.id)
   const ref = useLiveFlatElement<{ x: number; y: number }>({
     tag: 'v-br-scatter', ids, measureKey: yKey,
-    values: leaves.map(n => Math.round(n.measures[yKey] ?? 0)),
+    values: leaves.map(n => n.measures[yKey] ?? 0),
     shapeKey: `${xKey}|${yKey}|${ids.join(',')}`,
     build: () => leaves.map((n, i) => ({ x: xKey === '_index' ? i : (n.measures[xKey] ?? 0), y: n.measures[yKey] ?? 0 })),
     readValue: d => d.y, writeValue: (d, v) => { d.y = v },
@@ -364,7 +376,7 @@ export function BrLcLine({ nodes, measureKey, onUpdate }: FlatProps) {
   const ids = leaves.map(n => n.id)
   const ref = useLiveFlatElement<{ date: Date; value: number }>({
     tag: 'v-br-line', ids, measureKey,
-    values: leaves.map(n => Math.round(n.measures[measureKey] ?? 0)),
+    values: leaves.map(n => n.measures[measureKey] ?? 0),
     shapeKey: `${measureKey}|${ids.join(',')}`,
     build: () => leaves.map((n, i) => ({ date: new Date(SERIES_START + i * DAY_MS), value: n.measures[measureKey] ?? 0 })),
     readValue: d => d.value, writeValue: (d, v) => { d.value = v },
@@ -377,7 +389,7 @@ export function BrLcArea({ nodes, measureKey, onUpdate }: FlatProps) {
   const ids = leaves.map(n => n.id)
   const ref = useLiveFlatElement<{ date: Date; value: number }>({
     tag: 'v-br-area', ids, measureKey,
-    values: leaves.map(n => Math.round(n.measures[measureKey] ?? 0)),
+    values: leaves.map(n => n.measures[measureKey] ?? 0),
     shapeKey: `${measureKey}|${ids.join(',')}`,
     build: () => leaves.map((n, i) => ({ date: new Date(SERIES_START + i * DAY_MS), value: n.measures[measureKey] ?? 0 })),
     readValue: d => d.value, writeValue: (d, v) => { d.value = v },
@@ -401,21 +413,24 @@ function useLiveHierElement(
   nodes: PNode[],
   measureKey: string,
   onUpdate?: (nodeId: string, measures: PNode['measures']) => void,
+  onUpdateMany?: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void,
 ) {
   const containerRef = useRef<HTMLDivElement>(null)
   const elRef = useRef<ElWithRoot | null>(null)
   const rootRef = useRef<BiNode | null>(null)
   const leavesRef = useRef<BiNode[]>([])
   const disposeRef = useRef<(() => void) | undefined>(undefined)
-  // last[id] = rounded value considered in sync with the store, to suppress echo.
+  // last[id] = exact value considered in sync with the store, to suppress echo.
   const lastRef = useRef<Map<string, number>>(new Map())
   const nodesRef = useRef(nodes); nodesRef.current = nodes
   const onUpdateRef = useRef(onUpdate); onUpdateRef.current = onUpdate
+  const onUpdateManyRef = useRef(onUpdateMany); onUpdateManyRef.current = onUpdateMany
 
   // Shape: rebuild only when the tree structure (ids/parents) or measureKey changes.
   const shapeKey = `${measureKey}|${nodes.map(n => `${n.id}:${n.parentId ?? ''}`).join(',')}`
-  // Per-leaf store values, applied in place on change.
-  const valueKey = nodes.map(n => `${n.id}:${Math.round(n.measures[measureKey] ?? 0)}`).join(',')
+  // Per-leaf store values, applied in place on change. Keyed on the exact
+  // (precision-stable) value so fractional edits still trigger apply-in.
+  const valueKey = nodes.map(n => `${n.id}:${vkey(n.measures[measureKey] ?? 0)}`).join(',')
 
   useEffect(() => {
     const container = containerRef.current
@@ -425,7 +440,7 @@ function useLiveHierElement(
     if (!root) return
     const leaves = leavesOf(root) as BiNode[]
     leavesRef.current = leaves
-    lastRef.current = new Map(leaves.map(l => [l.value.id, Math.round(l.value.total.value)]))
+    lastRef.current = new Map(leaves.map(l => [l.value.id, l.value.total.value]))
 
     const el = document.createElement(tag) as ElWithRoot
     el.setAttribute('no-source', '')
@@ -441,32 +456,36 @@ function useLiveHierElement(
     //
     // Group resizes flow through a Num.lens that rescales children
     // *proportionally* — producing fractional leaf values (e.g. 31 → 30.65).
-    // The store is integer-rounded, so without quantizing here the tree would
-    // render the fractional frame and then snap when the store echo applies the
-    // rounded value back in — visible jitter on every group-edit tick.
-    //
-    // Fix: quantize the live leaf cells to integers *synchronously* the moment
-    // an edit is detected, so render, store, and tree all agree and there is no
-    // fractional intermediate. Writing a leaf cell is safe (leaves are plain
-    // cells, not lenses); the write re-runs this effect once, finds everything
-    // already integer, and converges with no further writes.
+    // We push those exact floats to the store. Crucially we do NOT quantize the
+    // live leaf cells: rounding them mid-flush would erase any sub-unit sibling
+    // delta (a +1 parent resize redistributes ~0.5 to each of two siblings),
+    // making parent resize additive instead of conservative. The tree is the
+    // source of truth during a gesture and carries fractional values, exactly
+    // like the standalone layercharts demo.
     disposeRef.current = biEffect(() => {
       const last = lastRef.current
       const cb = onUpdateRef.current
-      const pending: Array<[string, PNode['measures']]> = []
+      const cbMany = onUpdateManyRef.current
+      const pending: Array<{ id: string; measures: PNode['measures'] }> = []
       const byId = new Map(nodesRef.current.map(n => [n.id, n]))
       for (const leaf of leaves) {
-        const v = Math.round(leaf.value.total.value)
-        // Snap the live cell to the integer the store will hold, killing the
-        // fractional render frame (no-op once already integer).
-        if (leaf.value.total.value !== v) leaf.value.total.value = v
-        if (v !== last.get(leaf.value.id)) {
+        const v = leaf.value.total.value
+        const prev = last.get(leaf.value.id)
+        if (prev === undefined || !near(v, prev)) {
           last.set(leaf.value.id, v)
           const node = byId.get(leaf.value.id)
-          if (cb && node) pending.push([node.id, { ...node.measures, [measureKey]: v }])
+          if (node && (cb || cbMany)) pending.push({ id: node.id, measures: { ...node.measures, [measureKey]: v } })
         }
       }
-      if (cb && pending.length) queueMicrotask(() => { for (const [id, m] of pending) cb(id, m) })
+      // Parent resize redistributes across siblings → several leaves change on
+      // one tick. Emit them as ONE batch so they don't clobber each other
+      // through React's stale-workspace closure (separate updateRow calls each
+      // start from the same snapshot, so only the last would survive). Defer out
+      // of the bireactive flush to avoid re-entering React setState mid-flush.
+      if (pending.length) queueMicrotask(() => {
+        if (cbMany) cbMany(pending)
+        else if (cb) for (const p of pending) cb(p.id, p.measures)
+      })
     })
 
     return () => {
@@ -490,8 +509,8 @@ function useLiveHierElement(
     for (const leaf of leavesRef.current) {
       const node = byId.get(leaf.value.id)
       if (!node) continue
-      const target = Math.round(node.measures[measureKey] ?? 0)
-      if (Math.round(leaf.value.total.value) !== target) {
+      const target = node.measures[measureKey] ?? 0
+      if (!near(leaf.value.total.value, target)) {
         leaf.value.total.value = target
         last.set(leaf.value.id, target)
       }
@@ -508,30 +527,31 @@ interface HierProps {
   nodes: PNode[]
   measureKey: string
   onUpdate?: (nodeId: string, measures: PNode['measures']) => void
+  onUpdateMany?: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
 }
 
-export function BrLcPack({ nodes, measureKey, onUpdate }: HierProps) {
-  const ref = useLiveHierElement('v-br-pack', nodes, measureKey, onUpdate)
+export function BrLcPack({ nodes, measureKey, onUpdate, onUpdateMany }: HierProps) {
+  const ref = useLiveHierElement('v-br-pack', nodes, measureKey, onUpdate, onUpdateMany)
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }
 
-export function BrLcTreemap({ nodes, measureKey, onUpdate }: HierProps) {
-  const ref = useLiveHierElement('v-br-treemap', nodes, measureKey, onUpdate)
+export function BrLcTreemap({ nodes, measureKey, onUpdate, onUpdateMany }: HierProps) {
+  const ref = useLiveHierElement('v-br-treemap', nodes, measureKey, onUpdate, onUpdateMany)
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }
 
-export function BrLcIcicle({ nodes, measureKey, onUpdate }: HierProps) {
-  const ref = useLiveHierElement('v-br-icicle', nodes, measureKey, onUpdate)
+export function BrLcIcicle({ nodes, measureKey, onUpdate, onUpdateMany }: HierProps) {
+  const ref = useLiveHierElement('v-br-icicle', nodes, measureKey, onUpdate, onUpdateMany)
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }
 
-export function BrLcSunburst({ nodes, measureKey, onUpdate }: HierProps) {
-  const ref = useLiveHierElement('v-br-sunburst', nodes, measureKey, onUpdate)
+export function BrLcSunburst({ nodes, measureKey, onUpdate, onUpdateMany }: HierProps) {
+  const ref = useLiveHierElement('v-br-sunburst', nodes, measureKey, onUpdate, onUpdateMany)
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }
 
-export function BrLcTree({ nodes, measureKey, onUpdate }: HierProps) {
-  const ref = useLiveHierElement('v-br-tree', nodes, measureKey, onUpdate)
+export function BrLcTree({ nodes, measureKey, onUpdate, onUpdateMany }: HierProps) {
+  const ref = useLiveHierElement('v-br-tree', nodes, measureKey, onUpdate, onUpdateMany)
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }
 

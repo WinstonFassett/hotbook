@@ -565,6 +565,25 @@ export function updateRow(ws: Workspace, dsId: string, rowId: string, patch: Par
   }
 }
 
+// Apply many row patches in a SINGLE workspace update. Parent-resize gestures
+// redistribute across siblings, changing several leaves on one tick; emitting
+// them as separate updateRow calls would clobber each other (each starts from
+// the same stale workspace, so only the last write survives). Batching keeps
+// every changed leaf in one commit.
+export function updateRows(ws: Workspace, dsId: string, patches: Array<{ id: string; patch: Partial<PNode> }>): Workspace {
+  if (patches.length === 0) return ws
+  const byId = new Map(patches.map(p => [p.id, p.patch]))
+  return {
+    ...ws,
+    datasets: ws.datasets.map(ds =>
+      ds.id !== dsId ? ds : {
+        ...ds,
+        rows: ds.rows.map(r => { const p = byId.get(r.id); return p ? { ...r, ...p } : r }),
+      }
+    ),
+  }
+}
+
 export function reorderLeaves(ws: Workspace, dsId: string, orderedLeafIds: string[]): Workspace {
   return {
     ...ws,

@@ -1,5 +1,5 @@
 import { hierarchy } from "d3-hierarchy";
-import { effect as biEffect } from "bireactive";
+import { effect as biEffect, batch } from "bireactive";
 import { leaves, type BiNode } from "./tree";
 
 export function applyDelta(node: BiNode, parent: BiNode | undefined, delta: number): void {
@@ -9,36 +9,45 @@ export function applyDelta(node: BiNode, parent: BiNode | undefined, delta: numb
   const next = Math.max(0, cur + delta);
   const real = next - cur;
   if (real === 0) return;
-  node.value.total.value = next;
-  let remaining = real;
-  if (real > 0) {
-    const pool = siblings.filter((s) => s.value.total.value > 0);
-    const poolSum = pool.reduce((a, b) => a + b.value.total.value, 0);
-    if (poolSum > 0) {
-      for (const sib of pool) {
-        const share = (sib.value.total.value / poolSum) * real;
-        const take = Math.min(sib.value.total.value, share);
-        sib.value.total.value -= take;
-        remaining -= take;
+  // Redistribute the whole resize in ONE batch so the edit fires a single
+  // reactive flush. Every sibling is written exactly once from pre-computed
+  // sums (poolSum / sibSum / shares captured before any write), so deferred
+  // backward writes coalescing inside the batch is safe. The single flush
+  // matters in embeddings (e.g. sliceboard) where each separate flush would
+  // round-trip through an external store and interleave, snapping the tree
+  // back between writes; standalone it's just one tidy update.
+  batch(() => {
+    node.value.total.value = next;
+    let remaining = real;
+    if (real > 0) {
+      const pool = siblings.filter((s) => s.value.total.value > 0);
+      const poolSum = pool.reduce((a, b) => a + b.value.total.value, 0);
+      if (poolSum > 0) {
+        for (const sib of pool) {
+          const share = (sib.value.total.value / poolSum) * real;
+          const take = Math.min(sib.value.total.value, share);
+          sib.value.total.value -= take;
+          remaining -= take;
+        }
+        for (const sib of siblings) {
+          if (remaining <= 0) break;
+          const take = Math.min(sib.value.total.value, remaining);
+          sib.value.total.value -= take;
+          remaining -= take;
+        }
       }
-      for (const sib of siblings) {
-        if (remaining <= 0) break;
-        const take = Math.min(sib.value.total.value, remaining);
-        sib.value.total.value -= take;
-        remaining -= take;
+    } else if (siblings.length > 0) {
+      const sibSum = siblings.reduce((a, b) => a + b.value.total.value, 0);
+      if (sibSum > 0) {
+        for (const sib of siblings) {
+          const share = (sib.value.total.value / sibSum) * -real;
+          sib.value.total.value += share;
+        }
+      } else {
+        for (const sib of siblings) sib.value.total.value += -real / siblings.length;
       }
     }
-  } else if (siblings.length > 0) {
-    const sibSum = siblings.reduce((a, b) => a + b.value.total.value, 0);
-    if (sibSum > 0) {
-      for (const sib of siblings) {
-        const share = (sib.value.total.value / sibSum) * -real;
-        sib.value.total.value += share;
-      }
-    } else {
-      for (const sib of siblings) sib.value.total.value += -real / siblings.length;
-    }
-  }
+  });
 }
 
 export function flatOrder(root: BiNode): BiNode[] {
