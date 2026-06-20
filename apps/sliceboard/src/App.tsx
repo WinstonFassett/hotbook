@@ -172,7 +172,8 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
 
 // Kinds that support depth selector (natively hierarchical, depth param wired)
 const HIER_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial', 'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-tree', 'svelte-br-lc-sunburst', 'svelte-br-lc-icicle', 'svelte-br-lc-pack', 'svelte-br-lc-treemap'])
-const VIZ_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial', 'treemap', 'radial', 'bands', 'br-lc-bar', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie', 'br-lc-radar', 'br-lc-concentric-arc', 'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree', 'svelte-br-lc-sunburst', 'svelte-br-lc-icicle', 'svelte-br-lc-pack', 'svelte-br-lc-treemap', 'svelte-treemap-demo'])
+// Kinds where Order/Value sort selector is wired and has effect
+const VIZ_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial', 'treemap', 'radial', 'bands', 'br-lc-bar', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie', 'br-lc-radar', 'br-lc-concentric-arc'])
 // Kinds that are natively hierarchical (already have parent/child structure — groupBy would conflict)
 const NATIVELY_HIER_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial'])
 // Kinds that accept groupBy to add hierarchy to flat data
