@@ -6,3 +6,6 @@ inspo/
 .DS_Store
 .apitable.yml
 .claude/worktrees/
+
+# Local Netlify folder
+.netlify
