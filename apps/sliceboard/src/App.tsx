@@ -101,7 +101,9 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
   const sortBy = tile.sortBy ?? 'index'
   const rawNodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.rows, tile.groupBy) : ds.rows)
   const nodes = sortBy === 'value'
-    ? [...rawNodes].sort((a, b) => (b.measures[mk] ?? 0) - (a.measures[mk] ?? 0))
+    ? [...rawNodes]
+        .sort((a, b) => (b.measures[mk] ?? 0) - (a.measures[mk] ?? 0))
+        .map((n, i) => ({ ...n, index: i }))
     : rawNodes
 
   if (tile.kind === 'h-treemap') {
