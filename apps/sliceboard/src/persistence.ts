@@ -94,7 +94,7 @@ export interface Workspace {
 
 // ─── Storage ──────────────────────────────────────────────────────────────────
 
-const LS_KEY = 'sb:workspace:v5'
+const LS_KEY = 'sb:workspace:v9'
 
 function genId(): string {
   return Math.random().toString(36).slice(2, 10)
@@ -441,58 +441,50 @@ function buildSeedWorkspace(): Workspace {
   const team  = buildTeamDataset()
   const life  = buildLifeDataset()
 
-  // Fruit: flat viz
-  const fruitTiles: Tile[] = [
-    { id: 'ft-treemap', kind: 'treemap', title: 'Treemap' },
-    { id: 'ft-radial',  kind: 'radial',  title: 'Radial' },
-    { id: 'ft-bands',   kind: 'bands',   title: 'Bands' },
-  ]
-  const fruitLayout: LayoutItem[] = [
-    { i: 'ft-treemap', x: 0, y: 0,  w: 6, h: 10 },
-    { i: 'ft-radial',  x: 6, y: 0,  w: 6, h: 10 },
-    { i: 'ft-bands',   x: 0, y: 10, w: 12, h: 8 },
+  // All viz kinds, 4-across, half-height tiles
+  const ALL_KINDS: TileKind[] = [
+    'treetable', 'h-treemap', 'h-icicle', 'h-radial', 'treemap', 'radial', 'bands',
+    'br-lc-bar', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie',
+    'br-lc-radar', 'br-lc-concentric-arc',
+    'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree',
+    'svelte-br-lc-sunburst', 'svelte-br-lc-icicle', 'svelte-br-lc-pack', 'svelte-br-lc-treemap', 'svelte-treemap-demo',
   ]
 
-  // Team: hier + groupBy
-  const teamTiles: Tile[] = [
-    { id: 'tm-htreemap', kind: 'h-treemap', title: 'By Quarter' },
-    { id: 'tm-hicicle',  kind: 'h-icicle',  title: 'Icicle', groupBy: 'role' },
-  ]
-  const teamLayout: LayoutItem[] = [
-    { i: 'tm-htreemap', x: 0, y: 0, w: 6, h: 12 },
-    { i: 'tm-hicicle',  x: 6, y: 0, w: 6, h: 12 },
-  ]
+  const GROUPBY_KINDS = new Set<TileKind>([
+    'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree',
+    'svelte-br-lc-sunburst', 'svelte-br-lc-icicle', 'svelte-br-lc-pack',
+  ])
 
-  // Life: 4-level hierarchy, two dashboards
-  const lifeTiles1: Tile[] = [
-    { id: 'lf-table',    kind: 'treetable', title: 'Tasks' },
-    { id: 'lf-htreemap', kind: 'h-treemap', title: 'Treemap' },
-    { id: 'lf-hicicle',  kind: 'h-icicle',  title: 'Icicle' },
-  ]
-  const lifeLayout1: LayoutItem[] = [
-    { i: 'lf-table',    x: 0, y: 0, w: 6, h: 12 },
-    { i: 'lf-htreemap', x: 6, y: 0, w: 6, h: 6 },
-    { i: 'lf-hicicle',  x: 6, y: 6, w: 6, h: 6 },
-  ]
-  const lifeTiles2: Tile[] = [
-    { id: 'lf-radial',   kind: 'radial',   title: 'Flat radial' },
-    { id: 'lf-hradial',  kind: 'h-radial', title: 'Sunburst' },
-  ]
-  const lifeLayout2: LayoutItem[] = [
-    { i: 'lf-radial',  x: 0, y: 0, w: 6, h: 12 },
-    { i: 'lf-hradial', x: 6, y: 0, w: 6, h: 12 },
-  ]
+  function makeAllVizDash(prefix: string, flatGroupBy?: string): { tiles: Tile[]; layout: LayoutItem[] } {
+    const tiles: Tile[] = ALL_KINDS.map((kind, i) => ({
+      id: `${prefix}-${i}`,
+      kind,
+      title: kind,
+      ...(flatGroupBy && GROUPBY_KINDS.has(kind) ? { groupBy: flatGroupBy } : {}),
+    }))
+    const layout: LayoutItem[] = ALL_KINDS.map((_, i) => ({
+      i: `${prefix}-${i}`,
+      x: (i % 4) * 3,
+      y: Math.floor(i / 4) * 5,
+      w: 3,
+      h: 5,
+    }))
+    return { tiles, layout }
+  }
+
+  const lifeViz  = makeAllVizDash('lf', 'level')
+  const fruitViz = makeAllVizDash('fr', 'group')
+  const teamViz  = makeAllVizDash('tm', 'role')
 
   return {
     datasets: [life, fruit, team],
     dashboards: [
-      { id: 'dash-life-overview', datasetId: life.id, name: 'Overview', createdAt: NOW, layout: lifeLayout1, tiles: lifeTiles1, measureKey: 'est' },
-      { id: 'dash-life-shape',    datasetId: life.id, name: 'Shape',    createdAt: NOW, layout: lifeLayout2, tiles: lifeTiles2, measureKey: 'est' },
-      { id: 'dash-fruit',         datasetId: fruit.id, name: 'Overview', createdAt: NOW, layout: fruitLayout, tiles: fruitTiles, measureKey: 'value' },
-      { id: 'dash-team',          datasetId: team.id,  name: 'Allocation', createdAt: NOW, layout: teamLayout, tiles: teamTiles, measureKey: 'budget' },
+      { id: 'dash-life',  datasetId: life.id,  name: 'Life',  createdAt: NOW, layout: lifeViz.layout,  tiles: lifeViz.tiles,  measureKey: 'est' },
+      { id: 'dash-fruit', datasetId: fruit.id, name: 'Fruit', createdAt: NOW, layout: fruitViz.layout, tiles: fruitViz.tiles, measureKey: 'value' },
+      { id: 'dash-team',  datasetId: team.id,  name: 'Team',  createdAt: NOW, layout: teamViz.layout,  tiles: teamViz.tiles,  measureKey: 'budget' },
     ],
     activeDatasetId: life.id,
-    activeDashboardId: 'dash-life-overview',
+    activeDashboardId: 'dash-life',
   }
 }
 

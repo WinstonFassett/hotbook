@@ -170,8 +170,13 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
 
 // ─── Tile wrapper ─────────────────────────────────────────────────────────────
 
+// Kinds that support depth selector (natively hierarchical, depth param wired)
 const HIER_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial', 'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-tree', 'svelte-br-lc-sunburst', 'svelte-br-lc-icicle', 'svelte-br-lc-pack', 'svelte-br-lc-treemap'])
 const VIZ_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial', 'treemap', 'radial', 'bands', 'br-lc-bar', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie', 'br-lc-radar', 'br-lc-concentric-arc', 'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree', 'svelte-br-lc-sunburst', 'svelte-br-lc-icicle', 'svelte-br-lc-pack', 'svelte-br-lc-treemap', 'svelte-treemap-demo'])
+// Kinds that are natively hierarchical (already have parent/child structure — groupBy would conflict)
+const NATIVELY_HIER_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial'])
+// Kinds that accept groupBy to add hierarchy to flat data
+const GROUPBY_KINDS = new Set<TileKind>(['br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree', 'svelte-br-lc-sunburst', 'svelte-br-lc-icicle', 'svelte-br-lc-pack'])
 
 function TileCard({
   tile, ds, measureKey, onRemove, onMeasureChange, onXKeyChange, onYKeyChange, onDepthChange, onSortChange, onGroupByChange, onNodeUpdate, onNodesUpdate, onNodeReorder, availableMeasures,
@@ -191,8 +196,9 @@ function TileCard({
   onNodeReorder: (orderedIds: string[]) => void
   availableMeasures: { key: string; label: string }[]
 }) {
-  const isHier = HIER_KINDS.has(tile.kind)
+  const isHier = HIER_KINDS.has(tile.kind) && !NATIVELY_HIER_KINDS.has(tile.kind)
   const isViz = VIZ_KINDS.has(tile.kind)
+  const showGroupBy = GROUPBY_KINDS.has(tile.kind) && ds.dimDefs.length > 0
   const depth = tile.depth ?? 2
   const sortBy = tile.sortBy ?? 'index'
   return (
@@ -258,10 +264,11 @@ function TileCard({
               ))}
             </select>
           )}
-          {ds.dimDefs.length > 0 && (
+          {showGroupBy && (
             <select
               className="tile-measure-select"
-              value={tile.groupBy ?? ''}
+              key={`${tile.id}-${tile.groupBy ?? ''}`}
+              defaultValue={tile.groupBy ?? ''}
               onChange={e => onGroupByChange(e.target.value || undefined)}
               title="Group by"
             >
@@ -461,8 +468,8 @@ export function App() {
     saveWorkspace(next)
   }
 
-  const ds = activeDataset(ws)
   const dash = activeDashboard(ws)
+  const ds = dash ? ws.datasets.find(d => d.id === dash.datasetId) : activeDataset(ws)
   const measures = ds ? ds.measureDefs : []
 
   const switchDataset = useCallback((id: string) => {
