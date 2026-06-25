@@ -10,6 +10,22 @@ export interface PNode {
   color?: string
 }
 
+export interface PEdge {
+  id: string
+  sourceId: string          // references PNode.id
+  targetId: string          // references PNode.id
+  measures: Record<string, number>
+  dims: Record<string, string>
+}
+
+export interface ColumnSchema {
+  key: string
+  label: string
+  type: 'measure' | 'dim' | 'name' | 'parent-ref' | 'edge-source' | 'edge-target'
+  rollup?: 'sum' | 'max' | 'mean' | 'none'
+  unit?: string
+}
+
 export type Rollup = 'sum' | 'max' | 'mean' | 'none'
 
 export interface Measurement {

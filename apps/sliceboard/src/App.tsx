@@ -1,7 +1,8 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { GridLayout, useContainerWidth } from 'react-grid-layout'
 import type { LayoutItem } from 'react-grid-layout'
-import { Viz, HTreetable, pickColor } from '@winstonfassett/vizform-react-d3'
+import { Viz, HTreetable } from '@winstonfassett/vizform-react-d3'
+import { colorFor } from '@winstonfassett/vizform-core'
 import type { Goal } from '@winstonfassett/vizform-react-d3'
 import { leavesOf } from '@winstonfassett/vizform-vanilla-d3'
 import { Treemap } from './viz/Treemap'
@@ -27,13 +28,9 @@ import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
 import './App.css'
 
-// Group-coherent coloring, shared by every hierarchy chart (first-gen + BR-LC)
-// so the whole board reads the same way: each top-level group gets one vibrant
-// PALETTE hue and all its descendants inherit it. Datasets often carry scattered
-// per-node colors (a group rose, its child violet) which looked incoherent and
-// differed chart-to-chart; this overwrites them with the grouped look the flat
-// Viz already had. `nodeColor`/`pnodeColor` resolve a node by walking up to the
-// nearest colored ancestor, so coloring every node directly here is sufficient.
+// Pre-color nodes by root-ancestor identity so gen-0 Viz components (which don't
+// walk ancestors internally) get the right hue. colorFor is sort-stable: same
+// root name → same color regardless of position.
 function colorByGroup(nodes: PNode[]): PNode[] {
   const byId = new Map(nodes.map(n => [n.id, n]))
   const rootOf = (n: PNode): PNode => {
@@ -41,50 +38,43 @@ function colorByGroup(nodes: PNode[]): PNode[] {
     while (cur.parentId && byId.has(cur.parentId)) cur = byId.get(cur.parentId)!
     return cur
   }
-  // Stable hue per top-level group, by document order of the roots.
-  const hueByRoot = new Map<string, string>()
-  let gi = 0
-  for (const n of nodes) {
-    if (!n.parentId || !byId.has(n.parentId)) {
-      if (!hueByRoot.has(n.id)) hueByRoot.set(n.id, pickColor(gi++))
-    }
-  }
-  return nodes.map(n => ({ ...n, color: hueByRoot.get(rootOf(n).id) ?? n.color }))
+  return nodes.map(n => ({ ...n, color: n.color ?? colorFor(rootOf(n).name) }))
 }
 
+// Canon picker — retired gen-0/Svelte kinds excluded
 const TILE_KINDS: TileKind[] = [
-  'treetable', 'h-treemap', 'h-icicle', 'h-radial', 'treemap', 'radial', 'bands',
+  'treetable',
   'br-lc-bar', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie',
   'br-lc-radar', 'br-lc-concentric-arc',
   'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree',
-  'svelte-br-lc-sunburst', 'svelte-br-lc-icicle', 'svelte-br-lc-pack', 'svelte-br-lc-treemap', 'svelte-treemap-demo',
 ]
 const TILE_LABELS: Record<TileKind, string> = {
-  'treetable':           'Table (D3)',
-  'h-treemap':           'H-Treemap (D3)',
-  'h-icicle':            'Icicle (D3)',
-  'h-radial':            'Sunburst (D3)',
-  'treemap':             'Treemap (D3)',
-  'radial':              'Radial (D3)',
-  'bands':               'Bands (D3)',
-  'br-lc-bar':           'Bar (BR-LC)',
-  'br-lc-line':          'Line (BR-LC)',
-  'br-lc-area':          'Area (BR-LC)',
-  'br-lc-scatter':       'Scatter (BR-LC)',
-  'br-lc-pie':           'Pie (BR-LC)',
-  'br-lc-radar':         'Radar (BR-LC)',
-  'br-lc-concentric-arc':'ConcentricArc (BR-LC)',
-  'br-lc-pack':          'Pack (BR-LC)',
-  'br-lc-treemap':       'Treemap (BR-LC)',
-  'br-lc-icicle':        'Icicle (BR-LC)',
-  'br-lc-sunburst':      'Sunburst (BR-LC)',
-  'br-lc-sankey':        'Sankey (BR-LC)',
-  'br-lc-tree':          'Tree (BR-LC)',
-  'svelte-br-lc-sunburst':'Sunburst (Svelte BR-LC)',
-  'svelte-br-lc-icicle': 'Icicle (Svelte BR-LC)',
-  'svelte-br-lc-pack':   'Pack (Svelte BR-LC)',
-  'svelte-br-lc-treemap':'Treemap (Svelte BR-LC)',
-  'svelte-treemap-demo': 'Treemap (Svelte demo)',
+  'treetable':            'Table',
+  'br-lc-bar':            'Bar',
+  'br-lc-line':           'Line',
+  'br-lc-area':           'Area',
+  'br-lc-scatter':        'Scatter',
+  'br-lc-pie':            'Pie',
+  'br-lc-radar':          'Radar',
+  'br-lc-concentric-arc': 'Concentric Arc',
+  'br-lc-pack':           'Pack',
+  'br-lc-treemap':        'Treemap',
+  'br-lc-icicle':         'Icicle',
+  'br-lc-sunburst':       'Sunburst',
+  'br-lc-sankey':         'Sankey',
+  'br-lc-tree':           'Tree',
+  // retired — still rendered if encountered in stored dashboards
+  'h-treemap':            'H-Treemap (retired)',
+  'h-icicle':             'Icicle (retired)',
+  'h-radial':             'Sunburst (retired)',
+  'treemap':              'Treemap (retired)',
+  'radial':               'Radial (retired)',
+  'bands':                'Bands (retired)',
+  'svelte-br-lc-sunburst':'Sunburst (Svelte, retired)',
+  'svelte-br-lc-icicle':  'Icicle (Svelte, retired)',
+  'svelte-br-lc-pack':    'Pack (Svelte, retired)',
+  'svelte-br-lc-treemap': 'Treemap (Svelte, retired)',
+  'svelte-treemap-demo':  'Treemap demo (Svelte, retired)',
 }
 
 // ─── Tile content ─────────────────────────────────────────────────────────────
@@ -148,7 +138,7 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
   // just read `n.color` — no separate per-tile recolor that would diverge.
   const goals: Goal[] = leavesOf(nodes).map((n, idx) => {
     return {
-      id: n.id, name: n.name, color: n.color ?? pickColor(idx),
+      id: n.id, name: n.name, color: n.color ?? colorFor(n.name),
       measurements: { ...n.measures, _index: idx },
       archived: false, tags: [], urgent: false, important: false,
       createdAt: '', updatedAt: '',
@@ -175,12 +165,12 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
 
 // ─── Tile wrapper ─────────────────────────────────────────────────────────────
 
-// Kinds where depth selector is wired and has effect (h-* only)
+// Kinds where depth selector is wired (retired h-* only — kept so stored tiles still render)
 const HIER_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial'])
-// Kinds where Order/Value sort selector is shown (pre-sort applied to nodes before passing in)
-const VIZ_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial', 'treemap', 'radial', 'bands', 'br-lc-bar', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie', 'br-lc-radar', 'br-lc-concentric-arc', 'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree', 'svelte-br-lc-sunburst', 'svelte-br-lc-icicle', 'svelte-br-lc-pack', 'svelte-br-lc-treemap'])
+// Kinds where Order/Value sort selector is shown
+const VIZ_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial', 'treemap', 'radial', 'bands', 'br-lc-bar', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie', 'br-lc-radar', 'br-lc-concentric-arc', 'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree'])
 // Kinds that accept groupBy to add hierarchy to flat data
-const GROUPBY_KINDS = new Set<TileKind>(['br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree', 'svelte-br-lc-sunburst', 'svelte-br-lc-icicle', 'svelte-br-lc-pack'])
+const GROUPBY_KINDS = new Set<TileKind>(['br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree'])
 
 function TileCard({
   tile, ds, measureKey, onRemove, onMeasureChange, onXKeyChange, onYKeyChange, onDepthChange, onSortChange, onGroupByChange, onNodeUpdate, onNodesUpdate, onNodeReorder, availableMeasures,

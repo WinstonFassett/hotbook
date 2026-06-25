@@ -1,3 +1,4 @@
+import { colorFor } from '@winstonfassett/vizform-core'
 import type { PNode, Rollup } from '../types'
 
 export interface TreeDatum {
@@ -47,12 +48,16 @@ export function rollupMeasurement(
   return all.reduce((a, b) => a + b, 0)
 }
 
-// Walk ancestors to find the first node with a color set.
 export function nodeColor(nodes: PNode[], id: string): string {
   const byId = new Map(nodes.map(n => [n.id, n]))
   let cur = byId.get(id)
-  while (cur && !cur.color) cur = cur.parentId ? byId.get(cur.parentId) : undefined
-  return cur?.color ?? 'oklch(0.55 0.01 250)'
+  let root = cur
+  while (cur) {
+    if (cur.color) return cur.color
+    root = cur
+    cur = cur.parentId ? byId.get(cur.parentId) : undefined
+  }
+  return colorFor(root?.name ?? id)
 }
 
 export function buildColorMap(nodes: PNode[]): Map<string, string> {

@@ -1,4 +1,5 @@
 import { num, treeNode, walkTree, leavesOf, Num, type TreeNode, type Writable } from 'bireactive'
+import { colorFor } from '@winstonfassett/vizform-core'
 import type { PNode } from '../../persistence'
 
 export interface NodeValue {
@@ -52,15 +53,16 @@ export function biLeavesOf(root: BiNode): BiNode[] {
   return leavesOf(root) as BiNode[]
 }
 
-const FALLBACK_COLOR = '#7aaae8'
-
 function pnodeColor(byId: Map<string, PNode>, n: PNode): string {
+  // Walk to root ancestor; root's name is the stable color identity for the whole subtree.
   let cur: PNode | undefined = n
+  let root: PNode = n
   while (cur) {
-    if (cur.color) return cur.color
+    if (cur.color) return cur.color  // explicit override wins
+    root = cur
     cur = cur.parentId ? byId.get(cur.parentId) : undefined
   }
-  return FALLBACK_COLOR
+  return colorFor(root.name)
 }
 
 export function buildBiTree(nodes: PNode[], measureKey: string): BiNode | null {

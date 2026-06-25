@@ -1,1 +1,1 @@
-export { PALETTE, pickColor } from '@winstonfassett/vizform-core'
+export { PALETTE, pickColor, colorFor } from '@winstonfassett/vizform-core'

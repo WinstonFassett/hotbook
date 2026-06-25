@@ -1,7 +1,9 @@
 import type { PNode } from '@winstonfassett/vizform-react-d3'
+import type { PEdge } from '@winstonfassett/vizform-core'
+import { colorFor } from '@winstonfassett/vizform-core'
 import type { LayoutItem } from 'react-grid-layout'
 
-export type { PNode }
+export type { PNode, PEdge }
 
 // ─── Schema defs ──────────────────────────────────────────────────────────────
 
@@ -23,22 +25,25 @@ export interface Dataset {
   id: string
   name: string
   createdAt: string
+  shape: 'flat' | 'tree' | 'graph'
   rows: PNode[]
+  edges?: PEdge[]
   measureDefs: MeasureDef[]
   dimDefs: DimDef[]
 }
 
 // ─── Dashboard tile ───────────────────────────────────────────────────────────
 
+// Gen-0 and Svelte variants are retired from the picker but kept as string literals
+// so old persisted dashboards don't crash if encountered.
+export type RetiredTileKind =
+  | 'treemap' | 'radial' | 'bands'           // gen-0 flat morph trio
+  | 'h-treemap' | 'h-icicle' | 'h-radial'   // gen-0 hier D3
+  | 'svelte-br-lc-sunburst' | 'svelte-br-lc-icicle' | 'svelte-br-lc-pack' | 'svelte-br-lc-treemap' | 'svelte-treemap-demo'
+
 export type TileKind =
   | 'treetable'
-  | 'treemap'
-  | 'radial'
-  | 'bands'
-  | 'h-treemap'
-  | 'h-icicle'
-  | 'h-radial'
-  // bireactive LC-port charts
+  // bireactive LC-port charts (canon)
   | 'br-lc-bar'
   | 'br-lc-line'
   | 'br-lc-area'
@@ -52,12 +57,7 @@ export type TileKind =
   | 'br-lc-sunburst'
   | 'br-lc-sankey'
   | 'br-lc-tree'
-  // Svelte LayerChart adaptation (real Svelte+LayerChart, live data + sync)
-  | 'svelte-br-lc-sunburst'
-  | 'svelte-br-lc-icicle'
-  | 'svelte-br-lc-pack'
-  | 'svelte-br-lc-treemap'
-  | 'svelte-treemap-demo'
+  | RetiredTileKind
 
 export interface Tile {
   id: string
@@ -94,7 +94,7 @@ export interface Workspace {
 
 // ─── Storage ──────────────────────────────────────────────────────────────────
 
-const LS_KEY = 'sb:workspace:v9'
+const LS_KEY = 'sb:workspace:v10'
 
 function genId(): string {
   return Math.random().toString(36).slice(2, 10)
@@ -133,6 +133,7 @@ function buildFruitDataset(): Dataset {
     id: 'ds-fruit',
     name: 'Fruit (demo)',
     createdAt: NOW,
+    shape: 'flat' as const,
     rows,
     measureDefs: [{ key: 'value', label: 'Value' }],
     dimDefs: [
@@ -170,6 +171,7 @@ function buildTeamDataset(): Dataset {
     id: 'ds-team',
     name: 'Team allocation (demo)',
     createdAt: NOW,
+    shape: 'tree' as const,
     rows,
     measureDefs: [
       { key: 'budget', label: 'Budget', unit: 'k' },
@@ -424,6 +426,7 @@ function buildLifeDataset(): Dataset {
     id: 'ds-life',
     name: 'Life areas',
     createdAt: NOW,
+    shape: 'tree' as const,
     rows,
     measureDefs: [
       { key: 'est', label: 'Estimate', unit: 'h' },
@@ -441,18 +444,16 @@ function buildSeedWorkspace(): Workspace {
   const team  = buildTeamDataset()
   const life  = buildLifeDataset()
 
-  // All viz kinds, 4-across, half-height tiles
+  // Canon viz kinds for seed dashboard (retired gen-0/Svelte kinds excluded)
   const ALL_KINDS: TileKind[] = [
-    'treetable', 'h-treemap', 'h-icicle', 'h-radial', 'treemap', 'radial', 'bands',
+    'treetable',
     'br-lc-bar', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie',
     'br-lc-radar', 'br-lc-concentric-arc',
     'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree',
-    'svelte-br-lc-sunburst', 'svelte-br-lc-icicle', 'svelte-br-lc-pack', 'svelte-br-lc-treemap', 'svelte-treemap-demo',
   ]
 
   const GROUPBY_KINDS = new Set<TileKind>([
     'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree',
-    'svelte-br-lc-sunburst', 'svelte-br-lc-icicle', 'svelte-br-lc-pack',
   ])
 
   function makeAllVizDash(prefix: string, flatGroupBy?: string): { tiles: Tile[]; layout: LayoutItem[] } {
@@ -536,7 +537,7 @@ export function applyGroupBy(rows: PNode[], dimKey: string): PNode[] {
     if (!groups.has(val)) {
       const gid = `__grp__${dimKey}__${val}`
       groups.set(val, gid)
-      groupNodes.push({ id: gid, parentId: null, index: gi, name: val, measures: {}, dims: {}, color: PALETTE[gi % PALETTE.length] })
+      groupNodes.push({ id: gid, parentId: null, index: gi, name: val, measures: {}, dims: {}, color: colorFor(val) })
       gi++
     }
   }

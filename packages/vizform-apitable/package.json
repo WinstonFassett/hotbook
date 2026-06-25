@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@apitable/widget-sdk": "^1.10.0",
+    "@winstonfassett/vizform-core": "*",
     "@winstonfassett/vizform-react-d3": "*"
   },
   "devDependencies": {

@@ -4,7 +4,7 @@ export type {
   VizFormEvent, VizFormChangeEvent, VizFormClickEvent, Cleanup,
   PNode, Rollup, Measurement,
 } from './types'
-export { pickColor } from './colors'
+export { pickColor, colorFor } from './colors'
 export { VizRenderer } from './viz/VizRenderer'
 export type { VizRenderOptions } from './viz/VizRenderer'
 export { mountIcicle } from './hviz/icicle'
