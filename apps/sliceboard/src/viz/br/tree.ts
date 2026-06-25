@@ -83,7 +83,7 @@ export function buildBiTree(nodes: PNode[], measureKey: string): BiNode | null {
   const roots = nodes.filter(n => n.parentId === null).sort((a, b) => a.index - b.index)
   if (roots.length === 0) return null
   if (roots.length === 1) return build(roots[0]!)
-  return biGroup('__root__', 'root', FALLBACK_COLOR, roots.map(build))
+  return biGroup('__root__', 'root', colorFor('root'), roots.map(build))
 }
 
 export function buildFlatBiData(nodes: PNode[], measureKey: string): Array<{ label: string; value: number }> {
