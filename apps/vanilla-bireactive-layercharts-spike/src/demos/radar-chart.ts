@@ -2,9 +2,8 @@
 // Mirrors LC's radial Chart + scaleBand for x (angle per category).
 // Grid: polygon rings at radius ticks + spoke lines. Points on polygon are clickable/editable.
 
-import { Anchor, cell, circle, derive, Diagram, effect as biEffect, label, line, type Mount, pathD, Vec, vec } from "bireactive";
+import { Anchor, cell, circle, derive, Diagram, effect as biEffect, label, type Mount, pathD, Vec, vec } from "bireactive";
 import { scaleBand, scaleLinear } from "d3-scale";
-import { curveLinearClosed, lineRadial } from "d3-shape";
 import { makeWheelGesture } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 
@@ -94,29 +93,39 @@ export class MdRadarChartLC extends Diagram {
       s(pathD(ringD, { stroke: "#ffffff", opacity: 0.1, strokeWidth: 1 }));
     }
 
-    // Spoke lines from center to outer ring.
-    const spokeGroup = derive(() => {
+    // Spoke lines + labels — rendered as derived paths so they react to count changes.
+    // One <path> element per spoke slot up to MAX_SPOKES; hidden when slot is out of range.
+    const MAX_SPOKES = 20;
+    const spokeD = derive(() => {
       const rows = data.value as Spoke[];
-      return rows.map((_, i) => {
+      const pts: string[] = [];
+      for (let i = 0; i < rows.length; i++) {
         const a = angle(i);
-        return { x: CX + Math.cos(a) * R_MAX, y: CY + Math.sin(a) * R_MAX };
-      });
+        const tx = (CX + Math.cos(a) * R_MAX).toFixed(1);
+        const ty = (CY + Math.sin(a) * R_MAX).toFixed(1);
+        pts.push(`M${CX},${CY}L${tx},${ty}`);
+      }
+      return pts.join(" ");
     });
-    for (let i = 0; i < (data.value as Spoke[]).length; i++) {
-      const tip = Vec.derive(() => spokeGroup.value[i] ?? { x: CX, y: CY });
-      s(line(Vec.derive(() => ({ x: CX, y: CY })), tip, { thin: true, stroke: "#ffffff", opacity: 0.12 }));
+    s(pathD(spokeD, { fill: "none", stroke: "#ffffff", opacity: 0.12, strokeWidth: 1 }));
 
-      // Angle axis label (category name).
+    // Labels — one text element per slot, repositioned + renamed reactively.
+    for (let i = 0; i < MAX_SPOKES; i++) {
       const lblPos = Vec.derive(() => {
+        const rows = data.value as Spoke[];
+        if (i >= rows.length) return { x: -1000, y: -1000 }; // hide off-screen
         const a = angle(i);
         const r = R_MAX + 22;
         return { x: CX + Math.cos(a) * r, y: CY + Math.sin(a) * r };
       });
-      s(label(lblPos, (data.value as Spoke[])[i]!.name, { size: 11, align: Anchor.Center, fill: "#aaa" }));
+      const lblText = derive(() => {
+        const rows = data.value as Spoke[];
+        return i < rows.length ? rows[i]!.name : "";
+      });
+      s(label(lblPos, lblText, { size: 11, align: Anchor.Center, fill: "#aaa" }));
     }
 
     // Filled polygon (value area).
-    // lineRadial produces center-origin coords, so we build absolute coords manually.
     const polyD = derive(() => {
       const rows = data.value as Spoke[];
       const ys = yScale.value;
@@ -133,30 +142,47 @@ export class MdRadarChartLC extends Diagram {
     s(pathD(polyD, { fill: COLOR, stroke: "none", opacity: 0.18 }));
     s(pathD(polyD, { fill: "none", stroke: COLOR, strokeWidth: 2, opacity: 0.85 }));
 
-    // Data points — one per spoke, clickable.
-    for (let i = 0; i < (data.value as Spoke[]).length; i++) {
-      const d = (data.value as Spoke[])[i]!;
-
+    // Data points — one slot per MAX_SPOKES; each reads data.value[i] reactively.
+    for (let i = 0; i < MAX_SPOKES; i++) {
       const dotPos = Vec.derive(() => {
-        void data.value;
+        const rows = data.value as Spoke[];
+        if (i >= rows.length) return { x: -1000, y: -1000 }; // hide off-screen
         const a = angle(i);
-        const r = yScale.value(d.value);
+        const r = yScale.value(rows[i]!.value);
         return { x: CX + Math.cos(a) * r, y: CY + Math.sin(a) * r };
       });
-
-      const dotR = derive(() =>
-        selected.value === d ? 8 : hover.value === d ? 7 : 5
-      );
-      const dotStroke = derive(() =>
-        selected.value === d ? "#fff" : hover.value === d ? "#fff" : "#0b0d12"
-      );
-      const dotStrokeW = derive(() => selected.value === d ? 2.5 : 1.5);
-
+      const dotR = derive(() => {
+        const rows = data.value as Spoke[];
+        const d = rows[i];
+        if (!d) return 0;
+        return selected.value === d ? 8 : hover.value === d ? 7 : 5;
+      });
+      const dotStroke = derive(() => {
+        const rows = data.value as Spoke[];
+        const d = rows[i];
+        if (!d) return "#0b0d12";
+        return selected.value === d ? "#fff" : hover.value === d ? "#fff" : "#0b0d12";
+      });
+      const dotStrokeW = derive(() => {
+        const rows = data.value as Spoke[];
+        const d = rows[i];
+        return d && selected.value === d ? 2.5 : 1.5;
+      });
       const dot = s(circle(dotPos, dotR, { fill: COLOR, stroke: dotStroke, strokeWidth: dotStrokeW }));
       dot.el.style.cursor = "ns-resize";
-      dot.el.addEventListener("pointerenter", () => { if (!wheel.active) hover.value = d; });
-      dot.el.addEventListener("pointerleave", () => { if (!wheel.active && hover.value === d) hover.value = null; });
-      dot.el.addEventListener("click", () => { selected.value = selected.value === d ? null : d; });
+      dot.el.addEventListener("pointerenter", () => {
+        const d = (data.value as Spoke[])[i];
+        if (d && !wheel.active) hover.value = d;
+      });
+      dot.el.addEventListener("pointerleave", () => {
+        const d = (data.value as Spoke[])[i];
+        if (d && !wheel.active && hover.value === d) hover.value = null;
+      });
+      dot.el.addEventListener("click", () => {
+        const d = (data.value as Spoke[])[i];
+        if (!d) return;
+        selected.value = selected.value === d ? null : d;
+      });
     }
 
     // Drag: pointermove on host, find nearest spoke by angle, map radius → value.

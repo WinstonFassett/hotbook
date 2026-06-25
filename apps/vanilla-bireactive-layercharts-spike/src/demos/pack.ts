@@ -22,6 +22,7 @@ const PAD = 2;
 export class MdPack extends Diagram {
   static styles = `text { pointer-events: none; }${FILL_STYLE}`
   externalRoot?: BiNode
+  maxDepth?: number
   protected scene(s: Mount): void {
     const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
     const view = this.view(Wc, Hc);
@@ -49,7 +50,9 @@ export class MdPack extends Diagram {
       return map;
     });
 
+    const maxD = this.maxDepth
     for (const { node, depth, isLeaf } of walkWithDepth(root)) {
+      if (maxD !== undefined && depth > maxD) continue;
       const cx = derive(() => layout.value.get(node)?.x ?? 0);
       const cy = derive(() => layout.value.get(node)?.y ?? 0);
       const r = derive(() => layout.value.get(node)?.r ?? 0);

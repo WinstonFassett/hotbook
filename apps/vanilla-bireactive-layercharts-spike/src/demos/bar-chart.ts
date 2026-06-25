@@ -1,6 +1,6 @@
 // BarChart — vanilla-TS port of LayerChart's BarChart wrapper.
 
-import { Anchor, cell, derive, Diagram, effect as biEffect, label, line, type Mount, rect, Vec, vec } from "bireactive";
+import { Anchor, cell, circle, derive, Diagram, effect as biEffect, label, line, type Mount, rect, Vec, vec } from "bireactive";
 import { scaleBand } from "d3-scale";
 import { axis } from "../lib/axis";
 import { chartContext } from "../lib/chart-context";
@@ -218,6 +218,25 @@ export class MdBarChartLC extends Diagram {
       tile.el.addEventListener("pointerenter", () => { if (!wheel.active) hover.value = d; });
       tile.el.addEventListener("pointerleave", () => { if (!wheel.active && hover.value === d) hover.value = null; });
       tile.el.addEventListener("click", () => { selected.value = selected.value === d ? null : d; });
+
+      // Drag handle — visible circle at bar top on hover/select.
+      const handlePos = Vec.derive(() => ({
+        x: barX.value + barW.value / 2,
+        y: barY.value,
+      }));
+      const handleR = derive(() => selected.value === d ? 6 : 5);
+      const handleFill = derive(() => selected.value === d ? "#fff" : hover.value === d ? "#a4c0f0" : COLOR);
+      const handleOpacity = derive(() => (hover.value === d || selected.value === d) ? 1 : 0);
+      const handle = s(circle(handlePos, handleR, {
+        fill: handleFill,
+        stroke: "#0b0d12",
+        strokeWidth: 1.5,
+        opacity: handleOpacity,
+      }));
+      handle.el.style.cursor = "ns-resize";
+      handle.el.style.transition = "opacity 0.1s";
+      handle.el.addEventListener("pointerenter", () => { if (!wheel.active) hover.value = d; });
+      handle.el.addEventListener("pointerleave", () => { if (!wheel.active && hover.value === d) hover.value = null; });
     }
 
     s(label(

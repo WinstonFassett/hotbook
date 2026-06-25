@@ -33,12 +33,17 @@ import './App.css'
 // root name → same color regardless of position.
 function colorByGroup(nodes: PNode[]): PNode[] {
   const byId = new Map(nodes.map(n => [n.id, n]))
-  const rootOf = (n: PNode): PNode => {
+  // Walk up to the nearest ancestor that has an explicit color (not the synthetic
+  // groupBy virtual root, which has no color and would collapse all children to one hue).
+  const nearestColor = (n: PNode): string => {
     let cur = n
-    while (cur.parentId && byId.has(cur.parentId)) cur = byId.get(cur.parentId)!
-    return cur
+    while (true) {
+      if (cur.color) return cur.color
+      if (!cur.parentId || !byId.has(cur.parentId)) return colorFor(cur.name)
+      cur = byId.get(cur.parentId)!
+    }
   }
-  return nodes.map(n => ({ ...n, color: n.color ?? colorFor(rootOf(n).name) }))
+  return nodes.map(n => ({ ...n, color: n.color ?? nearestColor(n) }))
 }
 
 // Canon picker — retired gen-0/Svelte kinds excluded
@@ -119,10 +124,10 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
   if (tile.kind === 'br-lc-concentric-arc') return <BrLcConcentricArc nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} />
 
   // ── BR-LC hierarchical charts ────────────────────────────────────────────
-  if (tile.kind === 'br-lc-pack')           return <BrLcPack nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
-  if (tile.kind === 'br-lc-treemap')        return <BrLcTreemap nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
-  if (tile.kind === 'br-lc-icicle')         return <BrLcIcicle nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
-  if (tile.kind === 'br-lc-sunburst')       return <BrLcSunburst nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
+  if (tile.kind === 'br-lc-pack')           return <BrLcPack nodes={nodes} measureKey={mk} depth={depth} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
+  if (tile.kind === 'br-lc-treemap')        return <BrLcTreemap nodes={nodes} measureKey={mk} depth={depth} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
+  if (tile.kind === 'br-lc-icicle')         return <BrLcIcicle nodes={nodes} measureKey={mk} depth={depth} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
+  if (tile.kind === 'br-lc-sunburst')       return <BrLcSunburst nodes={nodes} measureKey={mk} depth={depth} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
   if (tile.kind === 'br-lc-sankey')         return <BrLcSankey nodes={nodes} measureKey={mk} />
   if (tile.kind === 'br-lc-tree')           return <BrLcTree nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
 
@@ -165,8 +170,8 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
 
 // ─── Tile wrapper ─────────────────────────────────────────────────────────────
 
-// Kinds where depth selector is wired (retired h-* only — kept so stored tiles still render)
-const HIER_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial'])
+// Kinds where depth selector is wired
+const HIER_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial', 'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst'])
 // Kinds where Order/Value sort selector is shown
 const VIZ_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial', 'treemap', 'radial', 'bands', 'br-lc-bar', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie', 'br-lc-radar', 'br-lc-concentric-arc', 'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree'])
 // Kinds that accept groupBy to add hierarchy to flat data

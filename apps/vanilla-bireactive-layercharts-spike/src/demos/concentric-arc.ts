@@ -2,7 +2,7 @@
 // Full-360° track per ring, rounded ends, value arc on top.
 // Click ring to select · Tab/←/→ nav · ↑/↓ edit · cmd+wheel.
 
-import { Anchor, cell, derive, Diagram, effect as biEffect, group, label, mount, type Mount, pathD, vec, Vec } from "bireactive";
+import { Anchor, cell, circle, derive, Diagram, effect as biEffect, group, label, mount, type Mount, pathD, vec, Vec } from "bireactive";
 import { arc as d3Arc } from "d3-shape";
 import { makeWheelGesture } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
@@ -80,15 +80,20 @@ export class MdConcentricArcLC extends Diagram {
     const g = s(group({ translate: vec(CX, CY) }));
     const gs = mount(g);
 
-    for (let i = 0; i < (data.value as Ring[]).length; i++) {
+    // Rings are ordered by current sort rank. We mount MAX_RINGS slots and derive
+    // radius from the ring's current position in data.value so sort-by-value reorders visually.
+    const MAX_RINGS = (data.value as Ring[]).length;
+    for (let i = 0; i < MAX_RINGS; i++) {
       const d = (data.value as Ring[])[i]!;
-      const rOuter = RING_OUTER_START - i * (RING_THICKNESS + RING_GAP);
-      const rInner = rOuter - RING_THICKNESS;
+      // Derive radius from the ring's current rank in data.value (sort-stable).
+      const rankOf = () => (data.value as Ring[]).indexOf(d);
+      const rOuter = derive(() => RING_OUTER_START - rankOf() * (RING_THICKNESS + RING_GAP));
+      const rInner = derive(() => rOuter.value - RING_THICKNESS);
       const corner = RING_THICKNESS / 2;
 
       // Full-circle track.
       const trackEl = gs(pathD(
-        derive(() => arcD(rOuter, rInner, START, START + TWO_PI, corner)),
+        derive(() => arcD(rOuter.value, rInner.value, START, START + TWO_PI, corner)),
         { fill: d.color, opacity: derive(() => hover.value === d || selected.value === d ? 0.25 : 0.18) }
       ));
       trackEl.el.style.cursor = "pointer";
@@ -103,8 +108,8 @@ export class MdConcentricArcLC extends Diagram {
         const endAngle = START + frac * TWO_PI;
         if (Math.abs(endAngle - START) < 0.001) return "";
         const isActive = hover.value === d || selected.value === d;
-        const ro = rOuter + (isActive ? 4 : 0);
-        const ri = rInner - (isActive ? 2 : 0);
+        const ro = rOuter.value + (isActive ? 4 : 0);
+        const ri = rInner.value - (isActive ? 2 : 0);
         return arcD(ro, ri, START, endAngle, corner);
       });
       const valueStroke = derive(() =>
@@ -120,11 +125,35 @@ export class MdConcentricArcLC extends Diagram {
       valueEl.el.addEventListener("pointerleave", () => { if (hover.value === d) hover.value = null; });
       valueEl.el.addEventListener("click", () => { selected.value = selected.value === d ? null : d; this.focus(); });
 
+      // End-cap drag handle — circle at the arc tip, visible on hover/select.
+      const handlePos = Vec.derive(() => {
+        void data.value;
+        const d3Angle = START + (d.value / 100) * TWO_PI;
+        const svgAngle = d3Angle - Math.PI / 2;
+        const rMid = (rOuter.value + rInner.value) / 2;
+        return { x: CX + Math.cos(svgAngle) * rMid, y: CY + Math.sin(svgAngle) * rMid };
+      });
+      const handleR = derive(() => selected.value === d ? 7 : 6);
+      const handleFill = derive(() => selected.value === d ? "#fff" : d.color);
+      const handleOpacity = derive(() => (hover.value === d || selected.value === d) ? 1 : 0);
+      const handleEl = s(circle(handlePos, handleR, {
+        fill: handleFill,
+        stroke: "#0b0d12",
+        strokeWidth: 1.5,
+        opacity: handleOpacity,
+      }));
+      handleEl.el.style.cursor = "pointer";
+      handleEl.el.style.transition = "opacity 0.12s";
+      handleEl.el.addEventListener("pointerenter", () => { hover.value = d; });
+      handleEl.el.addEventListener("pointerleave", () => { if (hover.value === d) hover.value = null; });
+      handleEl.el.addEventListener("click", () => { selected.value = selected.value === d ? null : d; this.focus(); });
+
       // Ring label near end-cap — d3Arc angle 0=top, clockwise; SVG: angle 0=right, y-down.
       const lblPos = Vec.derive(() => {
+        void data.value; // subscribe to re-position when value or rank changes
         const d3Angle = START + (d.value / 100) * TWO_PI; // d3Arc angle (0=top, cw)
         const svgAngle = d3Angle - Math.PI / 2;           // convert to SVG (0=right, cw y-down)
-        const rMid = (rOuter + rInner) / 2;
+        const rMid = (rOuter.value + rInner.value) / 2;
         return { x: CX + Math.cos(svgAngle) * (rMid + 22), y: CY + Math.sin(svgAngle) * (rMid + 22) };
       });
       s(label(lblPos, d.label, { size: 10, fill: d.color, opacity: 0.85 }));
@@ -160,13 +189,13 @@ export class MdConcentricArcLC extends Diagram {
       const lx = (pe.clientX - r.left) * sx - CX;
       const ly = (pe.clientY - r.top) * sy - CY;
       const dist = Math.sqrt(lx * lx + ly * ly);
-      // Find which ring the pointer is over by radius.
+      // Find which ring the pointer is over by radius. Rank = position in data.value (sorted order).
       const rows = data.value as Ring[];
       let hit: Ring | null = null;
-      for (let i = 0; i < rows.length; i++) {
-        const rOuter = RING_OUTER_START - i * (RING_THICKNESS + RING_GAP);
-        const rInner = rOuter - RING_THICKNESS;
-        if (dist >= rInner - 4 && dist <= rOuter + 4) { hit = rows[i]!; break; }
+      for (let rank = 0; rank < rows.length; rank++) {
+        const ro = RING_OUTER_START - rank * (RING_THICKNESS + RING_GAP);
+        const ri = ro - RING_THICKNESS;
+        if (dist >= ri - 4 && dist <= ro + 4) { hit = rows[rank]!; break; }
       }
       if (!selected.value) hover.value = hit;
       lastRing = hit;

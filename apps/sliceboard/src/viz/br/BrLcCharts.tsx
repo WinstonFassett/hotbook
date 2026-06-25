@@ -434,6 +434,7 @@ export function BrLcArea({ nodes, measureKey, onUpdate }: FlatProps) {
 
 interface ElWithRoot extends HTMLElement {
   externalRoot?: BiNode
+  maxDepth?: number
 }
 
 export function useLiveHierElement(
@@ -442,6 +443,7 @@ export function useLiveHierElement(
   measureKey: string,
   onUpdate?: (nodeId: string, measures: PNode['measures']) => void,
   onUpdateMany?: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void,
+  depth?: number,
 ) {
   const containerRef = useRef<HTMLDivElement>(null)
   const elRef = useRef<ElWithRoot | null>(null)
@@ -454,8 +456,8 @@ export function useLiveHierElement(
   const onUpdateRef = useRef(onUpdate); onUpdateRef.current = onUpdate
   const onUpdateManyRef = useRef(onUpdateMany); onUpdateManyRef.current = onUpdateMany
 
-  // Shape: rebuild only when the tree structure (ids/parents) or measureKey changes.
-  const shapeKey = `${measureKey}|${nodes.map(n => `${n.id}:${n.parentId ?? ''}`).join(',')}`
+  // Shape: rebuild when tree structure, measureKey, or depth changes.
+  const shapeKey = `${measureKey}|${depth ?? 'all'}|${nodes.map(n => `${n.id}:${n.parentId ?? ''}`).join(',')}`
   // Per-leaf store values, applied in place on change. Keyed on the exact
   // (precision-stable) value so fractional edits still trigger apply-in.
   const valueKey = nodes.map(n => `${n.id}:${vkey(n.measures[measureKey] ?? 0)}`).join(',')
@@ -473,6 +475,7 @@ export function useLiveHierElement(
     const el = document.createElement(tag) as ElWithRoot
     el.setAttribute('no-source', '')
     el.externalRoot = root
+    if (depth !== undefined) el.maxDepth = depth
     container.appendChild(el)
     elRef.current = el
 
@@ -554,27 +557,28 @@ export function useLiveHierElement(
 interface HierProps {
   nodes: PNode[]
   measureKey: string
+  depth?: number
   onUpdate?: (nodeId: string, measures: PNode['measures']) => void
   onUpdateMany?: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
 }
 
-export function BrLcPack({ nodes, measureKey, onUpdate, onUpdateMany }: HierProps) {
-  const ref = useLiveHierElement('v-br-pack', nodes, measureKey, onUpdate, onUpdateMany)
+export function BrLcPack({ nodes, measureKey, depth, onUpdate, onUpdateMany }: HierProps) {
+  const ref = useLiveHierElement('v-br-pack', nodes, measureKey, onUpdate, onUpdateMany, depth)
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }
 
-export function BrLcTreemap({ nodes, measureKey, onUpdate, onUpdateMany }: HierProps) {
-  const ref = useLiveHierElement('v-br-treemap', nodes, measureKey, onUpdate, onUpdateMany)
+export function BrLcTreemap({ nodes, measureKey, depth, onUpdate, onUpdateMany }: HierProps) {
+  const ref = useLiveHierElement('v-br-treemap', nodes, measureKey, onUpdate, onUpdateMany, depth)
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }
 
-export function BrLcIcicle({ nodes, measureKey, onUpdate, onUpdateMany }: HierProps) {
-  const ref = useLiveHierElement('v-br-icicle', nodes, measureKey, onUpdate, onUpdateMany)
+export function BrLcIcicle({ nodes, measureKey, depth, onUpdate, onUpdateMany }: HierProps) {
+  const ref = useLiveHierElement('v-br-icicle', nodes, measureKey, onUpdate, onUpdateMany, depth)
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }
 
-export function BrLcSunburst({ nodes, measureKey, onUpdate, onUpdateMany }: HierProps) {
-  const ref = useLiveHierElement('v-br-sunburst', nodes, measureKey, onUpdate, onUpdateMany)
+export function BrLcSunburst({ nodes, measureKey, depth, onUpdate, onUpdateMany }: HierProps) {
+  const ref = useLiveHierElement('v-br-sunburst', nodes, measureKey, onUpdate, onUpdateMany, depth)
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }
 

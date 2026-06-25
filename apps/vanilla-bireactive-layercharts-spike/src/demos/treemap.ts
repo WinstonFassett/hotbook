@@ -24,6 +24,7 @@ const PAD_TOP = 16;
 export class MdTreemapLC extends Diagram {
   static styles = `text { pointer-events: none; }${FILL_STYLE}`
   externalRoot?: BiNode
+  maxDepth?: number
   protected scene(s: Mount): void {
     const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
     const view = this.view(Wc, Hc);
@@ -57,7 +58,9 @@ export class MdTreemapLC extends Diagram {
       return map;
     });
 
+    const maxD = this.maxDepth
     for (const { node, depth, isLeaf } of walkWithDepth(root)) {
+      if (maxD !== undefined && depth > maxD) continue;
       const x = derive(() => layout.value.get(node)?.x0 ?? 0);
       const y = derive(() => layout.value.get(node)?.y0 ?? 0);
       const w = derive(() => Math.max(0, (layout.value.get(node)?.x1 ?? 0) - (layout.value.get(node)?.x0 ?? 0)));

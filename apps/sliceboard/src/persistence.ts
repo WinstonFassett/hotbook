@@ -111,6 +111,34 @@ function row(name: string, measures: Record<string, number>, dims: Record<string
   return { id: nid(), parentId: parentId ?? null, index: _idc, name, measures, dims, ...(color ? { color } : {}) }
 }
 
+// ─── Seed datasets ────────────────────────────────────────────────────────────
+//
+// Dataset 1 — Fruit (flat + groupBy demo)
+//   Shape: flat (no parentId). 12 rows, 1 measure (value), 2 dims (group, season).
+//   Groups: Alpha (Apples/Bananas/Grapes), Beta (Carrots/Dates/Elderberry),
+//           Gamma (Eggplant/Fennel/Honeydew), Delta (Jackfruit/Kale/Lemon).
+//   Use: exercises flat charts (bar/line/area/pie/radar/concentric-arc/scatter),
+//        groupBy demos (group or season → hierarchy for pack/treemap/icicle/sunburst).
+//
+// Dataset 2 — Team Allocation (2-level hierarchy)
+//   Shape: tree (3 quarter roots Q2/Q3/Q4 → team leaves). 16 rows total.
+//   Measures: budget (k), headcount. Dims: team, role.
+//   Teams per quarter: Design, Frontend, Backend, Infra (+ PM in Q4).
+//   Use: exercises hier charts natively (no groupBy needed), scatter (budget vs headcount),
+//        multi-measure selector, cross-quarter comparison via flat charts on leaves.
+//
+// Dataset 3 — Life Areas (4-level hierarchy: goal → project → subproject → task)
+//   Shape: tree (5-6 top-level goals, each with 2-3 projects, 2-3 subprojects, 2-5 tasks).
+//   Measures: est (hours estimated), act (hours actual, optional).
+//   Dims: level (goal/project/subproject/task), status (done/doing/todo).
+//   Colors: each goal has a distinct palette color; descendants inherit it.
+//   Use: deep hier charts (icicle/sunburst/pack/treemap — depth selector meaningful here),
+//        groupBy:'level' groups leaves by level for flat charts,
+//        groupBy:'status' clusters by done/doing/todo.
+//   Note: all nodes already have parentId (fully hierarchical), so applyGroupBy only
+//         re-roots the top-level goal nodes under a virtual parent named by the dim value.
+//
+// ─────────────────────────────────────────────────────────────────────────────
 // ─── Dataset 1: Fruit (flat + groupBy demo) ───────────────────────────────────
 
 function buildFruitDataset(): Dataset {

@@ -21,6 +21,7 @@ const H = 480;
 export class MdSunburstLC extends Diagram {
   static styles = `text { pointer-events: none; }${FILL_STYLE}`
   externalRoot?: BiNode
+  maxDepth?: number
   protected scene(s: Mount): void {
     const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
     const view = this.view(Wc, Hc);
@@ -51,8 +52,10 @@ export class MdSunburstLC extends Diagram {
 
     const center = Vec.derive(() => ({ x: Wc.value / 2, y: Hc.value / 2 }));
 
+    const maxD = this.maxDepth
     for (const { node, depth, isLeaf } of walkWithDepth(root)) {
       if (depth === 0) continue;
+      if (maxD !== undefined && depth > maxD) continue;
       const a0 = derive(() => layout.value.get(node)?.x0 ?? 0);
       const a1 = derive(() => layout.value.get(node)?.x1 ?? 0);
       const rIn = derive(() => layout.value.get(node)?.y0 ?? 0);
