@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@types/d3-hierarchy": "^3.1.7",
-    "bireactive": "^0.2.4",
+    "bireactive": "^0.3.4",
     "d3-hierarchy": "^3.1.2"
   },
   "devDependencies": {
