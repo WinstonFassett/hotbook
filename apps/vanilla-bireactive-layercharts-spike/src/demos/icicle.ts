@@ -156,20 +156,28 @@ export class MdIcicleLC extends Diagram {
             const frac = sum === 0 ? 0.5 : va / sum;
             return x0 + frac * (x1 - x0);
           });
+          // Canonical budget-tree pill: borderless black, ~2/3 of the row tall,
+          // opacity 0.85. White stroke is reserved for hover/active feedback.
+          const rowH = derive(() => rowY1.value - rowY0.value);
+          const pillH = derive(() => Math.max(8, rowH.value * (2 / 3)));
           const pillX = Num.derive(() => knobX.value - PILL_W / 2);
-          const pillY = derive(() => rowY0.value + 3);
-          const pillH = derive(() => Math.max(8, rowY1.value - rowY0.value - 6));
+          const pillY = derive(() => rowY0.value + (rowH.value - pillH.value) / 2);
+          const active = cell(false);
           const pill = s(
             rect(pillX, pillY, PILL_W, pillH, {
-              fill: "#0b0d12",
-              stroke: "#fff",
-              strokeWidth: 1,
+              fill: "black",
+              stroke: derive(() => (active.value ? "#fff" : "black")),
+              thin: true,
               corner: PILL_W / 2,
-              opacity: 0.85,
+              opacity: derive(() => (active.value ? 1 : 0.85)),
             }),
           );
           drag(pill, knob);
           pill.el.style.cursor = "ew-resize";
+          pill.el.addEventListener("pointerenter", () => { active.value = true; });
+          pill.el.addEventListener("pointerleave", () => { active.value = false; });
+          pill.el.addEventListener("pointerdown", () => { active.value = true; });
+          window.addEventListener("pointerup", () => { active.value = false; });
         }
       }
     }
