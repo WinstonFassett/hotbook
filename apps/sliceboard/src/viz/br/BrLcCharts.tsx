@@ -171,11 +171,13 @@ function useBrElement<T extends HTMLElement>(
 interface ElWithDataCell<D> extends HTMLElement {
   dataCell: Writable<Cell<readonly D[]>>
   externalData?: unknown
+  /** True while a wheel or drag gesture is live — remount must be deferred. */
+  gestureActive?: boolean
 }
 
 interface LiveFlatSpec<D> {
   tag: string
-  /** Per-datum backing PNode id, in render order. Drives shape key + edit-out. */
+  /** Per-datum backing PNode id, in render order. Drives edit-out + apply-in. */
   ids: string[]
   /** Build the datum objects for the initial mount. */
   build: () => D[]
@@ -185,7 +187,7 @@ interface LiveFlatSpec<D> {
   writeValue: (d: D, v: number) => void
   /** Current store values per id, in the same order as `ids`. */
   values: number[]
-  /** Shape key: rebuild when this changes. */
+  /** Shape key: rebuild when this changes (row set / names / measure — NOT sort order). */
   shapeKey: string
   /** measureKey the value maps to, for edit-out patches. */
   measureKey: string
@@ -199,11 +201,12 @@ function useLiveFlatElement<D>(
   const containerRef = useRef<HTMLDivElement>(null)
   const elRef = useRef<ElWithDataCell<D> | null>(null)
   const disposeRef = useRef<(() => void) | undefined>(undefined)
-  // `last[i]` = the exact value we consider already in sync with the store for
-  // datum i. The edit-out subscription emits only when a value diverges from it
-  // (epsilon compare); the apply-in effect updates it when it pushes a store
-  // change in, so a store echo of the element's own edit doesn't bounce back out.
+  // `last[i]` = the exact value we consider already in sync for datum at
+  // build-time position i. Keyed by build-time index, not sort-time index.
   const lastRef = useRef<number[]>(spec.values.slice())
+  // Build-time id order — stable across sort reorders (set at mount, cleared on unmount).
+  // arr[i] in the element always corresponds to buildIds[i].
+  const buildIdsRef = useRef<string[]>(spec.ids.slice())
   // Latest spec/nodes/onUpdate for the (stable) edit-out subscription to read.
   const specRef = useRef(spec); specRef.current = spec
   const nodesRef = useRef(nodes); nodesRef.current = nodes
@@ -218,17 +221,23 @@ function useLiveFlatElement<D>(
     el.externalData = spec.build()
     container.appendChild(el)
     elRef.current = el
+    // Snapshot the id order at build time — arr[i] always matches buildIds[i].
+    buildIdsRef.current = specRef.current.ids.slice()
     lastRef.current = specRef.current.values.slice()
 
-    // Cross-tile hover/select sync (index ↔ id via the live spec.ids).
-    const unbindHud = bindHudSyncFlat(el as ElWithBrSync, { get current() { return specRef.current.ids } })
+    // Cross-tile hover/select sync (index ↔ id via build-time order, not sort order).
+    // buildIdsRef is frozen at mount so element index i always maps to buildIds[i].
+    const unbindHud = bindHudSyncFlat(el as ElWithBrSync, buildIdsRef)
 
     // Edit-out: when the element's own gesture changes a value, push to store.
+    // Uses buildIds (frozen at mount) not spec.ids (current sort order), so
+    // arr[i] always maps to the correct node even after a sort reorder.
     disposeRef.current = biEffect(() => {
       const arr = el.dataCell.value
       const s = specRef.current
       const cb = onUpdateRef.current
       const last = lastRef.current
+      const buildIds = buildIdsRef.current
       if (!cb) { for (let i = 0; i < arr.length; i++) last[i] = s.readValue(arr[i]!); return }
       const byId = new Map(nodesRef.current.map(n => [n.id, n]))
       const pending: Array<[string, PNode['measures']]> = []
@@ -236,7 +245,7 @@ function useLiveFlatElement<D>(
         const v = s.readValue(arr[i]!)
         if (!near(v, last[i]!)) {
           last[i] = v
-          const node = byId.get(s.ids[i]!)
+          const node = byId.get(buildIds[i]!)
           if (node) pending.push([node.id, { ...node.measures, [s.measureKey]: v }])
         }
       }
@@ -255,26 +264,45 @@ function useLiveFlatElement<D>(
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [spec.tag, spec.shapeKey])
 
-  // Apply store value changes in place — mutate existing objects, re-signal.
-  // Skips values already matching (the common case: echo of the element's own
-  // edit). Updates lastRef so edit-out won't re-emit what we just applied.
+  // Apply store changes in place — update values AND reorder to match current sort.
+  // Reconciles by id: builds a map from id→datum, then writes spec.ids order into
+  // the element's array so the reactive band/domain derives pick up the new order.
   useEffect(() => {
     const el = elRef.current
     if (!el) return
     const arr = el.dataCell.value as D[]
-    const last = lastRef.current
+    // Build id→datum map from the element's current array and buildIds.
+    const buildIds = buildIdsRef.current
+    const datumById = new Map<string, D>()
+    for (let i = 0; i < arr.length; i++) datumById.set(buildIds[i]!, arr[i]!)
+    // Apply new values and produce array in current spec.ids order.
     let changed = false
-    for (let i = 0; i < arr.length && i < spec.values.length; i++) {
-      const target = spec.values[i]!
-      if (!near(spec.readValue(arr[i]!), target)) {
-        spec.writeValue(arr[i]!, target)
-        last[i] = target
+    const next: D[] = []
+    for (let j = 0; j < spec.ids.length; j++) {
+      const id = spec.ids[j]!
+      const d = datumById.get(id)
+      if (!d) continue
+      const target = spec.values[j]!
+      // Find this datum's build-time index for lastRef.
+      const bi = buildIds.indexOf(id)
+      if (!near(spec.readValue(d), target)) {
+        spec.writeValue(d, target)
+        if (bi >= 0) lastRef.current[bi] = target
         changed = true
       }
+      next.push(d)
     }
-    if (changed) el.dataCell.value = [...arr]
+    // Check if order changed.
+    const reordered = next.some((d, i) => d !== arr[i])
+    if (changed || reordered) {
+      // Update buildIdsRef to reflect new order (edit-out and HUD use it).
+      buildIdsRef.current = spec.ids.slice()
+      el.dataCell.value = next
+      // Rebuild lastRef in new order.
+      lastRef.current = next.map(d => spec.readValue(d))
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [spec.values.join(',')])
+  }, [spec.values.join(','), spec.ids.join(',')])
 
   return containerRef
 }
@@ -297,7 +325,7 @@ export function BrLcBar({ nodes, measureKey, onUpdate }: FlatProps) {
   const ref = useLiveFlatElement<{ label: string; value: number }>({
     tag: 'v-br-bar', ids, measureKey,
     values: leaves.map(n => n.measures[measureKey] ?? 0),
-    shapeKey: `${measureKey}|${ids.join(',')}|${leaves.map(n => n.name).join(',')}`,
+    shapeKey: `${measureKey}|${[...ids].sort().join(',')}|${[...leaves].sort((a,b)=>a.id<b.id?-1:1).map(n=>n.name).join(',')}`,
     build: () => leaves.map(n => ({ label: n.name, value: n.measures[measureKey] ?? 1 })),
     readValue: d => d.value, writeValue: (d, v) => { d.value = v },
   }, nodes, onUpdate)
@@ -310,7 +338,7 @@ export function BrLcPie({ nodes, measureKey, onUpdate }: FlatProps) {
   const ref = useLiveFlatElement<{ label: string; value: number }>({
     tag: 'v-br-pie', ids, measureKey,
     values: leaves.map(n => n.measures[measureKey] ?? 0),
-    shapeKey: `${measureKey}|${ids.join(',')}|${leaves.map(n => n.name).join(',')}`,
+    shapeKey: `${measureKey}|${[...ids].sort().join(',')}|${[...leaves].sort((a,b)=>a.id<b.id?-1:1).map(n=>n.name).join(',')}`,
     build: () => leaves.map(n => ({ label: n.name, value: n.measures[measureKey] ?? 1 })),
     readValue: d => d.value, writeValue: (d, v) => { d.value = v },
   }, nodes, onUpdate)
@@ -323,7 +351,7 @@ export function BrLcRadar({ nodes, measureKey, onUpdate }: FlatProps) {
   const ref = useLiveFlatElement<{ name: string; value: number }>({
     tag: 'v-br-radar', ids, measureKey,
     values: leaves.map(n => n.measures[measureKey] ?? 0),
-    shapeKey: `${measureKey}|${ids.join(',')}|${leaves.map(n => n.name).join(',')}`,
+    shapeKey: `${measureKey}|${[...ids].sort().join(',')}|${[...leaves].sort((a,b)=>a.id<b.id?-1:1).map(n=>n.name).join(',')}`,
     build: () => leaves.map(n => ({ name: n.name, value: n.measures[measureKey] ?? 1 })),
     readValue: d => d.value, writeValue: (d, v) => { d.value = v },
   }, nodes, onUpdate)
@@ -337,7 +365,7 @@ export function BrLcConcentricArc({ nodes, measureKey, onUpdate }: FlatProps) {
   const ref = useLiveFlatElement<{ label: string; color: string; value: number }>({
     tag: 'v-br-concentric-arc', ids, measureKey,
     values: leaves.map(n => Math.min(100, n.measures[measureKey] ?? 0)),
-    shapeKey: `${measureKey}|${ids.join(',')}|${leaves.map(n => n.name).join(',')}`,
+    shapeKey: `${measureKey}|${[...ids].sort().join(',')}|${[...leaves].sort((a,b)=>a.id<b.id?-1:1).map(n=>n.name).join(',')}`,
     build: () => leaves.map((n, i) => ({ label: n.name, color: palette[i % 6]!, value: Math.min(100, n.measures[measureKey] ?? 0) })),
     readValue: d => d.value, writeValue: (d, v) => { d.value = Math.min(100, v) },
   }, nodes, onUpdate)
@@ -359,7 +387,7 @@ export function BrLcScatter({ nodes, xKey, yKey, onUpdate }: ScatterProps) {
   const ref = useLiveFlatElement<{ x: number; y: number }>({
     tag: 'v-br-scatter', ids, measureKey: yKey,
     values: leaves.map(n => n.measures[yKey] ?? 0),
-    shapeKey: `${xKey}|${yKey}|${ids.join(',')}`,
+    shapeKey: `${xKey}|${yKey}|${[...ids].sort().join(',')}`,
     build: () => leaves.map((n, i) => ({ x: xKey === '_index' ? i : (n.measures[xKey] ?? 0), y: n.measures[yKey] ?? 0 })),
     readValue: d => d.y, writeValue: (d, v) => { d.y = v },
   }, nodes, onUpdate)
@@ -377,7 +405,7 @@ export function BrLcLine({ nodes, measureKey, onUpdate }: FlatProps) {
   const ref = useLiveFlatElement<{ date: Date; value: number }>({
     tag: 'v-br-line', ids, measureKey,
     values: leaves.map(n => n.measures[measureKey] ?? 0),
-    shapeKey: `${measureKey}|${ids.join(',')}`,
+    shapeKey: `${measureKey}|${[...ids].sort().join(',')}`,
     build: () => leaves.map((n, i) => ({ date: new Date(SERIES_START + i * DAY_MS), value: n.measures[measureKey] ?? 0 })),
     readValue: d => d.value, writeValue: (d, v) => { d.value = v },
   }, nodes, onUpdate)
@@ -390,7 +418,7 @@ export function BrLcArea({ nodes, measureKey, onUpdate }: FlatProps) {
   const ref = useLiveFlatElement<{ date: Date; value: number }>({
     tag: 'v-br-area', ids, measureKey,
     values: leaves.map(n => n.measures[measureKey] ?? 0),
-    shapeKey: `${measureKey}|${ids.join(',')}`,
+    shapeKey: `${measureKey}|${[...ids].sort().join(',')}`,
     build: () => leaves.map((n, i) => ({ date: new Date(SERIES_START + i * DAY_MS), value: n.measures[measureKey] ?? 0 })),
     readValue: d => d.value, writeValue: (d, v) => { d.value = v },
   }, nodes, onUpdate)

@@ -41,10 +41,15 @@ export function attachCartesianGestures<TData>(
     return { x: (e.clientX - rect.left) * sx, y: (e.clientY - rect.top) * sy };
   };
 
+  // Frozen snapshot of order() taken at gesture-start. When sorted-by-value,
+  // mid-gesture mutations shift order() — idxOf/datumAt must use the pre-gesture
+  // snapshot so the bridge doesn't resolve a different datum from a shifted index.
+  let gestureOrder: TData[] | null = null;
+
   const wheel = makeWheelGesture<TData>({
     snapshot: (d) => ctx.yAcc(d) as number,
     restore: (d, v) => mutateDatum(d, v - (ctx.yAcc(d) as number)),
-    onEnd: () => { state.hover.value = null; },
+    onEnd: () => { state.hover.value = null; gestureOrder = null; },
   });
 
   let dragTarget: TData | null = null;
@@ -77,6 +82,7 @@ export function attachCartesianGestures<TData>(
   const onWheel = (e: Event) => {
     const we = e as WheelEvent;
     if (!we.ctrlKey) return;
+    if (!wheel.active) gestureOrder = order();
     wheel.begin(state.hover.value ?? state.selected.value);
     const target = wheel.target;
     if (!target) return;
@@ -121,6 +127,7 @@ export function attachCartesianGestures<TData>(
     if (!pt) return;
     if (Math.abs(y - yPixel(pt)) > 12) return;
     dragTarget = pt;
+    gestureOrder = order();
     dragStartValue = ctx.yAcc(pt) as number;
     dragPointerId = pe.pointerId;
     state.selected.value = pt;
@@ -146,7 +153,9 @@ export function attachCartesianGestures<TData>(
     host.style.cursor = pt && Math.abs(y - yPixel(pt)) <= 12 ? "ns-resize" : "";
   };
 
-  const onPointerUp = () => { dragTarget = null; dragPointerId = -1; host.style.cursor = ""; };
+  const setGestureActive = (v: boolean) => { (host as any).gestureActive = v; };
+
+  const onPointerUp = () => { dragTarget = null; gestureOrder = null; dragPointerId = -1; host.style.cursor = ""; setGestureActive(false); };
 
   host.addEventListener("pointerleave", onPointerLeave);
   host.addEventListener("click", onClick);
@@ -162,13 +171,13 @@ export function attachCartesianGestures<TData>(
   // `order()`; the React wrapper maps index ↔ PNode id via its parallel `ids[]`.
   const idxOf = (d: TData | null): string | null => {
     if (d == null) return null;
-    const i = order().indexOf(d);
+    const i = (gestureOrder ?? order()).indexOf(d);
     return i < 0 ? null : String(i);
   };
   const datumAt = (key: string | null): TData | null => {
     if (key == null) return null;
     const i = Number(key);
-    const rows = order();
+    const rows = gestureOrder ?? order();
     return Number.isInteger(i) && i >= 0 && i < rows.length ? rows[i]! : null;
   };
 
