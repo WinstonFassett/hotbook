@@ -2,10 +2,12 @@ import {
   Anchor,
   Diagram,
   derive,
+  drag,
   label,
   type Mount,
   cell,
   annularSector,
+  circle,
   Vec,
 } from "bireactive";
 import { partition, type HierarchyRectangularNode } from "d3-hierarchy";
@@ -77,6 +79,97 @@ export class MdSunburstLC extends Diagram {
       arc.el.addEventListener("click", () => { state.focused.value = node; });
       arc.el.addEventListener("pointerenter", () => { state.hovered.current = node; hoverCell.value = node; state.emitHover?.(node); });
       arc.el.addEventListener("pointerleave", () => { if (state.hovered.current === node) { state.hovered.current = null; hoverCell.value = null; state.emitHover?.(null); } });
+    }
+
+    // Angular boundary handles: same conservation lens as the icicle, but the
+    // shared edge between two adjacent wedges is an ANGLE (polar partition: x0/x1
+    // are angles, y0/y1 radii). A round knob sits at the boundary angle, mid
+    // radius. Dragging it converts pointer->angle about the center, recomputes
+    // the split fraction, and reapportions a.total/b.total (sum preserved by the
+    // group Num.lens). Lens sources = writable cells (a,b) only; geometry peeked.
+    if (!this.hasAttribute("no-handles")) {
+      for (const { node: parent, depth } of walkWithDepth(root)) {
+        if (maxD !== undefined && depth >= maxD) continue;
+        const kids = parent.children as BiNode[];
+        if (kids.length < 2) continue;
+        for (let i = 1; i < kids.length; i++) {
+          const aNode = kids[i - 1]!;
+          const bNode = kids[i]!;
+          const a = aNode.value.total;
+          const b = bNode.value.total;
+          // Shared angular span [angStart, angEnd] and radius band of these wedges.
+          const angStart = derive(() => layout.value.get(aNode)?.x0 ?? 0);
+          const angEnd = derive(() => layout.value.get(bNode)?.x1 ?? 0);
+          const rIn = derive(() => layout.value.get(aNode)?.y0 ?? 0);
+          const rOut = derive(() => layout.value.get(aNode)?.y1 ?? 0);
+          const midR = derive(() => (rIn.value + rOut.value) / 2);
+
+          // Boundary angle reactive read (used for visual position).
+          const boundaryAng = derive(() => {
+            const va = a.value, vb = b.value;
+            const sum = va + vb;
+            const frac = sum === 0 ? 0.5 : va / sum;
+            return angStart.value + frac * (angEnd.value - angStart.value);
+          });
+          // annularSector convention: x = cx + r*cos(a), y = cy + r*sin(a)
+          // (angle 0 at +X). Match it exactly so knobs land on the wedge edge.
+          const knobPos = Vec.derive(() => {
+            const ang = boundaryAng.value;
+            const r = midR.value;
+            const c = center.value;
+            return { x: c.x + r * Math.cos(ang), y: c.y + r * Math.sin(ang) };
+          });
+
+          // Drag target: writable lens over (a,b) only; geometry peeked. Converts
+          // the dragged point back to an angle, clamps within the shared span.
+          const knob = Vec.lens(
+            [a, b] as const,
+            (vals: readonly [number, number]) => {
+              const [va, vb] = vals;
+              const sum = va + vb;
+              const frac = sum === 0 ? 0.5 : va / sum;
+              const ang = angStart.peek() + frac * (angEnd.peek() - angStart.peek());
+              const r = midR.peek();
+              const c = center.peek();
+              return { x: c.x + r * Math.cos(ang), y: c.y + r * Math.sin(ang) };
+            },
+            (target, vals) => {
+              const [va, vb] = vals;
+              const sum = va + vb;
+              const a0 = angStart.peek();
+              const a1 = angEnd.peek();
+              if (sum === 0 || a1 <= a0) return [va, vb];
+              const c = center.peek();
+              // pointer angle in annularSector convention: atan2(dy, dx), 0 at +X
+              let ang = Math.atan2(target.y - c.y, target.x - c.x);
+              if (ang < 0) ang += 2 * Math.PI;
+              // unwrap into [a0, a1] neighborhood
+              while (ang < a0 - Math.PI) ang += 2 * Math.PI;
+              while (ang > a1 + Math.PI) ang -= 2 * Math.PI;
+              let frac = (ang - a0) / (a1 - a0);
+              frac = Math.max(0, Math.min(1, frac));
+              const newA = frac * sum;
+              return [newA, sum - newA];
+            },
+          );
+
+          const active = cell(false);
+          const dot = s(
+            circle(knobPos, 5, {
+              fill: "black",
+              stroke: derive(() => (active.value ? "#fff" : "black")),
+              thin: true,
+              opacity: derive(() => (active.value ? 1 : 0.85)),
+            }),
+          );
+          drag(dot, knob);
+          dot.el.style.cursor = "grab";
+          dot.el.addEventListener("pointerenter", () => { active.value = true; });
+          dot.el.addEventListener("pointerleave", () => { active.value = false; });
+          dot.el.addEventListener("pointerdown", () => { active.value = true; });
+          window.addEventListener("pointerup", () => { active.value = false; });
+        }
+      }
     }
 
     if (!this.hasAttribute('no-source')) s(label(view.bottom.up(10), derive(() => {
