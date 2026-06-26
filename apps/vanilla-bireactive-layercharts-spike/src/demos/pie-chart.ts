@@ -1,8 +1,9 @@
-import { Anchor, annularSector, cell, circle, derive, Diagram, drag, effect as biEffect, label, type Mount, Num, num, Vec, type Writable } from "bireactive";
+import { Anchor, annularSector, cell, circle, derive, Diagram, effect as biEffect, label, type Mount, Num, num, Vec, type Writable } from "bireactive";
 import { pie } from "d3-shape";
 import { makeWheelGesture } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
+import { attachEscContract, dragCancelable } from "../lib/esc-contract";
 
 const W = 720;
 const H = 360;
@@ -168,12 +169,16 @@ export class MdPieChartLC extends Diagram {
           stroke: derive(() => active.value ? "#fff" : "#000"),
           strokeWidth: 1.5,
         }));
-        drag(dot, knob);
+        // Cancelable drag: snapshots [a,b] on down, reverts on Esc (handled by
+        // the host's attachEscContract via the shared live-gesture registry).
+        dragCancelable(dot, knob, [a, b], {
+          host: this,
+          onStart: () => { active.value = true; (this as any).gestureActive = true; },
+          onEnd: () => { active.value = false; (this as any).gestureActive = false; },
+        });
         dot.el.style.cursor = "grab";
         dot.el.addEventListener("pointerenter", () => { active.value = true; });
-        dot.el.addEventListener("pointerleave", () => { active.value = false; });
-        dot.el.addEventListener("pointerdown", () => { active.value = true; (this as any).gestureActive = true; });
-        window.addEventListener("pointerup", () => { active.value = false; (this as any).gestureActive = false; });
+        dot.el.addEventListener("pointerleave", () => { if (!(this as any).gestureActive) active.value = false; });
       }
     }
 
@@ -187,12 +192,15 @@ export class MdPieChartLC extends Diagram {
       mutateDatum(t, we.deltaY < 0 ? (we.shiftKey ? 5 : 1) : (we.shiftKey ? -5 : -1));
     }, { passive: false });
 
+    // Esc contract (drag→revert, else→clear selection, else→fall through) lives
+    // in one shared helper; the chart keydown below only handles nav/edit keys.
+    attachEscContract(this, {
+      clearSelection: () => { if (selected.value == null) return false; selected.value = null; return true; },
+    });
+
     this.addEventListener("keydown", (e) => {
       const ke = e as KeyboardEvent;
-      if (ke.key === "Escape") {
-        if (selected.value != null) { selected.value = null; ke.preventDefault(); }
-        return;
-      }
+      if (ke.key === "Escape") return; // handled by attachEscContract
       const rows = data.value as Slice[];
       const cur = selected.value;
       const i = cur ? rows.indexOf(cur) : -1;
