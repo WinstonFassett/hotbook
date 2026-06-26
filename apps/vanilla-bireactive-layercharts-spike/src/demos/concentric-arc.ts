@@ -6,6 +6,7 @@ import { Anchor, cell, circle, derive, Diagram, effect as biEffect, group, label
 import { arc as d3Arc } from "d3-shape";
 import { makeWheelGesture } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
+import { attachEscContract } from "../lib/esc-contract";
 
 const W = 640;
 const H = 640;
@@ -205,13 +206,14 @@ export class MdConcentricArcLC extends Diagram {
       // Keep lastRing until gesture release so wheel still works just after leaving.
     });
 
+    // Canonical Esc: no drag in this chart, so just clear selection, else fall
+    // through. (Same shared helper as every other chart.)
+    attachEscContract(this, {
+      clearSelection: () => { if (selected.value == null) return false; selected.value = null; return true; },
+    });
     this.addEventListener("keydown", (e) => {
       const ke = e as KeyboardEvent;
-      if (ke.key === "Escape") {
-        // No drag here: clear selection, else fall through (don't preventDefault).
-        if (selected.value != null) { selected.value = null; ke.preventDefault(); }
-        return;
-      }
+      if (ke.key === "Escape") return; // handled by attachEscContract
       const rows = data.value as Ring[];
       const cur = selected.value;
       const i = cur ? rows.indexOf(cur) : -1;

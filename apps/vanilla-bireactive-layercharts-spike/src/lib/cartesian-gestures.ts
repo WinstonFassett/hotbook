@@ -7,6 +7,7 @@ import { bisector } from "d3-array";
 import { effect as biEffect } from "bireactive";
 import type { Cell, Writable } from "bireactive";
 import { makeBridge, type ElementWithBridge } from "./hud-bridge";
+import { attachEscContract, beginGesture } from "./esc-contract";
 
 export interface CartesianGestureState<TData> {
   hover: Writable<Cell<TData | null>>;
@@ -57,6 +58,9 @@ export function attachCartesianGestures<TData>(
   // gen-1 VizRenderer's _cancelResizeDrag — abort the drag AND undo its change).
   let dragStartValue = 0;
   let dragPointerId = -1;
+  // Registry disposer — this manual (pixel-space) drag isn't a dragCancelable
+  // shape drag, so it registers/unregisters with the shared Esc registry by hand.
+  let unregisterDrag: (() => void) | null = null;
 
   const cancelDrag = () => {
     if (!dragTarget) return;
@@ -68,6 +72,7 @@ export function attachCartesianGestures<TData>(
     dragTarget = null;
     dragPointerId = -1;
     host.style.cursor = "";
+    unregisterDrag?.(); unregisterDrag = null;
   };
 
   const onPointerLeave = () => { if (wheel.active) return; state.hover.value = null; };
@@ -93,14 +98,7 @@ export function attachCartesianGestures<TData>(
 
   const onKeydown = (e: Event) => {
     const ke = e as KeyboardEvent;
-    if (ke.key === "Escape") {
-      // Unified Esc contract: cancel an in-progress drag (revert to start),
-      // else clear selection, else fall through (don't preventDefault) so Esc
-      // can still close a menu/overlay when this chart has nothing to dismiss.
-      if (dragTarget) { cancelDrag(); ke.preventDefault(); }
-      else if (state.selected.value != null) { state.selected.value = null; ke.preventDefault(); }
-      return;
-    }
+    if (ke.key === "Escape") return; // handled by attachEscContract
     const rows = order();
     if (rows.length === 0) return;
     const cur = state.selected.value;
@@ -133,6 +131,8 @@ export function attachCartesianGestures<TData>(
     state.selected.value = pt;
     host.style.cursor = "ns-resize";
     (host as any).setPointerCapture(pe.pointerId);
+    // Register with the shared Esc registry so attachEscContract reverts us.
+    unregisterDrag = beginGesture(host, cancelDrag);
     pe.preventDefault();
   };
 
@@ -155,7 +155,7 @@ export function attachCartesianGestures<TData>(
 
   const setGestureActive = (v: boolean) => { (host as any).gestureActive = v; };
 
-  const onPointerUp = () => { dragTarget = null; gestureOrder = null; dragPointerId = -1; host.style.cursor = ""; setGestureActive(false); };
+  const onPointerUp = () => { dragTarget = null; gestureOrder = null; dragPointerId = -1; host.style.cursor = ""; setGestureActive(false); unregisterDrag?.(); unregisterDrag = null; };
 
   host.addEventListener("pointerleave", onPointerLeave);
   host.addEventListener("click", onClick);
@@ -165,6 +165,11 @@ export function attachCartesianGestures<TData>(
   host.addEventListener("pointermove", onPointerMove);
   host.addEventListener("pointerup", onPointerUp);
   host.addEventListener("pointercancel", onPointerUp);
+  // Canonical Esc: live drag→revert (cancelDrag, via registry), else clear
+  // selection, else fall through.
+  const escDispose = attachEscContract(host, {
+    clearSelection: () => { if (state.selected.value == null) return false; state.selected.value = null; return true; },
+  });
 
   // ── Cross-tile sync bridge ──────────────────────────────────────────────
   // Flat datums carry no PNode id, so the bridge keys on the datum's index in
@@ -208,6 +213,8 @@ export function attachCartesianGestures<TData>(
     host.removeEventListener("pointermove", onPointerMove);
     host.removeEventListener("pointerup", onPointerUp);
     host.removeEventListener("pointercancel", onPointerUp);
+    escDispose();
+    unregisterDrag?.();
     wheel.dispose();
     hoverDispose();
     selectDispose();

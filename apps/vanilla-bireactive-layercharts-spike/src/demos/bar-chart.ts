@@ -6,6 +6,7 @@ import { axis } from "../lib/axis";
 import { chartContext } from "../lib/chart-context";
 import { makeWheelGesture } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
+import { attachEscContract, beginGesture } from "../lib/esc-contract";
 
 const W = 720;
 const H = 360;
@@ -113,6 +114,7 @@ export class MdBarChartLC extends Diagram {
     // Pre-gesture value so Esc reverts the drag (gen-1 parity).
     let dragStartValue = 0;
     let dragPointerId = -1;
+    let unregisterDrag: (() => void) | null = null;
     const cancelDrag = () => {
       if (!dragTarget) return;
       mutateDatum(dragTarget, dragStartValue - dragTarget.value);
@@ -121,6 +123,7 @@ export class MdBarChartLC extends Diagram {
       }
       dragTarget = null;
       dragPointerId = -1;
+      unregisterDrag?.(); unregisterDrag = null;
     };
 
     this.addEventListener("pointerleave", () => { if (!wheel.active) hover.value = null; });
@@ -138,14 +141,14 @@ export class MdBarChartLC extends Diagram {
       we.preventDefault();
       mutateDatum(t, we.deltaY < 0 ? (we.shiftKey ? 5 : 1) : (we.shiftKey ? -5 : -1));
     }, { passive: false });
+    // Canonical Esc: live drag→revert (cancelDrag via registry), else clear
+    // selection, else fall through.
+    attachEscContract(this, {
+      clearSelection: () => { if (selected.value == null) return false; selected.value = null; return true; },
+    });
     this.addEventListener("keydown", (e) => {
       const ke = e as KeyboardEvent;
-      if (ke.key === "Escape") {
-        // cancel drag → revert; else clear selection; else fall through.
-        if (dragTarget) { cancelDrag(); ke.preventDefault(); }
-        else if (selected.value != null) { selected.value = null; ke.preventDefault(); }
-        return;
-      }
+      if (ke.key === "Escape") return; // handled by attachEscContract
       const rows = data.value as Bar[];
       const cur = selected.value;
       const i = cur ? rows.indexOf(cur) : -1;
@@ -173,6 +176,7 @@ export class MdBarChartLC extends Diagram {
       dragPointerId = pe.pointerId;
       selected.value = pt;
       (this as any).setPointerCapture(pe.pointerId);
+      unregisterDrag = beginGesture(this, cancelDrag);
       pe.preventDefault();
     });
     this.addEventListener("pointermove", (e) => {
@@ -187,8 +191,8 @@ export class MdBarChartLC extends Diagram {
       const { x } = localPoint(pe);
       hover.value = findAtPixel(x);
     });
-    this.addEventListener("pointerup", () => { dragTarget = null; dragPointerId = -1; });
-    this.addEventListener("pointercancel", () => { dragTarget = null; dragPointerId = -1; });
+    this.addEventListener("pointerup", () => { dragTarget = null; dragPointerId = -1; unregisterDrag?.(); unregisterDrag = null; });
+    this.addEventListener("pointercancel", () => { dragTarget = null; dragPointerId = -1; unregisterDrag?.(); unregisterDrag = null; });
 
     // Column hover highlight — full-height rect that slides to the active column.
     const hlTarget = derive(() => hover.value ?? selected.value);

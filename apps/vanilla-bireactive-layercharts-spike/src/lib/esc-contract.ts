@@ -31,6 +31,17 @@ import type { AnyShape, Cell, Vec, Writable } from "bireactive";
 interface LiveGesture { revert: () => void }
 const liveByHost = new WeakMap<EventTarget, LiveGesture>();
 
+/**
+ * Register a manually-managed gesture (one not driven by dragCancelable) so the
+ * host's attachEscContract can revert it. For charts that do their own pointer
+ * handling (e.g. cartesian pixel-space drags) instead of a Vec.lens shape drag.
+ * Call on gesture start; call the returned disposer on commit/end.
+ */
+export function beginGesture(host: EventTarget, revert: () => void): () => void {
+  liveByHost.set(host, { revert });
+  return () => { if (liveByHost.get(host)?.revert === revert) liveByHost.delete(host); };
+}
+
 /** The host a handle belongs to, walking out of any shadow roots since chart
  *  handles live inside a Diagram's shadow DOM. */
 function hostOf(el: Element): EventTarget {

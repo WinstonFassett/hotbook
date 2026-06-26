@@ -6,6 +6,7 @@ import { Anchor, cell, circle, derive, Diagram, effect as biEffect, label, type 
 import { scaleBand, scaleLinear } from "d3-scale";
 import { makeWheelGesture } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
+import { attachEscContract, beginGesture } from "../lib/esc-contract";
 
 const W = 640;
 const H = 640;
@@ -212,6 +213,7 @@ export class MdRadarChartLC extends Diagram {
     // Pre-gesture value so Esc reverts the drag (gen-1 parity).
     let dragStartValue = 0;
     let dragPointerId = -1;
+    let unregisterDrag: (() => void) | null = null;
     const cancelDrag = () => {
       if (!dragTarget) return;
       mutateDatum(dragTarget, dragStartValue - dragTarget.value);
@@ -220,6 +222,7 @@ export class MdRadarChartLC extends Diagram {
       }
       dragTarget = null;
       dragPointerId = -1;
+      unregisterDrag?.(); unregisterDrag = null;
     };
 
     this.addEventListener("pointerdown", (e) => {
@@ -239,6 +242,7 @@ export class MdRadarChartLC extends Diagram {
       dragPointerId = pe.pointerId;
       selected.value = spoke;
       (this as any).setPointerCapture(pe.pointerId);
+      unregisterDrag = beginGesture(this, cancelDrag);
       pe.preventDefault();
     });
     this.addEventListener("pointermove", (e) => {
@@ -251,8 +255,8 @@ export class MdRadarChartLC extends Diagram {
       const newVal = Math.max(0, Math.min(100, yScale.value.invert(dist)));
       mutateDatum(dragTarget, newVal - dragTarget.value);
     });
-    this.addEventListener("pointerup", () => { dragTarget = null; dragPointerId = -1; });
-    this.addEventListener("pointercancel", () => { dragTarget = null; dragPointerId = -1; });
+    this.addEventListener("pointerup", () => { dragTarget = null; dragPointerId = -1; unregisterDrag?.(); unregisterDrag = null; });
+    this.addEventListener("pointercancel", () => { dragTarget = null; dragPointerId = -1; unregisterDrag?.(); unregisterDrag = null; });
 
     svgEl.addEventListener("wheel", (e) => {
       const we = e as WheelEvent;
@@ -264,14 +268,14 @@ export class MdRadarChartLC extends Diagram {
       mutateDatum(t, we.deltaY < 0 ? (we.shiftKey ? 5 : 1) : (we.shiftKey ? -5 : -1));
     }, { passive: false });
 
+    // Canonical Esc: live drag→revert (cancelDrag via registry), else clear
+    // selection, else fall through.
+    attachEscContract(this, {
+      clearSelection: () => { if (selected.value == null) return false; selected.value = null; return true; },
+    });
     this.addEventListener("keydown", (e) => {
       const ke = e as KeyboardEvent;
-      if (ke.key === "Escape") {
-        // cancel drag → revert; else clear selection; else fall through.
-        if (dragTarget) { cancelDrag(); ke.preventDefault(); }
-        else if (selected.value != null) { selected.value = null; ke.preventDefault(); }
-        return;
-      }
+      if (ke.key === "Escape") return; // handled by attachEscContract
       const rows = data.value as Spoke[];
       const cur = selected.value;
       const i = cur ? rows.indexOf(cur) : -1;
