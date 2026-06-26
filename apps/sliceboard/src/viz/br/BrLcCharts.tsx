@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { effect as biEffect, leavesOf } from 'bireactive'
-import type { Cell, Writable } from 'bireactive'
+import type { Cell, Num, Writable } from 'bireactive'
 import type { PNode } from '../../persistence'
 import { buildBiTree } from './tree'
 import type { BiNode } from './tree'
@@ -270,6 +270,7 @@ function useLiveFlatElement<D>(
   useEffect(() => {
     const el = elRef.current
     if (!el) return
+    if (el.gestureActive) return
     const arr = el.dataCell.value as D[]
     // Build id→datum map from the element's current array and buildIds.
     const buildIds = buildIdsRef.current
@@ -335,12 +336,16 @@ export function BrLcBar({ nodes, measureKey, onUpdate }: FlatProps) {
 export function BrLcPie({ nodes, measureKey, onUpdate }: FlatProps) {
   const leaves = leavesOfNodes(nodes)
   const ids = leaves.map(n => n.id)
-  const ref = useLiveFlatElement<{ label: string; value: number }>({
+  // MdPieChartLC backs each slice's value with a Num CELL (so the boundary
+  // knob can use the canonical Vec.lens([a,b],...) pattern). build() passes
+  // plain numbers (externalData's setter wraps them in num()); read/write go
+  // through the live datum, whose .value IS the cell — hence d.value.value.
+  const ref = useLiveFlatElement<{ label: string; value: Writable<Num> }>({
     tag: 'v-br-pie', ids, measureKey,
     values: leaves.map(n => n.measures[measureKey] ?? 0),
     shapeKey: `${measureKey}|${[...ids].sort().join(',')}|${[...leaves].sort((a,b)=>a.id<b.id?-1:1).map(n=>n.name).join(',')}`,
-    build: () => leaves.map(n => ({ label: n.name, value: n.measures[measureKey] ?? 1 })),
-    readValue: d => d.value, writeValue: (d, v) => { d.value = v },
+    build: () => leaves.map(n => ({ label: n.name, value: n.measures[measureKey] ?? 1 })) as never,
+    readValue: d => d.value.value, writeValue: (d, v) => { d.value.value = v },
   }, nodes, onUpdate)
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }
