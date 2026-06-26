@@ -3,6 +3,7 @@ import { walkTree, effect as biEffect, batch } from "bireactive";
 import type { BiNode } from "./tree";
 import type { Writable, Cell } from "bireactive";
 import { makeBridge, type ElementWithBridge } from "./hud-bridge";
+import { attachEscContract } from "./esc-contract";
 
 export interface SelectionState {
   focused: Writable<Cell<BiNode | null>>;
@@ -56,12 +57,7 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
   };
 
   const onKeydown = (e: KeyboardEvent) => {
-    if (e.key === "Escape") {
-      // No continuous drag here (wheel/arrow only): clear selection, else fall
-      // through (don't preventDefault) so Esc can dismiss other overlays.
-      if (state.focused.value != null) { state.focused.value = null; e.preventDefault(); }
-      return;
-    }
+    if (e.key === "Escape") return; // handled by attachEscContract below
     if (e.key === "Tab") {
       const order = flatOrder(root);
       if (order.length === 0) return;
@@ -87,6 +83,11 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
 
   host.addEventListener("wheel", onWheel as EventListener, { passive: false });
   host.addEventListener("keydown", onKeydown as EventListener);
+  // Canonical Esc contract: live drag→revert (via dragCancelable registry),
+  // else clear focus, else fall through. Replaces the inline Esc branch above.
+  const escDispose = attachEscContract(host as HTMLElement, {
+    clearSelection: () => { if (state.focused.value == null) return false; state.focused.value = null; return true; },
+  });
 
   // ── Cross-tile sync bridge ──────────────────────────────────────────────
   // Index nodes by PNode id so external ids resolve to BiNodes.
@@ -127,6 +128,7 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
   return () => {
     host.removeEventListener("wheel", onWheel as EventListener);
     host.removeEventListener("keydown", onKeydown as EventListener);
+    escDispose();
     wheel.dispose();
     focusDispose();
     state.emitHover = undefined;

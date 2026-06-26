@@ -2,7 +2,6 @@ import {
   Anchor,
   Diagram,
   derive,
-  drag,
   label,
   type Mount,
   cell,
@@ -16,6 +15,7 @@ import { buildParentIndex, type BiNode } from "../lib/tree";
 import { portfolio, walkWithDepth } from "../lib/portfolio";
 import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
+import { dragCancelable } from "../lib/esc-contract";
 
 const W = 480;
 const H = 480;
@@ -112,7 +112,7 @@ export class MdSunburstLC extends Diagram {
             return angStart.value + frac * (angEnd.value - angStart.value);
           });
           // annularSector convention: x = cx + r*cos(a), y = cy + r*sin(a)
-          // (angle 0 at +X). Match it exactly so knobs land on the wedge edge.
+          // (angle 0 at +X). Knob sits at the midpoint of the ring for this boundary.
           const knobPos = Vec.derive(() => {
             const ang = boundaryAng.value;
             const r = midR.value;
@@ -156,18 +156,21 @@ export class MdSunburstLC extends Diagram {
           const active = cell(false);
           const dot = s(
             circle(knobPos, 5, {
-              fill: "black",
-              stroke: derive(() => (active.value ? "#fff" : "black")),
-              thin: true,
-              opacity: derive(() => (active.value ? 1 : 0.85)),
+              fill: aNode.value.color,
+              stroke: derive(() => active.value ? "#fff" : "#000"),
+              strokeWidth: 1.5,
             }),
           );
-          drag(dot, knob);
+          // Cancelable drag: snapshots [a,b] on down, reverts on Esc via the
+          // host's attachEscContract (installed by attachChartGestures).
+          dragCancelable(dot, knob, [a, b], {
+            host: this,
+            onStart: () => { active.value = true; },
+            onEnd: () => { active.value = false; },
+          });
           dot.el.style.cursor = "grab";
           dot.el.addEventListener("pointerenter", () => { active.value = true; });
           dot.el.addEventListener("pointerleave", () => { active.value = false; });
-          dot.el.addEventListener("pointerdown", () => { active.value = true; });
-          window.addEventListener("pointerup", () => { active.value = false; });
         }
       }
     }

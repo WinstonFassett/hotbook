@@ -1,8 +1,8 @@
 import {
   Anchor,
+  circle,
   Diagram,
   derive,
-  drag,
   label,
   type Mount,
   cell,
@@ -16,6 +16,7 @@ import { buildParentIndex, type BiNode } from "../lib/tree";
 import { portfolio, walkWithDepth } from "../lib/portfolio";
 import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
+import { dragCancelable } from "../lib/esc-contract";
 
 const W = 720;
 const H = 360;
@@ -146,38 +147,31 @@ export class MdIcicleLC extends Diagram {
             },
           );
 
-          const PILL_W = 6;
-          const knobX = derive(() => {
-            const va = a.value;
-            const vb = b.value;
-            const x0 = spanX0.value;
-            const x1 = spanX1.value;
+          const knobPos = Vec.derive(() => {
+            const va = a.value, vb = b.value;
+            const x0 = spanX0.value, x1 = spanX1.value;
             const sum = va + vb;
             const frac = sum === 0 ? 0.5 : va / sum;
-            return x0 + frac * (x1 - x0);
+            return { x: x0 + frac * (x1 - x0), y: (rowY0.value + rowY1.value) / 2 };
           });
-          // Canonical budget-tree pill: borderless black, ~2/3 of the row tall,
-          // opacity 0.85. White stroke is reserved for hover/active feedback.
-          const rowH = derive(() => rowY1.value - rowY0.value);
-          const pillH = derive(() => Math.max(8, rowH.value * (2 / 3)));
-          const pillX = Num.derive(() => knobX.value - PILL_W / 2);
-          const pillY = derive(() => rowY0.value + (rowH.value - pillH.value) / 2);
           const active = cell(false);
-          const pill = s(
-            rect(pillX, pillY, PILL_W, pillH, {
-              fill: "black",
-              stroke: derive(() => (active.value ? "#fff" : "black")),
-              thin: true,
-              corner: PILL_W / 2,
-              opacity: derive(() => (active.value ? 1 : 0.85)),
+          const dot = s(
+            circle(knobPos, 5, {
+              fill: aNode.value.color,
+              stroke: derive(() => active.value ? "#fff" : "#000"),
+              strokeWidth: 1.5,
             }),
           );
-          drag(pill, knob);
-          pill.el.style.cursor = "ew-resize";
-          pill.el.addEventListener("pointerenter", () => { active.value = true; });
-          pill.el.addEventListener("pointerleave", () => { active.value = false; });
-          pill.el.addEventListener("pointerdown", () => { active.value = true; });
-          window.addEventListener("pointerup", () => { active.value = false; });
+          // Cancelable drag: snapshots [a,b] on down, reverts on Esc via the
+          // host's attachEscContract (installed by attachChartGestures).
+          dragCancelable(dot, knob, [a, b], {
+            host: this,
+            onStart: () => { active.value = true; },
+            onEnd: () => { active.value = false; },
+          });
+          dot.el.style.cursor = "ew-resize";
+          dot.el.addEventListener("pointerenter", () => { active.value = true; });
+          dot.el.addEventListener("pointerleave", () => { active.value = false; });
         }
       }
     }

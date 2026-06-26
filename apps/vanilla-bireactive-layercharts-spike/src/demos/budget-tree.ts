@@ -10,7 +10,6 @@ import {
   Anchor,
   Diagram,
   derive,
-  drag,
   label,
   type Mount,
   Num,
@@ -21,6 +20,7 @@ import {
   Vec,
   type Writable,
 } from "bireactive";
+import { attachEscContract, dragCancelable } from "../lib/esc-contract";
 
 interface Category {
   label: string;
@@ -216,8 +216,14 @@ export class MdBudgetTree extends Diagram {
           opacity: 0.85,
         }),
       );
-      drag(pillShape, knob);
+      // Cancelable drag: lens sources are [a, b, leftX] but only [a, b] are
+      // writable cells, so those are the revert snapshot. Esc reverts via the
+      // host contract installed below.
+      dragCancelable(pillShape, knob, [a, b], { host: this });
       pillShape.el.style.cursor = "ew-resize";
     }
+
+    // Esc reverts an in-progress boundary drag (no selection in this demo).
+    attachEscContract(this);
   }
 }
