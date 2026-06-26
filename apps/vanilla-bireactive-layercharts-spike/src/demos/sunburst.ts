@@ -161,8 +161,8 @@ export class MdSunburstLC extends Diagram {
               strokeWidth: 1.5,
             }),
           );
-          // Cancelable drag: snapshots [a,b] on down, reverts on Esc via the
-          // host's attachEscContract (installed by attachChartGestures).
+          // Cancelable drag: snapshots [a,b] on down; the gesture owns its Esc
+          // listener and reverts on Esc.
           dragCancelable(dot, knob, [a, b], {
             host: this,
             onStart: () => { active.value = true; },

@@ -1,9 +1,9 @@
 import { Anchor, annularSector, cell, circle, derive, Diagram, effect as biEffect, label, type Mount, Num, num, Vec, type Writable } from "bireactive";
 import { pie } from "d3-shape";
-import { makeWheelGesture } from "../lib/interaction";
+import { wheelController } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
-import { attachEscContract, dragCancelable } from "../lib/esc-contract";
+import { dragCancelable } from "../lib/esc-contract";
 
 const W = 720;
 const H = 360;
@@ -56,11 +56,12 @@ export class MdPieChartLC extends Diagram {
       d.value.value = Math.max(1, d.value.value + delta);
     };
 
-    const wheel = makeWheelGesture<Slice>({
-      snapshot: (d) => d.value.value,
-      restore: (d, v) => { d.value.value = Math.max(1, v); },
+    // Config handed to the SHARED wheel controller (app-wide singleton).
+    const wheelConfig = {
+      snapshot: (d: Slice) => d.value.value,
+      restore: (d: Slice, v: number) => { d.value.value = Math.max(1, v); },
       onEnd: () => { hover.value = null; },
-    });
+    };
 
     // Pie layout (reactive). Reads each slice's value CELL so the layout
     // recomputes whenever any value changes (drag, wheel, keyboard).
@@ -89,8 +90,8 @@ export class MdPieChartLC extends Diagram {
         opacity,
       }));
       sector.el.style.cursor = "pointer";
-      sector.el.addEventListener("pointerenter", () => { if (!wheel.active) hover.value = d; });
-      sector.el.addEventListener("pointerleave", () => { if (!wheel.active && hover.value === d) hover.value = null; });
+      sector.el.addEventListener("pointerenter", () => { if (!wheelController.active) hover.value = d; });
+      sector.el.addEventListener("pointerleave", () => { if (!wheelController.active && hover.value === d) hover.value = null; });
       sector.el.addEventListener("click", () => { selected.value = selected.value === d ? null : d; });
 
       const labelPos = Vec.derive(() => {
@@ -169,8 +170,8 @@ export class MdPieChartLC extends Diagram {
           stroke: derive(() => active.value ? "#fff" : "#000"),
           strokeWidth: 1.5,
         }));
-        // Cancelable drag: snapshots [a,b] on down, reverts on Esc (handled by
-        // the host's attachEscContract via the shared live-gesture registry).
+        // Cancelable drag: snapshots [a,b] on down; the gesture owns its own Esc
+        // listener (armed on down, torn down on commit/cancel) and reverts on Esc.
         dragCancelable(dot, knob, [a, b], {
           host: this,
           onStart: () => { active.value = true; (this as any).gestureActive = true; },
@@ -185,22 +186,20 @@ export class MdPieChartLC extends Diagram {
     this.addEventListener("wheel", (e) => {
       const we = e as WheelEvent;
       if (!we.ctrlKey) return;
-      wheel.begin(hover.value ?? selected.value);
-      const t = wheel.target;
+      const t = wheelController.begin(hover.value ?? selected.value, wheelConfig);
       if (!t) return;
       we.preventDefault();
       mutateDatum(t, we.deltaY < 0 ? (we.shiftKey ? 5 : 1) : (we.shiftKey ? -5 : -1));
     }, { passive: false });
 
-    // Esc contract (drag→revert, else→clear selection, else→fall through) lives
-    // in one shared helper; the chart keydown below only handles nav/edit keys.
-    attachEscContract(this, {
-      clearSelection: () => { if (selected.value == null) return false; selected.value = null; return true; },
-    });
-
     this.addEventListener("keydown", (e) => {
       const ke = e as KeyboardEvent;
-      if (ke.key === "Escape") return; // handled by attachEscContract
+      if (ke.key === "Escape") {
+        // Drag-Esc is owned by the gesture (dragCancelable). Here: clear selection
+        // if focused, else fall through.
+        if (selected.value != null) { selected.value = null; ke.preventDefault(); }
+        return;
+      }
       const rows = data.value as Slice[];
       const cur = selected.value;
       const i = cur ? rows.indexOf(cur) : -1;

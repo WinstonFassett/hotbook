@@ -1,68 +1,26 @@
-// Centralized Escape contract for gesture-based charts.
+// Cancelable shape-handle drag, built on the ONE app-wide drag controller
+// (dragController in interaction.ts).
 //
 // Interaction principle Rule 6 (docs/interaction-principles.md): gestures are
-// speculative until committed — "Escape at any point cancels cleanly, reverting
-// to the exact state at gesture start. The system must snapshot state at gesture
-// start to support this."
+// speculative — Esc reverts to gesture-start state. The Esc listener lives INSIDE
+// the drag controller, armed on begin() and torn down on commit/cancel. There is
+// no global listener and no registry; exactly one gesture (hence one Esc
+// listener) is live at a time. See dragController for the lifecycle.
 //
-// Historically every chart hand-rolled this (snapshot on pointerdown, revert on
-// Esc, plus the clear-selection / fall-through priority), so the contract drifted
-// per chart. This module is the single home for both halves:
-//
-//   1. dragCancelable() — a FORK of bireactive's drag() (it isn't exported in a
-//      cancelable form, and wrapping it would mean two listener sets racing on
-//      one handle). Same pointer wiring as the original, with snapshot-on-down +
-//      revert-on-Esc built into the single gesture flow — mirroring how
-//      makeWheelGesture owns its own cancel. If bireactive's drag() changes
-//      materially, re-sync this fork.
-//
-//   2. attachEscContract() — one host keydown implementing the canonical
-//      priority: live drag → revert; else selection → clear; else fall through
-//      (no preventDefault) so Esc can still dismiss an outer menu/overlay.
+// This file only adapts a bireactive shape handle's pointer input into that
+// controller: on pointerdown it hands the controller a per-handle config
+// (snapshot/restore/onMove). Manual pixel-space drags (bar/radar/cartesian) call
+// dragController.begin directly with their own pointerdown hit-test.
 
-import { batch } from "bireactive";
 import type { AnyShape, Cell, Vec, Writable } from "bireactive";
-
-// ─── Live-gesture registry ────────────────────────────────────────────────────
-// A drag in flight registers its revert fn here, keyed by host. attachEscContract
-// checks this first so a single host keydown can cancel whatever drag is active,
-// without the chart threading per-handle state into its keydown.
-
-interface LiveGesture { revert: () => void }
-const liveByHost = new WeakMap<EventTarget, LiveGesture>();
-
-/**
- * Register a manually-managed gesture (one not driven by dragCancelable) so the
- * host's attachEscContract can revert it. For charts that do their own pointer
- * handling (e.g. cartesian pixel-space drags) instead of a Vec.lens shape drag.
- * Call on gesture start; call the returned disposer on commit/end.
- */
-export function beginGesture(host: EventTarget, revert: () => void): () => void {
-  liveByHost.set(host, { revert });
-  return () => { if (liveByHost.get(host)?.revert === revert) liveByHost.delete(host); };
-}
-
-/** The host a handle belongs to, walking out of any shadow roots since chart
- *  handles live inside a Diagram's shadow DOM. */
-function hostOf(el: Element): EventTarget {
-  let node: Node | null = el;
-  while (node) {
-    const root = node.getRootNode();
-    if (root instanceof ShadowRoot) { node = root.host; continue; }
-    return node instanceof Document ? (node.defaultView ?? window) : node;
-  }
-  return window;
-}
-
-// ── Touch/scroll helpers (inlined from bireactive's interaction.ts; not exported) ──
+import { batch } from "bireactive";
+import { dragController } from "./interaction";
 
 function ownTouchGesture(shape: AnyShape): void {
   shape.el.style.touchAction = "none";
   if (shape.intrinsic) shape.intrinsic.style.touchAction = "none";
 }
 
-/** Block page scroll/zoom for the lifetime of a drag (iOS Safari ignores
- *  touch-action on inner SVG nodes). Returns a disposer. */
 function blockPageScroll(): () => void {
   const onMove = (e: Event) => e.preventDefault();
   document.addEventListener("touchmove", onMove, { passive: false });
@@ -70,26 +28,26 @@ function blockPageScroll(): () => void {
 }
 
 export interface DragCancelableOpts {
-  /** Reactive active-state cell (drives handle highlight). True on down,
-   *  false on up/cancel. */
+  /** Reactive active-state cell (drives handle highlight). */
   dragging?: Writable<Cell<boolean>>;
-  /** Host whose Esc handler can cancel this drag. Defaults to the shape's host
-   *  element (walking out of shadow DOM). */
-  host?: EventTarget;
-  /** Extra work on pointerdown (e.g. select the datum, set gestureActive). */
+  /** Extra work on pointerdown. */
   onStart?: () => void;
-  /** Extra work when the gesture ends. `canceled` = reverted via Esc. */
+  /** Extra work on end. `canceled` = reverted via Esc. */
   onEnd?: (canceled: boolean) => void;
+  /** Host element — accepted for call-site convenience; unused (the shared drag
+   *  controller listens on window, not the host). */
+  host?: unknown;
 }
 
 /**
- * drag() with the Rule-6 speculative contract: snapshots `sources` on
- * pointerdown and reverts them (one batch) if canceled via Esc. Otherwise
- * identical to bireactive's drag() — writes `target.value` from the pointer on
- * each move, pointer-captured so the drag survives leaving the handle.
+ * Drag a shape handle whose motion writes `target` (a Vec.lens over `sources`),
+ * with Rule-6 Esc-revert. Snapshots `sources` on pointerdown; reverts them in one
+ * batch on Esc. The whole speculative lifecycle (move/up/cancel listeners, Esc,
+ * teardown) is owned by the drag controller — this just feeds it the handle's pointer
+ * input and a move handler that writes the lens.
  *
  * @param shape   the draggable handle
- * @param target  the Vec.lens drag writes to (its sources should be `sources`)
+ * @param target  the Vec.lens drag writes to (sources should be `sources`)
  * @param sources the writable cells the lens mutates — snapshotted for revert
  */
 export function dragCancelable(
@@ -100,42 +58,21 @@ export function dragCancelable(
 ): () => void {
   if (!shape.el.style.cursor) shape.el.style.cursor = "grab";
   ownTouchGesture(shape);
-  const host = opts.host ?? hostOf(shape.el);
 
   let dx = 0, dy = 0;
-  let pointerId = -1;
   let unblock: (() => void) | null = null;
-  let snapshot: number[] | null = null;
+  let pointerId = -1;
 
-  const finish = (canceled: boolean) => {
-    if (canceled && snapshot) {
-      const snap = snapshot;
-      batch(() => { sources.forEach((c, i) => { c.value = snap[i]!; }); });
-    }
-    snapshot = null;
-    liveByHost.delete(host);
-    if (opts.dragging) opts.dragging.value = false;
-    opts.onEnd?.(canceled);
-  };
-
-  // Moves/ups on window (capture survives re-parent / pointer outrunning shape).
+  // Move writes the lens; the live pointer is mapped to world space, offset by
+  // the grab delta captured on pointerdown.
   const onMove = (e: PointerEvent) => {
     if (pointerId === -1 || e.pointerId !== pointerId) return;
     const world = shape.toWorld(e);
     target.value = { x: world.x - dx, y: world.y - dy };
   };
-  const stop = (e?: PointerEvent) => {
-    if (pointerId === -1 || (e && e.pointerId !== pointerId)) return;
-    try { shape.el.releasePointerCapture(pointerId); } catch { /* ok */ }
-    pointerId = -1;
-    window.removeEventListener("pointermove", onMove);
-    window.removeEventListener("pointerup", stop as EventListener);
-    window.removeEventListener("pointercancel", stop as EventListener);
-    unblock?.(); unblock = null;
-    finish(false); // pointerup = commit
-  };
 
   const offDown = shape.on("pointerdown", (e: Event) => {
+    if (dragController.active) return; // one pointer, one live drag
     const pe = e as PointerEvent;
     pointerId = pe.pointerId;
     try { shape.el.setPointerCapture(pointerId); } catch { /* ok */ }
@@ -144,65 +81,29 @@ export function dragCancelable(
     const v = target.value;
     dx = world.x - v.x;
     dy = world.y - v.y;
-    // Snapshot for Esc-revert + register with the host so attachEscContract
-    // can cancel us.
-    snapshot = sources.map((c) => c.value);
-    liveByHost.set(host, { revert: () => { stopForCancel(); } });
     if (opts.dragging) opts.dragging.value = true;
     opts.onStart?.();
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", stop as EventListener);
-    window.addEventListener("pointercancel", stop as EventListener);
+    // Hand the shared controller this handle's value-mapping for the gesture.
+    // It arms move/up/Esc and reverts the snapshotted cells on Esc.
+    dragController.begin(true, {
+      snapshot: () => sources.map((c) => c.value),
+      restore: (_t, snap: number[]) => {
+        batch(() => { sources.forEach((c, i) => { c.value = snap[i]!; }); });
+      },
+      onMove,
+      onEnd: (canceled) => {
+        try { shape.el.releasePointerCapture(pointerId); } catch { /* ok */ }
+        pointerId = -1;
+        unblock?.(); unblock = null;
+        if (opts.dragging) opts.dragging.value = false;
+        opts.onEnd?.(canceled);
+      },
+    });
   });
-
-  // Esc cancel: tear down listeners like stop(), but revert instead of commit.
-  const stopForCancel = () => {
-    if (pointerId !== -1) {
-      try { shape.el.releasePointerCapture(pointerId); } catch { /* ok */ }
-      pointerId = -1;
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", stop as EventListener);
-      window.removeEventListener("pointercancel", stop as EventListener);
-      unblock?.(); unblock = null;
-    }
-    finish(true);
-  };
 
   return () => {
     offDown();
-    if (pointerId !== -1) stop();
-    liveByHost.delete(host);
+    // If this handle's gesture is the live one, revert+tear it down on dispose.
+    if (pointerId !== -1) dragController.cancel();
   };
-}
-
-// ─── Host Escape handler ──────────────────────────────────────────────────────
-
-export interface EscContractOpts {
-  /** Clear the chart's selection. Return true if something was cleared (so Esc
-   *  is consumed); false to let Esc fall through. */
-  clearSelection?: () => boolean;
-}
-
-/**
- * Install the canonical Escape handler on a chart host. Priority:
- *   1. a live drag → revert to gesture-start state
- *   2. else a selection → clear it
- *   3. else fall through (no preventDefault) so an outer overlay can handle Esc
- *
- * Returns a disposer.
- */
-export function attachEscContract(
-  host: HTMLElement | SVGElement,
-  opts: EscContractOpts = {},
-): () => void {
-  const onKeydown = (e: Event) => {
-    const ke = e as KeyboardEvent;
-    if (ke.key !== "Escape") return;
-    const live = liveByHost.get(host);
-    if (live) { live.revert(); ke.preventDefault(); return; }
-    if (opts.clearSelection?.()) { ke.preventDefault(); return; }
-    // else fall through — Esc not consumed.
-  };
-  host.addEventListener("keydown", onKeydown);
-  return () => host.removeEventListener("keydown", onKeydown);
 }

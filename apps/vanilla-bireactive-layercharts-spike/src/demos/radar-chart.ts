@@ -4,9 +4,8 @@
 
 import { Anchor, cell, circle, derive, Diagram, effect as biEffect, label, type Mount, pathD, Vec, vec } from "bireactive";
 import { scaleBand, scaleLinear } from "d3-scale";
-import { makeWheelGesture } from "../lib/interaction";
+import { wheelController, dragController } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
-import { attachEscContract, beginGesture } from "../lib/esc-contract";
 
 const W = 640;
 const H = 640;
@@ -52,11 +51,12 @@ export class MdRadarChartLC extends Diagram {
       data.value = [...data.value];
     };
 
-    const wheel = makeWheelGesture<Spoke>({
-      snapshot: (d) => d.value,
-      restore: (d, v) => mutateDatum(d, v - d.value),
+    // Config handed to the SHARED wheel controller (app-wide singleton).
+    const wheelConfig = {
+      snapshot: (d: Spoke) => d.value,
+      restore: (d: Spoke, v: number) => mutateDatum(d, v - d.value),
       onEnd: () => { hover.value = null; },
-    });
+    };
 
     // x: scaleBand over category names → angle at band center
     // y: scaleLinear 0–100 → radius 0–R_MAX
@@ -173,11 +173,11 @@ export class MdRadarChartLC extends Diagram {
       dot.el.style.cursor = "ns-resize";
       dot.el.addEventListener("pointerenter", () => {
         const d = (data.value as Spoke[])[i];
-        if (d && !wheel.active) hover.value = d;
+        if (d && !wheelController.active) hover.value = d;
       });
       dot.el.addEventListener("pointerleave", () => {
         const d = (data.value as Spoke[])[i];
-        if (d && !wheel.active && hover.value === d) hover.value = null;
+        if (d && !wheelController.active && hover.value === d) hover.value = null;
       });
       dot.el.addEventListener("click", () => {
         const d = (data.value as Spoke[])[i];
@@ -209,23 +209,30 @@ export class MdRadarChartLC extends Diagram {
       }
       return bestDiff < Math.PI / rows.length ? best : null;
     };
-    let dragTarget: Spoke | null = null;
-    // Pre-gesture value so Esc reverts the drag (gen-1 parity).
-    let dragStartValue = 0;
+    // Move handler the SHARED drag controller invokes while a drag is live.
     let dragPointerId = -1;
-    let unregisterDrag: (() => void) | null = null;
-    const cancelDrag = () => {
-      if (!dragTarget) return;
-      mutateDatum(dragTarget, dragStartValue - dragTarget.value);
-      if (dragPointerId >= 0 && (this as any).hasPointerCapture?.(dragPointerId)) {
-        (this as any).releasePointerCapture(dragPointerId);
-      }
-      dragTarget = null;
-      dragPointerId = -1;
-      unregisterDrag?.(); unregisterDrag = null;
+    const onDragMove = (pe: PointerEvent) => {
+      const t = dragController.target as Spoke | null;
+      if (!t) return;
+      const { x, y } = localPt(pe);
+      const dist = Math.sqrt((x - CX) ** 2 + (y - CY) ** 2);
+      const newVal = Math.max(0, Math.min(100, yScale.value.invert(dist)));
+      mutateDatum(t, newVal - t.value);
     };
-
+    // Config handed to the SHARED drag controller (app-wide singleton).
+    const dragConfig = {
+      snapshot: (d: Spoke) => d.value,
+      restore: (d: Spoke, v: number) => mutateDatum(d, v - d.value),
+      onMove: onDragMove,
+      onEnd: () => {
+        if (dragPointerId >= 0 && (this as any).hasPointerCapture?.(dragPointerId)) {
+          (this as any).releasePointerCapture(dragPointerId);
+        }
+        dragPointerId = -1;
+      },
+    };
     this.addEventListener("pointerdown", (e) => {
+      if (dragController.active) return;
       const pe = e as PointerEvent;
       const { x, y } = localPt(pe);
       const spoke = hover.value ?? findNearestSpoke(x, y);
@@ -237,45 +244,29 @@ export class MdRadarChartLC extends Diagram {
       const dx = x - (CX + Math.cos(a) * r);
       const dy = y - (CY + Math.sin(a) * r);
       if (Math.sqrt(dx*dx + dy*dy) > 20) return;
-      dragTarget = spoke;
-      dragStartValue = spoke.value;
       dragPointerId = pe.pointerId;
       selected.value = spoke;
       (this as any).setPointerCapture(pe.pointerId);
-      unregisterDrag = beginGesture(this, cancelDrag);
+      dragController.begin(spoke, dragConfig); // controller owns move/up/Esc from here
       pe.preventDefault();
     });
-    this.addEventListener("pointermove", (e) => {
-      const pe = e as PointerEvent;
-      if (!dragTarget) return;
-      const { x, y } = localPt(pe);
-      const dx = x - CX;
-      const dy = y - CY;
-      const dist = Math.sqrt(dx*dx + dy*dy);
-      const newVal = Math.max(0, Math.min(100, yScale.value.invert(dist)));
-      mutateDatum(dragTarget, newVal - dragTarget.value);
-    });
-    this.addEventListener("pointerup", () => { dragTarget = null; dragPointerId = -1; unregisterDrag?.(); unregisterDrag = null; });
-    this.addEventListener("pointercancel", () => { dragTarget = null; dragPointerId = -1; unregisterDrag?.(); unregisterDrag = null; });
 
     svgEl.addEventListener("wheel", (e) => {
       const we = e as WheelEvent;
       if (!we.ctrlKey) return;
-      wheel.begin(hover.value ?? selected.value);
-      const t = wheel.target;
+      const t = wheelController.begin(hover.value ?? selected.value, wheelConfig);
       if (!t) return;
       we.preventDefault();
       mutateDatum(t, we.deltaY < 0 ? (we.shiftKey ? 5 : 1) : (we.shiftKey ? -5 : -1));
     }, { passive: false });
 
-    // Canonical Esc: live drag→revert (cancelDrag via registry), else clear
-    // selection, else fall through.
-    attachEscContract(this, {
-      clearSelection: () => { if (selected.value == null) return false; selected.value = null; return true; },
-    });
     this.addEventListener("keydown", (e) => {
       const ke = e as KeyboardEvent;
-      if (ke.key === "Escape") return; // handled by attachEscContract
+      if (ke.key === "Escape") {
+        // Drag-Esc owned by the drag gesture. Here: clear selection if focused.
+        if (selected.value != null) { selected.value = null; ke.preventDefault(); }
+        return;
+      }
       const rows = data.value as Spoke[];
       const cur = selected.value;
       const i = cur ? rows.indexOf(cur) : -1;

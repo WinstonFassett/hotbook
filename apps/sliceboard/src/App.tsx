@@ -10,7 +10,7 @@ import { Icicle } from './viz/Icicle'
 import { Sunburst } from './viz/Sunburst'
 import {
   BrLcBar, BrLcLine, BrLcArea, BrLcScatter, BrLcPie, BrLcRadar, BrLcConcentricArc,
-  BrLcPack, BrLcTreemap, BrLcIcicle, BrLcSunburst, BrLcSankey, BrLcTree,
+  BrLcPack, BrLcTreemap, BrLcIcicle, BrLcSunburst, BrLcSankey, BrLcSankeyFlow, BrLcTree,
 } from './viz/br/BrLcCharts'
 import {
   SvelteLcSunburst, SvelteLcIcicle, SvelteLcPack, SvelteLcTreemap, SvelteTreemapDemo,
@@ -51,7 +51,7 @@ const TILE_KINDS: TileKind[] = [
   'treetable',
   'br-lc-bar', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie',
   'br-lc-radar', 'br-lc-concentric-arc',
-  'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree',
+  'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-sankey-flow', 'br-lc-tree',
 ]
 const TILE_LABELS: Record<TileKind, string> = {
   'treetable':            'Table',
@@ -67,6 +67,7 @@ const TILE_LABELS: Record<TileKind, string> = {
   'br-lc-icicle':         'Icicle',
   'br-lc-sunburst':       'Sunburst',
   'br-lc-sankey':         'Sankey',
+  'br-lc-sankey-flow':    'Sankey Flow',
   'br-lc-tree':           'Tree',
   // retired — still rendered if encountered in stored dashboards
   'h-treemap':            'H-Treemap (retired)',
@@ -129,6 +130,7 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
   if (tile.kind === 'br-lc-icicle')         return <BrLcIcicle nodes={nodes} measureKey={mk} depth={depth} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
   if (tile.kind === 'br-lc-sunburst')       return <BrLcSunburst nodes={nodes} measureKey={mk} depth={depth} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
   if (tile.kind === 'br-lc-sankey')         return <BrLcSankey nodes={nodes} measureKey={mk} />
+  if (tile.kind === 'br-lc-sankey-flow')    return <BrLcSankeyFlow />
   if (tile.kind === 'br-lc-tree')           return <BrLcTree nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
 
   // ── Svelte LayerChart charts (real Svelte+LayerChart, live data + sync) ────

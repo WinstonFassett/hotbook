@@ -4,9 +4,8 @@
 
 import { Anchor, cell, circle, derive, Diagram, effect as biEffect, group, label, mount, type Mount, pathD, vec, Vec } from "bireactive";
 import { arc as d3Arc } from "d3-shape";
-import { makeWheelGesture } from "../lib/interaction";
+import { wheelController } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
-import { attachEscContract } from "../lib/esc-contract";
 
 const W = 640;
 const H = 640;
@@ -69,10 +68,11 @@ export class MdConcentricArcLC extends Diagram {
       data.value = [...data.value];
     };
 
-    const wheel = makeWheelGesture<Ring>({
-      snapshot: (d) => d.value,
-      restore: (d, v) => mutateDatum(d, v - d.value),
-    });
+    // Config handed to the SHARED wheel controller (app-wide singleton).
+    const wheelConfig = {
+      snapshot: (d: Ring) => d.value,
+      restore: (d: Ring, v: number) => mutateDatum(d, v - d.value),
+    };
     // Last ring the pointer was over — kept past pointerleave so a wheel edit can
     // still target it for a moment after the cursor exits the ring band.
     let lastRing: Ring | null = null;
@@ -175,8 +175,7 @@ export class MdConcentricArcLC extends Diagram {
     svgEl.addEventListener("wheel", (e) => {
       const we = e as WheelEvent;
       if (!we.ctrlKey) return;
-      wheel.begin(selected.value ?? hover.value ?? lastRing);
-      const t = wheel.target;
+      const t = wheelController.begin(selected.value ?? hover.value ?? lastRing, wheelConfig);
       if (!t) return;
       we.preventDefault();
       mutateDatum(t, we.deltaY < 0 ? (we.shiftKey ? 5 : 1) : (we.shiftKey ? -5 : -1));
@@ -206,14 +205,13 @@ export class MdConcentricArcLC extends Diagram {
       // Keep lastRing until gesture release so wheel still works just after leaving.
     });
 
-    // Canonical Esc: no drag in this chart, so just clear selection, else fall
-    // through. (Same shared helper as every other chart.)
-    attachEscContract(this, {
-      clearSelection: () => { if (selected.value == null) return false; selected.value = null; return true; },
-    });
     this.addEventListener("keydown", (e) => {
       const ke = e as KeyboardEvent;
-      if (ke.key === "Escape") return; // handled by attachEscContract
+      if (ke.key === "Escape") {
+        // No drag here: clear selection, else fall through (don't preventDefault).
+        if (selected.value != null) { selected.value = null; ke.preventDefault(); }
+        return;
+      }
       const rows = data.value as Ring[];
       const cur = selected.value;
       const i = cur ? rows.indexOf(cur) : -1;

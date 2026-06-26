@@ -56,6 +56,7 @@ export type TileKind =
   | 'br-lc-icicle'
   | 'br-lc-sunburst'
   | 'br-lc-sankey'
+  | 'br-lc-sankey-flow'
   | 'br-lc-tree'
   | RetiredTileKind
 
@@ -477,7 +478,7 @@ function buildSeedWorkspace(): Workspace {
     'treetable',
     'br-lc-bar', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie',
     'br-lc-radar', 'br-lc-concentric-arc',
-    'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree',
+    'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-sankey-flow', 'br-lc-tree',
   ]
 
   const GROUPBY_KINDS = new Set<TileKind>([

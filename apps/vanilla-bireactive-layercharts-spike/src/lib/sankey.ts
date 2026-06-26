@@ -17,7 +17,7 @@ import {
 } from "d3-sankey";
 import { scaleSequential } from "d3-scale";
 import { interpolateCool } from "d3-scale-chromatic";
-import { makeWheelGesture } from "./interaction";
+import { wheelController, dragController } from "./interaction";
 
 export const linkPath = sankeyLinkHorizontal();
 
@@ -104,11 +104,12 @@ export function sankeyScene(
   const ribbonEls = new Map<Element, number>();
 
   // Wheel edits a link by index; snapshot/restore the one link cell's value.
-  const wheel = makeWheelGesture<number>({
-    snapshot: (idx) => linkValues[idx]!.value.value,
-    restore: (idx, v) => { linkValues[idx]!.value.value = v; },
+  // Config handed to the SHARED wheel controller (app-wide singleton).
+  const wheelConfig = {
+    snapshot: (idx: number) => linkValues[idx]!.value.value,
+    restore: (idx: number, v: number) => { linkValues[idx]!.value.value = v; },
     onEnd: () => { wheelLocked.value = null; hovered.value = null; tooltipVis.value = false; },
-  });
+  };
 
   const hitTestRibbon = (clientX: number, clientY: number): number | null => {
     const shadow = (host as any).shadowRoot as ShadowRoot | null;
@@ -122,8 +123,10 @@ export function sankeyScene(
 
   host.addEventListener("wheel", ((e: WheelEvent) => {
     if (!e.ctrlKey) return;
-    wheel.begin(hovered.value ?? focused.value ?? hitTestRibbon(e.clientX, e.clientY));
-    const idx = wheel.target;
+    const idx = wheelController.begin(
+      hovered.value ?? focused.value ?? hitTestRibbon(e.clientX, e.clientY),
+      wheelConfig,
+    );
     if (idx === null) return;
     wheelLocked.value = idx;
     e.preventDefault();
@@ -171,6 +174,46 @@ export function sankeyScene(
   const tooltipAt = cell({ x: 0, y: 0 });
   const tooltipVis = cell(false);
 
+  // Drag gesture — sibling of the wheel gesture above. Dragging a ribbon
+  // vertically resizes its link value; Esc reverts. The controller owns the
+  // gesture frame: snapshot captures everything the move needs (start value,
+  // start pointer-Y, and value-per-pixel — the latter frozen at gesture start so
+  // the scale is stable during the drag, Rule 2). No loose caller-side vars.
+  interface SankeyFrame { value: number; startY: number; vPerPx: number }
+  let dragStartPointerY = 0; // set by pointerdown before begin(); read once by snapshot
+  let dragPointerId = -1;    // set by ribbon pointerdown; released on end
+  const onDragMove = (e: PointerEvent, f: SankeyFrame) => {
+    const idx = dragController.target as number | null;
+    if (idx === null) return;
+    const { y } = toSVG(e);
+    // Absolute value from gesture-start frame: drag up = larger.
+    const next = Math.max(0.01, f.value + (f.startY - y) * f.vPerPx);
+    linkValues[idx]!.value.value = next;
+    const lk = layout.value.links[idx] as any;
+    const sn = nodeIds[(lk.source as any).index ?? lk.source] ?? String(lk.source);
+    const tn = nodeIds[(lk.target as any).index ?? lk.target] ?? String(lk.target);
+    tooltipText.value = `${sn} → ${tn}: ${next.toFixed(1)}`;
+  };
+  // Config handed to the SHARED drag controller. The frame (start value, start
+  // pointer-Y, value-per-pixel) is the snapshot — vPerPx is frozen at start so the
+  // scale is stable for the drag (Rule 2). No loose caller-side vars.
+  const dragConfig = {
+    snapshot: (idx: number): SankeyFrame => {
+      const v = linkValues[idx]!.value.value;
+      const width = (layout.value.links[idx] as any).width || 1;
+      return { value: v, startY: dragStartPointerY, vPerPx: v / width };
+    },
+    restore: (idx: number, f: SankeyFrame) => { linkValues[idx]!.value.value = f.value; },
+    onMove: onDragMove,
+    onEnd: () => {
+      if (dragPointerId >= 0) { try { (host as any).releasePointerCapture?.(dragPointerId); } catch { /* ok */ } }
+      dragPointerId = -1;
+      wheelLocked.value = null;
+      tooltipVis.value = false;
+      (host as any).gestureActive = false;
+    },
+  };
+
   // Links
   for (let i = 0; i < linkDefs.length; i++) {
     const idx = i;
@@ -198,9 +241,22 @@ export function sankeyScene(
     const ribbon = s(pathD(d, { stroke, strokeWidth: sw, opacity, cap: "butt" }));
     ribbonEls.set(ribbon.el, idx);
     if (ribbon.el.firstElementChild) ribbonEls.set(ribbon.el.firstElementChild, idx);
-    ribbon.el.style.cursor = "pointer";
+    ribbon.el.style.cursor = "ns-resize";
+    // Drag a ribbon vertically to resize its link value; Esc reverts. The shared
+    // drag controller owns move/up/Esc once begun.
+    ribbon.el.addEventListener("pointerdown", (e) => {
+      if (dragController.active) return;
+      const pe = e as PointerEvent;
+      dragStartPointerY = toSVG(pe).y; // read once by snapshot()
+      dragPointerId = pe.pointerId;
+      try { (host as any).setPointerCapture?.(pe.pointerId); } catch { /* ok */ }
+      focused.value = idx;
+      (host as any).gestureActive = true;
+      dragController.begin(idx, dragConfig);
+      pe.preventDefault();
+    });
     ribbon.el.addEventListener("pointerenter", (e) => {
-      if (wheel.active) return;
+      if (wheelController.active || dragController.active) return;
       hovered.value = idx;
       const lk = layout.value.links[idx] as any;
       const srcName = nodeIds[(lk.source as any).index ?? lk.source] ?? String(lk.source);
@@ -208,8 +264,8 @@ export function sankeyScene(
       tooltipText.value = `${srcName} → ${tgtName}: ${lk.value.toFixed(1)}`;
       tooltipAt.value = toSVG(e as PointerEvent); tooltipVis.value = true;
     });
-    ribbon.el.addEventListener("pointermove", (e) => { if (!wheel.active) tooltipAt.value = toSVG(e as PointerEvent); });
-    ribbon.el.addEventListener("pointerleave", () => { if (wheel.active) return; if (hovered.value === idx) { hovered.value = null; tooltipVis.value = false; } });
+    ribbon.el.addEventListener("pointermove", (e) => { if (!wheelController.active && !dragController.active) tooltipAt.value = toSVG(e as PointerEvent); });
+    ribbon.el.addEventListener("pointerleave", () => { if (wheelController.active || dragController.active) return; if (hovered.value === idx) { hovered.value = null; tooltipVis.value = false; } });
     ribbon.el.addEventListener("click", () => { focused.value = focused.value === idx ? null : idx; });
   }
 

@@ -11,6 +11,7 @@ import { MdPieChartLC } from "./demos/pie-chart";
 import { MdRadarChartLC } from "./demos/radar-chart";
 import { MdConcentricArcLC } from "./demos/concentric-arc";
 import { MdSankeySimple, MdSankeyComplex, MdSankeyHierarchy } from "./demos/sankey";
+import { MdSankeyFlow } from "./demos/sankey-flow";
 import { MdTreeChart } from "./demos/tree-chart";
 import { MdBudgetTree } from "./demos/budget-tree";
 
@@ -29,6 +30,7 @@ const experiments: Array<{ id: string; title: string; tag: string; ctor: typeof 
   { id: "sankey-simple", title: "Sankey (simple, editable)", tag: "v-sankey-simple", ctor: MdSankeySimple },
   { id: "sankey-complex", title: "Sankey (UK energy)", tag: "v-sankey-complex", ctor: MdSankeyComplex },
   { id: "sankey-hierarchy", title: "Sankey (hierarchy → flow)", tag: "v-sankey-hierarchy", ctor: MdSankeyHierarchy },
+  { id: "sankey-flow", title: "Sankey (conservation flow, drag handles)", tag: "v-sankey-flow", ctor: MdSankeyFlow },
   { id: "tree-chart", title: "Tree (node-link dendrogram)", tag: "v-tree-chart", ctor: MdTreeChart },
   { id: "budget-tree", title: "Budget Tree (drag boundary handles)", tag: "v-budget-tree", ctor: MdBudgetTree },
 ];

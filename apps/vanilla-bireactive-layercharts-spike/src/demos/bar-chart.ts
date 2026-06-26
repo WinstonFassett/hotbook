@@ -4,9 +4,8 @@ import { Anchor, cell, circle, derive, Diagram, effect as biEffect, label, line,
 import { scaleBand } from "d3-scale";
 import { axis } from "../lib/axis";
 import { chartContext } from "../lib/chart-context";
-import { makeWheelGesture } from "../lib/interaction";
+import { wheelController, dragController } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
-import { attachEscContract, beginGesture } from "../lib/esc-contract";
 
 const W = 720;
 const H = 360;
@@ -104,29 +103,38 @@ export class MdBarChartLC extends Diagram {
       data.value = [...data.value];
     };
 
-    const wheel = makeWheelGesture<Bar>({
-      snapshot: (d) => d.value,
-      restore: (d, v) => mutateDatum(d, v - d.value),
+    // Per-gesture value-mapping for the SHARED wheel/drag controllers. The
+    // controllers are app-wide singletons (one pointer → one live gesture); this
+    // chart only supplies what to snapshot/restore and how to map motion.
+    const wheelConfig = {
+      snapshot: (d: Bar) => d.value,
+      restore: (d: Bar, v: number) => mutateDatum(d, v - d.value),
       onEnd: () => { hover.value = null; },
-    });
-
-    let dragTarget: Bar | null = null;
-    // Pre-gesture value so Esc reverts the drag (gen-1 parity).
-    let dragStartValue = 0;
-    let dragPointerId = -1;
-    let unregisterDrag: (() => void) | null = null;
-    const cancelDrag = () => {
-      if (!dragTarget) return;
-      mutateDatum(dragTarget, dragStartValue - dragTarget.value);
-      if (dragPointerId >= 0 && (this as any).hasPointerCapture?.(dragPointerId)) {
-        (this as any).releasePointerCapture(dragPointerId);
-      }
-      dragTarget = null;
-      dragPointerId = -1;
-      unregisterDrag?.(); unregisterDrag = null;
     };
 
-    this.addEventListener("pointerleave", () => { if (!wheel.active) hover.value = null; });
+    let dragPointerId = -1;
+    // The move handler the controller invokes for each pointermove while live.
+    const onDragMove = (pe: PointerEvent) => {
+      const t = dragController.target as Bar | null;
+      if (!t) return;
+      const { y } = localPoint(pe);
+      const ys = ctx.yScale.value as any;
+      mutateDatum(t, ys.invert(y) - t.value);
+    };
+    const dragConfig = {
+      snapshot: (d: Bar) => d.value,
+      restore: (d: Bar, v: number) => mutateDatum(d, v - d.value),
+      onMove: onDragMove,
+      onEnd: () => {
+        if (dragPointerId >= 0 && (this as any).hasPointerCapture?.(dragPointerId)) {
+          (this as any).releasePointerCapture(dragPointerId);
+        }
+        dragPointerId = -1;
+        (this as any).gestureActive = false;
+      },
+    };
+
+    this.addEventListener("pointerleave", () => { if (!wheelController.active) hover.value = null; });
     this.addEventListener("click", (e) => {
       const { x } = localPoint(e as PointerEvent);
       const pt = findAtPixel(x);
@@ -135,20 +143,18 @@ export class MdBarChartLC extends Diagram {
     this.addEventListener("wheel", (e) => {
       const we = e as WheelEvent;
       if (!we.ctrlKey) return;
-      wheel.begin(hover.value ?? selected.value);
-      const t = wheel.target;
+      const t = wheelController.begin(hover.value ?? selected.value, wheelConfig);
       if (!t) return;
       we.preventDefault();
       mutateDatum(t, we.deltaY < 0 ? (we.shiftKey ? 5 : 1) : (we.shiftKey ? -5 : -1));
     }, { passive: false });
-    // Canonical Esc: live drag→revert (cancelDrag via registry), else clear
-    // selection, else fall through.
-    attachEscContract(this, {
-      clearSelection: () => { if (selected.value == null) return false; selected.value = null; return true; },
-    });
     this.addEventListener("keydown", (e) => {
       const ke = e as KeyboardEvent;
-      if (ke.key === "Escape") return; // handled by attachEscContract
+      if (ke.key === "Escape") {
+        // Drag-Esc is owned by the drag gesture. Here: clear selection if focused.
+        if (selected.value != null) { selected.value = null; ke.preventDefault(); }
+        return;
+      }
       const rows = data.value as Bar[];
       const cur = selected.value;
       const i = cur ? rows.indexOf(cur) : -1;
@@ -165,34 +171,26 @@ export class MdBarChartLC extends Diagram {
       else if (ke.key === "ArrowDown") { mutateDatum(cur, -step); ke.preventDefault(); }
     });
     this.addEventListener("pointerdown", (e) => {
+      if (dragController.active) return;
       const pe = e as PointerEvent;
       const { x, y } = localPoint(pe);
       const pt = findAtPixel(x);
       if (!pt) return;
       const topY = (ctx.yScale.value as any)(pt.value);
       if (Math.abs(y - topY) > 12) return;
-      dragTarget = pt;
-      dragStartValue = pt.value;
       dragPointerId = pe.pointerId;
       selected.value = pt;
+      (this as any).gestureActive = true;
       (this as any).setPointerCapture(pe.pointerId);
-      unregisterDrag = beginGesture(this, cancelDrag);
+      dragController.begin(pt, dragConfig); // controller owns move/up/Esc from here
       pe.preventDefault();
     });
+    // Hover only (drag motion is handled by the gesture controller).
     this.addEventListener("pointermove", (e) => {
-      const pe = e as PointerEvent;
-      if (dragTarget) {
-        const { y } = localPoint(pe);
-        const ys = ctx.yScale.value as any;
-        mutateDatum(dragTarget, ys.invert(y) - dragTarget.value);
-        return;
-      }
-      if (wheel.active) return;
-      const { x } = localPoint(pe);
+      if (dragController.active || wheelController.active) return;
+      const { x } = localPoint(e as PointerEvent);
       hover.value = findAtPixel(x);
     });
-    this.addEventListener("pointerup", () => { dragTarget = null; dragPointerId = -1; unregisterDrag?.(); unregisterDrag = null; });
-    this.addEventListener("pointercancel", () => { dragTarget = null; dragPointerId = -1; unregisterDrag?.(); unregisterDrag = null; });
 
     // Column hover highlight — full-height rect that slides to the active column.
     const hlTarget = derive(() => hover.value ?? selected.value);
@@ -219,8 +217,8 @@ export class MdBarChartLC extends Diagram {
       );
       const tile = s(rect(barX, barY, barW, barH, { fill, corner: 2 }));
       tile.el.style.cursor = "pointer";
-      tile.el.addEventListener("pointerenter", () => { if (!wheel.active) hover.value = d; });
-      tile.el.addEventListener("pointerleave", () => { if (!wheel.active && hover.value === d) hover.value = null; });
+      tile.el.addEventListener("pointerenter", () => { if (!wheelController.active) hover.value = d; });
+      tile.el.addEventListener("pointerleave", () => { if (!wheelController.active && hover.value === d) hover.value = null; });
       tile.el.addEventListener("click", () => { selected.value = selected.value === d ? null : d; });
 
       // Drag handle — visible circle at bar top on hover/select.
@@ -239,8 +237,8 @@ export class MdBarChartLC extends Diagram {
       }));
       handle.el.style.cursor = "ns-resize";
       handle.el.style.transition = "opacity 0.1s";
-      handle.el.addEventListener("pointerenter", () => { if (!wheel.active) hover.value = d; });
-      handle.el.addEventListener("pointerleave", () => { if (!wheel.active && hover.value === d) hover.value = null; });
+      handle.el.addEventListener("pointerenter", () => { if (!wheelController.active) hover.value = d; });
+      handle.el.addEventListener("pointerleave", () => { if (!wheelController.active && hover.value === d) hover.value = null; });
     }
 
     s(label(

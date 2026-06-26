@@ -104,6 +104,7 @@ import { MdTreemapLC } from '@br-lc/demos/treemap'
 import { MdIcicleLC } from '@br-lc/demos/icicle'
 import { MdSunburstLC } from '@br-lc/demos/sunburst'
 import { MdSankeySimple } from '@br-lc/demos/sankey'
+import { MdSankeyFlow } from '@br-lc/demos/sankey-flow'
 import { MdTreeChart } from '@br-lc/demos/tree-chart'
 
 // Register custom elements once
@@ -120,6 +121,7 @@ const TAGS = [
   ['v-br-icicle',         MdIcicleLC],
   ['v-br-sunburst',       MdSunburstLC],
   ['v-br-sankey',         MdSankeySimple],
+  ['v-br-sankey-flow',    MdSankeyFlow],
   ['v-br-tree',           MdTreeChart],
 ] as const
 
@@ -608,5 +610,12 @@ export function BrLcSankey({ nodes, measureKey }: FlatProps) {
     .filter(l => nodeNameSet.has(l.source) && nodeNameSet.has(l.target))
   const data = { nodes: nodeNames, links }
   const ref = useBrElement<MdSankeySimple>('v-br-sankey', el => { el.externalData = data }, [JSON.stringify(data)])
+  return <div ref={ref} style={{ width: '100%', height: '100%' }} />
+}
+
+// ─── Sankey (conservation flow) ─────────────────────────────────────────────────
+// Self-contained conservation demo — takes no node data; just mount the element.
+export function BrLcSankeyFlow() {
+  const ref = useBrElement<MdSankeyFlow>('v-br-sankey-flow', () => {}, [])
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }

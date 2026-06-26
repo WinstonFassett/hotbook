@@ -20,7 +20,7 @@ import {
   Vec,
   type Writable,
 } from "bireactive";
-import { attachEscContract, dragCancelable } from "../lib/esc-contract";
+import { dragCancelable } from "../lib/esc-contract";
 
 interface Category {
   label: string;
@@ -222,8 +222,6 @@ export class MdBudgetTree extends Diagram {
       dragCancelable(pillShape, knob, [a, b], { host: this });
       pillShape.el.style.cursor = "ew-resize";
     }
-
-    // Esc reverts an in-progress boundary drag (no selection in this demo).
-    attachEscContract(this);
+    // Esc-revert is owned by each pill's dragCancelable gesture. No selection here.
   }
 }

@@ -86,62 +86,70 @@ export function installGestureRelease(release: () => void): () => void {
   };
 }
 
-/**
- * A wheel-edit gesture (cmd/ctrl + wheel). The gesture is the span where a
- * target is locked: it BEGINS on the first cmd+wheel tick and ENDS on either
- * COMMIT (modifier released / blur — keep the edits) or CANCEL (Escape — revert
- * to the snapshot taken at begin).
- *
- * The end-of-gesture listeners (Meta/Ctrl-up + blur to commit, Escape to cancel)
- * exist ONLY for the duration of the gesture — installed at begin, removed at
- * end — exactly like gen-1 VizRenderer's _startResizeDrag/_endResizeDrag. There
- * is no global handler armed while idle: when no gesture is live, Escape is not
- * touched and falls through to the chart's own keydown (clear selection, etc).
- *
- * The Escape and release listeners are on `window` (capture phase) because the
- * chart element is NOT focused during cmd+wheel, so a per-element keydown never
- * fires. Charts vary only in WHAT they lock and HOW they snapshot/restore it.
- *
- *   const g = makeWheelGesture<Datum>({
- *     snapshot: (d) => d.value,            // capture revert state at begin
- *     restore:  (d, s) => setValue(d, s),  // applied on cancel
- *     onEnd:    () => { hover.value = null }, // optional, runs on any end
- *   })
- *   // in onWheel: g.begin(hover ?? selected); const t = g.target; if (!t) return; ...
- *   g.active     // true while a gesture is live (guard hover/pointer handlers)
- */
-export interface WheelGesture<T> {
-  /** Currently-locked target, or null when idle. */
-  readonly target: T | null;
-  /** True while a gesture is live (i.e. its end-listeners are installed). */
-  readonly active: boolean;
-  /** Lock a target and capture its revert snapshot. No-op if already locked. */
-  begin(target: T | null): void;
-  /** End the gesture, force-cancelling (revert) if still live. For teardown. */
-  dispose(): void;
+// ===========================================================================
+// ONE wheel controller + ONE drag controller for the WHOLE app.
+//
+// A human has one pointer. Only one wheel gesture and one drag gesture can ever
+// be live at a time, so there is exactly ONE of each controller — a singleton —
+// not one instance per chart. Each controller owns the (single) window listener
+// set, the Esc-cancel, and the gesture FRAME (the locked target + the snapshot
+// taken at begin). Charts own only their target and a pure value-mapping, which
+// they hand to begin() per gesture (snapshot/restore differ chart-to-chart, so
+// the mapping is per-begin config, not baked into the controller).
+//
+// Because only one gesture of each kind is ever live, exactly one Esc listener
+// of each kind exists at a time — no global idle handlers, no registry, no
+// cross-chart interference, by construction. When no gesture is live, Escape is
+// untouched and falls through to the chart's own keydown (clear selection, etc).
+//
+// The listeners are on `window` (capture phase for keydown) because the chart
+// element is NOT focused during cmd+wheel or a pointer-captured drag, so a
+// per-element keydown never fires.
+// ===========================================================================
+
+/** Per-gesture value mapping for a wheel edit. Differs chart-to-chart, so it is
+ *  passed to begin() rather than baked into the (shared) controller. */
+export interface WheelConfig<T> {
+  /** Capture revert state at begin. */
+  snapshot: (target: T) => unknown;
+  /** Applied on cancel (Esc). */
+  restore: (target: T, snap: any) => void;
+  /** Runs on any end (commit or cancel). */
+  onEnd?: () => void;
 }
 
-export function makeWheelGesture<T>(opts: {
-  snapshot: (target: T) => unknown;
-  restore: (target: T, snap: any) => void;
-  onEnd?: () => void;
-}): WheelGesture<T> {
-  let target: T | null = null;
+export interface WheelController {
+  /** Currently-locked target, or null when idle. Untyped: the caller holds its
+   *  own typed reference; this is for the few sites that re-read across events. */
+  readonly target: unknown;
+  /** True while a gesture is live (i.e. its end-listeners are installed). */
+  readonly active: boolean;
+  /** Lock a target and capture its revert snapshot. No-op if already locked.
+   *  Returns the locked target (or null) so callers can `const t = begin(...)`. */
+  begin<T>(target: T | null, config: WheelConfig<T>): T | null;
+  /** Force-cancel (revert) if still live. For teardown. */
+  cancel(): boolean;
+}
+
+function makeWheelController(): WheelController {
+  let target: unknown = null;
   let snap: unknown = undefined;
+  let cfg: WheelConfig<any> | null = null;
   let teardown: (() => void) | null = null;
 
-  // Remove the gesture-scoped listeners and clear state. Idempotent.
+  // Remove the gesture-scoped listeners and clear the frame. Idempotent.
   const end = () => {
     if (teardown) { teardown(); teardown = null; }
+    const onEnd = cfg?.onEnd;
     target = null;
     snap = undefined;
-    opts.onEnd?.();
+    cfg = null;
+    onEnd?.();
   };
-
   const commit = () => { if (target !== null) end(); };
   const cancel = (): boolean => {
-    if (target === null) return false;
-    opts.restore(target, snap);
+    if (target === null || !cfg) return false;
+    cfg.restore(target, snap);
     end();
     return true;
   };
@@ -149,10 +157,11 @@ export function makeWheelGesture<T>(opts: {
   return {
     get target() { return target; },
     get active() { return target !== null; },
-    begin(t) {
-      if (target !== null || t == null) return;
+    begin<T>(t: T | null, config: WheelConfig<T>): T | null {
+      if (target !== null || t == null) return target as T | null;
       target = t;
-      snap = opts.snapshot(t);
+      cfg = config;
+      snap = config.snapshot(t);
       // Install end-of-gesture listeners for the lifetime of THIS gesture only.
       const onKeyup = (e: KeyboardEvent) => { if (e.key === "Meta" || e.key === "Control") commit(); };
       const onBlur = () => commit();
@@ -167,7 +176,94 @@ export function makeWheelGesture<T>(opts: {
         window.removeEventListener("blur", onBlur);
         window.removeEventListener("keydown", onKeydown, true);
       };
+      return t;
     },
-    dispose() { cancel(); },
+    cancel,
   };
 }
+
+/** Per-gesture value mapping for a drag edit. */
+export interface DragConfig<T> {
+  snapshot: (target: T) => unknown;
+  restore: (target: T, snap: any) => void;
+  /** Invoked for each pointermove while live, with the live pointer AND the
+   *  gesture-start snapshot — so callers that need a start reference read it from
+   *  the controller (which owns the frame) instead of stashing loose start vars. */
+  onMove: (e: PointerEvent, snapshot: any) => void;
+  /** Runs on any end. `canceled` = reverted via Esc. */
+  onEnd?: (canceled: boolean) => void;
+}
+
+export interface DragController {
+  readonly target: unknown;
+  readonly active: boolean;
+  /** Lock a target, snapshot it, arm move/up/cancel/Esc listeners. No-op if a
+   *  drag is already live. The caller still owns pointerDOWN (hit-test / capture):
+   *  it decides WHEN to begin() and on what target; the controller owns everything
+   *  after (move/up/cancel, snapshot, revert, teardown). Returns the locked target. */
+  begin<T>(target: T | null, config: DragConfig<T>): T | null;
+  /** Commit (keep edits) — e.g. on pointerup. */
+  commit(): void;
+  /** Cancel (revert to snapshot). Returns true if a gesture was live. */
+  cancel(): boolean;
+}
+
+function makeDragController(): DragController {
+  let target: unknown = null;
+  let snap: unknown = undefined;
+  let cfg: DragConfig<any> | null = null;
+  let teardown: (() => void) | null = null;
+
+  const end = (canceled: boolean) => {
+    if (teardown) { teardown(); teardown = null; }
+    const onEnd = cfg?.onEnd;
+    target = null;
+    snap = undefined;
+    cfg = null;
+    onEnd?.(canceled);
+  };
+  const commit = () => { if (target !== null) end(false); };
+  const cancel = (): boolean => {
+    if (target === null || !cfg) return false;
+    cfg.restore(target, snap);
+    end(true);
+    return true;
+  };
+
+  return {
+    get target() { return target; },
+    get active() { return target !== null; },
+    begin<T>(t: T | null, config: DragConfig<T>): T | null {
+      if (target !== null || t == null) return target as T | null;
+      target = t;
+      cfg = config;
+      snap = config.snapshot(t);
+      const onPointerMove = (e: Event) => config.onMove(e as PointerEvent, snap);
+      const onPointerUp = () => commit();
+      const onBlur = () => commit();
+      const onKeydown = (e: KeyboardEvent) => {
+        if (e.key === "Escape" && cancel()) { e.preventDefault(); e.stopPropagation(); }
+      };
+      window.addEventListener("pointermove", onPointerMove);
+      window.addEventListener("pointerup", onPointerUp);
+      window.addEventListener("pointercancel", onPointerUp);
+      window.addEventListener("blur", onBlur);
+      window.addEventListener("keydown", onKeydown, true);
+      teardown = () => {
+        window.removeEventListener("pointermove", onPointerMove);
+        window.removeEventListener("pointerup", onPointerUp);
+        window.removeEventListener("pointercancel", onPointerUp);
+        window.removeEventListener("blur", onBlur);
+        window.removeEventListener("keydown", onKeydown, true);
+      };
+      return t;
+    },
+    commit,
+    cancel,
+  };
+}
+
+/** The ONE wheel controller for the whole app. */
+export const wheelController: WheelController = makeWheelController();
+/** The ONE drag controller for the whole app. */
+export const dragController: DragController = makeDragController();
