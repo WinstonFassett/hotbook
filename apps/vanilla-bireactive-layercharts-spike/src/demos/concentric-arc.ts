@@ -4,7 +4,7 @@
 
 import { Anchor, cell, circle, derive, Diagram, effect as biEffect, group, label, mount, type Mount, pathD, vec, Vec } from "bireactive";
 import { arc as d3Arc } from "d3-shape";
-import { wheelController } from "../lib/interaction";
+import { wheelController, dragController } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 
 const W = 640;
@@ -44,6 +44,9 @@ function arcD(rOuter: number, rInner: number, startAngle: number, endAngle: numb
 
 const TWO_PI = 2 * Math.PI;
 const START = 0; // d3Arc: 0 = top (12 o'clock), clockwise
+// Floor on a ring's value so the arc never collapses to a useless near-zero
+// sliver. Applies to wheel, keyboard, AND drag edits.
+const MIN_VALUE = 3;
 
 export class MdConcentricArcLC extends Diagram {
   static styles = `text { pointer-events: none; }`
@@ -63,10 +66,11 @@ export class MdConcentricArcLC extends Diagram {
     const hover = cell<Ring | null>(null);
     const selected = cell<Ring | null>(null);
 
-    const mutateDatum = (d: Ring, delta: number) => {
-      d.value = Math.max(0, Math.min(100, d.value + delta));
+    const setValue = (d: Ring, v: number) => {
+      d.value = Math.max(MIN_VALUE, Math.min(100, v));
       data.value = [...data.value];
     };
+    const mutateDatum = (d: Ring, delta: number) => setValue(d, d.value + delta);
 
     // Config handed to the SHARED wheel controller (app-wide singleton).
     const wheelConfig = {
@@ -76,6 +80,44 @@ export class MdConcentricArcLC extends Diagram {
     // Last ring the pointer was over — kept past pointerleave so a wheel edit can
     // still target it for a moment after the cursor exits the ring band.
     let lastRing: Ring | null = null;
+
+    const svgEl = (this as any).svg as SVGSVGElement;
+    // Pointer → diagram-local coords (CX/CY origin at center, SVG-space angles).
+    const localPt = (e: PointerEvent) => {
+      const r = svgEl.getBoundingClientRect();
+      const vb = svgEl.viewBox?.baseVal;
+      const sx = vb && vb.width ? vb.width / r.width : 1;
+      const sy = vb && vb.height ? vb.height / r.height : 1;
+      return { x: (e.clientX - r.left) * sx - CX, y: (e.clientY - r.top) * sy - CY };
+    };
+    // Pointer angle → ring value (0–100). d3Arc angle 0 = top, clockwise; SVG
+    // atan2 is 0 = right, so add π/2. Unwrap into [0, 2π).
+    const angleToValue = (lx: number, ly: number): number => {
+      let d3Angle = Math.atan2(ly, lx) + Math.PI / 2;
+      if (d3Angle < 0) d3Angle += TWO_PI;
+      return (d3Angle / TWO_PI) * 100;
+    };
+
+    // Drag a ring's end-cap handle angularly to set its value; Esc reverts.
+    // Config handed to the SHARED drag controller (one pointer, one live drag).
+    let dragPointerId = -1;
+    const onDragMove = (pe: PointerEvent) => {
+      const t = dragController.target as Ring | null;
+      if (!t) return;
+      const { x, y } = localPt(pe);
+      setValue(t, angleToValue(x, y));
+    };
+    const dragConfig = {
+      snapshot: (d: Ring) => d.value,
+      restore: (d: Ring, v: number) => setValue(d, v),
+      onMove: onDragMove,
+      onEnd: () => {
+        if (dragPointerId >= 0 && (this as any).hasPointerCapture?.(dragPointerId)) {
+          (this as any).releasePointerCapture(dragPointerId);
+        }
+        dragPointerId = -1;
+      },
+    };
 
     // All arcs rendered in a group translated to center.
     const g = s(group({ translate: vec(CX, CY) }));
@@ -143,11 +185,22 @@ export class MdConcentricArcLC extends Diagram {
         strokeWidth: 1.5,
         opacity: handleOpacity,
       }));
-      handleEl.el.style.cursor = "pointer";
+      handleEl.el.style.cursor = "grab";
       handleEl.el.style.transition = "opacity 0.12s";
-      handleEl.el.addEventListener("pointerenter", () => { hover.value = d; });
-      handleEl.el.addEventListener("pointerleave", () => { if (hover.value === d) hover.value = null; });
-      handleEl.el.addEventListener("click", () => { selected.value = selected.value === d ? null : d; this.focus(); });
+      handleEl.el.addEventListener("pointerenter", () => { if (!dragController.active) hover.value = d; });
+      handleEl.el.addEventListener("pointerleave", () => { if (!dragController.active && hover.value === d) hover.value = null; });
+      // Drag the handle around the ring to set its value; the shared controller
+      // owns move/up/Esc and reverts on Esc.
+      handleEl.el.addEventListener("pointerdown", (e) => {
+        if (dragController.active) return;
+        const pe = e as PointerEvent;
+        dragPointerId = pe.pointerId;
+        selected.value = d;
+        try { (this as any).setPointerCapture(pe.pointerId); } catch { /* ok */ }
+        dragController.begin(d, dragConfig);
+        pe.preventDefault();
+        pe.stopPropagation();
+      });
 
       // Ring label near end-cap — d3Arc angle 0=top, clockwise; SVG: angle 0=right, y-down.
       const lblPos = Vec.derive(() => {
@@ -170,8 +223,6 @@ export class MdConcentricArcLC extends Diagram {
       return p ? `${p.value}` : "";
     }), { size: 28, align: Anchor.Center, fill: derive(() => (selected.value ?? hover.value)?.color ?? "#fff") }));
 
-    const svgEl = (this as any).svg as SVGSVGElement;
-
     svgEl.addEventListener("wheel", (e) => {
       const we = e as WheelEvent;
       if (!we.ctrlKey) return;
@@ -181,6 +232,7 @@ export class MdConcentricArcLC extends Diagram {
       mutateDatum(t, we.deltaY < 0 ? (we.shiftKey ? 5 : 1) : (we.shiftKey ? -5 : -1));
     }, { passive: false });
     this.addEventListener("pointermove", (e) => {
+      if (dragController.active || wheelController.active) return;
       const pe = e as PointerEvent;
       const r = svgEl.getBoundingClientRect();
       const vb = svgEl.viewBox?.baseVal;
@@ -232,7 +284,7 @@ export class MdConcentricArcLC extends Diagram {
     s(label(vec(W / 2, 20), derive(() => {
       void data.value;
       const p = selected.value ?? hover.value;
-      if (!p) return "ConcentricArc — hover · click ring · Tab/←/→ nav · ↑/↓ edit · wheel";
+      if (!p) return "ConcentricArc — hover · click ring · drag handle · Tab/←/→ nav · ↑/↓ edit · cmd+wheel";
       return `${p.label}  ${p.value}%`;
     }), { size: 11, align: Anchor.Center, opacity: 0.7 }));
 
