@@ -343,13 +343,16 @@ export function sankeyScene(
         const b = layout.value.nodes[n]!;
         return { x: (b.x0 + b.x1) / 2, y: b.y1 };
       };
-      // Nodes are center-stacked, so BOTH edges move when the node resizes — no
-      // edge is a stable absolute reference. Instead map pointer DELTA from
-      // gesture start directly to throughput delta: robust regardless of stacking.
+      // Nodes are center-stacked, so BOTH edges move when a node resizes — no edge
+      // is a stable absolute reference. frozenGripPos pins the lens getter to the
+      // capture position for the duration of the drag so the grip tracks the cursor
+      // at 1:1 (without freezing, the bottom edge moves at half the drag rate
+      // because growth splits evenly between top and bottom).
+      let frozenGripPos: { x: number; y: number } | null = null;
       let startY = 0, startTot = 0, startVals: number[] = [];
       const lens = Vec.lens(
         sources,
-        () => gripPos(),
+        () => frozenGripPos ?? gripPos(),
         (target, vals: readonly number[]) => {
           if (startTot <= 0) return vals.slice();
           const wantTot = Math.max(LINK_MIN, startTot + (target.y - startY) / pxPerUnit);
@@ -359,7 +362,7 @@ export function sankeyScene(
           return startVals.map((v) => Math.max(LINK_MIN, v * k));
         },
       );
-      const gripVis = Vec.derive(gripPos);
+      const gripVis = Vec.derive(() => frozenGripPos ?? gripPos());
       const grip = s(circle(gripVis, 5, {
         fill: "#0b0d12",
         stroke: derive(() => nodeActive.value ? "#fff" : fill.value),
@@ -372,11 +375,12 @@ export function sankeyScene(
       dragCancelable(grip, lens, sources, {
         onStart: () => {
           nodeActive.value = true;
-          startY = gripPos().y;
+          frozenGripPos = gripPos();
+          startY = frozenGripPos.y;
           startVals = sources.map((c) => c.value);
           startTot = startVals.reduce((a, v) => a + v, 0);
         },
-        onEnd: () => { nodeActive.value = false; },
+        onEnd: () => { frozenGripPos = null; nodeActive.value = false; },
       });
     }
 
