@@ -172,8 +172,8 @@ export class MdConcentricArcLC extends Diagram {
         { fill: slotColor, opacity: derive(() => { const d = di(); return hover.value === d || selected.value === d ? 0.25 : 0.18; }) }
       ));
       trackEl.el.style.cursor = "pointer";
-      trackEl.el.addEventListener("pointerenter", () => { const d = di(); if (d && !wheelController.active) hover.value = d; });
-      trackEl.el.addEventListener("pointerleave", () => { const d = di(); if (d && !wheelController.active && hover.value === d) hover.value = null; });
+      trackEl.el.addEventListener("pointerenter", () => { const d = di(); if (d && !wheelController.active && !dragController.active) hover.value = d; });
+      trackEl.el.addEventListener("pointerleave", () => { const d = di(); if (d && !wheelController.active && !dragController.active && hover.value === d) hover.value = null; });
       trackEl.el.addEventListener("click", () => { const d = di(); if (!d) return; selected.value = selected.value === d ? null : d; this.focus(); });
 
       // Value arc.
@@ -195,8 +195,8 @@ export class MdConcentricArcLC extends Diagram {
       const valueEl = gs(pathD(valueD, { fill: slotColor, stroke: valueStroke, strokeWidth: valueStrokeW }));
       valueEl.el.style.cursor = "pointer";
       valueEl.el.style.transition = "d 0.1s";
-      valueEl.el.addEventListener("pointerenter", () => { const d = di(); if (d && !wheelController.active) hover.value = d; });
-      valueEl.el.addEventListener("pointerleave", () => { const d = di(); if (d && !wheelController.active && hover.value === d) hover.value = null; });
+      valueEl.el.addEventListener("pointerenter", () => { const d = di(); if (d && !wheelController.active && !dragController.active) hover.value = d; });
+      valueEl.el.addEventListener("pointerleave", () => { const d = di(); if (d && !wheelController.active && !dragController.active && hover.value === d) hover.value = null; });
       valueEl.el.addEventListener("click", () => { const d = di(); if (!d) return; selected.value = selected.value === d ? null : d; this.focus(); });
 
       // End-cap drag handle.
