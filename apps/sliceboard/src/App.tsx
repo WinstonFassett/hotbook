@@ -102,6 +102,11 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
         .sort((a, b) => (b.measures[mk] ?? 0) - (a.measures[mk] ?? 0))
         .map((n, i) => ({ ...n, index: i }))
     : rawNodes
+  // Line/area/scatter use array position for x-axis — sorting is the reorder,
+  // but index remapping scrambles their x-axis. Sort without remapping.
+  const sortedNodes = sortBy === 'value'
+    ? [...rawNodes].sort((a, b) => (b.measures[mk] ?? 0) - (a.measures[mk] ?? 0))
+    : rawNodes
 
   if (tile.kind === 'h-treemap') {
     return <Treemap nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} onUpdate={onNodeUpdate} />
@@ -117,11 +122,11 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
   }
 
   // ── BR-LC flat charts ────────────────────────────────────────────────────
-  if (tile.kind === 'br-lc-bar')            return <BrLcBar nodes={nodes} measureKey={mk} sortBy={sortBy} orientation={tile.orientation} colorMode={tile.colorMode} labelMode={tile.labelMode} valueMode={tile.valueMode} minBandSize={tile.minBandSize} onUpdate={onNodeUpdate} />
-  if (tile.kind === 'br-lc-bands')          return <BrLcBar nodes={nodes} measureKey={mk} sortBy={sortBy} orientation="horizontal" colorMode="palette" labelMode="inside" valueMode="inside" onUpdate={onNodeUpdate} />
-  if (tile.kind === 'br-lc-line')           return <BrLcLine nodes={nodes} measureKey={mk} sortBy={sortBy} onUpdate={onNodeUpdate} />
-  if (tile.kind === 'br-lc-area')           return <BrLcArea nodes={nodes} measureKey={mk} sortBy={sortBy} onUpdate={onNodeUpdate} />
-  if (tile.kind === 'br-lc-scatter')        return <BrLcScatter nodes={nodes} xKey={tile.xKey ?? '_index'} yKey={tile.yKey ?? mk} onUpdate={onNodeUpdate} />
+  if (tile.kind === 'br-lc-bar')            return <BrLcBar nodes={nodes} measureKey={mk} sortBy={sortBy} maxItems={tile.maxItems} orientation={tile.orientation} colorMode={tile.colorMode} labelMode={tile.labelMode} valueMode={tile.valueMode} minBandSize={tile.minBandSize} onUpdate={onNodeUpdate} />
+  if (tile.kind === 'br-lc-bands')          return <BrLcBar nodes={nodes} measureKey={mk} sortBy={sortBy} maxItems={tile.maxItems} orientation="horizontal" colorMode="palette" labelMode="inside" valueMode="inside" onUpdate={onNodeUpdate} />
+  if (tile.kind === 'br-lc-line')           return <BrLcLine nodes={sortedNodes} measureKey={mk} onUpdate={onNodeUpdate} />
+  if (tile.kind === 'br-lc-area')           return <BrLcArea nodes={sortedNodes} measureKey={mk} onUpdate={onNodeUpdate} />
+  if (tile.kind === 'br-lc-scatter')        return <BrLcScatter nodes={sortedNodes} xKey={tile.xKey ?? '_index'} yKey={tile.yKey ?? mk} onUpdate={onNodeUpdate} />
   if (tile.kind === 'br-lc-pie')            return <BrLcPie nodes={nodes} measureKey={mk} sortBy={sortBy} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
   if (tile.kind === 'br-lc-radar')          return <BrLcRadar nodes={nodes} measureKey={mk} sortBy={sortBy} onUpdate={onNodeUpdate} />
   if (tile.kind === 'br-lc-concentric-arc') return <BrLcConcentricArc nodes={nodes} measureKey={mk} sortBy={sortBy} onUpdate={onNodeUpdate} />

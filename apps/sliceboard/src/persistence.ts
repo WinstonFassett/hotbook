@@ -76,6 +76,7 @@ export interface Tile {
   labelMode?: 'axis' | 'inside' | 'both'
   valueMode?: 'inside' | 'outside' | 'none'
   minBandSize?: number
+  maxItems?: number
 }
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────

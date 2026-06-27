@@ -328,6 +328,7 @@ interface FlatProps {
   nodes: PNode[]
   measureKey: string
   sortBy?: 'index' | 'value'
+  maxItems?: number
   onUpdate?: (nodeId: string, measures: PNode['measures']) => void
   onUpdateMany?: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
 }
@@ -352,17 +353,18 @@ interface BarProps extends FlatProps {
   minBandSize?: number
 }
 
-export function BrLcBar({ nodes, measureKey, sortBy = 'index', orientation = 'vertical', colorMode = 'single', labelMode = 'axis', valueMode = 'none', minBandSize = 0, onUpdate }: BarProps) {
+export function BrLcBar({ nodes, measureKey, sortBy = 'index', maxItems, orientation = 'vertical', colorMode = 'single', labelMode = 'axis', valueMode = 'none', minBandSize = 0, onUpdate }: BarProps) {
   const leaves = leavesOfNodes(nodes)
   const ids = leaves.map(n => n.id)
   // orientation + display options in shapeKey so changing any forces a remount (re-runs scene()).
-  const displayKey = `${orientation}|${colorMode}|${labelMode}|${valueMode}|${minBandSize}`
+  const displayKey = `${orientation}|${colorMode}|${labelMode}|${valueMode}|${minBandSize}|${maxItems ?? 0}`
+  const maxProp = orientation === 'horizontal' ? 'maxBands' : 'maxBars'
   const ref = useLiveFlatElement<{ label: string; value: number }>({
     tag: 'v-br-bar', ids, measureKey,
     values: leaves.map(n => n.measures[measureKey] ?? 0),
     shapeKey: `${displayKey}|${measureKey}|${[...ids].sort().join(',')}|${[...leaves].sort((a,b)=>a.id<b.id?-1:1).map(n=>n.name).join(',')}`,
     build: () => leaves.map(n => ({ label: n.name, value: n.measures[measureKey] ?? 1 })),
-    onMount: (el: any) => { el.orientation = orientation; el.sortBy = sortBy; el.colorMode = colorMode; el.labelMode = labelMode; el.valueMode = valueMode; el.minBandSize = minBandSize },
+    onMount: (el: any) => { el.orientation = orientation; el.sortBy = sortBy; el.colorMode = colorMode; el.labelMode = labelMode; el.valueMode = valueMode; el.minBandSize = minBandSize; if (maxItems !== undefined) el[maxProp] = maxItems },
     readValue: d => d.value, writeValue: (d, v) => { d.value = v },
   }, nodes, onUpdate)
   useElProp(ref, 'sortBy', sortBy)
@@ -401,15 +403,16 @@ export function BrLcRadar({ nodes, measureKey, sortBy = 'index', onUpdate }: Fla
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }
 
-export function BrLcConcentricArc({ nodes, measureKey, sortBy = 'index', onUpdate }: FlatProps) {
+export function BrLcConcentricArc({ nodes, measureKey, sortBy = 'index', maxItems, onUpdate }: FlatProps) {
   const leaves = leavesOfNodes(nodes)
   const ids = leaves.map(n => n.id)
   const palette = ['#e05c5c', '#f0a742', '#4cba6e', '#5b8def', '#b76de0', '#44c4c4']
   const ref = useLiveFlatElement<{ label: string; color: string; value: number }>({
     tag: 'v-br-concentric-arc', ids, measureKey,
     values: leaves.map(n => Math.min(100, n.measures[measureKey] ?? 0)),
-    shapeKey: `${measureKey}|${[...ids].sort().join(',')}|${[...leaves].sort((a,b)=>a.id<b.id?-1:1).map(n=>n.name).join(',')}`,
+    shapeKey: `${measureKey}|${maxItems ?? ''}|${[...ids].sort().join(',')}|${[...leaves].sort((a,b)=>a.id<b.id?-1:1).map(n=>n.name).join(',')}`,
     build: () => leaves.map((n, i) => ({ label: n.name, color: palette[i % 6]!, value: Math.min(100, n.measures[measureKey] ?? 0) })),
+    onMount: (el: any) => { if (maxItems !== undefined) el.maxRings = maxItems },
     readValue: d => d.value, writeValue: (d, v) => { d.value = Math.min(100, v) },
   }, nodes, onUpdate)
   useElProp(ref, 'sortBy', sortBy)
@@ -443,31 +446,29 @@ export function BrLcScatter({ nodes, xKey, yKey, onUpdate }: ScatterProps) {
 const SERIES_START = new Date(2026, 0, 1).getTime()
 const DAY_MS = 86400 * 1000
 
-export function BrLcLine({ nodes, measureKey, sortBy = 'index', onUpdate }: FlatProps) {
+export function BrLcLine({ nodes, measureKey, onUpdate }: Omit<FlatProps, 'sortBy'>) {
   const leaves = leavesOfNodes(nodes)
   const ids = leaves.map(n => n.id)
   const ref = useLiveFlatElement<{ date: Date; value: number }>({
     tag: 'v-br-line', ids, measureKey,
     values: leaves.map(n => n.measures[measureKey] ?? 0),
-    shapeKey: `${measureKey}|${[...ids].sort().join(',')}`,
+    shapeKey: `${measureKey}|${ids.join(',')}`,
     build: () => leaves.map((n, i) => ({ date: new Date(SERIES_START + i * DAY_MS), value: n.measures[measureKey] ?? 0 })),
     readValue: d => d.value, writeValue: (d, v) => { d.value = v },
   }, nodes, onUpdate)
-  useElProp(ref, 'sortBy', sortBy)
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }
 
-export function BrLcArea({ nodes, measureKey, sortBy = 'index', onUpdate }: FlatProps) {
+export function BrLcArea({ nodes, measureKey, onUpdate }: Omit<FlatProps, 'sortBy'>) {
   const leaves = leavesOfNodes(nodes)
   const ids = leaves.map(n => n.id)
   const ref = useLiveFlatElement<{ date: Date; value: number }>({
     tag: 'v-br-area', ids, measureKey,
     values: leaves.map(n => n.measures[measureKey] ?? 0),
-    shapeKey: `${measureKey}|${[...ids].sort().join(',')}`,
+    shapeKey: `${measureKey}|${ids.join(',')}`,
     build: () => leaves.map((n, i) => ({ date: new Date(SERIES_START + i * DAY_MS), value: n.measures[measureKey] ?? 0 })),
     readValue: d => d.value, writeValue: (d, v) => { d.value = v },
   }, nodes, onUpdate)
-  useElProp(ref, 'sortBy', sortBy)
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }
 

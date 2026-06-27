@@ -50,12 +50,42 @@ if (app) {
     const section = document.createElement("section");
     section.id = e.id;
     section.className = "experiment";
+
     const h2 = document.createElement("h2");
     h2.textContent = e.title;
+
     const demo = document.createElement("div");
     demo.className = "demo";
-    demo.appendChild(document.createElement(e.tag));
-    section.append(h2, demo);
+    const el = document.createElement(e.tag) as InstanceType<typeof Diagram>;
+    el.setAttribute("no-source", "");
+    demo.appendChild(el);
+
+    // Source expander rendered outside the demo box
+    const srcDetails = document.createElement("details");
+    srcDetails.className = "diagram-source-panel";
+    const srcSummary = document.createElement("summary");
+    srcSummary.textContent = "source";
+    const srcCode = document.createElement("md-syntax") as any;
+    srcCode.setAttribute("lang", "ts");
+    // scene() source is available after upgrade; grab it lazily on first open
+    srcDetails.addEventListener("toggle", () => {
+      if (srcDetails.open && !srcCode.textContent) {
+        const proto = Object.getPrototypeOf(el);
+        const sceneFn = proto?.scene ?? (el as any).scene;
+        srcCode.textContent = sceneFn ? dedentFn(sceneFn.toString()) : "(source unavailable)";
+        (srcCode as any).update?.();
+      }
+    }, { once: false });
+    srcDetails.append(srcSummary, srcCode);
+
+    section.append(h2, demo, srcDetails);
     app.appendChild(section);
   }
+}
+
+function dedentFn(s: string): string {
+  const lines = s.split("\n");
+  const indents = lines.slice(1).filter(l => l.trim().length > 0).map(l => (l.match(/^ */) ?? [""])[0].length);
+  const min = indents.length ? Math.min(...indents) : 0;
+  return lines.map((l, i) => i === 0 ? l : l.slice(min)).join("\n");
 }
