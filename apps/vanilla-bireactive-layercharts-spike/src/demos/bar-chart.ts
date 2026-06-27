@@ -44,6 +44,10 @@ export class MdBarChartLC extends Diagram {
   valueMode: 'inside' | 'outside' | 'none' = 'outside';
   minBandSize: number = 0;
   sortBy: 'index' | 'value' = 'index';
+  /** Max bands before overflow-scroll kicks in. */
+  maxBands: number = 10;
+  /** Max bars before overflow-scroll kicks in. */
+  maxBars: number = 10;
 
   set externalData(v: { label: string; value: number }[] | undefined) {
     if (v) this.dataCell.value = v as Bar[];
@@ -54,7 +58,6 @@ export class MdBarChartLC extends Diagram {
 
   protected scene(s: Mount): void {
     const size = useHostSize(this, { width: W, height: H });
-    this.view(size.w, size.h);
     this.tabIndex = 0;
     this.style.outline = "none";
     const data = this.dataCell;
@@ -75,10 +78,31 @@ export class MdBarChartLC extends Diagram {
   #vertical(s: Mount, data: ReturnType<typeof cell<readonly Bar[]>>, { w: Wc, h: Hc }: HostSize) {
     const PAD = { top: 16, right: 24, bottom: 36, left: 48 };
     const plotX = PAD.left, plotY = PAD.top;
-    const plotW = derive(() => Wc.value - PAD.left - PAD.right);
-    const plotH = derive(() => Hc.value - PAD.top - PAD.bottom);
 
     const rows0 = data.value as Bar[];
+
+    // Overflow mode: fixed bar width per bar, chart scrolls horizontally.
+    const BAR_STEP = 56; // px per bar (step including gap) in overflow mode
+    const overflowMode = this.maxBars > 0 && rows0.length > this.maxBars;
+    const neededW = overflowMode ? PAD.left + PAD.right + rows0.length * BAR_STEP : null;
+    const viewW = neededW != null ? cell(neededW) : Wc;
+    const viewH = Hc;
+    this.view(viewW, viewH);
+    const svgElV = (this as any).svg as SVGSVGElement;
+    if (overflowMode) {
+      svgElV.style.width = neededW + 'px';
+      svgElV.style.height = '100%';
+      this.style.overflowX = 'auto';
+      this.style.overflowY = 'hidden';
+    } else {
+      svgElV.style.width = '';
+      svgElV.style.height = '';
+      this.style.overflowX = '';
+      this.style.overflowY = '';
+    }
+
+    const plotW = overflowMode ? cell(neededW! - PAD.left - PAD.right) : derive(() => Wc.value - PAD.left - PAD.right);
+    const plotH = derive(() => Hc.value - PAD.top - PAD.bottom);
 
     // xBand keyed by index — avoids stacking when multiple rows share a label.
     const xBand = derive(() =>
@@ -291,18 +315,44 @@ export class MdBarChartLC extends Diagram {
   #horizontal(s: Mount, data: ReturnType<typeof cell<readonly Bar[]>>, { w: Wc, h: Hc }: HostSize) {
     const PAD = { top: 16, right: 64, bottom: 16, left: 16 };
     const plotX = PAD.left, plotY = PAD.top;
-    const plotW = derive(() => Wc.value - PAD.left - PAD.right);
-    const plotH = derive(() => Hc.value - PAD.top - PAD.bottom);
 
     const rows0 = data.value as Bar[];
 
+    // Overflow mode: fixed band height per row, chart scrolls vertically.
+    const BAND_STEP = 44; // px per band (step including gap) in overflow mode
+    const overflowMode = this.maxBands > 0 && rows0.length > this.maxBands;
+    const neededH = overflowMode ? PAD.top + PAD.bottom + rows0.length * BAND_STEP : null;
+    const viewW = Wc;
+    const viewH = neededH != null ? cell(neededH) : Hc;
+    this.view(viewW, viewH);
+    const svgEl = (this as any).svg as SVGSVGElement;
+    if (overflowMode) {
+      svgEl.style.width = '100%';
+      svgEl.style.height = neededH + 'px';
+      this.style.overflowY = 'auto';
+      this.style.overflowX = 'hidden';
+    } else {
+      svgEl.style.width = '';
+      svgEl.style.height = '';
+      this.style.overflowY = '';
+      this.style.overflowX = '';
+    }
+
+    const plotW = derive(() => Wc.value - PAD.left - PAD.right);
+    const plotH = overflowMode ? cell(neededH! - PAD.top - PAD.bottom) : derive(() => Hc.value - PAD.top - PAD.bottom);
+
     // yBand keyed by index — avoids stacking when multiple rows share a label.
-    const yBand = derive(() =>
-      scaleBand<string>()
-        .domain(rows0.map((_, i) => String(i)))
-        .range([plotY, plotY + plotH.value])
-        .padding(0.15)
-    );
+    const yBand = overflowMode
+      ? cell(scaleBand<string>()
+          .domain(rows0.map((_, i) => String(i)))
+          .range([plotY, plotY + (neededH! - PAD.top - PAD.bottom)])
+          .padding(0.15))
+      : derive(() =>
+        scaleBand<string>()
+          .domain(rows0.map((_, i) => String(i)))
+          .range([plotY, plotY + plotH.value])
+          .padding(0.15)
+      );
     const xLinear = derive(() => {
       const max = Math.max(1, ...(data.value as Bar[]).map(d => d.value));
       return scaleLinear().domain([0, max]).range([plotX, plotX + plotW.value]).nice();
@@ -310,7 +360,6 @@ export class MdBarChartLC extends Diagram {
 
     const hover = cell<Bar | null>(null);
     const selected = cell<Bar | null>(null);
-    const svgEl = (this as any).svg as SVGSVGElement;
 
     const localPoint = (e: PointerEvent) => {
       const r = svgEl.getBoundingClientRect();

@@ -85,7 +85,7 @@ export function attachCartesianGestures<TData>(
 
   const onClick = (e: Event) => {
     const { x } = localPoint(e as PointerEvent);
-    if (x < ctx.plotX || x > ctx.plotX + ctx.plotWidth) return;
+    if (x < ctx.plotX || x > ctx.plotX + ctx.rPlotWidth.value) return;
     const pt = findAtPixel(x);
     state.selected.value = state.selected.value === pt ? null : pt;
   };
@@ -130,7 +130,7 @@ export function attachCartesianGestures<TData>(
     if (dragController.active || !canEdit()) return;
     const pe = e as PointerEvent;
     const { x, y } = localPoint(pe);
-    if (x < ctx.plotX || x > ctx.plotX + ctx.plotWidth) return;
+    if (x < ctx.plotX || x > ctx.plotX + ctx.rPlotWidth.value) return;
     const pt = findAtPixel(x);
     if (!pt) return;
     if (Math.abs(y - yPixel(pt)) > 12) return;
@@ -149,7 +149,7 @@ export function attachCartesianGestures<TData>(
     if (dragController.active || wheelController.active) return;
     const pe = e as PointerEvent;
     const { x, y } = localPoint(pe);
-    if (x < ctx.plotX || x > ctx.plotX + ctx.plotWidth) { state.hover.value = null; host.style.cursor = ""; return; }
+    if (x < ctx.plotX || x > ctx.plotX + ctx.rPlotWidth.value) { state.hover.value = null; host.style.cursor = ""; return; }
     const pt = findAtPixel(x);
     state.hover.value = pt;
     host.style.cursor = pt && Math.abs(y - yPixel(pt)) <= 12 ? "ns-resize" : "";

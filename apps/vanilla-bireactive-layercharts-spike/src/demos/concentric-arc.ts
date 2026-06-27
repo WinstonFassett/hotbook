@@ -15,7 +15,7 @@ const RING_GAP = 8;
 // Fraction of total radius reserved as empty center (for label readout / future hover info).
 // 1.5 means the dead zone equals 1.5 ring-step widths.
 const INNER_RESERVE = 1.5;
-const MAX_RINGS = 8;
+const DEFAULT_MAX_RINGS = 8;
 
 const RING_DEFS = [
   { label: "Speed",    color: "#e05c5c" },
@@ -35,7 +35,7 @@ interface Ring {
 }
 
 function makeData(): Ring[] {
-  return RING_DEFS.slice(0, MAX_RINGS).map((r) => ({ ...r, value: Math.round(20 + Math.random() * 70) }));
+  return RING_DEFS.slice(0, DEFAULT_MAX_RINGS).map((r) => ({ ...r, value: Math.round(20 + Math.random() * 70) }));
 }
 
 // Build rounded arc path-d centered at 0,0 (caller applies group translate).
@@ -58,8 +58,9 @@ export class MdConcentricArcLC extends Diagram {
   static styles = `text { pointer-events: none; }${FILL_STYLE}`
   readonly dataCell = cell<readonly Ring[]>(makeData());
   sortBy: 'index' | 'value' = 'index';
+  maxRings: number = DEFAULT_MAX_RINGS;
   set externalData(v: { label: string; value: number }[] | undefined) {
-    if (v) this.dataCell.value = (v as unknown as Ring[]).slice(0, MAX_RINGS);
+    if (v) this.dataCell.value = (v as unknown as Ring[]).slice(0, this.maxRings);
   }
   get externalData(): { label: string; value: number }[] | undefined {
     return this.dataCell.value as unknown as { label: string; value: number }[];
@@ -74,10 +75,11 @@ export class MdConcentricArcLC extends Diagram {
     const cy = derive(() => Hc.value / 2);
 
     const data = this.dataCell;
-    // n for the static render loop (mount-time snapshot, safe because externalData caps at MAX_RINGS).
-    const n = Math.min((data.value as Ring[]).length, MAX_RINGS);
+    const maxRings = this.maxRings;
+    // n for the static render loop (mount-time snapshot, safe because externalData caps at maxRings).
+    const n = Math.min((data.value as Ring[]).length, maxRings);
     // Reactive count drives thickness so it re-derives if data changes after mount.
-    const nCell = derive(() => Math.min((data.value as Ring[]).length, MAX_RINGS));
+    const nCell = derive(() => Math.min((data.value as Ring[]).length, maxRings));
 
     // Outermost ring outer radius — fills the container with padding for end-cap labels.
     const rOuterStart = derive(() => Math.min(Wc.value, Hc.value) / 2 - 30);
@@ -148,9 +150,9 @@ export class MdConcentricArcLC extends Diagram {
     const g = s(group({ translate: Vec.derive(() => ({ x: cx.value, y: cy.value })) }));
     const gs = mount(g);
 
-    // Always mount MAX_RINGS slots; slots past nCell.value are hidden.
+    // Always mount maxRings slots; slots past nCell.value are hidden.
     // di() reads the live datum at slot i so external data replacements are picked up.
-    for (let i = 0; i < MAX_RINGS; i++) {
+    for (let i = 0; i < maxRings; i++) {
       const di = (): Ring | null => (data.value as Ring[])[i] ?? null;
       // Derive radius from the ring's current visual rank. When sortBy=value, rank by descending value.
       const rankOf = () => {
@@ -230,6 +232,8 @@ export class MdConcentricArcLC extends Diagram {
       // owns move/up/Esc and reverts on Esc.
       handleEl.el.addEventListener("pointerdown", (e) => {
         if (dragController.active || this.sortBy === 'value') return;
+        const d = di();
+        if (!d) return;
         const pe = e as PointerEvent;
         dragPointerId = pe.pointerId;
         selected.value = d;
@@ -240,14 +244,17 @@ export class MdConcentricArcLC extends Diagram {
       });
 
       // Ring label near end-cap — d3Arc angle 0=top, clockwise; SVG: angle 0=right, y-down.
+      const slotDef = RING_DEFS[i]!;
       const lblPos = Vec.derive(() => {
         void data.value; // subscribe to re-position when value or rank changes
+        const d = di();
+        if (!d) return { x: -1000, y: -1000 };
         const d3Angle = START + (d.value / 100) * TWO_PI; // d3Arc angle (0=top, cw)
         const svgAngle = d3Angle - Math.PI / 2;           // convert to SVG (0=right, cw y-down)
         const rMid = (rOuter.value + rInner.value) / 2;
         return { x: cx.value + Math.cos(svgAngle) * (rMid + 22), y: cy.value + Math.sin(svgAngle) * (rMid + 22) };
       });
-      s(label(lblPos, d.label, { size: 10, fill: d.color, opacity: 0.85 }));
+      s(label(lblPos, slotDef.label, { size: 10, fill: slotDef.color, opacity: 0.85 }));
     }
 
     // Center readout.
@@ -257,7 +264,7 @@ export class MdConcentricArcLC extends Diagram {
     s(label(Vec.derive(() => ({ x: cx.value, y: cy.value + 14 })), derive(() => {
       void data.value;
       const p = selected.value ?? hover.value;
-      return p ? `${p.value}` : "";
+      return p ? `${Math.round(p.value)}` : "";
     }), { size: 28, align: Anchor.Center, fill: derive(() => (selected.value ?? hover.value)?.color ?? "#fff") }));
 
     svgEl.addEventListener("wheel", (e) => {
@@ -325,7 +332,7 @@ export class MdConcentricArcLC extends Diagram {
       void data.value;
       const p = selected.value ?? hover.value;
       if (!p) return "ConcentricArc — hover · click ring · drag handle · Tab/←/→ nav · ↑/↓ edit · cmd+wheel";
-      return `${p.label}  ${p.value}%`;
+      return `${p.label}  ${Math.round(p.value)}%`;
     }), { size: 11, align: Anchor.Center, opacity: 0.7 }));
 
     // Cross-tile hover/select sync bridge.
