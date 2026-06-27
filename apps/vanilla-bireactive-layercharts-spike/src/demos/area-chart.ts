@@ -31,6 +31,7 @@ function makeSeries(): Point[] {
 export class MdAreaChartLC extends Diagram {
   static styles = `text { pointer-events: none; }`
   readonly dataCell = cell<readonly Point[]>(makeSeries());
+  sortBy: 'index' | 'value' = 'index';
   set externalData(v: { date: Date; value: number }[] | undefined) {
     if (v) this.dataCell.value = v as Point[];
   }
@@ -73,6 +74,7 @@ export class MdAreaChartLC extends Diagram {
       yPixel: (d) => (ctx.yScale.value as any)(d.value),
       mutateDatum: (d, delta) => mutateDatum(d, delta),
       order: () => data.value as Point[],
+      canEdit: () => this.sortBy !== 'value',
     });
 
     // Hover crosshair.

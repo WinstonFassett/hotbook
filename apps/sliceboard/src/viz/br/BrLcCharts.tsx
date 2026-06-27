@@ -193,6 +193,8 @@ interface LiveFlatSpec<D> {
   shapeKey: string
   /** measureKey the value maps to, for edit-out patches. */
   measureKey: string
+  /** Called after element creation, before it is appended to the DOM. Use to set props that scene() reads on connect. */
+  onMount?: (el: HTMLElement) => void
 }
 
 function useLiveFlatElement<D>(
@@ -220,6 +222,7 @@ function useLiveFlatElement<D>(
     if (!container) return
     const el = document.createElement(spec.tag) as ElWithDataCell<D>
     el.setAttribute('no-source', '')
+    specRef.current.onMount?.(el)
     el.externalData = spec.build()
     container.appendChild(el)
     elRef.current = el
@@ -315,6 +318,7 @@ function useLiveFlatElement<D>(
 interface FlatProps {
   nodes: PNode[]
   measureKey: string
+  sortBy?: 'index' | 'value'
   onUpdate?: (nodeId: string, measures: PNode['measures']) => void
 }
 
@@ -322,20 +326,40 @@ function leavesOfNodes(nodes: PNode[]): PNode[] {
   return nodes.filter(n => !nodes.some(m => m.parentId === n.id))
 }
 
-export function BrLcBar({ nodes, measureKey, onUpdate }: FlatProps) {
+function useElProp(containerRef: ReturnType<typeof useRef<HTMLDivElement | null>>, prop: string, value: unknown) {
+  // Run after every render — ensures prop is current even after a shapeKey-triggered remount.
+  useEffect(() => {
+    const el = containerRef.current?.firstElementChild as any
+    if (el) el[prop] = value
+  })
+}
+
+interface BarProps extends FlatProps {
+  orientation?: 'vertical' | 'horizontal'
+  colorMode?: 'single' | 'palette'
+  labelMode?: 'axis' | 'inside' | 'both'
+  valueMode?: 'inside' | 'outside' | 'none'
+  minBandSize?: number
+}
+
+export function BrLcBar({ nodes, measureKey, sortBy = 'index', orientation = 'vertical', colorMode = 'single', labelMode = 'axis', valueMode = 'none', minBandSize = 0, onUpdate }: BarProps) {
   const leaves = leavesOfNodes(nodes)
   const ids = leaves.map(n => n.id)
+  // orientation + display options in shapeKey so changing any forces a remount (re-runs scene()).
+  const displayKey = `${orientation}|${colorMode}|${labelMode}|${valueMode}|${minBandSize}`
   const ref = useLiveFlatElement<{ label: string; value: number }>({
     tag: 'v-br-bar', ids, measureKey,
     values: leaves.map(n => n.measures[measureKey] ?? 0),
-    shapeKey: `${measureKey}|${[...ids].sort().join(',')}|${[...leaves].sort((a,b)=>a.id<b.id?-1:1).map(n=>n.name).join(',')}`,
+    shapeKey: `${displayKey}|${measureKey}|${[...ids].sort().join(',')}|${[...leaves].sort((a,b)=>a.id<b.id?-1:1).map(n=>n.name).join(',')}`,
     build: () => leaves.map(n => ({ label: n.name, value: n.measures[measureKey] ?? 1 })),
+    onMount: (el: any) => { el.orientation = orientation; el.sortBy = sortBy; el.colorMode = colorMode; el.labelMode = labelMode; el.valueMode = valueMode; el.minBandSize = minBandSize },
     readValue: d => d.value, writeValue: (d, v) => { d.value = v },
   }, nodes, onUpdate)
+  useElProp(ref, 'sortBy', sortBy)
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }
 
-export function BrLcPie({ nodes, measureKey, onUpdate }: FlatProps) {
+export function BrLcPie({ nodes, measureKey, sortBy = 'index', onUpdate }: FlatProps) {
   const leaves = leavesOfNodes(nodes)
   const ids = leaves.map(n => n.id)
   // MdPieChartLC backs each slice's value with a Num CELL (so the boundary
@@ -349,10 +373,11 @@ export function BrLcPie({ nodes, measureKey, onUpdate }: FlatProps) {
     build: () => leaves.map(n => ({ label: n.name, value: n.measures[measureKey] ?? 1 })) as never,
     readValue: d => d.value.value, writeValue: (d, v) => { d.value.value = v },
   }, nodes, onUpdate)
+  useElProp(ref, 'sortBy', sortBy)
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }
 
-export function BrLcRadar({ nodes, measureKey, onUpdate }: FlatProps) {
+export function BrLcRadar({ nodes, measureKey, sortBy = 'index', onUpdate }: FlatProps) {
   const leaves = leavesOfNodes(nodes)
   const ids = leaves.map(n => n.id)
   const ref = useLiveFlatElement<{ name: string; value: number }>({
@@ -362,10 +387,11 @@ export function BrLcRadar({ nodes, measureKey, onUpdate }: FlatProps) {
     build: () => leaves.map(n => ({ name: n.name, value: n.measures[measureKey] ?? 1 })),
     readValue: d => d.value, writeValue: (d, v) => { d.value = v },
   }, nodes, onUpdate)
+  useElProp(ref, 'sortBy', sortBy)
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }
 
-export function BrLcConcentricArc({ nodes, measureKey, onUpdate }: FlatProps) {
+export function BrLcConcentricArc({ nodes, measureKey, sortBy = 'index', onUpdate }: FlatProps) {
   const leaves = leavesOfNodes(nodes)
   const ids = leaves.map(n => n.id)
   const palette = ['#e05c5c', '#f0a742', '#4cba6e', '#5b8def', '#b76de0', '#44c4c4']
@@ -376,6 +402,7 @@ export function BrLcConcentricArc({ nodes, measureKey, onUpdate }: FlatProps) {
     build: () => leaves.map((n, i) => ({ label: n.name, color: palette[i % 6]!, value: Math.min(100, n.measures[measureKey] ?? 0) })),
     readValue: d => d.value, writeValue: (d, v) => { d.value = Math.min(100, v) },
   }, nodes, onUpdate)
+  useElProp(ref, 'sortBy', sortBy)
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }
 
@@ -406,7 +433,7 @@ export function BrLcScatter({ nodes, xKey, yKey, onUpdate }: ScatterProps) {
 const SERIES_START = new Date(2026, 0, 1).getTime()
 const DAY_MS = 86400 * 1000
 
-export function BrLcLine({ nodes, measureKey, onUpdate }: FlatProps) {
+export function BrLcLine({ nodes, measureKey, sortBy = 'index', onUpdate }: FlatProps) {
   const leaves = leavesOfNodes(nodes)
   const ids = leaves.map(n => n.id)
   const ref = useLiveFlatElement<{ date: Date; value: number }>({
@@ -416,10 +443,11 @@ export function BrLcLine({ nodes, measureKey, onUpdate }: FlatProps) {
     build: () => leaves.map((n, i) => ({ date: new Date(SERIES_START + i * DAY_MS), value: n.measures[measureKey] ?? 0 })),
     readValue: d => d.value, writeValue: (d, v) => { d.value = v },
   }, nodes, onUpdate)
+  useElProp(ref, 'sortBy', sortBy)
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }
 
-export function BrLcArea({ nodes, measureKey, onUpdate }: FlatProps) {
+export function BrLcArea({ nodes, measureKey, sortBy = 'index', onUpdate }: FlatProps) {
   const leaves = leavesOfNodes(nodes)
   const ids = leaves.map(n => n.id)
   const ref = useLiveFlatElement<{ date: Date; value: number }>({
@@ -429,6 +457,7 @@ export function BrLcArea({ nodes, measureKey, onUpdate }: FlatProps) {
     build: () => leaves.map((n, i) => ({ date: new Date(SERIES_START + i * DAY_MS), value: n.measures[measureKey] ?? 0 })),
     readValue: d => d.value, writeValue: (d, v) => { d.value = v },
   }, nodes, onUpdate)
+  useElProp(ref, 'sortBy', sortBy)
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }
 

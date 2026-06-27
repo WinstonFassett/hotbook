@@ -56,6 +56,7 @@ const TILE_KINDS: TileKind[] = [
 const TILE_LABELS: Record<TileKind, string> = {
   'treetable':            'Table',
   'br-lc-bar':            'Bar',
+  'br-lc-bands':          'Bands',
   'br-lc-line':           'Line',
   'br-lc-area':           'Area',
   'br-lc-scatter':        'Scatter',
@@ -116,13 +117,14 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
   }
 
   // ── BR-LC flat charts ────────────────────────────────────────────────────
-  if (tile.kind === 'br-lc-bar')            return <BrLcBar nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} />
-  if (tile.kind === 'br-lc-line')           return <BrLcLine nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} />
-  if (tile.kind === 'br-lc-area')           return <BrLcArea nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} />
+  if (tile.kind === 'br-lc-bar')            return <BrLcBar nodes={nodes} measureKey={mk} sortBy={sortBy} orientation={tile.orientation} colorMode={tile.colorMode} labelMode={tile.labelMode} valueMode={tile.valueMode} minBandSize={tile.minBandSize} onUpdate={onNodeUpdate} />
+  if (tile.kind === 'br-lc-bands')          return <BrLcBar nodes={nodes} measureKey={mk} sortBy={sortBy} orientation="horizontal" colorMode="palette" labelMode="inside" valueMode="inside" onUpdate={onNodeUpdate} />
+  if (tile.kind === 'br-lc-line')           return <BrLcLine nodes={nodes} measureKey={mk} sortBy={sortBy} onUpdate={onNodeUpdate} />
+  if (tile.kind === 'br-lc-area')           return <BrLcArea nodes={nodes} measureKey={mk} sortBy={sortBy} onUpdate={onNodeUpdate} />
   if (tile.kind === 'br-lc-scatter')        return <BrLcScatter nodes={nodes} xKey={tile.xKey ?? '_index'} yKey={tile.yKey ?? mk} onUpdate={onNodeUpdate} />
-  if (tile.kind === 'br-lc-pie')            return <BrLcPie nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} />
-  if (tile.kind === 'br-lc-radar')          return <BrLcRadar nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} />
-  if (tile.kind === 'br-lc-concentric-arc') return <BrLcConcentricArc nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} />
+  if (tile.kind === 'br-lc-pie')            return <BrLcPie nodes={nodes} measureKey={mk} sortBy={sortBy} onUpdate={onNodeUpdate} />
+  if (tile.kind === 'br-lc-radar')          return <BrLcRadar nodes={nodes} measureKey={mk} sortBy={sortBy} onUpdate={onNodeUpdate} />
+  if (tile.kind === 'br-lc-concentric-arc') return <BrLcConcentricArc nodes={nodes} measureKey={mk} sortBy={sortBy} onUpdate={onNodeUpdate} />
 
   // ── BR-LC hierarchical charts ────────────────────────────────────────────
   if (tile.kind === 'br-lc-pack')           return <BrLcPack nodes={nodes} measureKey={mk} depth={depth} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
@@ -175,7 +177,7 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
 // Kinds where depth selector is wired
 const HIER_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial', 'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst'])
 // Kinds where Order/Value sort selector is shown
-const VIZ_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial', 'treemap', 'radial', 'bands', 'br-lc-bar', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie', 'br-lc-radar', 'br-lc-concentric-arc', 'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree'])
+const VIZ_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial', 'treemap', 'radial', 'bands', 'br-lc-bar', 'br-lc-bands', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie', 'br-lc-radar', 'br-lc-concentric-arc', 'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree'])
 // Kinds that accept groupBy to add hierarchy to flat data
 const GROUPBY_KINDS = new Set<TileKind>(['br-lc-bar', 'br-lc-line', 'br-lc-area', 'br-lc-pie', 'br-lc-radar', 'br-lc-concentric-arc', 'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree'])
 // Kinds whose diagram can honestly exceed the tile (it announces its own bounds);

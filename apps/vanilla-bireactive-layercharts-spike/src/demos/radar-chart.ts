@@ -31,6 +31,7 @@ function makeData(): Spoke[] {
 export class MdRadarChartLC extends Diagram {
   static styles = `text { pointer-events: none; }`
   readonly dataCell = cell<readonly Spoke[]>(makeData());
+  sortBy: 'index' | 'value' = 'index';
   set externalData(v: { label: string; value: number }[] | undefined) {
     if (v) this.dataCell.value = v as unknown as Spoke[];
   }
@@ -232,7 +233,7 @@ export class MdRadarChartLC extends Diagram {
       },
     };
     this.addEventListener("pointerdown", (e) => {
-      if (dragController.active) return;
+      if (dragController.active || this.sortBy === 'value') return;
       const pe = e as PointerEvent;
       const { x, y } = localPt(pe);
       const spoke = hover.value ?? findNearestSpoke(x, y);
@@ -253,7 +254,7 @@ export class MdRadarChartLC extends Diagram {
 
     svgEl.addEventListener("wheel", (e) => {
       const we = e as WheelEvent;
-      if (!we.ctrlKey) return;
+      if (!we.ctrlKey || this.sortBy === 'value') return;
       const t = wheelController.begin(hover.value ?? selected.value, wheelConfig);
       if (!t) return;
       we.preventDefault();

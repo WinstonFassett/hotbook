@@ -24,6 +24,8 @@ export interface CartesianGestureOpts<TData> {
   mutateDatum: (d: TData, delta: number) => void;
   /** Ordered flat list of all data points for keyboard nav. */
   order: () => TData[];
+  /** When false, value-edit gestures (drag, wheel, arrow up/down) are disabled. Defaults to true. */
+  canEdit?: () => boolean;
 }
 
 export function attachCartesianGestures<TData>(
@@ -32,6 +34,7 @@ export function attachCartesianGestures<TData>(
   opts: CartesianGestureOpts<TData>,
 ): () => void {
   const { ctx, state, findAtPixel, yPixel, mutateDatum, order } = opts;
+  const canEdit = opts.canEdit ?? (() => true);
 
   const localPoint = (e: PointerEvent): { x: number; y: number } => {
     const rect = svgEl.getBoundingClientRect();
@@ -89,7 +92,7 @@ export function attachCartesianGestures<TData>(
 
   const onWheel = (e: Event) => {
     const we = e as WheelEvent;
-    if (!we.ctrlKey) return;
+    if (!we.ctrlKey || !canEdit()) return;
     if (!wheelController.active) gestureOrder = order();
     const target = wheelController.begin(state.hover.value ?? state.selected.value, wheelConfig);
     if (!target) return;
@@ -117,14 +120,14 @@ export function attachCartesianGestures<TData>(
     }
     if (ke.key === "ArrowRight") { state.selected.value = rows[(i + 1) % rows.length] ?? null; ke.preventDefault(); return; }
     if (ke.key === "ArrowLeft") { state.selected.value = rows[(i <= 0 ? rows.length : i) - 1] ?? null; ke.preventDefault(); return; }
-    if (!cur) return;
+    if (!cur || !canEdit()) return;
     const step = ke.shiftKey ? 5 : 1;
     if (ke.key === "ArrowUp") { mutateDatum(cur, +step); ke.preventDefault(); }
     else if (ke.key === "ArrowDown") { mutateDatum(cur, -step); ke.preventDefault(); }
   };
 
   const onPointerDown = (e: Event) => {
-    if (dragController.active) return;
+    if (dragController.active || !canEdit()) return;
     const pe = e as PointerEvent;
     const { x, y } = localPoint(pe);
     if (x < ctx.plotX || x > ctx.plotX + ctx.plotWidth) return;

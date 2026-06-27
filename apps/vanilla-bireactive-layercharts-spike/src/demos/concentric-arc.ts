@@ -51,6 +51,7 @@ const MIN_VALUE = 3;
 export class MdConcentricArcLC extends Diagram {
   static styles = `text { pointer-events: none; }`
   readonly dataCell = cell<readonly Ring[]>(makeData());
+  sortBy: 'index' | 'value' = 'index';
   set externalData(v: { label: string; value: number }[] | undefined) {
     if (v) this.dataCell.value = v as unknown as Ring[];
   }
@@ -192,7 +193,7 @@ export class MdConcentricArcLC extends Diagram {
       // Drag the handle around the ring to set its value; the shared controller
       // owns move/up/Esc and reverts on Esc.
       handleEl.el.addEventListener("pointerdown", (e) => {
-        if (dragController.active) return;
+        if (dragController.active || this.sortBy === 'value') return;
         const pe = e as PointerEvent;
         dragPointerId = pe.pointerId;
         selected.value = d;
@@ -225,7 +226,7 @@ export class MdConcentricArcLC extends Diagram {
 
     svgEl.addEventListener("wheel", (e) => {
       const we = e as WheelEvent;
-      if (!we.ctrlKey) return;
+      if (!we.ctrlKey || this.sortBy === 'value') return;
       const t = wheelController.begin(selected.value ?? hover.value ?? lastRing, wheelConfig);
       if (!t) return;
       we.preventDefault();

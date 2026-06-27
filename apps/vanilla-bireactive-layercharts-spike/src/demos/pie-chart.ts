@@ -29,6 +29,7 @@ function makeData(): Slice[] {
 export class MdPieChartLC extends Diagram {
   static styles = `text { pointer-events: none; }${FILL_STYLE}`
   readonly dataCell = cell<readonly Slice[]>(makeData());
+  sortBy: 'index' | 'value' = 'index';
   set externalData(v: { label: string; value: number }[] | undefined) {
     if (v) this.dataCell.value = v.map((d) => ({ label: d.label, value: num(d.value) }));
   }
@@ -170,14 +171,15 @@ export class MdPieChartLC extends Diagram {
           stroke: derive(() => active.value ? "#fff" : "#000"),
           strokeWidth: 1.5,
         }));
-        // Cancelable drag: snapshots [a,b] on down; the gesture owns its own Esc
-        // listener (armed on down, torn down on commit/cancel) and reverts on Esc.
-        dragCancelable(dot, knob, [a, b], {
-          host: this,
-          onStart: () => { active.value = true; (this as any).gestureActive = true; },
-          onEnd: () => { active.value = false; (this as any).gestureActive = false; },
-        });
-        dot.el.style.cursor = "grab";
+        // Cancelable drag: snapshots [a,b] on down; gated on sortBy.
+        if (this.sortBy !== 'value') {
+          dragCancelable(dot, knob, [a, b], {
+            host: this,
+            onStart: () => { active.value = true; (this as any).gestureActive = true; },
+            onEnd: () => { active.value = false; (this as any).gestureActive = false; },
+          });
+          dot.el.style.cursor = "grab";
+        }
         dot.el.addEventListener("pointerenter", () => { active.value = true; });
         dot.el.addEventListener("pointerleave", () => { if (!(this as any).gestureActive) active.value = false; });
       }
@@ -185,7 +187,7 @@ export class MdPieChartLC extends Diagram {
 
     this.addEventListener("wheel", (e) => {
       const we = e as WheelEvent;
-      if (!we.ctrlKey) return;
+      if (!we.ctrlKey || this.sortBy === 'value') return;
       const t = wheelController.begin(hover.value ?? selected.value, wheelConfig);
       if (!t) return;
       we.preventDefault();

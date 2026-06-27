@@ -15,10 +15,15 @@ import { MdSankeyFlow } from "./demos/sankey-flow";
 import { MdTreeChart } from "./demos/tree-chart";
 import { MdBudgetTree } from "./demos/budget-tree";
 
+class MdBandsChartLC extends MdBarChartLC {
+  constructor() { super(); this.orientation = 'horizontal'; this.colorMode = 'palette'; this.labelMode = 'inside'; this.valueMode = 'inside'; }
+}
+
 const experiments: Array<{ id: string; title: string; tag: string; ctor: typeof Diagram }> = [
   { id: "line-chart", title: "LineChart", tag: "v-line-chart", ctor: MdLineChartLC },
   { id: "area-chart", title: "AreaChart", tag: "v-area-chart", ctor: MdAreaChartLC },
-  { id: "bar-chart", title: "BarChart", tag: "v-bar-chart", ctor: MdBarChartLC },
+  { id: "bar-chart", title: "BarChart (vertical)", tag: "v-bar-chart", ctor: MdBarChartLC },
+  { id: "bands-chart", title: "Bands (horizontal, palette, inside labels)", tag: "v-bands-chart", ctor: MdBandsChartLC },
   { id: "scatter-chart", title: "ScatterChart", tag: "v-scatter-chart", ctor: MdScatterChartLC },
   { id: "pie-chart", title: "PieChart", tag: "v-pie-chart", ctor: MdPieChartLC },
   { id: "radar-chart", title: "RadarChart (Radial Line)", tag: "v-radar-chart", ctor: MdRadarChartLC },

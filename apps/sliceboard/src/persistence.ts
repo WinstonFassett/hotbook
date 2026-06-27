@@ -45,6 +45,7 @@ export type TileKind =
   | 'treetable'
   // bireactive LC-port charts (canon)
   | 'br-lc-bar'
+  | 'br-lc-bands'
   | 'br-lc-line'
   | 'br-lc-area'
   | 'br-lc-scatter'
@@ -70,6 +71,11 @@ export interface Tile {
   groupBy?: string
   depth?: number
   sortBy?: 'index' | 'value'
+  orientation?: 'vertical' | 'horizontal'
+  colorMode?: 'single' | 'palette'
+  labelMode?: 'axis' | 'inside' | 'both'
+  valueMode?: 'inside' | 'outside' | 'none'
+  minBandSize?: number
 }
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
@@ -476,7 +482,7 @@ function buildSeedWorkspace(): Workspace {
   // Canon viz kinds for seed dashboard (retired gen-0/Svelte kinds excluded)
   const ALL_KINDS: TileKind[] = [
     'treetable',
-    'br-lc-bar', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie',
+    'br-lc-bar', 'br-lc-bands', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie',
     'br-lc-radar', 'br-lc-concentric-arc',
     'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-sankey-flow', 'br-lc-tree',
   ]
