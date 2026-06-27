@@ -122,7 +122,7 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
   if (tile.kind === 'br-lc-line')           return <BrLcLine nodes={nodes} measureKey={mk} sortBy={sortBy} onUpdate={onNodeUpdate} />
   if (tile.kind === 'br-lc-area')           return <BrLcArea nodes={nodes} measureKey={mk} sortBy={sortBy} onUpdate={onNodeUpdate} />
   if (tile.kind === 'br-lc-scatter')        return <BrLcScatter nodes={nodes} xKey={tile.xKey ?? '_index'} yKey={tile.yKey ?? mk} onUpdate={onNodeUpdate} />
-  if (tile.kind === 'br-lc-pie')            return <BrLcPie nodes={nodes} measureKey={mk} sortBy={sortBy} onUpdate={onNodeUpdate} />
+  if (tile.kind === 'br-lc-pie')            return <BrLcPie nodes={nodes} measureKey={mk} sortBy={sortBy} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
   if (tile.kind === 'br-lc-radar')          return <BrLcRadar nodes={nodes} measureKey={mk} sortBy={sortBy} onUpdate={onNodeUpdate} />
   if (tile.kind === 'br-lc-concentric-arc') return <BrLcConcentricArc nodes={nodes} measureKey={mk} sortBy={sortBy} onUpdate={onNodeUpdate} />
 

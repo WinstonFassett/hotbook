@@ -201,6 +201,7 @@ function useLiveFlatElement<D>(
   spec: LiveFlatSpec<D>,
   nodes: PNode[],
   onUpdate?: (nodeId: string, measures: PNode['measures']) => void,
+  onUpdateMany?: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void,
 ) {
   const containerRef = useRef<HTMLDivElement>(null)
   const elRef = useRef<ElWithDataCell<D> | null>(null)
@@ -215,6 +216,7 @@ function useLiveFlatElement<D>(
   const specRef = useRef(spec); specRef.current = spec
   const nodesRef = useRef(nodes); nodesRef.current = nodes
   const onUpdateRef = useRef(onUpdate); onUpdateRef.current = onUpdate
+  const onUpdateManyRef = useRef(onUpdateMany); onUpdateManyRef.current = onUpdateMany
 
   // Mount once per shape. Rebuild only when the shape key changes.
   useEffect(() => {
@@ -241,22 +243,29 @@ function useLiveFlatElement<D>(
       const arr = el.dataCell.value
       const s = specRef.current
       const cb = onUpdateRef.current
+      const cbMany = onUpdateManyRef.current
       const last = lastRef.current
       const buildIds = buildIdsRef.current
-      if (!cb) { for (let i = 0; i < arr.length; i++) last[i] = s.readValue(arr[i]!); return }
+      if (!cb && !cbMany) { for (let i = 0; i < arr.length; i++) last[i] = s.readValue(arr[i]!); return }
       const byId = new Map(nodesRef.current.map(n => [n.id, n]))
-      const pending: Array<[string, PNode['measures']]> = []
+      const pending: Array<{ id: string; measures: PNode['measures'] }> = []
       for (let i = 0; i < arr.length; i++) {
         const v = s.readValue(arr[i]!)
         if (!near(v, last[i]!)) {
           last[i] = v
           const node = byId.get(buildIds[i]!)
-          if (node) pending.push([node.id, { ...node.measures, [s.measureKey]: v }])
+          if (node) pending.push({ id: node.id, measures: { ...node.measures, [s.measureKey]: v } })
         }
       }
-      // Defer the store write out of the bireactive flush (avoids re-entering
-      // React setState mid-flush).
-      if (pending.length) queueMicrotask(() => { for (const [id, m] of pending) cb(id, m) })
+      // Defer out of the bireactive flush. When multiple datums change in one
+      // flush (e.g. pie divider drag edits two adjacent slices atomically),
+      // emit as ONE batch via cbMany so they don't clobber each other through
+      // React's stale-snapshot closure (separate cb calls each start from the
+      // same snapshot, so only the last would survive).
+      if (pending.length) queueMicrotask(() => {
+        if (cbMany) { cbMany(pending) }
+        else if (cb) { for (const p of pending) cb(p.id, p.measures) }
+      })
     })
 
     return () => {
@@ -320,6 +329,7 @@ interface FlatProps {
   measureKey: string
   sortBy?: 'index' | 'value'
   onUpdate?: (nodeId: string, measures: PNode['measures']) => void
+  onUpdateMany?: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
 }
 
 function leavesOfNodes(nodes: PNode[]): PNode[] {
@@ -359,7 +369,7 @@ export function BrLcBar({ nodes, measureKey, sortBy = 'index', orientation = 've
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }
 
-export function BrLcPie({ nodes, measureKey, sortBy = 'index', onUpdate }: FlatProps) {
+export function BrLcPie({ nodes, measureKey, sortBy = 'index', onUpdate, onUpdateMany }: FlatProps) {
   const leaves = leavesOfNodes(nodes)
   const ids = leaves.map(n => n.id)
   // MdPieChartLC backs each slice's value with a Num CELL (so the boundary
@@ -372,7 +382,7 @@ export function BrLcPie({ nodes, measureKey, sortBy = 'index', onUpdate }: FlatP
     shapeKey: `${measureKey}|${[...ids].sort().join(',')}|${[...leaves].sort((a,b)=>a.id<b.id?-1:1).map(n=>n.name).join(',')}`,
     build: () => leaves.map(n => ({ label: n.name, value: n.measures[measureKey] ?? 1 })) as never,
     readValue: d => d.value.value, writeValue: (d, v) => { d.value.value = v },
-  }, nodes, onUpdate)
+  }, nodes, onUpdate, onUpdateMany)
   useElProp(ref, 'sortBy', sortBy)
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }
