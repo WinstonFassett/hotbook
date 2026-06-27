@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { effect as biEffect, leavesOf } from 'bireactive'
 import type { Cell, Writable } from 'bireactive'
-import type { PNode } from '../../persistence'
+import type { PNode, PEdge } from '../../persistence'
 import { buildBiTree } from './tree'
 import type { BiNode } from './tree'
 import { hudStore } from '../../store'
@@ -555,21 +555,17 @@ export function BrLcTree({ nodes, measureKey, onUpdate, onUpdateMany }: HierProp
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }
 
-// ─── Sankey (hierarchy edges) ──────────────────────────────────────────────────
+// ─── Sankey (flat edge-list) ────────────────────────────────────────────────────
 
-export function BrLcSankey({ nodes, measureKey }: FlatProps) {
-  const nameById = new Map(nodes.map(n => [n.id, n.name]))
-  const nodeNames = [...new Set(nodes.map(n => n.name))]
-  const nodeNameSet = new Set(nodeNames)
-  const links = nodes
-    .filter(n => n.parentId !== null && nameById.has(n.parentId))
-    .map(n => ({
-      source: nameById.get(n.parentId!)!,
-      target: n.name,
-      value: n.measures[measureKey] ?? 0,
-    }))
-    .filter(l => nodeNameSet.has(l.source) && nodeNameSet.has(l.target))
+interface SankeyProps {
+  edges: PEdge[]
+}
+
+export function BrLcSankey({ edges }: SankeyProps) {
+  const nodeNames = [...new Set(edges.flatMap(e => [e.source, e.target]))]
+  const links = edges.map(e => ({ source: e.source, target: e.target, value: e.value }))
   const data = { nodes: nodeNames, links }
   const ref = useBrElement<MdSankeySimple>('v-br-sankey', el => { el.externalData = data }, [JSON.stringify(data)])
+  if (edges.length === 0) return <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.4, fontSize: 12 }}>No edge data — dataset needs a flat edge list</div>
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }

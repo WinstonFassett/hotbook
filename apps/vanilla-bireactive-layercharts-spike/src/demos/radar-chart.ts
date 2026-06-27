@@ -3,8 +3,7 @@
 // Grid: polygon rings at radius ticks + spoke lines. Points on polygon are clickable/editable.
 
 import { Anchor, cell, circle, derive, Diagram, effect as biEffect, label, line, type Mount, pathD, Vec, vec } from "bireactive";
-import { scaleBand, scaleLinear } from "d3-scale";
-import { curveLinearClosed, lineRadial } from "d3-shape";
+import { scaleLinear } from "d3-scale";
 import { makeWheelGesture } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 
@@ -58,24 +57,15 @@ export class MdRadarChartLC extends Diagram {
       onEnd: () => { hover.value = null; },
     });
 
-    // x: scaleBand over category names → angle at band center
     // y: scaleLinear 0–100 → radius 0–R_MAX
-    const xScale = derive(() => {
-      const rows = data.value as Spoke[];
-      return scaleBand<string>()
-        .domain(rows.map((d) => d.name))
-        .range([0, 2 * Math.PI])
-        .padding(0);
-    });
     const yScale = derive(() =>
       scaleLinear().domain([0, 100]).range([0, R_MAX])
     );
 
-    // Angle for spoke i (band center)
+    // Angle for spoke i: evenly distributed by index so duplicate names never collapse spokes.
     const angle = (i: number): number => {
-      const rows = data.value as Spoke[];
-      const xs = xScale.value;
-      return (xs(rows[i]!.name) ?? 0) + xs.bandwidth() / 2 - Math.PI / 2;
+      const n = (data.value as Spoke[]).length;
+      return (2 * Math.PI / n) * i - Math.PI / 2;
     };
 
     // Polygon at a given radius tick — static grid rings.
@@ -83,7 +73,6 @@ export class MdRadarChartLC extends Diagram {
       const r = (tick / 100) * R_MAX;
       const ringD = derive(() => {
         const rows = data.value as Spoke[];
-        const n = rows.length;
         const pts = rows.map((_, i) => {
           const a = angle(i);
           return `${i === 0 ? "M" : "L"}${(CX + Math.cos(a) * r).toFixed(1)},${(CY + Math.sin(a) * r).toFixed(1)}`;
@@ -106,13 +95,15 @@ export class MdRadarChartLC extends Diagram {
       const tip = Vec.derive(() => spokeGroup.value[i] ?? { x: CX, y: CY });
       s(line(Vec.derive(() => ({ x: CX, y: CY })), tip, { thin: true, stroke: "#ffffff", opacity: 0.12 }));
 
-      // Angle axis label (category name).
+      // Angle axis label (category name) — position and text both track data.
       const lblPos = Vec.derive(() => {
+        void data.value;
         const a = angle(i);
         const r = R_MAX + 22;
         return { x: CX + Math.cos(a) * r, y: CY + Math.sin(a) * r };
       });
-      s(label(lblPos, (data.value as Spoke[])[i]!.name, { size: 11, align: Anchor.Center, fill: "#aaa" }));
+      const lblText = derive(() => (data.value as Spoke[])[i]?.name ?? "");
+      s(label(lblPos, lblText, { size: 11, align: Anchor.Center, fill: "#aaa" }));
     }
 
     // Filled polygon (value area).

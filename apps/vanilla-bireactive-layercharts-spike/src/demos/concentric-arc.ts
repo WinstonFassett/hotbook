@@ -92,8 +92,8 @@ export class MdConcentricArcLC extends Diagram {
         { fill: d.color, opacity: derive(() => hover.value === d || selected.value === d ? 0.25 : 0.18) }
       ));
       trackEl.el.style.cursor = "pointer";
-      trackEl.el.addEventListener("pointerenter", () => { hover.value = d; });
-      trackEl.el.addEventListener("pointerleave", () => { if (hover.value === d) hover.value = null; });
+      trackEl.el.addEventListener("pointerenter", () => { if (!wheel.active) hover.value = d; });
+      trackEl.el.addEventListener("pointerleave", () => { if (!wheel.active && hover.value === d) hover.value = null; });
       trackEl.el.addEventListener("click", () => { selected.value = selected.value === d ? null : d; this.focus(); });
 
       // Value arc — scale out slightly on hover/select instead of dimming others.
@@ -116,16 +116,17 @@ export class MdConcentricArcLC extends Diagram {
       const valueEl = gs(pathD(valueD, { fill: d.color, stroke: valueStroke, strokeWidth: valueStrokeW }));
       valueEl.el.style.cursor = "pointer";
       valueEl.el.style.transition = "d 0.1s";
-      valueEl.el.addEventListener("pointerenter", () => { hover.value = d; });
-      valueEl.el.addEventListener("pointerleave", () => { if (hover.value === d) hover.value = null; });
+      valueEl.el.addEventListener("pointerenter", () => { if (!wheel.active) hover.value = d; });
+      valueEl.el.addEventListener("pointerleave", () => { if (!wheel.active && hover.value === d) hover.value = null; });
       valueEl.el.addEventListener("click", () => { selected.value = selected.value === d ? null : d; this.focus(); });
 
       // Ring label near end-cap — d3Arc angle 0=top, clockwise; SVG: angle 0=right, y-down.
+      // `void data.value` subscribes so the position updates when value changes.
       const lblPos = Vec.derive(() => {
+        void data.value;
         const d3Angle = START + (d.value / 100) * TWO_PI; // d3Arc angle (0=top, cw)
         const svgAngle = d3Angle - Math.PI / 2;           // convert to SVG (0=right, cw y-down)
-        const rMid = (rOuter + rInner) / 2;
-        return { x: CX + Math.cos(svgAngle) * (rMid + 22), y: CY + Math.sin(svgAngle) * (rMid + 22) };
+        return { x: CX + Math.cos(svgAngle) * (rOuter + 8), y: CY + Math.sin(svgAngle) * (rOuter + 8) };
       });
       s(label(lblPos, d.label, { size: 10, fill: d.color, opacity: 0.85 }));
     }

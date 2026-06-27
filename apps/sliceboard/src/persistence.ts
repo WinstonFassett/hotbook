@@ -11,6 +11,12 @@ export interface MeasureDef {
   unit?: string
 }
 
+export interface PEdge {
+  source: string
+  target: string
+  value: number
+}
+
 export interface DimDef {
   key: string
   label: string
@@ -24,6 +30,7 @@ export interface Dataset {
   name: string
   createdAt: string
   rows: PNode[]
+  edges?: PEdge[]
   measureDefs: MeasureDef[]
   dimDefs: DimDef[]
 }
@@ -94,7 +101,7 @@ export interface Workspace {
 
 // ─── Storage ──────────────────────────────────────────────────────────────────
 
-const LS_KEY = 'sb:workspace:v9'
+const LS_KEY = 'sb:workspace:v10'
 
 function genId(): string {
   return Math.random().toString(36).slice(2, 10)
@@ -436,6 +443,31 @@ function buildLifeDataset(): Dataset {
   }
 }
 
+// ─── Dataset 4: Supply chain (flat edge-list for Sankey) ──────────────────────
+
+function buildSupplyChainDataset(): Dataset {
+  const NODES = ['Mining', 'Refining', 'Manufacturing', 'Warehouse', 'Retail', 'Export']
+  const edges: PEdge[] = [
+    { source: 'Mining',        target: 'Refining',       value: 80 },
+    { source: 'Mining',        target: 'Export',         value: 20 },
+    { source: 'Refining',      target: 'Manufacturing',  value: 65 },
+    { source: 'Refining',      target: 'Export',         value: 15 },
+    { source: 'Manufacturing', target: 'Warehouse',      value: 50 },
+    { source: 'Manufacturing', target: 'Retail',         value: 15 },
+    { source: 'Warehouse',     target: 'Retail',         value: 40 },
+    { source: 'Warehouse',     target: 'Export',         value: 10 },
+  ]
+  return {
+    id: 'ds-supply',
+    name: 'Supply chain (sankey)',
+    createdAt: NOW,
+    rows: [],
+    edges,
+    measureDefs: [],
+    dimDefs: [],
+  }
+}
+
 function buildSeedWorkspace(): Workspace {
   const fruit = buildFruitDataset()
   const team  = buildTeamDataset()
@@ -475,13 +507,17 @@ function buildSeedWorkspace(): Workspace {
   const lifeViz  = makeAllVizDash('lf', 'level')
   const fruitViz = makeAllVizDash('fr', 'group')
   const teamViz  = makeAllVizDash('tm', 'role')
+  const supply   = buildSupplyChainDataset()
+  const supplyTiles: Tile[] = [{ id: 'sp-0', kind: 'br-lc-sankey', title: 'Supply chain' }]
+  const supplyLayout: LayoutItem[] = [{ i: 'sp-0', x: 0, y: 0, w: 12, h: 8 }]
 
   return {
-    datasets: [life, fruit, team],
+    datasets: [life, fruit, team, supply],
     dashboards: [
-      { id: 'dash-life',  datasetId: life.id,  name: 'Life',  createdAt: NOW, layout: lifeViz.layout,  tiles: lifeViz.tiles,  measureKey: 'est' },
-      { id: 'dash-fruit', datasetId: fruit.id, name: 'Fruit', createdAt: NOW, layout: fruitViz.layout, tiles: fruitViz.tiles, measureKey: 'value' },
-      { id: 'dash-team',  datasetId: team.id,  name: 'Team',  createdAt: NOW, layout: teamViz.layout,  tiles: teamViz.tiles,  measureKey: 'budget' },
+      { id: 'dash-life',   datasetId: life.id,   name: 'Life',          createdAt: NOW, layout: lifeViz.layout,   tiles: lifeViz.tiles,   measureKey: 'est' },
+      { id: 'dash-fruit',  datasetId: fruit.id,  name: 'Fruit',         createdAt: NOW, layout: fruitViz.layout,  tiles: fruitViz.tiles,  measureKey: 'value' },
+      { id: 'dash-team',   datasetId: team.id,   name: 'Team',          createdAt: NOW, layout: teamViz.layout,   tiles: teamViz.tiles,   measureKey: 'budget' },
+      { id: 'dash-supply', datasetId: supply.id, name: 'Supply chain',  createdAt: NOW, layout: supplyLayout,     tiles: supplyTiles,     measureKey: 'value' },
     ],
     activeDatasetId: life.id,
     activeDashboardId: 'dash-life',
