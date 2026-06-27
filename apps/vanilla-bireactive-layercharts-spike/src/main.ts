@@ -44,9 +44,88 @@ for (const e of experiments) {
   if (!customElements.get(e.tag)) customElements.define(e.tag, e.ctor as any);
 }
 
+// --- Repro config: drive charts into the states that only break in sliceboard ---
+// Static SPA, no server/router — so config rides the URL HASH (client-only, no reload).
+// The hash is ALSO used for section anchors (#concentric-arc etc.), so config lives
+// under a reserved `cfg:` segment and bare anchors are left untouched for scroll-nav:
+//   #cfg:sort=value;width=320           config only
+//   #concentric-arc                     plain anchor, ignored by config
+//   #cfg:width=320|concentric-arc       config + anchor coexist ( '|' separates )
+//   sort=value   sortBy='value' on every chart that has a sortBy prop
+//   width=320    constrain each demo box width (trips narrow-tile bugs, e.g. Bug 2)
+//   only=a,b     render only these experiment ids
+const CFG_PREFIX = 'cfg:';
+function parseHash(): { cfg: URLSearchParams; anchor: string } {
+  const raw = location.hash.replace(/^#/, '');
+  // Split config segment from a trailing bare anchor on '|'.
+  const [a, b] = raw.split('|');
+  const cfgSeg = a.startsWith(CFG_PREFIX) ? a.slice(CFG_PREFIX.length) : '';
+  const anchor = a.startsWith(CFG_PREFIX) ? (b ?? '') : a;
+  // Hash uses ';' between config keys so '&' isn't needed and anchors stay readable.
+  return { cfg: new URLSearchParams(cfgSeg.replace(/;/g, '&')), anchor };
+}
+interface ReproConfig { sort: 'index' | 'value'; width: number | null; only: string[] | null; }
+function readConfig(): ReproConfig {
+  const { cfg } = parseHash();
+  const widthRaw = cfg.get('width');
+  const onlyRaw = cfg.get('only');
+  return {
+    sort: cfg.get('sort') === 'value' ? 'value' : 'index',
+    width: widthRaw != null && widthRaw !== '' ? Number(widthRaw) : null,
+    only: onlyRaw ? onlyRaw.split(',').map(s => s.trim()).filter(Boolean) : null,
+  };
+}
+let config = readConfig();
+
+function applyConfig(el: InstanceType<typeof Diagram>, demo: HTMLElement) {
+  // Only set sortBy on charts that declare it (index/value charts).
+  if ('sortBy' in el) (el as any).sortBy = config.sort;
+  if (config.width != null) {
+    demo.style.width = config.width + 'px';
+    demo.style.maxWidth = config.width + 'px';
+  } else {
+    demo.style.width = '';
+    demo.style.maxWidth = '';
+  }
+}
+
+function buildConfigBar(): HTMLElement {
+  const bar = document.createElement('div');
+  bar.className = 'repro-config-bar';
+  const set = (k: string, v: string | null) => {
+    const { cfg, anchor } = parseHash();
+    if (v == null || v === '') cfg.delete(k); else cfg.set(k, v);
+    const cfgStr = cfg.toString().replace(/&/g, ';');
+    const parts = [];
+    if (cfgStr) parts.push(CFG_PREFIX + cfgStr);
+    location.hash = anchor ? `${parts[0] ?? ''}|${anchor}` : (parts[0] ?? '');
+  };
+  // sort toggle
+  const sortBtn = document.createElement('button');
+  sortBtn.textContent = `sort: ${config.sort}`;
+  sortBtn.onclick = () => set('sort', config.sort === 'value' ? 'index' : 'value');
+  // width presets
+  const widthLabel = document.createElement('span');
+  widthLabel.textContent = `width: ${config.width ?? 'full'}`;
+  const mkW = (w: string, label: string) => {
+    const b = document.createElement('button');
+    b.textContent = label;
+    b.onclick = () => set('width', w);
+    return b;
+  };
+  bar.append(sortBtn, widthLabel, mkW('', 'full'), mkW('640', '640'), mkW('420', '420'), mkW('320', '320'), mkW('240', '240'));
+  return bar;
+}
+
 const app = document.getElementById("app");
+// Track mounted elements so a live hash change re-applies config without reload.
+const mounted: Array<{ el: InstanceType<typeof Diagram>; demo: HTMLElement }> = [];
 if (app) {
-  for (const e of experiments) {
+  app.prepend(buildConfigBar());
+  const shown = config.only
+    ? experiments.filter(e => config.only!.includes(e.id))
+    : experiments;
+  for (const e of shown) {
     const section = document.createElement("section");
     section.id = e.id;
     section.className = "experiment";
@@ -59,6 +138,8 @@ if (app) {
     const el = document.createElement(e.tag) as InstanceType<typeof Diagram>;
     el.setAttribute("no-source", "");
     demo.appendChild(el);
+    applyConfig(el, demo);
+    mounted.push({ el, demo });
 
     // Source expander rendered outside the demo box
     const srcDetails = document.createElement("details");
@@ -82,6 +163,22 @@ if (app) {
     app.appendChild(section);
   }
 }
+
+// Live hash changes: width re-applies in place; sort/only change construction → reload.
+// Bare anchor jumps (#concentric-arc) carry no cfg: segment — let the browser scroll,
+// don't reparse/reload (readConfig would return defaults and wipe state otherwise).
+let lastCfgSeg = parseHash().cfg.toString();
+window.addEventListener('hashchange', () => {
+  const cfgSeg = parseHash().cfg.toString();
+  if (cfgSeg === lastCfgSeg) return; // anchor-only change → ignore
+  lastCfgSeg = cfgSeg;
+  const next = readConfig();
+  const needsReload = next.sort !== config.sort
+    || JSON.stringify(next.only) !== JSON.stringify(config.only);
+  config = next;
+  if (needsReload) { location.reload(); return; }
+  for (const { el, demo } of mounted) applyConfig(el, demo);
+});
 
 function dedentFn(s: string): string {
   const lines = s.split("\n");

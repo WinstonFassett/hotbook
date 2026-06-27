@@ -3,6 +3,10 @@ header { padding: 18px 24px 8px; max-width: 960px; margin: 0 auto; }
 header h1 { margin: 0 0 4px; font-size: 18px; font-weight: 600; color: #e6e8ee; }
 header .sub { margin: 0; font-size: 12px; color: #9aa0a8; }
 main { padding: 12px 24px 64px; display: flex; flex-direction: column; gap: 32px; max-width: 960px; margin: 0 auto; width: 100%; box-sizing: border-box; }
+.repro-config-bar { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; background: #161a23; border: 1px solid #2a2f3d; border-radius: 8px; font-size: 12px; }
+.repro-config-bar button { background: #222838; color: #e6e8ee; border: 1px solid #313a4f; border-radius: 5px; padding: 3px 8px; font-size: 12px; cursor: pointer; }
+.repro-config-bar button:hover { background: #2c3447; }
+.repro-config-bar span { color: #9aa0a8; }
 section.experiment { background: #11141b; border: 1px solid #1d212b; border-radius: 8px; padding: 16px; }
 section.experiment h2 { margin: 0 0 6px; font-size: 14px; font-weight: 600; color: #e6e8ee; }
 section.experiment .note { margin: 0 0 12px; font-size: 12px; color: #9aa0a8; }
