@@ -4,6 +4,7 @@
 
 import { Anchor, cell, circle, derive, Diagram, effect as biEffect, label, type Mount, pathD, Vec } from "bireactive";
 import { scaleBand, scaleLinear } from "d3-scale";
+import { extent, ticks as d3Ticks } from "d3-array";
 import { wheelController, dragController } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
@@ -11,7 +12,6 @@ import { useHostSize, FILL_STYLE } from "../lib/host-size";
 const W = 640;
 const H = 640;
 
-const TICKS = [0, 25, 50, 75, 100];
 const COLOR = "#7aaae8";
 
 interface Spoke {
@@ -30,6 +30,7 @@ export class MdRadarChartLC extends Diagram {
   static styles = `text { pointer-events: none; }${FILL_STYLE}`
   readonly dataCell = cell<readonly Spoke[]>(makeData());
   sortBy: 'index' | 'value' = 'index';
+  tickCount = 4;
   set externalData(v: { label: string; value: number }[] | undefined) {
     if (v) this.dataCell.value = v as unknown as Spoke[];
   }
@@ -51,7 +52,7 @@ export class MdRadarChartLC extends Diagram {
     const selected = cell<Spoke | null>(null);
 
     const mutateDatum = (d: Spoke, delta: number) => {
-      d.value = Math.max(0, Math.min(100, d.value + delta));
+      d.value = Math.max(0, d.value + delta);
       data.value = [...data.value];
     };
 
@@ -71,8 +72,24 @@ export class MdRadarChartLC extends Diagram {
         .range([0, 2 * Math.PI])
         .padding(0);
     });
+    // Dynamic domain: extent of current data, niced to clean tick values.
+    const domainMin = derive(() => {
+      const rows = data.value as Spoke[];
+      const [lo] = extent(rows, (d) => d.value);
+      return Math.max(0, (lo ?? 0));
+    });
+    const domainMax = derive(() => {
+      const rows = data.value as Spoke[];
+      const [, hi] = extent(rows, (d) => d.value);
+      return hi ?? 100;
+    });
+    const ticks = derive(() => {
+      const lo = domainMin.value, hi = domainMax.value;
+      // Nice ticks in range; 0 is always included as inner ring.
+      return [0, ...d3Ticks(lo, hi, this.tickCount).filter(t => t > 0)];
+    });
     const yScale = derive(() =>
-      scaleLinear().domain([0, 100]).range([0, rMax.value])
+      scaleLinear().domain([0, domainMax.value]).range([0, rMax.value])
     );
 
     // Angle for spoke i (band center)
@@ -82,11 +99,16 @@ export class MdRadarChartLC extends Diagram {
       return (xs(rows[i]!.name) ?? 0) + xs.bandwidth() / 2 - Math.PI / 2;
     };
 
-    // Polygon at a given radius tick — static grid rings.
-    for (const tick of TICKS) {
+    // Reactive grid rings — pool of MAX_RINGS slots driven by ticks.value.
+    const MAX_GRID_RINGS = 8;
+    for (let ri = 0; ri < MAX_GRID_RINGS; ri++) {
       const ringD = derive(() => {
+        const ts = ticks.value;
+        if (ri >= ts.length) return "";
+        const tick = ts[ri]!;
+        if (tick === 0) return "";
+        const r = yScale.value(tick);
         const rows = data.value as Spoke[];
-        const r = (tick / 100) * rMax.value;
         const cxv = cx.value, cyv = cy.value;
         const pts = rows.map((_, i) => {
           const a = angle(i);
@@ -94,8 +116,20 @@ export class MdRadarChartLC extends Diagram {
         });
         return pts.join(" ") + " Z";
       });
-      if (tick === 0) continue;
       s(pathD(ringD, { stroke: "#ffffff", opacity: 0.1, strokeWidth: 1 }));
+      // Tick label at top spoke for each ring.
+      const tickLblPos = Vec.derive(() => {
+        const ts = ticks.value;
+        if (ri >= ts.length || ts[ri] === 0) return { x: -1000, y: -1000 };
+        const r = yScale.value(ts[ri]!);
+        // Place label above the ring at the 12-o'clock position.
+        return { x: cx.value, y: cy.value - r - 4 };
+      });
+      const tickLblText = derive(() => {
+        const ts = ticks.value;
+        return ri < ts.length && ts[ri] !== 0 ? String(ts[ri]) : "";
+      });
+      s(label(tickLblPos, tickLblText, { size: 9, align: Anchor.Center, fill: "#888" }));
     }
 
     // Spoke lines + labels — rendered as derived paths so they react to count changes.

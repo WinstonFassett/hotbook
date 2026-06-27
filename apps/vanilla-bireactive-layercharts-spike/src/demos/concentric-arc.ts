@@ -12,11 +12,20 @@ const W = 640;
 const H = 640;
 
 const RING_GAP = 8;
+// Fraction of total radius reserved as empty center (for label readout / future hover info).
+// 1.5 means the dead zone equals 1.5 ring-step widths.
+const INNER_RESERVE = 1.5;
+const MAX_RINGS = 8;
+
 const RING_DEFS = [
-  { label: "Speed",   color: "#e05c5c" },
-  { label: "Power",   color: "#f0a742" },
-  { label: "Stamina", color: "#4cba6e" },
-  { label: "Focus",   color: "#5b8def" },
+  { label: "Speed",    color: "#e05c5c" },
+  { label: "Power",    color: "#f0a742" },
+  { label: "Stamina",  color: "#4cba6e" },
+  { label: "Focus",    color: "#5b8def" },
+  { label: "Agility",  color: "#c07ef0" },
+  { label: "Endure",   color: "#4ecde6" },
+  { label: "Reflex",   color: "#f06090" },
+  { label: "Vision",   color: "#a0c840" },
 ];
 
 interface Ring {
@@ -26,7 +35,7 @@ interface Ring {
 }
 
 function makeData(): Ring[] {
-  return RING_DEFS.map((r) => ({ ...r, value: Math.round(20 + Math.random() * 70) }));
+  return RING_DEFS.slice(0, MAX_RINGS).map((r) => ({ ...r, value: Math.round(20 + Math.random() * 70) }));
 }
 
 // Build rounded arc path-d centered at 0,0 (caller applies group translate).
@@ -65,13 +74,16 @@ export class MdConcentricArcLC extends Diagram {
     const cy = derive(() => Hc.value / 2);
 
     const data = this.dataCell;
-    const n = (data.value as Ring[]).length;
+    const n = Math.min((data.value as Ring[]).length, MAX_RINGS);
 
     // Outermost ring outer radius — fills the container with padding for end-cap labels.
     const rOuterStart = derive(() => Math.min(Wc.value, Hc.value) / 2 - 30);
-    // Ring thickness scales so all rings always fit within rOuterStart.
-    // n rings: n*thickness + (n-1)*gap = rOuterStart → thickness = (rOuterStart - (n-1)*gap) / n
-    const ringThickness = derive(() => Math.max(8, (rOuterStart.value - (n - 1) * RING_GAP) / n));
+    // Total slots = n rings + INNER_RESERVE dead zone at center.
+    // (n + INNER_RESERVE) * (thickness + gap) - gap = rOuterStart
+    // → thickness = (rOuterStart + gap) / (n + INNER_RESERVE) - gap
+    const ringThickness = derive(() =>
+      Math.max(6, (rOuterStart.value + RING_GAP) / (n + INNER_RESERVE) - RING_GAP)
+    );
     const ringStep = derive(() => ringThickness.value + RING_GAP);
     const hover = cell<Ring | null>(null);
     const selected = cell<Ring | null>(null);
@@ -133,10 +145,8 @@ export class MdConcentricArcLC extends Diagram {
     const g = s(group({ translate: Vec.derive(() => ({ x: cx.value, y: cy.value })) }));
     const gs = mount(g);
 
-    // Rings are ordered by current sort rank. We mount MAX_RINGS slots and derive
-    // radius from the ring's current position in data.value so sort-by-value reorders visually.
-    const MAX_RINGS = (data.value as Ring[]).length;
-    for (let i = 0; i < MAX_RINGS; i++) {
+    // Rings are ordered by current sort rank. Capped at n (≤ MAX_RINGS).
+    for (let i = 0; i < n; i++) {
       const d = (data.value as Ring[])[i]!;
       // Derive radius from the ring's current rank in data.value (sort-stable).
       const rankOf = () => (data.value as Ring[]).indexOf(d);

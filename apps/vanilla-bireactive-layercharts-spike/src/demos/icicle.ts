@@ -48,14 +48,24 @@ export class MdIcicleLC extends Diagram {
     const layout = derive(() => {
       const h = buildHierarchy(root);
       const totalDepth = h.height; // levels below root
-      // Scale partition height so the visible depth fills Hc exactly.
-      // partition distributes H across (totalDepth+1) levels including root (depth 0).
-      // We skip depth 0 in rendering, so visible levels = min(maxD ?? totalDepth, totalDepth).
+      // partition distributes H across (totalDepth+1) levels (depth 0 through totalDepth).
+      // We skip depth 0 in rendering. To make visible rows fill Hc exactly, scale partition
+      // height so one extra row fits above the viewport, then offset y by rowH to shift
+      // visible rows up to y=0.
       const visibleDepth = maxD !== undefined ? Math.min(maxD, totalDepth) : totalDepth;
-      const scaledH = visibleDepth > 0 ? Hc.value * totalDepth / visibleDepth : Hc.value;
+      const scaledH = visibleDepth > 0 ? Hc.value * (totalDepth + 1) / visibleDepth : Hc.value;
       partition<BiNode>().size([Wc.value, scaledH])(h);
+      const rowH = visibleDepth > 0 ? Hc.value / visibleDepth : 0;
       const map = new Map<BiNode, HierarchyRectangularNode<BiNode>>();
-      h.each((d) => map.set(d.data, d as HierarchyRectangularNode<BiNode>));
+      h.each((d) => {
+        const node = d as HierarchyRectangularNode<BiNode>;
+        // Shift all y coords up by one row so depth-1 tiles start at y=0.
+        map.set(d.data, {
+          ...node,
+          y0: node.y0 - rowH,
+          y1: node.y1 - rowH,
+        } as HierarchyRectangularNode<BiNode>);
+      });
       return map;
     });
     for (const { node, depth, isLeaf } of walkWithDepth(root)) {
