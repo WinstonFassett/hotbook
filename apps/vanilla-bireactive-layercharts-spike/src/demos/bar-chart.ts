@@ -191,9 +191,12 @@ export class MdBarChartLC extends Diagram {
     this.addEventListener("wheel", e => {
       const we = e as WheelEvent;
       if (!we.ctrlKey || this.sortBy === 'value') return;
+      // Own the wheel for editing in overflow mode (host is overflow:auto): stop it
+      // from scrolling the bars instead of editing the hovered value.
+      we.preventDefault();
+      we.stopPropagation();
       const t = wheelController.begin(hover.value ?? selected.value, wheelConfig);
       if (!t) return;
-      we.preventDefault();
       mutateDatum(t, we.deltaY < 0 ? (we.shiftKey ? 5 : 1) : (we.shiftKey ? -5 : -1));
     }, { passive: false });
     this.addEventListener("keydown", e => {
@@ -412,9 +415,12 @@ export class MdBarChartLC extends Diagram {
     this.addEventListener("wheel", e => {
       const we = e as WheelEvent;
       if (!we.ctrlKey || this.sortBy === 'value') return;
+      // Own the wheel for editing in overflow mode (host is overflow:auto): stop it
+      // from scrolling the bars instead of editing the hovered value.
+      we.preventDefault();
+      we.stopPropagation();
       const t = wheelController.begin(hover.value ?? selected.value, wheelConfig);
       if (!t) return;
-      we.preventDefault();
       mutateDatum(t, we.deltaY < 0 ? (we.shiftKey ? 5 : 1) : (we.shiftKey ? -5 : -1));
     }, { passive: false });
     this.addEventListener("keydown", e => {
