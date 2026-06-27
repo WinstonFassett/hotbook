@@ -43,9 +43,14 @@ export class MdSunburstLC extends Diagram {
     const hoverCell = cell<BiNode | null>(null);
     state.hoverCell = hoverCell;
 
+    const maxD = this.maxDepth
     const layout = derive(() => {
-      const R = Math.min(Wc.value, Hc.value) / 2 - 4;
+      const Rfull = Math.min(Wc.value, Hc.value) / 2 - 4;
       const h = buildHierarchy(root);
+      const totalDepth = h.height;
+      // Scale partition radius so visible rings fill Rfull exactly.
+      const visibleDepth = maxD !== undefined ? Math.min(maxD, totalDepth) : totalDepth;
+      const R = visibleDepth > 0 ? Rfull * totalDepth / visibleDepth : Rfull;
       partition<BiNode>().size([2 * Math.PI, R])(h);
       const map = new Map<BiNode, HierarchyRectangularNode<BiNode>>();
       h.each((d) => map.set(d.data, d as HierarchyRectangularNode<BiNode>));
@@ -53,8 +58,6 @@ export class MdSunburstLC extends Diagram {
     });
 
     const center = Vec.derive(() => ({ x: Wc.value / 2, y: Hc.value / 2 }));
-
-    const maxD = this.maxDepth
     for (const { node, depth, isLeaf } of walkWithDepth(root)) {
       if (depth === 0) continue;
       if (maxD !== undefined && depth > maxD) continue;

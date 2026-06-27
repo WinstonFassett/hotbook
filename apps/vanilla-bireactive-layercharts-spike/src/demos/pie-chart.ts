@@ -5,8 +5,8 @@ import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { dragCancelable } from "../lib/esc-contract";
 
-const W = 720;
-const H = 360;
+const W = 640;
+const H = 640;
 const R_INNER = 0;
 
 const PALETTE = ['#e08888', '#d4a86c', '#ccc060', '#7ec87e', '#60c4c0', '#7aaae8', '#b090e0', '#8899b4'];

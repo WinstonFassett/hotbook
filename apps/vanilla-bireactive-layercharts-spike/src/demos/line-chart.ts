@@ -5,6 +5,7 @@ import { axis } from "../lib/axis";
 import { chartContext } from "../lib/chart-context";
 import { attachCartesianGestures, makeBisectFinder } from "../lib/cartesian-gestures";
 import { spline } from "../lib/spline";
+import { useHostSize, FILL_STYLE } from "../lib/host-size";
 
 const W = 720;
 const H = 360;
@@ -27,7 +28,7 @@ function makeSeries(): Point[] {
 }
 
 export class MdLineChartLC extends Diagram {
-  static styles = `text { pointer-events: none; }`
+  static styles = `text { pointer-events: none; }${FILL_STYLE}`
   readonly dataCell = cell<readonly Point[]>(makeSeries());
   sortBy: 'index' | 'value' = 'index';
   set externalData(v: { date: Date; value: number }[] | undefined) {
@@ -37,14 +38,15 @@ export class MdLineChartLC extends Diagram {
     return this.dataCell.value as Point[];
   }
   protected scene(s: Mount): void {
-    this.view(W, H);
+    const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
+    this.view(Wc, Hc);
     this.tabIndex = 0;
     this.style.outline = "none";
 
     const data = this.dataCell;
 
     const ctx = chartContext<Point>({
-      width: W, height: H, data,
+      width: Wc, height: Hc, data,
       x: (d) => d.date, y: (d) => d.value,
       padding: { top: 16, right: 24, bottom: 36, left: 56 },
       yNice: true, yBaseline: 0,
@@ -111,7 +113,7 @@ export class MdLineChartLC extends Diagram {
     );
 
     s(label(
-      vec(W / 2, 12),
+      Vec.derive(() => ({ x: Wc.value / 2, y: 12 })),
       derive(() => {
         const p = selected.value ?? hover.value;
         if (!p) return "LineChart — hover · click to select · ←/→ navigate · ↑/↓ edit · cmd+wheel · drag marker";

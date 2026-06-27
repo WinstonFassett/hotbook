@@ -6,15 +6,12 @@ import { Anchor, cell, circle, derive, Diagram, effect as biEffect, group, label
 import { arc as d3Arc } from "d3-shape";
 import { wheelController, dragController } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
+import { useHostSize, FILL_STYLE } from "../lib/host-size";
 
 const W = 640;
 const H = 640;
-const CX = W / 2;
-const CY = H / 2;
 
-const RING_THICKNESS = 28;
-const RING_GAP = 10;
-const RING_OUTER_START = 210;
+const RING_GAP = 8;
 const RING_DEFS = [
   { label: "Speed",   color: "#e05c5c" },
   { label: "Power",   color: "#f0a742" },
@@ -49,7 +46,7 @@ const START = 0; // d3Arc: 0 = top (12 o'clock), clockwise
 const MIN_VALUE = 3;
 
 export class MdConcentricArcLC extends Diagram {
-  static styles = `text { pointer-events: none; }`
+  static styles = `text { pointer-events: none; }${FILL_STYLE}`
   readonly dataCell = cell<readonly Ring[]>(makeData());
   sortBy: 'index' | 'value' = 'index';
   set externalData(v: { label: string; value: number }[] | undefined) {
@@ -59,11 +56,23 @@ export class MdConcentricArcLC extends Diagram {
     return this.dataCell.value as unknown as { label: string; value: number }[];
   }
   protected scene(s: Mount): void {
-    this.view(W, H);
+    const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
+    this.view(Wc, Hc);
     this.tabIndex = 0;
     this.style.outline = "none";
 
+    const cx = derive(() => Wc.value / 2);
+    const cy = derive(() => Hc.value / 2);
+
     const data = this.dataCell;
+    const n = (data.value as Ring[]).length;
+
+    // Outermost ring outer radius — fills the container with padding for end-cap labels.
+    const rOuterStart = derive(() => Math.min(Wc.value, Hc.value) / 2 - 30);
+    // Ring thickness scales so all rings always fit within rOuterStart.
+    // n rings: n*thickness + (n-1)*gap = rOuterStart → thickness = (rOuterStart - (n-1)*gap) / n
+    const ringThickness = derive(() => Math.max(8, (rOuterStart.value - (n - 1) * RING_GAP) / n));
+    const ringStep = derive(() => ringThickness.value + RING_GAP);
     const hover = cell<Ring | null>(null);
     const selected = cell<Ring | null>(null);
 
@@ -89,7 +98,7 @@ export class MdConcentricArcLC extends Diagram {
       const vb = svgEl.viewBox?.baseVal;
       const sx = vb && vb.width ? vb.width / r.width : 1;
       const sy = vb && vb.height ? vb.height / r.height : 1;
-      return { x: (e.clientX - r.left) * sx - CX, y: (e.clientY - r.top) * sy - CY };
+      return { x: (e.clientX - r.left) * sx - cx.peek(), y: (e.clientY - r.top) * sy - cy.peek() };
     };
     // Pointer angle → ring value (0–100). d3Arc angle 0 = top, clockwise; SVG
     // atan2 is 0 = right, so add π/2. Unwrap into [0, 2π).
@@ -121,7 +130,7 @@ export class MdConcentricArcLC extends Diagram {
     };
 
     // All arcs rendered in a group translated to center.
-    const g = s(group({ translate: vec(CX, CY) }));
+    const g = s(group({ translate: Vec.derive(() => ({ x: cx.value, y: cy.value })) }));
     const gs = mount(g);
 
     // Rings are ordered by current sort rank. We mount MAX_RINGS slots and derive
@@ -131,13 +140,13 @@ export class MdConcentricArcLC extends Diagram {
       const d = (data.value as Ring[])[i]!;
       // Derive radius from the ring's current rank in data.value (sort-stable).
       const rankOf = () => (data.value as Ring[]).indexOf(d);
-      const rOuter = derive(() => RING_OUTER_START - rankOf() * (RING_THICKNESS + RING_GAP));
-      const rInner = derive(() => rOuter.value - RING_THICKNESS);
-      const corner = RING_THICKNESS / 2;
+      const rOuter = derive(() => rOuterStart.value - rankOf() * ringStep.value);
+      const rInner = derive(() => rOuter.value - ringThickness.value);
+      const corner = derive(() => Math.min(ringThickness.value / 2, 14));
 
       // Full-circle track.
       const trackEl = gs(pathD(
-        derive(() => arcD(rOuter.value, rInner.value, START, START + TWO_PI, corner)),
+        derive(() => rInner.value >= 1 ? arcD(rOuter.value, rInner.value, START, START + TWO_PI, corner.value) : ""),
         { fill: d.color, opacity: derive(() => hover.value === d || selected.value === d ? 0.25 : 0.18) }
       ));
       trackEl.el.style.cursor = "pointer";
@@ -154,7 +163,7 @@ export class MdConcentricArcLC extends Diagram {
         const isActive = hover.value === d || selected.value === d;
         const ro = rOuter.value + (isActive ? 4 : 0);
         const ri = rInner.value - (isActive ? 2 : 0);
-        return arcD(ro, ri, START, endAngle, corner);
+        return arcD(ro, ri, START, endAngle, corner.value);
       });
       const valueStroke = derive(() =>
         selected.value === d ? "#fff" : hover.value === d ? d.color : "none"
@@ -175,7 +184,7 @@ export class MdConcentricArcLC extends Diagram {
         const d3Angle = START + (d.value / 100) * TWO_PI;
         const svgAngle = d3Angle - Math.PI / 2;
         const rMid = (rOuter.value + rInner.value) / 2;
-        return { x: CX + Math.cos(svgAngle) * rMid, y: CY + Math.sin(svgAngle) * rMid };
+        return { x: cx.value + Math.cos(svgAngle) * rMid, y: cy.value + Math.sin(svgAngle) * rMid };
       });
       const handleR = derive(() => selected.value === d ? 7 : 6);
       const handleFill = derive(() => selected.value === d ? "#fff" : d.color);
@@ -209,16 +218,16 @@ export class MdConcentricArcLC extends Diagram {
         const d3Angle = START + (d.value / 100) * TWO_PI; // d3Arc angle (0=top, cw)
         const svgAngle = d3Angle - Math.PI / 2;           // convert to SVG (0=right, cw y-down)
         const rMid = (rOuter.value + rInner.value) / 2;
-        return { x: CX + Math.cos(svgAngle) * (rMid + 22), y: CY + Math.sin(svgAngle) * (rMid + 22) };
+        return { x: cx.value + Math.cos(svgAngle) * (rMid + 22), y: cy.value + Math.sin(svgAngle) * (rMid + 22) };
       });
       s(label(lblPos, d.label, { size: 10, fill: d.color, opacity: 0.85 }));
     }
 
     // Center readout.
-    s(label(vec(CX, CY - 10), derive(() => (selected.value ?? hover.value)?.label ?? ""), {
+    s(label(Vec.derive(() => ({ x: cx.value, y: cy.value - 10 })), derive(() => (selected.value ?? hover.value)?.label ?? ""), {
       size: 13, align: Anchor.Center, opacity: 0.5,
     }));
-    s(label(vec(CX, CY + 14), derive(() => {
+    s(label(Vec.derive(() => ({ x: cx.value, y: cy.value + 14 })), derive(() => {
       void data.value;
       const p = selected.value ?? hover.value;
       return p ? `${p.value}` : "";
@@ -239,15 +248,15 @@ export class MdConcentricArcLC extends Diagram {
       const vb = svgEl.viewBox?.baseVal;
       const sx = vb && vb.width ? vb.width / r.width : 1;
       const sy = vb && vb.height ? vb.height / r.height : 1;
-      const lx = (pe.clientX - r.left) * sx - CX;
-      const ly = (pe.clientY - r.top) * sy - CY;
+      const lx = (pe.clientX - r.left) * sx - cx.peek();
+      const ly = (pe.clientY - r.top) * sy - cy.peek();
       const dist = Math.sqrt(lx * lx + ly * ly);
       // Find which ring the pointer is over by radius. Rank = position in data.value (sorted order).
       const rows = data.value as Ring[];
       let hit: Ring | null = null;
       for (let rank = 0; rank < rows.length; rank++) {
-        const ro = RING_OUTER_START - rank * (RING_THICKNESS + RING_GAP);
-        const ri = ro - RING_THICKNESS;
+        const ro = rOuterStart.peek() - rank * ringStep.peek();
+        const ri = ro - ringThickness.peek();
         if (dist >= ri - 4 && dist <= ro + 4) { hit = rows[rank]!; break; }
       }
       if (!selected.value) hover.value = hit;
@@ -282,7 +291,7 @@ export class MdConcentricArcLC extends Diagram {
       else if (ke.key === "ArrowDown") { mutateDatum(target, -step); ke.preventDefault(); }
     });
 
-    s(label(vec(W / 2, 20), derive(() => {
+    s(label(Vec.derive(() => ({ x: Wc.value / 2, y: 20 })), derive(() => {
       void data.value;
       const p = selected.value ?? hover.value;
       if (!p) return "ConcentricArc — hover · click ring · drag handle · Tab/←/→ nav · ↑/↓ edit · cmd+wheel";

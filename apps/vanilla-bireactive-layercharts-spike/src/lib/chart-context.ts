@@ -17,8 +17,8 @@ export type AnyScale =
 export type Padding = { top: number; right: number; bottom: number; left: number };
 
 export interface ChartContextOpts<TData> {
-  width: number;
-  height: number;
+  width: number | Cell<number>;
+  height: number | Cell<number>;
   data: Cell<readonly TData[]> | readonly TData[];
   x: Accessor<TData>;
   y: Accessor<TData>;
@@ -41,16 +41,20 @@ export interface ChartContext<TData> {
   data: Cell<readonly TData[]>;
   xAcc: (d: TData) => any;
   yAcc: (d: TData) => any;
+  /** Snapshot width at context creation. */
   width: number;
+  /** Snapshot height at context creation. */
   height: number;
   padding: Padding;
-  /** Inner plot dimensions (width - padding.left - padding.right etc.) */
+  /** Snapshot inner plot dimensions — stable for hit-testing. */
   plotWidth: number;
   plotHeight: number;
-  /** Origin of plot area inside the SVG viewport. */
   plotX: number;
   plotY: number;
-  /** Reactive scale instances. Domain is data-derived; range is plot bounds. */
+  /** Reactive plot bounds — track container resize when width/height are Cells. */
+  rPlotWidth: Cell<number>;
+  rPlotHeight: Cell<number>;
+  /** Reactive scale instances. Domain is data-derived; range tracks container size. */
   xScale: Cell<AnyScale>;
   yScale: Cell<AnyScale>;
   /** xScale(xAcc(d)). */
@@ -75,14 +79,23 @@ export function chartContext<TData>(opts: ChartContextOpts<TData>): ChartContext
   const xAcc = normAccessor(opts.x);
   const yAcc = normAccessor(opts.y);
 
+  const wCell = asCell(opts.width);
+  const hCell = asCell(opts.height);
+
   const padding: Padding = { ...DEFAULT_PADDING, ...(opts.padding ?? {}) };
-  const plotWidth = Math.max(0, opts.width - padding.left - padding.right);
-  const plotHeight = Math.max(0, opts.height - padding.top - padding.bottom);
   const plotX = padding.left;
   const plotY = padding.top;
+  // Snapshot values for backward-compat plain-number fields.
+  const plotWidth = Math.max(0, wCell.value - padding.left - padding.right);
+  const plotHeight = Math.max(0, hCell.value - padding.top - padding.bottom);
+  // Reactive versions — update when the container resizes.
+  const rPlotWidth = derive(() => Math.max(0, wCell.value - padding.left - padding.right));
+  const rPlotHeight = derive(() => Math.max(0, hCell.value - padding.top - padding.bottom));
 
+  // Scales re-derive when data OR container size changes.
   const xScale = derive(() => {
     const rows = data.value;
+    const pw = Math.max(0, wCell.value - padding.left - padding.right);
     const first = rows[0];
     const firstX = first !== undefined ? xAcc(first) : undefined;
     const base =
@@ -95,13 +108,14 @@ export function chartContext<TData>(opts: ChartContextOpts<TData>): ChartContext
     ];
     const s: any = (base as any).copy ? (base as any).copy() : base;
     s.domain(domain);
-    s.range([plotX, plotX + plotWidth]);
+    s.range([plotX, plotX + pw]);
     if (opts.xNice && typeof s.nice === "function") s.nice();
     return s as AnyScale;
   });
 
   const yScale = derive(() => {
     const rows = data.value;
+    const ph = Math.max(0, hCell.value - padding.top - padding.bottom);
     const base = opts.yScale ?? scaleLinear();
     const inferred = extent(rows as TData[], yAcc) as [number | undefined, number | undefined];
     let lo = opts.yDomain?.[0] ?? inferred[0] ?? 0;
@@ -113,7 +127,7 @@ export function chartContext<TData>(opts: ChartContextOpts<TData>): ChartContext
     const s: any = (base as any).copy ? (base as any).copy() : base;
     s.domain([lo, hi]);
     // y range reversed: SVG origin top-left, charts grow up
-    s.range([plotY + plotHeight, plotY]);
+    s.range([plotY + ph, plotY]);
     if (opts.yNice && typeof s.nice === "function") s.nice();
     return s as AnyScale;
   });
@@ -131,13 +145,15 @@ export function chartContext<TData>(opts: ChartContextOpts<TData>): ChartContext
     data,
     xAcc,
     yAcc,
-    width: opts.width,
-    height: opts.height,
+    width: wCell.value,
+    height: hCell.value,
     padding,
     plotWidth,
     plotHeight,
     plotX,
     plotY,
+    rPlotWidth,
+    rPlotHeight,
     xScale,
     yScale,
     xGet,

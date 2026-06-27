@@ -22,18 +22,18 @@ export function axis<TData>(s: Mount, ctx: ChartContext<TData>, opts: AxisOpts) 
   const tickSize = opts.tickSize ?? 4;
 
   const ax0 = ctx.plotX;
-  const ax1 = ctx.plotX + ctx.plotWidth;
   const ay0 = ctx.plotY;
-  const ay1 = ctx.plotY + ctx.plotHeight;
+  const rAx1 = derive(() => ctx.plotX + ctx.rPlotWidth.value);
+  const rAy1 = derive(() => ctx.plotY + ctx.rPlotHeight.value);
 
   const baseline =
     placement === "bottom"
-      ? line(vec(ax0, ay1), vec(ax1, ay1), { thin: true, opacity: 0.5, stroke: color })
+      ? line(Vec.derive(() => ({ x: ax0, y: rAy1.value })), Vec.derive(() => ({ x: rAx1.value, y: rAy1.value })), { thin: true, opacity: 0.5, stroke: color })
       : placement === "top"
-        ? line(vec(ax0, ay0), vec(ax1, ay0), { thin: true, opacity: 0.5, stroke: color })
+        ? line(vec(ax0, ay0), Vec.derive(() => ({ x: rAx1.value, y: ay0 })), { thin: true, opacity: 0.5, stroke: color })
         : placement === "left"
-          ? line(vec(ax0, ay0), vec(ax0, ay1), { thin: true, opacity: 0.5, stroke: color })
-          : line(vec(ax1, ay0), vec(ax1, ay1), { thin: true, opacity: 0.5, stroke: color });
+          ? line(vec(ax0, ay0), Vec.derive(() => ({ x: ax0, y: rAy1.value })), { thin: true, opacity: 0.5, stroke: color })
+          : line(Vec.derive(() => ({ x: rAx1.value, y: ay0 })), Vec.derive(() => ({ x: rAx1.value, y: rAy1.value })), { thin: true, opacity: 0.5, stroke: color });
   s(baseline);
 
   const ticks = derive(() => {
@@ -55,33 +55,29 @@ export function axis<TData>(s: Mount, ctx: ChartContext<TData>, opts: AxisOpts) 
     const pos = derive(() => ticks.value[i]?.pos ?? 0);
 
     if (horizontal) {
-      const y0 = placement === "bottom" ? ay1 : ay0;
-      const y1 = placement === "bottom" ? ay1 + tickSize : ay0 - tickSize;
-      const lyText = placement === "bottom" ? ay1 + tickSize + 12 : ay0 - tickSize - 4;
+      // Tick y-positions track the bottom/top of the plot area reactively.
       s(
         line(
-          Vec.derive(() => ({ x: pos.value, y: y0 })),
-          Vec.derive(() => ({ x: pos.value, y: y1 })),
+          Vec.derive(() => ({ x: pos.value, y: placement === "bottom" ? rAy1.value : ay0 })),
+          Vec.derive(() => ({ x: pos.value, y: placement === "bottom" ? rAy1.value + tickSize : ay0 - tickSize })),
           { thin: true, stroke: color, opacity: tickOpacity },
         ),
         label(
-          Vec.derive(() => ({ x: pos.value, y: lyText })),
+          Vec.derive(() => ({ x: pos.value, y: placement === "bottom" ? rAy1.value + tickSize + 12 : ay0 - tickSize - 4 })),
           text,
           { size: 10, align: Anchor.Center, fill: color, opacity: labelOpacity },
         ),
       );
     } else {
-      const x0 = placement === "left" ? ax0 : ax1;
-      const x1 = placement === "left" ? ax0 - tickSize : ax1 + tickSize;
-      const lxText = placement === "left" ? ax0 - tickSize - 4 : ax1 + tickSize + 4;
+      // Left axis: ax0 is fixed (padding-based). Right axis: rAx1 tracks width.
       s(
         line(
-          Vec.derive(() => ({ x: x0, y: pos.value })),
-          Vec.derive(() => ({ x: x1, y: pos.value })),
+          Vec.derive(() => ({ x: placement === "left" ? ax0 : rAx1.value, y: pos.value })),
+          Vec.derive(() => ({ x: placement === "left" ? ax0 - tickSize : rAx1.value + tickSize, y: pos.value })),
           { thin: true, stroke: color, opacity: tickOpacity },
         ),
         label(
-          Vec.derive(() => ({ x: lxText, y: pos.value })),
+          Vec.derive(() => ({ x: placement === "left" ? ax0 - tickSize - 4 : rAx1.value + tickSize + 4, y: pos.value })),
           text,
           {
             size: 10,

@@ -11,6 +11,7 @@ import { axis } from "../lib/axis";
 import { chartContext } from "../lib/chart-context";
 import { wheelController, dragController } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
+import { useHostSize, FILL_STYLE, type HostSize } from "../lib/host-size";
 
 const W = 720;
 const H = 360;
@@ -33,7 +34,7 @@ function makeData(): Bar[] {
 }
 
 export class MdBarChartLC extends Diagram {
-  static styles = `text { pointer-events: none; }`
+  static styles = `text { pointer-events: none; }${FILL_STYLE}`
 
   readonly dataCell = cell<readonly Bar[]>(makeData());
 
@@ -52,14 +53,15 @@ export class MdBarChartLC extends Diagram {
   }
 
   protected scene(s: Mount): void {
-    this.view(W, H);
+    const size = useHostSize(this, { width: W, height: H });
+    this.view(size.w, size.h);
     this.tabIndex = 0;
     this.style.outline = "none";
     const data = this.dataCell;
     if (this.orientation === 'horizontal') {
-      this.#horizontal(s, data);
+      this.#horizontal(s, data, size);
     } else {
-      this.#vertical(s, data);
+      this.#vertical(s, data, size);
     }
   }
 
@@ -70,11 +72,11 @@ export class MdBarChartLC extends Diagram {
     return lightenHex(this.#barColor(idx), 0.35);
   }
 
-  #vertical(s: Mount, data: ReturnType<typeof cell<readonly Bar[]>>) {
+  #vertical(s: Mount, data: ReturnType<typeof cell<readonly Bar[]>>, { w: Wc, h: Hc }: HostSize) {
     const PAD = { top: 16, right: 24, bottom: 36, left: 48 };
     const plotX = PAD.left, plotY = PAD.top;
-    const plotW = W - PAD.left - PAD.right;
-    const plotH = H - PAD.top - PAD.bottom;
+    const plotW = derive(() => Wc.value - PAD.left - PAD.right);
+    const plotH = derive(() => Hc.value - PAD.top - PAD.bottom);
 
     const rows0 = data.value as Bar[];
 
@@ -82,11 +84,11 @@ export class MdBarChartLC extends Diagram {
     const xBand = derive(() =>
       scaleBand<string>()
         .domain(rows0.map((_, i) => String(i)))
-        .range([plotX, plotX + plotW])
+        .range([plotX, plotX + plotW.value])
         .padding(0.25)
     );
     const ctx = chartContext<Bar>({
-      width: W, height: H, data,
+      width: Wc, height: Hc, data,
       x: d => d.label, y: d => d.value,
       padding: PAD, yNice: true, yBaseline: 0,
     });
@@ -95,15 +97,19 @@ export class MdBarChartLC extends Diagram {
     axis(s, ctx, { placement: "left" });
 
     // Bottom axis — category labels (always shown in vertical).
-    const ay1 = plotY + plotH;
-    s(line(vec(plotX, ay1), vec(plotX + plotW, ay1), { thin: true, opacity: 0.5, stroke: "#888" }));
+    const ay1 = derive(() => plotY + plotH.value);
+    s(line(
+      Vec.derive(() => ({ x: plotX, y: ay1.value })),
+      Vec.derive(() => ({ x: plotX + plotW.value, y: ay1.value })),
+      { thin: true, opacity: 0.5, stroke: "#888" }
+    ));
     for (let i = 0; i < rows0.length; i++) {
       const d = rows0[i]!;
       const key = String(i);
       const tx = derive(() => (xBand.value(key) ?? 0) + xBand.value.bandwidth() / 2);
       s(
-        line(Vec.derive(() => ({ x: tx.value, y: ay1 })), Vec.derive(() => ({ x: tx.value, y: ay1 + 4 })), { thin: true, stroke: "#888", opacity: 0.6 }),
-        label(Vec.derive(() => ({ x: tx.value, y: ay1 + 16 })), d.label, { size: 10, align: Anchor.Center, fill: "#888", opacity: 0.8 }),
+        line(Vec.derive(() => ({ x: tx.value, y: ay1.value })), Vec.derive(() => ({ x: tx.value, y: ay1.value + 4 })), { thin: true, stroke: "#888", opacity: 0.6 }),
+        label(Vec.derive(() => ({ x: tx.value, y: ay1.value + 16 })), d.label, { size: 10, align: Anchor.Center, fill: "#888", opacity: 0.8 }),
       );
     }
 
@@ -209,7 +215,7 @@ export class MdBarChartLC extends Diagram {
       const i = rows0.indexOf(t);
       return i < 0 ? -9999 : (xBand.value(String(i)) ?? 0) - (xBand.value.step() - xBand.value.bandwidth()) / 2;
     });
-    const hlRect = s(rect(hlX, plotY, derive(() => xBand.value.step()), plotH, {
+    const hlRect = s(rect(hlX, plotY, derive(() => xBand.value.step()), derive(() => plotH.value), {
       fill: "#ffffff", opacity: derive(() => hlTarget.value ? 0.06 : 0),
     }));
     hlRect.el.style.transition = "x 0.15s ease, opacity 0.1s ease";
@@ -225,7 +231,7 @@ export class MdBarChartLC extends Diagram {
       const barX = derive(() => xBand.value(key) ?? 0);
       const barW = derive(() => xBand.value.bandwidth());
       const barY = derive(() => (ctx.yScale.value as any)(d.value));
-      const barH = derive(() => Math.max(0, plotY + plotH - barY.value));
+      const barH = derive(() => Math.max(0, plotY + plotH.value - barY.value));
       const fill = derive(() => selected.value === d ? "#fff" : hover.value === d ? hoverColor : base);
 
       const tile = s(rect(barX, barY, barW, barH, { fill, corner: 2 }));
@@ -272,7 +278,7 @@ export class MdBarChartLC extends Diagram {
       handle.el.addEventListener("pointerleave", () => { if (!wheelController.active && hover.value === d) hover.value = null; });
     }
 
-    s(label(vec(W / 2, 12), derive(() => {
+    s(label(Vec.derive(() => ({ x: Wc.value / 2, y: 12 })), derive(() => {
       const p = selected.value ?? hover.value;
       if (!p) return "BarChart — hover · click · ←/→ navigate · ↑/↓ edit · ctrl+wheel · drag top";
       return `${p.label}  ${p.value}`;
@@ -281,11 +287,11 @@ export class MdBarChartLC extends Diagram {
     this.#bridge(data, hover, selected);
   }
 
-  #horizontal(s: Mount, data: ReturnType<typeof cell<readonly Bar[]>>) {
+  #horizontal(s: Mount, data: ReturnType<typeof cell<readonly Bar[]>>, { w: Wc, h: Hc }: HostSize) {
     const PAD = { top: 16, right: 64, bottom: 16, left: 16 };
     const plotX = PAD.left, plotY = PAD.top;
-    const plotW = W - PAD.left - PAD.right;
-    const plotH = H - PAD.top - PAD.bottom;
+    const plotW = derive(() => Wc.value - PAD.left - PAD.right);
+    const plotH = derive(() => Hc.value - PAD.top - PAD.bottom);
 
     const rows0 = data.value as Bar[];
 
@@ -293,12 +299,12 @@ export class MdBarChartLC extends Diagram {
     const yBand = derive(() =>
       scaleBand<string>()
         .domain(rows0.map((_, i) => String(i)))
-        .range([plotY, plotY + plotH])
+        .range([plotY, plotY + plotH.value])
         .padding(0.15)
     );
     const xLinear = derive(() => {
       const max = Math.max(1, ...(data.value as Bar[]).map(d => d.value));
-      return scaleLinear().domain([0, max]).range([plotX, plotX + plotW]).nice();
+      return scaleLinear().domain([0, max]).range([plotX, plotX + plotW.value]).nice();
     });
 
     const hover = cell<Bar | null>(null);
@@ -403,7 +409,7 @@ export class MdBarChartLC extends Diagram {
       const i = rows0.indexOf(t);
       return i < 0 ? -9999 : (yBand.value(String(i)) ?? 0) - (yBand.value.step() - yBand.value.bandwidth()) / 2;
     });
-    const hlRect = s(rect(plotX, hlY, plotW, derive(() => yBand.value.step()), {
+    const hlRect = s(rect(plotX, hlY, derive(() => plotW.value), derive(() => yBand.value.step()), {
       fill: "#ffffff", opacity: derive(() => hlTarget.value ? 0.06 : 0),
     }));
     hlRect.el.style.transition = "y 0.15s ease, opacity 0.1s ease";
@@ -480,7 +486,7 @@ export class MdBarChartLC extends Diagram {
       handle.el.addEventListener("pointerleave", () => { if (!wheelController.active && hover.value === d) hover.value = null; });
     }
 
-    s(label(vec(W / 2, 8), derive(() => {
+    s(label(Vec.derive(() => ({ x: Wc.value / 2, y: 8 })), derive(() => {
       const p = selected.value ?? hover.value;
       if (!p) return "Bands — hover · click · ↑/↓ navigate · ←/→ edit · ctrl+wheel · drag end";
       return `${p.label}  ${p.value}`;

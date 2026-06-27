@@ -44,15 +44,20 @@ export class MdIcicleLC extends Diagram {
     const hoverCell = cell<BiNode | null>(null);
     state.hoverCell = hoverCell;
 
+    const maxD = this.maxDepth
     const layout = derive(() => {
       const h = buildHierarchy(root);
-      partition<BiNode>().size([Wc.value, Hc.value])(h);
+      const totalDepth = h.height; // levels below root
+      // Scale partition height so the visible depth fills Hc exactly.
+      // partition distributes H across (totalDepth+1) levels including root (depth 0).
+      // We skip depth 0 in rendering, so visible levels = min(maxD ?? totalDepth, totalDepth).
+      const visibleDepth = maxD !== undefined ? Math.min(maxD, totalDepth) : totalDepth;
+      const scaledH = visibleDepth > 0 ? Hc.value * totalDepth / visibleDepth : Hc.value;
+      partition<BiNode>().size([Wc.value, scaledH])(h);
       const map = new Map<BiNode, HierarchyRectangularNode<BiNode>>();
       h.each((d) => map.set(d.data, d as HierarchyRectangularNode<BiNode>));
       return map;
     });
-
-    const maxD = this.maxDepth
     for (const { node, depth, isLeaf } of walkWithDepth(root)) {
       if (depth === 0) continue;
       if (maxD !== undefined && depth > maxD) continue;

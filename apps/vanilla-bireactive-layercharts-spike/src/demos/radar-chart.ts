@@ -2,18 +2,16 @@
 // Mirrors LC's radial Chart + scaleBand for x (angle per category).
 // Grid: polygon rings at radius ticks + spoke lines. Points on polygon are clickable/editable.
 
-import { Anchor, cell, circle, derive, Diagram, effect as biEffect, label, type Mount, pathD, Vec, vec } from "bireactive";
+import { Anchor, cell, circle, derive, Diagram, effect as biEffect, label, type Mount, pathD, Vec } from "bireactive";
 import { scaleBand, scaleLinear } from "d3-scale";
 import { wheelController, dragController } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
+import { useHostSize, FILL_STYLE } from "../lib/host-size";
 
 const W = 640;
 const H = 640;
-const CX = W / 2;
-const CY = H / 2;
 
 const TICKS = [0, 25, 50, 75, 100];
-const R_MAX = 220;
 const COLOR = "#7aaae8";
 
 interface Spoke {
@@ -29,7 +27,7 @@ function makeData(): Spoke[] {
 }
 
 export class MdRadarChartLC extends Diagram {
-  static styles = `text { pointer-events: none; }`
+  static styles = `text { pointer-events: none; }${FILL_STYLE}`
   readonly dataCell = cell<readonly Spoke[]>(makeData());
   sortBy: 'index' | 'value' = 'index';
   set externalData(v: { label: string; value: number }[] | undefined) {
@@ -39,9 +37,14 @@ export class MdRadarChartLC extends Diagram {
     return this.dataCell.value as unknown as { label: string; value: number }[];
   }
   protected scene(s: Mount): void {
-    this.view(W, H);
+    const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
+    this.view(Wc, Hc);
     this.tabIndex = 0;
     this.style.outline = "none";
+
+    const cx = derive(() => Wc.value / 2);
+    const cy = derive(() => Hc.value / 2);
+    const rMax = derive(() => Math.min(Wc.value, Hc.value) / 2 - 50);
 
     const data = this.dataCell;
     const hover = cell<Spoke | null>(null);
@@ -69,7 +72,7 @@ export class MdRadarChartLC extends Diagram {
         .padding(0);
     });
     const yScale = derive(() =>
-      scaleLinear().domain([0, 100]).range([0, R_MAX])
+      scaleLinear().domain([0, 100]).range([0, rMax.value])
     );
 
     // Angle for spoke i (band center)
@@ -81,13 +84,13 @@ export class MdRadarChartLC extends Diagram {
 
     // Polygon at a given radius tick — static grid rings.
     for (const tick of TICKS) {
-      const r = (tick / 100) * R_MAX;
       const ringD = derive(() => {
         const rows = data.value as Spoke[];
-        const n = rows.length;
+        const r = (tick / 100) * rMax.value;
+        const cxv = cx.value, cyv = cy.value;
         const pts = rows.map((_, i) => {
           const a = angle(i);
-          return `${i === 0 ? "M" : "L"}${(CX + Math.cos(a) * r).toFixed(1)},${(CY + Math.sin(a) * r).toFixed(1)}`;
+          return `${i === 0 ? "M" : "L"}${(cxv + Math.cos(a) * r).toFixed(1)},${(cyv + Math.sin(a) * r).toFixed(1)}`;
         });
         return pts.join(" ") + " Z";
       });
@@ -100,12 +103,13 @@ export class MdRadarChartLC extends Diagram {
     const MAX_SPOKES = 20;
     const spokeD = derive(() => {
       const rows = data.value as Spoke[];
+      const cxv = cx.value, cyv = cy.value, rMaxv = rMax.value;
       const pts: string[] = [];
       for (let i = 0; i < rows.length; i++) {
         const a = angle(i);
-        const tx = (CX + Math.cos(a) * R_MAX).toFixed(1);
-        const ty = (CY + Math.sin(a) * R_MAX).toFixed(1);
-        pts.push(`M${CX},${CY}L${tx},${ty}`);
+        const tx = (cxv + Math.cos(a) * rMaxv).toFixed(1);
+        const ty = (cyv + Math.sin(a) * rMaxv).toFixed(1);
+        pts.push(`M${cxv},${cyv}L${tx},${ty}`);
       }
       return pts.join(" ");
     });
@@ -117,8 +121,8 @@ export class MdRadarChartLC extends Diagram {
         const rows = data.value as Spoke[];
         if (i >= rows.length) return { x: -1000, y: -1000 }; // hide off-screen
         const a = angle(i);
-        const r = R_MAX + 22;
-        return { x: CX + Math.cos(a) * r, y: CY + Math.sin(a) * r };
+        const r = rMax.value + 22;
+        return { x: cx.value + Math.cos(a) * r, y: cy.value + Math.sin(a) * r };
       });
       const lblText = derive(() => {
         const rows = data.value as Spoke[];
@@ -131,11 +135,12 @@ export class MdRadarChartLC extends Diagram {
     const polyD = derive(() => {
       const rows = data.value as Spoke[];
       const ys = yScale.value;
+      const cxv = cx.value, cyv = cy.value;
       const pts = rows.map((d, i) => {
         const a = angle(i);
         const r = ys(d.value);
-        const x = (CX + Math.cos(a) * r).toFixed(1);
-        const y = (CY + Math.sin(a) * r).toFixed(1);
+        const x = (cxv + Math.cos(a) * r).toFixed(1);
+        const y = (cyv + Math.sin(a) * r).toFixed(1);
         return `${i === 0 ? "M" : "L"}${x},${y}`;
       });
       return pts.join(" ") + " Z";
@@ -151,7 +156,7 @@ export class MdRadarChartLC extends Diagram {
         if (i >= rows.length) return { x: -1000, y: -1000 }; // hide off-screen
         const a = angle(i);
         const r = yScale.value(rows[i]!.value);
-        return { x: CX + Math.cos(a) * r, y: CY + Math.sin(a) * r };
+        return { x: cx.value + Math.cos(a) * r, y: cy.value + Math.sin(a) * r };
       });
       const dotR = derive(() => {
         const rows = data.value as Spoke[];
@@ -198,8 +203,8 @@ export class MdRadarChartLC extends Diagram {
     };
     const findNearestSpoke = (px: number, py: number): Spoke | null => {
       const rows = data.value as Spoke[];
-      const dx = px - CX;
-      const dy = py - CY;
+      const dx = px - cx.peek();
+      const dy = py - cy.peek();
       const ptAngle = Math.atan2(dy, dx); // -π to π
       let best: Spoke | null = null;
       let bestDiff = Infinity;
@@ -216,7 +221,7 @@ export class MdRadarChartLC extends Diagram {
       const t = dragController.target as Spoke | null;
       if (!t) return;
       const { x, y } = localPt(pe);
-      const dist = Math.sqrt((x - CX) ** 2 + (y - CY) ** 2);
+      const dist = Math.sqrt((x - cx.peek()) ** 2 + (y - cy.peek()) ** 2);
       const newVal = Math.max(0, Math.min(100, yScale.value.invert(dist)));
       mutateDatum(t, newVal - t.value);
     };
@@ -242,8 +247,8 @@ export class MdRadarChartLC extends Diagram {
       const spIdx = (data.value as Spoke[]).indexOf(spoke);
       const a = angle(spIdx);
       const r = yScale.value(spoke.value);
-      const dx = x - (CX + Math.cos(a) * r);
-      const dy = y - (CY + Math.sin(a) * r);
+      const dx = x - (cx.peek() + Math.cos(a) * r);
+      const dy = y - (cy.peek() + Math.sin(a) * r);
       if (Math.sqrt(dx*dx + dy*dy) > 20) return;
       dragPointerId = pe.pointerId;
       selected.value = spoke;
@@ -285,7 +290,7 @@ export class MdRadarChartLC extends Diagram {
     });
 
     s(label(
-      vec(W / 2, 20),
+      Vec.derive(() => ({ x: Wc.value / 2, y: 20 })),
       derive(() => {
         void data.value;
         const p = selected.value ?? hover.value;
