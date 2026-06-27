@@ -24,7 +24,12 @@ export interface CartesianGestureOpts<TData> {
   mutateDatum: (d: TData, delta: number) => void;
   /** Ordered flat list of all data points for keyboard nav. */
   order: () => TData[];
-  /** When false, value-edit gestures (drag, wheel, arrow up/down) are disabled. Defaults to true. */
+  /**
+   * When provided and it returns false, value-edit gestures (drag, wheel,
+   * arrow up/down) are disabled — e.g. a read-only tile. Defaults to always
+   * editable. NOTE: do NOT wire this to sort state; sorting by value must not
+   * disable editing.
+   */
   canEdit?: () => boolean;
 }
 

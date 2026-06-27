@@ -190,7 +190,7 @@ export class MdBarChartLC extends Diagram {
     });
     this.addEventListener("wheel", e => {
       const we = e as WheelEvent;
-      if (!we.ctrlKey || this.sortBy === 'value') return;
+      if (!we.ctrlKey) return;
       // Own the wheel for editing in overflow mode (host is overflow:auto): stop it
       // from scrolling the bars instead of editing the hovered value.
       we.preventDefault();
@@ -210,13 +210,13 @@ export class MdBarChartLC extends Diagram {
           ? rows[(i <= 0 ? rows.length : i) - 1] ?? null : rows[(i + 1) % rows.length] ?? null;
         selected.value = next; ke.preventDefault(); return;
       }
-      if (!cur || this.sortBy === 'value') return;
+      if (!cur) return;
       const step = ke.shiftKey ? 5 : 1;
       if (ke.key === "ArrowUp") { mutateDatum(cur, +step); ke.preventDefault(); }
       else if (ke.key === "ArrowDown") { mutateDatum(cur, -step); ke.preventDefault(); }
     });
     this.addEventListener("pointerdown", e => {
-      if (dragController.active || this.sortBy === 'value') return;
+      if (dragController.active) return;
       const pe = e as PointerEvent;
       const { x, y } = localPoint(pe);
       const pt = findAtPixel(x);
@@ -295,7 +295,7 @@ export class MdBarChartLC extends Diagram {
 
       // Drag handle at bar top.
       const handlePos = Vec.derive(() => ({ x: barCX.value, y: barY.value }));
-      const handleOpacity = derive(() => { const d = di(); return this.sortBy !== 'value' && (hover.value === d || selected.value === d) ? 1 : 0; });
+      const handleOpacity = derive(() => { const d = di(); return (hover.value === d || selected.value === d) ? 1 : 0; });
       const handle = s(circle(handlePos, derive(() => { const d = di(); return selected.value === d ? 6 : 5; }), {
         fill: derive(() => { const d = di(); return selected.value === d ? "#fff" : hoverColor; }),
         stroke: "#0b0d12", strokeWidth: 1.5, opacity: handleOpacity,
@@ -414,7 +414,7 @@ export class MdBarChartLC extends Diagram {
     });
     this.addEventListener("wheel", e => {
       const we = e as WheelEvent;
-      if (!we.ctrlKey || this.sortBy === 'value') return;
+      if (!we.ctrlKey) return;
       // Own the wheel for editing in overflow mode (host is overflow:auto): stop it
       // from scrolling the bars instead of editing the hovered value.
       we.preventDefault();
@@ -434,13 +434,13 @@ export class MdBarChartLC extends Diagram {
           ? rows[(i <= 0 ? rows.length : i) - 1] ?? null : rows[(i + 1) % rows.length] ?? null;
         selected.value = next; ke.preventDefault(); return;
       }
-      if (!cur || this.sortBy === 'value') return;
+      if (!cur) return;
       const step = ke.shiftKey ? 5 : 1;
       if (ke.key === "ArrowRight") { mutateDatum(cur, +step); ke.preventDefault(); }
       else if (ke.key === "ArrowLeft") { mutateDatum(cur, -step); ke.preventDefault(); }
     });
     this.addEventListener("pointerdown", e => {
-      if (dragController.active || this.sortBy === 'value') return;
+      if (dragController.active) return;
       const pe = e as PointerEvent;
       const { x, y } = localPoint(pe);
       const pt = findAtPixelY(y);
@@ -531,7 +531,7 @@ export class MdBarChartLC extends Diagram {
 
       // Drag handle at bar right end.
       const handlePos = Vec.derive(() => ({ x: plotX + barW.value, y: barCY.value }));
-      const handleOpacity = derive(() => { const d = di(); return this.sortBy !== 'value' && (hover.value === d || selected.value === d) ? 1 : 0; });
+      const handleOpacity = derive(() => { const d = di(); return (hover.value === d || selected.value === d) ? 1 : 0; });
       const handle = s(circle(handlePos, derive(() => { const d = di(); return selected.value === d ? 6 : 5; }), {
         fill: derive(() => { const d = di(); return selected.value === d ? "#fff" : hoverColor; }),
         stroke: "#0b0d12", strokeWidth: 1.5, opacity: handleOpacity,

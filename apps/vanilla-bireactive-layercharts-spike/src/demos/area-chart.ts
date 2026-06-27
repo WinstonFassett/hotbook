@@ -76,7 +76,6 @@ export class MdAreaChartLC extends Diagram {
       yPixel: (d) => (ctx.yScale.value as any)(d.value),
       mutateDatum: (d, delta) => mutateDatum(d, delta),
       order: () => data.value as Point[],
-      canEdit: () => this.sortBy !== 'value',
     });
 
     // Hover crosshair.

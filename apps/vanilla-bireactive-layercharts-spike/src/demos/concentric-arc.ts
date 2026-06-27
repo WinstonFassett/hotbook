@@ -231,7 +231,7 @@ export class MdConcentricArcLC extends Diagram {
       // Drag the handle around the ring to set its value; the shared controller
       // owns move/up/Esc and reverts on Esc.
       handleEl.el.addEventListener("pointerdown", (e) => {
-        if (dragController.active || this.sortBy === 'value') return;
+        if (dragController.active) return;
         const d = di();
         if (!d) return;
         const pe = e as PointerEvent;
@@ -269,7 +269,7 @@ export class MdConcentricArcLC extends Diagram {
 
     svgEl.addEventListener("wheel", (e) => {
       const we = e as WheelEvent;
-      if (!we.ctrlKey || this.sortBy === 'value') return;
+      if (!we.ctrlKey) return;
       const t = wheelController.begin(selected.value ?? hover.value ?? lastRing, wheelConfig);
       if (!t) return;
       we.preventDefault();

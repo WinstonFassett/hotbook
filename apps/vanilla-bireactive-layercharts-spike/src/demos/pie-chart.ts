@@ -171,15 +171,15 @@ export class MdPieChartLC extends Diagram {
           stroke: derive(() => active.value ? "#fff" : "#000"),
           strokeWidth: 1.5,
         }));
-        // Cancelable drag: snapshots [a,b] on down; gated on sortBy.
-        if (this.sortBy !== 'value') {
-          dragCancelable(dot, knob, [a, b], {
-            host: this,
-            onStart: () => { active.value = true; (this as any).gestureActive = true; },
-            onEnd: () => { active.value = false; (this as any).gestureActive = false; },
-          });
-          dot.el.style.cursor = "grab";
-        }
+        // Cancelable divider drag: snapshots [a,b] on down, redistributes between
+        // the two adjacent slices. Pie layout is .sort(null) (never reorders), so
+        // there is no sort-order concern here.
+        dragCancelable(dot, knob, [a, b], {
+          host: this,
+          onStart: () => { active.value = true; (this as any).gestureActive = true; },
+          onEnd: () => { active.value = false; (this as any).gestureActive = false; },
+        });
+        dot.el.style.cursor = "grab";
         dot.el.addEventListener("pointerenter", () => { active.value = true; });
         dot.el.addEventListener("pointerleave", () => { if (!(this as any).gestureActive) active.value = false; });
       }
@@ -187,7 +187,7 @@ export class MdPieChartLC extends Diagram {
 
     this.addEventListener("wheel", (e) => {
       const we = e as WheelEvent;
-      if (!we.ctrlKey || this.sortBy === 'value') return;
+      if (!we.ctrlKey) return;
       const t = wheelController.begin(hover.value ?? selected.value, wheelConfig);
       if (!t) return;
       we.preventDefault();
