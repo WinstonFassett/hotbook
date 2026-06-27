@@ -212,7 +212,7 @@ export class MdBarChartLC extends Diagram {
     const hlTarget = derive(() => hover.value ?? selected.value);
     const hlX = derive(() => {
       const t = hlTarget.value; if (!t) return -9999;
-      const i = rows0.indexOf(t);
+      const i = (data.value as Bar[]).indexOf(t);
       return i < 0 ? -9999 : (xBand.value(String(i)) ?? 0) - (xBand.value.step() - xBand.value.bandwidth()) / 2;
     });
     const hlRect = s(rect(hlX, plotY, derive(() => xBand.value.step()), derive(() => plotH.value), {
@@ -221,32 +221,33 @@ export class MdBarChartLC extends Diagram {
     hlRect.el.style.transition = "x 0.15s ease, opacity 0.1s ease";
     hlRect.el.style.pointerEvents = "none";
 
-    // Bars.
-    for (let idx = 0; idx < rows0.length; idx++) {
-      const d = rows0[idx]!;
+    // Bars — MAX_ROWS slots; each reads data.value[idx] live so sort reorders visually.
+    const MAX_ROWS = rows0.length;
+    for (let idx = 0; idx < MAX_ROWS; idx++) {
+      const di = (): Bar | null => (data.value as Bar[])[idx] ?? null;
       const key = String(idx);
       const base = this.#barColor(idx);
       const hoverColor = this.#hoverColor(idx);
 
       const barX = derive(() => xBand.value(key) ?? 0);
       const barW = derive(() => xBand.value.bandwidth());
-      const barY = derive(() => (ctx.yScale.value as any)(d.value));
+      const barY = derive(() => { const d = di(); return d ? (ctx.yScale.value as any)(d.value) : plotY + plotH.value; });
       const barH = derive(() => Math.max(0, plotY + plotH.value - barY.value));
-      const fill = derive(() => selected.value === d ? "#fff" : hover.value === d ? hoverColor : base);
+      const fill = derive(() => { const d = di(); return selected.value === d ? "#fff" : hover.value === d ? hoverColor : base; });
 
       const tile = s(rect(barX, barY, barW, barH, { fill, corner: 2 }));
       tile.el.style.cursor = "pointer";
-      tile.el.addEventListener("pointerenter", () => { if (!wheelController.active) hover.value = d; });
-      tile.el.addEventListener("pointerleave", () => { if (!wheelController.active && hover.value === d) hover.value = null; });
-      tile.el.addEventListener("click", () => { selected.value = selected.value === d ? null : d; });
+      tile.el.addEventListener("pointerenter", () => { const d = di(); if (!wheelController.active && d) hover.value = d; });
+      tile.el.addEventListener("pointerleave", () => { const d = di(); if (!wheelController.active && d && hover.value === d) hover.value = null; });
+      tile.el.addEventListener("click", () => { const d = di(); if (!d) return; selected.value = selected.value === d ? null : d; });
 
       const barCX = derive(() => barX.value + barW.value / 2);
 
       // Inside label (labelMode: inside | both).
       if (this.labelMode === 'inside' || this.labelMode === 'both') {
         const insideOpacity = derive(() => barH.value >= (this.minBandSize || 48) ? 1 : 0);
-        const labelFill = derive(() => selected.value === d ? base : "#fff");
-        s(label(Vec.derive(() => ({ x: barCX.value, y: barY.value + 14 })), d.label,
+        const labelFill = derive(() => { const d = di(); return selected.value === d ? base : "#fff"; });
+        s(label(Vec.derive(() => ({ x: barCX.value, y: barY.value + 14 })), derive(() => di()?.label ?? ""),
           { size: 10, align: Anchor.Center, fill: labelFill, opacity: insideOpacity }));
       }
 
@@ -254,28 +255,28 @@ export class MdBarChartLC extends Diagram {
       if (this.valueMode !== 'none') {
         if (this.valueMode === 'inside') {
           const insideOpacity = derive(() => barH.value >= (this.minBandSize || 48) ? 1 : 0);
-          const labelFill = derive(() => selected.value === d ? base : "#fff");
+          const labelFill = derive(() => { const d = di(); return selected.value === d ? base : "#fff"; });
           s(label(Vec.derive(() => ({ x: barCX.value, y: barY.value + (this.labelMode !== 'axis' ? 28 : 14) })),
-            derive(() => `${Math.round(d.value)}`),
+            derive(() => { const d = di(); return d ? `${Math.round(d.value)}` : ""; }),
             { size: 10, align: Anchor.Center, fill: labelFill, opacity: insideOpacity }));
         } else {
           s(label(Vec.derive(() => ({ x: barCX.value, y: barY.value - 6 })),
-            derive(() => `${Math.round(d.value)}`),
+            derive(() => { const d = di(); return d ? `${Math.round(d.value)}` : ""; }),
             { size: 10, align: Anchor.Center, fill: "#888", opacity: derive(() => barH.value > 0 ? 1 : 0) }));
         }
       }
 
       // Drag handle at bar top.
       const handlePos = Vec.derive(() => ({ x: barCX.value, y: barY.value }));
-      const handleOpacity = derive(() => this.sortBy !== 'value' && (hover.value === d || selected.value === d) ? 1 : 0);
-      const handle = s(circle(handlePos, derive(() => selected.value === d ? 6 : 5), {
-        fill: derive(() => selected.value === d ? "#fff" : hoverColor),
+      const handleOpacity = derive(() => { const d = di(); return this.sortBy !== 'value' && (hover.value === d || selected.value === d) ? 1 : 0; });
+      const handle = s(circle(handlePos, derive(() => { const d = di(); return selected.value === d ? 6 : 5; }), {
+        fill: derive(() => { const d = di(); return selected.value === d ? "#fff" : hoverColor; }),
         stroke: "#0b0d12", strokeWidth: 1.5, opacity: handleOpacity,
       }));
       handle.el.style.cursor = "ns-resize";
       handle.el.style.transition = "opacity 0.1s";
-      handle.el.addEventListener("pointerenter", () => { if (!wheelController.active) hover.value = d; });
-      handle.el.addEventListener("pointerleave", () => { if (!wheelController.active && hover.value === d) hover.value = null; });
+      handle.el.addEventListener("pointerenter", () => { const d = di(); if (!wheelController.active && d) hover.value = d; });
+      handle.el.addEventListener("pointerleave", () => { const d = di(); if (!wheelController.active && d && hover.value === d) hover.value = null; });
     }
 
     s(label(Vec.derive(() => ({ x: Wc.value / 2, y: 12 })), derive(() => {
@@ -321,9 +322,10 @@ export class MdBarChartLC extends Diagram {
     const findAtPixelY = (py: number): Bar | null => {
       const ys = yBand.value;
       const step = ys.step();
-      for (let i = 0; i < rows0.length; i++) {
+      const rows = data.value as Bar[];
+      for (let i = 0; i < rows.length; i++) {
         const by = ys(String(i)) ?? -1;
-        if (py >= by && py < by + step) return rows0[i]!;
+        if (py >= by && py < by + step) return rows[i]!;
       }
       return null;
     };
@@ -406,7 +408,7 @@ export class MdBarChartLC extends Diagram {
     const hlTarget = derive(() => hover.value ?? selected.value);
     const hlY = derive(() => {
       const t = hlTarget.value; if (!t) return -9999;
-      const i = rows0.indexOf(t);
+      const i = (data.value as Bar[]).indexOf(t);
       return i < 0 ? -9999 : (yBand.value(String(i)) ?? 0) - (yBand.value.step() - yBand.value.bandwidth()) / 2;
     });
     const hlRect = s(rect(plotX, hlY, derive(() => plotW.value), derive(() => yBand.value.step()), {
@@ -415,34 +417,33 @@ export class MdBarChartLC extends Diagram {
     hlRect.el.style.transition = "y 0.15s ease, opacity 0.1s ease";
     hlRect.el.style.pointerEvents = "none";
 
-    // Axis labels on left (labelMode: axis | both).
+    // Axis labels on left — live read so sort reorders.
     if (this.labelMode === 'axis' || this.labelMode === 'both') {
       for (let i = 0; i < rows0.length; i++) {
-        const d = rows0[i]!;
         const barCY = derive(() => (yBand.value(String(i)) ?? 0) + yBand.value.bandwidth() / 2);
-        s(label(Vec.derive(() => ({ x: plotX - 6, y: barCY.value })), d.label,
+        s(label(Vec.derive(() => ({ x: plotX - 6, y: barCY.value })), derive(() => (data.value as Bar[])[i]?.label ?? ""),
           { size: 11, align: Anchor.Right, fill: "#888", opacity: 0.8 }));
       }
     }
 
-    // Bars.
+    // Bars — live read from data.value[idx] so sort reorders visually.
     for (let idx = 0; idx < rows0.length; idx++) {
-      const d = rows0[idx]!;
+      const di = (): Bar | null => (data.value as Bar[])[idx] ?? null;
       const key = String(idx);
       const base = this.#barColor(idx);
       const hoverColor = this.#hoverColor(idx);
 
       const barY = derive(() => yBand.value(key) ?? 0);
       const barH = derive(() => yBand.value.bandwidth());
-      const barW = derive(() => Math.max(0, (xLinear.value as any)(d.value) - plotX));
-      const fill = derive(() => selected.value === d ? "#fff" : hover.value === d ? hoverColor : base);
-      const labelFill = derive(() => selected.value === d ? base : "#fff");
+      const barW = derive(() => { const d = di(); return d ? Math.max(0, (xLinear.value as any)(d.value) - plotX) : 0; });
+      const fill = derive(() => { const d = di(); return selected.value === d ? "#fff" : hover.value === d ? hoverColor : base; });
+      const labelFill = derive(() => { const d = di(); return selected.value === d ? base : "#fff"; });
 
       const tile = s(rect(plotX, barY, barW, barH, { fill, corner: 3 }));
       tile.el.style.cursor = "pointer";
-      tile.el.addEventListener("pointerenter", () => { if (!wheelController.active) hover.value = d; });
-      tile.el.addEventListener("pointerleave", () => { if (!wheelController.active && hover.value === d) hover.value = null; });
-      tile.el.addEventListener("click", () => { selected.value = selected.value === d ? null : d; });
+      tile.el.addEventListener("pointerenter", () => { const d = di(); if (!wheelController.active && d) hover.value = d; });
+      tile.el.addEventListener("pointerleave", () => { const d = di(); if (!wheelController.active && d && hover.value === d) hover.value = null; });
+      tile.el.addEventListener("click", () => { const d = di(); if (!d) return; selected.value = selected.value === d ? null : d; });
 
       const barCY = derive(() => barY.value + barH.value / 2);
       const minBand = this.minBandSize || 60;
@@ -450,7 +451,7 @@ export class MdBarChartLC extends Diagram {
       // Inside label (labelMode: inside | both).
       if (this.labelMode === 'inside' || this.labelMode === 'both') {
         const insideOpacity = derive(() => barW.value >= minBand ? 1 : 0);
-        s(label(Vec.derive(() => ({ x: plotX + 8, y: barCY.value })), d.label,
+        s(label(Vec.derive(() => ({ x: plotX + 8, y: barCY.value })), derive(() => di()?.label ?? ""),
           { size: 11, align: Anchor.Left, fill: labelFill, opacity: insideOpacity }));
       }
 
@@ -459,31 +460,31 @@ export class MdBarChartLC extends Diagram {
         if (this.valueMode === 'inside') {
           const insideOpacity = derive(() => barW.value >= minBand ? 1 : 0);
           s(label(Vec.derive(() => ({ x: plotX + barW.value - 8, y: barCY.value })),
-            derive(() => `${Math.round(d.value)}`),
+            derive(() => { const d = di(); return d ? `${Math.round(d.value)}` : ""; }),
             { size: 11, align: Anchor.Right, fill: labelFill, opacity: insideOpacity }));
           // Fallback value outside when bar too short.
           const outsideOpacity = derive(() => barW.value < minBand ? 1 : 0);
           s(label(Vec.derive(() => ({ x: plotX + barW.value + 6, y: barCY.value })),
-            derive(() => `${Math.round(d.value)}`),
+            derive(() => { const d = di(); return d ? `${Math.round(d.value)}` : ""; }),
             { size: 11, align: Anchor.Left, fill: "#aaa", opacity: outsideOpacity }));
         } else {
           s(label(Vec.derive(() => ({ x: plotX + barW.value + 6, y: barCY.value })),
-            derive(() => `${Math.round(d.value)}`),
+            derive(() => { const d = di(); return d ? `${Math.round(d.value)}` : ""; }),
             { size: 11, align: Anchor.Left, fill: "#888", opacity: derive(() => barW.value > 0 ? 1 : 0) }));
         }
       }
 
       // Drag handle at bar right end.
       const handlePos = Vec.derive(() => ({ x: plotX + barW.value, y: barCY.value }));
-      const handleOpacity = derive(() => this.sortBy !== 'value' && (hover.value === d || selected.value === d) ? 1 : 0);
-      const handle = s(circle(handlePos, derive(() => selected.value === d ? 6 : 5), {
-        fill: derive(() => selected.value === d ? "#fff" : hoverColor),
+      const handleOpacity = derive(() => { const d = di(); return this.sortBy !== 'value' && (hover.value === d || selected.value === d) ? 1 : 0; });
+      const handle = s(circle(handlePos, derive(() => { const d = di(); return selected.value === d ? 6 : 5; }), {
+        fill: derive(() => { const d = di(); return selected.value === d ? "#fff" : hoverColor; }),
         stroke: "#0b0d12", strokeWidth: 1.5, opacity: handleOpacity,
       }));
       handle.el.style.cursor = "ew-resize";
       handle.el.style.transition = "opacity 0.1s";
-      handle.el.addEventListener("pointerenter", () => { if (!wheelController.active) hover.value = d; });
-      handle.el.addEventListener("pointerleave", () => { if (!wheelController.active && hover.value === d) hover.value = null; });
+      handle.el.addEventListener("pointerenter", () => { const d = di(); if (!wheelController.active && d) hover.value = d; });
+      handle.el.addEventListener("pointerleave", () => { const d = di(); if (!wheelController.active && d && hover.value === d) hover.value = null; });
     }
 
     s(label(Vec.derive(() => ({ x: Wc.value / 2, y: 8 })), derive(() => {

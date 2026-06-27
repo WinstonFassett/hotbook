@@ -59,7 +59,7 @@ export class MdConcentricArcLC extends Diagram {
   readonly dataCell = cell<readonly Ring[]>(makeData());
   sortBy: 'index' | 'value' = 'index';
   set externalData(v: { label: string; value: number }[] | undefined) {
-    if (v) this.dataCell.value = v as unknown as Ring[];
+    if (v) this.dataCell.value = (v as unknown as Ring[]).slice(0, MAX_RINGS);
   }
   get externalData(): { label: string; value: number }[] | undefined {
     return this.dataCell.value as unknown as { label: string; value: number }[];
@@ -74,7 +74,10 @@ export class MdConcentricArcLC extends Diagram {
     const cy = derive(() => Hc.value / 2);
 
     const data = this.dataCell;
+    // n for the static render loop (mount-time snapshot, safe because externalData caps at MAX_RINGS).
     const n = Math.min((data.value as Ring[]).length, MAX_RINGS);
+    // Reactive count drives thickness so it re-derives if data changes after mount.
+    const nCell = derive(() => Math.min((data.value as Ring[]).length, MAX_RINGS));
 
     // Outermost ring outer radius — fills the container with padding for end-cap labels.
     const rOuterStart = derive(() => Math.min(Wc.value, Hc.value) / 2 - 30);
@@ -82,7 +85,7 @@ export class MdConcentricArcLC extends Diagram {
     // (n + INNER_RESERVE) * (thickness + gap) - gap = rOuterStart
     // → thickness = (rOuterStart + gap) / (n + INNER_RESERVE) - gap
     const ringThickness = derive(() =>
-      Math.max(6, (rOuterStart.value + RING_GAP) / (n + INNER_RESERVE) - RING_GAP)
+      Math.max(6, (rOuterStart.value + RING_GAP) / (nCell.value + INNER_RESERVE) - RING_GAP)
     );
     const ringStep = derive(() => ringThickness.value + RING_GAP);
     const hover = cell<Ring | null>(null);
@@ -145,28 +148,44 @@ export class MdConcentricArcLC extends Diagram {
     const g = s(group({ translate: Vec.derive(() => ({ x: cx.value, y: cy.value })) }));
     const gs = mount(g);
 
-    // Rings are ordered by current sort rank. Capped at n (≤ MAX_RINGS).
-    for (let i = 0; i < n; i++) {
-      const d = (data.value as Ring[])[i]!;
-      // Derive radius from the ring's current rank in data.value (sort-stable).
-      const rankOf = () => (data.value as Ring[]).indexOf(d);
+    // Always mount MAX_RINGS slots; slots past nCell.value are hidden.
+    // di() reads the live datum at slot i so external data replacements are picked up.
+    for (let i = 0; i < MAX_RINGS; i++) {
+      const di = (): Ring | null => (data.value as Ring[])[i] ?? null;
+      // Derive radius from the ring's current visual rank. When sortBy=value, rank by descending value.
+      const rankOf = () => {
+        const rows = data.value as Ring[];
+        const d = di();
+        if (!d) return i; // hidden slot — park at its index
+        if (this.sortBy === 'value') {
+          const sorted = [...rows].sort((a, b) => b.value - a.value);
+          return sorted.indexOf(d);
+        }
+        return rows.indexOf(d);
+      };
       const rOuter = derive(() => rOuterStart.value - rankOf() * ringStep.value);
       const rInner = derive(() => rOuter.value - ringThickness.value);
       const corner = derive(() => Math.min(ringThickness.value / 2, 14));
 
-      // Full-circle track.
+      // Hidden when this slot is beyond current data length.
+      const visible = derive(() => i < nCell.value && di() != null);
+      const slotColor = derive(() => di()?.color ?? '#888');
+
       const trackEl = gs(pathD(
-        derive(() => rInner.value >= 1 ? arcD(rOuter.value, rInner.value, START, START + TWO_PI, corner.value) : ""),
-        { fill: d.color, opacity: derive(() => hover.value === d || selected.value === d ? 0.25 : 0.18) }
+        derive(() => visible.value && rInner.value >= 1 ? arcD(rOuter.value, rInner.value, START, START + TWO_PI, corner.value) : ""),
+        { fill: slotColor, opacity: derive(() => { const d = di(); return hover.value === d || selected.value === d ? 0.25 : 0.18; }) }
       ));
       trackEl.el.style.cursor = "pointer";
-      trackEl.el.addEventListener("pointerenter", () => { hover.value = d; });
-      trackEl.el.addEventListener("pointerleave", () => { if (hover.value === d) hover.value = null; });
-      trackEl.el.addEventListener("click", () => { selected.value = selected.value === d ? null : d; this.focus(); });
+      trackEl.el.addEventListener("pointerenter", () => { const d = di(); if (d) hover.value = d; });
+      trackEl.el.addEventListener("pointerleave", () => { const d = di(); if (d && hover.value === d) hover.value = null; });
+      trackEl.el.addEventListener("click", () => { const d = di(); if (!d) return; selected.value = selected.value === d ? null : d; this.focus(); });
 
-      // Value arc — scale out slightly on hover/select instead of dimming others.
+      // Value arc.
       const valueD = derive(() => {
-        void data.value; // subscribe so mutateDatum's data.value = [...] triggers redraw
+        void data.value;
+        if (!visible.value) return "";
+        const d = di();
+        if (!d) return "";
         const frac = d.value / 100;
         const endAngle = START + frac * TWO_PI;
         if (Math.abs(endAngle - START) < 0.001) return "";
@@ -175,30 +194,28 @@ export class MdConcentricArcLC extends Diagram {
         const ri = rInner.value - (isActive ? 2 : 0);
         return arcD(ro, ri, START, endAngle, corner.value);
       });
-      const valueStroke = derive(() =>
-        selected.value === d ? "#fff" : hover.value === d ? d.color : "none"
-      );
-      const valueStrokeW = derive(() =>
-        selected.value === d ? 1.5 : hover.value === d ? 3 : 0
-      );
-      const valueEl = gs(pathD(valueD, { fill: d.color, stroke: valueStroke, strokeWidth: valueStrokeW }));
+      const valueStroke = derive(() => { const d = di(); return selected.value === d ? "#fff" : hover.value === d ? (d?.color ?? "none") : "none"; });
+      const valueStrokeW = derive(() => { const d = di(); return selected.value === d ? 1.5 : hover.value === d ? 3 : 0; });
+      const valueEl = gs(pathD(valueD, { fill: slotColor, stroke: valueStroke, strokeWidth: valueStrokeW }));
       valueEl.el.style.cursor = "pointer";
       valueEl.el.style.transition = "d 0.1s";
-      valueEl.el.addEventListener("pointerenter", () => { hover.value = d; });
-      valueEl.el.addEventListener("pointerleave", () => { if (hover.value === d) hover.value = null; });
-      valueEl.el.addEventListener("click", () => { selected.value = selected.value === d ? null : d; this.focus(); });
+      valueEl.el.addEventListener("pointerenter", () => { const d = di(); if (d) hover.value = d; });
+      valueEl.el.addEventListener("pointerleave", () => { const d = di(); if (d && hover.value === d) hover.value = null; });
+      valueEl.el.addEventListener("click", () => { const d = di(); if (!d) return; selected.value = selected.value === d ? null : d; this.focus(); });
 
-      // End-cap drag handle — circle at the arc tip, visible on hover/select.
+      // End-cap drag handle.
       const handlePos = Vec.derive(() => {
         void data.value;
+        const d = di();
+        if (!d || !visible.value) return { x: -1000, y: -1000 };
         const d3Angle = START + (d.value / 100) * TWO_PI;
         const svgAngle = d3Angle - Math.PI / 2;
         const rMid = (rOuter.value + rInner.value) / 2;
         return { x: cx.value + Math.cos(svgAngle) * rMid, y: cy.value + Math.sin(svgAngle) * rMid };
       });
-      const handleR = derive(() => selected.value === d ? 7 : 6);
-      const handleFill = derive(() => selected.value === d ? "#fff" : d.color);
-      const handleOpacity = derive(() => (hover.value === d || selected.value === d) ? 1 : 0);
+      const handleR = derive(() => { const d = di(); return selected.value === d ? 7 : 6; });
+      const handleFill = derive(() => { const d = di(); return selected.value === d ? "#fff" : (d?.color ?? '#888'); });
+      const handleOpacity = derive(() => { const d = di(); return (hover.value === d || selected.value === d) ? 1 : 0; });
       const handleEl = s(circle(handlePos, handleR, {
         fill: handleFill,
         stroke: "#0b0d12",
@@ -207,8 +224,8 @@ export class MdConcentricArcLC extends Diagram {
       }));
       handleEl.el.style.cursor = "grab";
       handleEl.el.style.transition = "opacity 0.12s";
-      handleEl.el.addEventListener("pointerenter", () => { if (!dragController.active) hover.value = d; });
-      handleEl.el.addEventListener("pointerleave", () => { if (!dragController.active && hover.value === d) hover.value = null; });
+      handleEl.el.addEventListener("pointerenter", () => { const d = di(); if (!dragController.active && d) hover.value = d; });
+      handleEl.el.addEventListener("pointerleave", () => { const d = di(); if (!dragController.active && d && hover.value === d) hover.value = null; });
       // Drag the handle around the ring to set its value; the shared controller
       // owns move/up/Esc and reverts on Esc.
       handleEl.el.addEventListener("pointerdown", (e) => {
@@ -261,13 +278,16 @@ export class MdConcentricArcLC extends Diagram {
       const lx = (pe.clientX - r.left) * sx - cx.peek();
       const ly = (pe.clientY - r.top) * sy - cy.peek();
       const dist = Math.sqrt(lx * lx + ly * ly);
-      // Find which ring the pointer is over by radius. Rank = position in data.value (sorted order).
+      // Find which ring the pointer is over by radius. Use visual rank order.
       const rows = data.value as Ring[];
+      const ordered = this.sortBy === 'value'
+        ? [...rows].sort((a, b) => b.value - a.value)
+        : rows;
       let hit: Ring | null = null;
-      for (let rank = 0; rank < rows.length; rank++) {
+      for (let rank = 0; rank < ordered.length; rank++) {
         const ro = rOuterStart.peek() - rank * ringStep.peek();
         const ri = ro - ringThickness.peek();
-        if (dist >= ri - 4 && dist <= ro + 4) { hit = rows[rank]!; break; }
+        if (dist >= ri - 4 && dist <= ro + 4) { hit = ordered[rank]!; break; }
       }
       if (!selected.value) hover.value = hit;
       lastRing = hit;
