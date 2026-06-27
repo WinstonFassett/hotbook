@@ -217,7 +217,6 @@ function useLiveFlatElement<D>(
   const nodesRef = useRef(nodes); nodesRef.current = nodes
   const onUpdateRef = useRef(onUpdate); onUpdateRef.current = onUpdate
   const onUpdateManyRef = useRef(onUpdateMany); onUpdateManyRef.current = onUpdateMany
-
   // Mount once per shape. Rebuild only when the shape key changes.
   useEffect(() => {
     const container = containerRef.current
@@ -452,7 +451,7 @@ export function BrLcLine({ nodes, measureKey, onUpdate }: Omit<FlatProps, 'sortB
   const ref = useLiveFlatElement<{ date: Date; value: number }>({
     tag: 'v-br-line', ids, measureKey,
     values: leaves.map(n => n.measures[measureKey] ?? 0),
-    shapeKey: `${measureKey}|${ids.join(',')}`,
+    shapeKey: `${measureKey}|${[...ids].sort().join(',')}`,
     build: () => leaves.map((n, i) => ({ date: new Date(SERIES_START + i * DAY_MS), value: n.measures[measureKey] ?? 0 })),
     readValue: d => d.value, writeValue: (d, v) => { d.value = v },
   }, nodes, onUpdate)
@@ -465,7 +464,7 @@ export function BrLcArea({ nodes, measureKey, onUpdate }: Omit<FlatProps, 'sortB
   const ref = useLiveFlatElement<{ date: Date; value: number }>({
     tag: 'v-br-area', ids, measureKey,
     values: leaves.map(n => n.measures[measureKey] ?? 0),
-    shapeKey: `${measureKey}|${ids.join(',')}`,
+    shapeKey: `${measureKey}|${[...ids].sort().join(',')}`,
     build: () => leaves.map((n, i) => ({ date: new Date(SERIES_START + i * DAY_MS), value: n.measures[measureKey] ?? 0 })),
     readValue: d => d.value, writeValue: (d, v) => { d.value = v },
   }, nodes, onUpdate)
