@@ -9,9 +9,15 @@ import { Anchor, cell, circle, derive, Diagram, effect as biEffect, label, line,
 import { scaleLinear, scaleBand } from "d3-scale";
 import { axis } from "../lib/axis";
 import { chartContext } from "../lib/chart-context";
-import { wheelController, dragController } from "../lib/interaction";
+import { wheelController, dragController, dynamicWheelStep } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE, type HostSize } from "../lib/host-size";
+import {
+  GESTURE_ACTIVE_CLASS,
+  GESTURE_SUPPRESSION_CSS,
+  hoverTransition,
+  settleTransition,
+} from "../lib/transitions";
 
 const W = 720;
 const H = 360;
@@ -34,7 +40,7 @@ function makeData(): Bar[] {
 }
 
 export class MdBarChartLC extends Diagram {
-  static styles = `text { pointer-events: none; }${FILL_STYLE}`
+  static styles = `text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}`
 
   readonly dataCell = cell<readonly Bar[]>(makeData());
 
@@ -165,14 +171,15 @@ export class MdBarChartLC extends Diagram {
       data.value = [...data.value];
     };
 
+    const setGestureActive = (on: boolean) => this.classList.toggle(GESTURE_ACTIVE_CLASS, on);
     const wheelConfig = {
-      snapshot: (d: Bar) => d.value,
+      snapshot: (d: Bar) => { setGestureActive(true); return d.value; },
       restore: (d: Bar, v: number) => mutateDatum(d, v - d.value),
-      onEnd: () => { hover.value = null; this.dispatchEvent(new CustomEvent("gesturecommit")); },
+      onEnd: () => { setGestureActive(false); hover.value = null; this.dispatchEvent(new CustomEvent("gesturecommit")); },
     };
     let dragPointerId = -1;
     const dragConfig = {
-      snapshot: (d: Bar) => d.value,
+      snapshot: (d: Bar) => { setGestureActive(true); return d.value; },
       restore: (d: Bar, v: number) => mutateDatum(d, v - d.value),
       onMove: (pe: PointerEvent) => {
         const t = dragController.target as Bar | null;
@@ -183,6 +190,7 @@ export class MdBarChartLC extends Diagram {
         if (dragPointerId >= 0 && (this as any).hasPointerCapture?.(dragPointerId)) (this as any).releasePointerCapture(dragPointerId);
         dragPointerId = -1;
         (this as any).gestureActive = false;
+        setGestureActive(false);
         this.dispatchEvent(new CustomEvent("gesturecommit"));
       },
     };
@@ -201,7 +209,8 @@ export class MdBarChartLC extends Diagram {
       we.stopPropagation();
       const t = wheelController.begin(hover.value ?? selected.value, wheelConfig);
       if (!t) return;
-      mutateDatum(t, we.deltaY < 0 ? (we.shiftKey ? 5 : 1) : (we.shiftKey ? -5 : -1));
+      const s = dynamicWheelStep(t.value, we.shiftKey);
+      mutateDatum(t, we.deltaY < 0 ? +s : -s);
     }, { passive: false });
     this.addEventListener("keydown", e => {
       const ke = e as KeyboardEvent;
@@ -215,7 +224,7 @@ export class MdBarChartLC extends Diagram {
         selected.value = next; ke.preventDefault(); return;
       }
       if (!cur) return;
-      const step = ke.shiftKey ? 5 : 1;
+      const step = dynamicWheelStep(cur.value, ke.shiftKey);
       if (ke.key === "ArrowUp") { mutateDatum(cur, +step); ke.preventDefault(); }
       else if (ke.key === "ArrowDown") { mutateDatum(cur, -step); ke.preventDefault(); }
     });
@@ -268,6 +277,11 @@ export class MdBarChartLC extends Diagram {
 
       const tile = s(rect(barX, barY, barW, barH, { fill, corner: 2 }));
       tile.el.style.cursor = "pointer";
+      // Value-change settle: height/y interpolate when value changes outside a
+      // gesture (external data, arrow-key edit, wheel-commit). Suppressed
+      // during active wheel/drag via .vf-gesture-active on the host, so
+      // cursor feedback stays instant (Part 2 / Interaction Principle 4).
+      tile.el.style.transition = settleTransition(["y", "height", "fill"]);
       tile.el.addEventListener("pointerenter", () => { const d = di(); if (!wheelController.active && d) hover.value = d; });
       tile.el.addEventListener("pointerleave", () => { const d = di(); if (!wheelController.active && d && hover.value === d) hover.value = null; });
       tile.el.addEventListener("click", () => { const d = di(); if (!d) return; selected.value = selected.value === d ? null : d; });
@@ -305,7 +319,7 @@ export class MdBarChartLC extends Diagram {
         stroke: "#0b0d12", strokeWidth: 1.5, opacity: handleOpacity,
       }));
       handle.el.style.cursor = "ns-resize";
-      handle.el.style.transition = "opacity 0.1s";
+      handle.el.style.transition = hoverTransition("opacity");
       handle.el.addEventListener("pointerenter", () => { const d = di(); if (!wheelController.active && d) hover.value = d; });
       handle.el.addEventListener("pointerleave", () => { const d = di(); if (!wheelController.active && d && hover.value === d) hover.value = null; });
     }
@@ -390,14 +404,15 @@ export class MdBarChartLC extends Diagram {
       data.value = [...data.value];
     };
 
+    const setGestureActive = (on: boolean) => this.classList.toggle(GESTURE_ACTIVE_CLASS, on);
     const wheelConfig = {
-      snapshot: (d: Bar) => d.value,
+      snapshot: (d: Bar) => { setGestureActive(true); return d.value; },
       restore: (d: Bar, v: number) => mutateDatum(d, v - d.value),
-      onEnd: () => { hover.value = null; this.dispatchEvent(new CustomEvent("gesturecommit")); },
+      onEnd: () => { setGestureActive(false); hover.value = null; this.dispatchEvent(new CustomEvent("gesturecommit")); },
     };
     let dragPointerId = -1;
     const dragConfig = {
-      snapshot: (d: Bar) => d.value,
+      snapshot: (d: Bar) => { setGestureActive(true); return d.value; },
       restore: (d: Bar, v: number) => mutateDatum(d, v - d.value),
       onMove: (pe: PointerEvent) => {
         const t = dragController.target as Bar | null;
@@ -408,6 +423,7 @@ export class MdBarChartLC extends Diagram {
         if (dragPointerId >= 0 && (this as any).hasPointerCapture?.(dragPointerId)) (this as any).releasePointerCapture(dragPointerId);
         dragPointerId = -1;
         (this as any).gestureActive = false;
+        setGestureActive(false);
         this.dispatchEvent(new CustomEvent("gesturecommit"));
       },
     };
@@ -426,7 +442,8 @@ export class MdBarChartLC extends Diagram {
       we.stopPropagation();
       const t = wheelController.begin(hover.value ?? selected.value, wheelConfig);
       if (!t) return;
-      mutateDatum(t, we.deltaY < 0 ? (we.shiftKey ? 5 : 1) : (we.shiftKey ? -5 : -1));
+      const s = dynamicWheelStep(t.value, we.shiftKey);
+      mutateDatum(t, we.deltaY < 0 ? +s : -s);
     }, { passive: false });
     this.addEventListener("keydown", e => {
       const ke = e as KeyboardEvent;
@@ -501,6 +518,7 @@ export class MdBarChartLC extends Diagram {
 
       const tile = s(rect(plotX, barY, barW, barH, { fill, corner: 3 }));
       tile.el.style.cursor = "pointer";
+      tile.el.style.transition = settleTransition(["width", "fill"]);
       tile.el.addEventListener("pointerenter", () => { const d = di(); if (!wheelController.active && d) hover.value = d; });
       tile.el.addEventListener("pointerleave", () => { const d = di(); if (!wheelController.active && d && hover.value === d) hover.value = null; });
       tile.el.addEventListener("click", () => { const d = di(); if (!d) return; selected.value = selected.value === d ? null : d; });
@@ -542,7 +560,7 @@ export class MdBarChartLC extends Diagram {
         stroke: "#0b0d12", strokeWidth: 1.5, opacity: handleOpacity,
       }));
       handle.el.style.cursor = "ew-resize";
-      handle.el.style.transition = "opacity 0.1s";
+      handle.el.style.transition = hoverTransition("opacity");
       handle.el.addEventListener("pointerenter", () => { const d = di(); if (!wheelController.active && d) hover.value = d; });
       handle.el.addEventListener("pointerleave", () => { const d = di(); if (!wheelController.active && d && hover.value === d) hover.value = null; });
     }

@@ -15,7 +15,7 @@ import {
 } from "bireactive";
 import { scaleSequential } from "d3-scale";
 import { interpolateCool } from "d3-scale-chromatic";
-import { wheelController } from "./interaction";
+import { wheelController, dynamicWheelStep } from "./interaction";
 import { dragCancelable } from "./esc-contract";
 import {
   buildTopology,
@@ -129,7 +129,7 @@ export function sankeyScene(
     nodeWidth = 12, nodePadding = 6,
     interp = interpolateCool, labelSize = 10,
   } = opts;
-  const stepFn = opts.stepFn ?? ((_v: number, shift: boolean) => shift ? 5 : 1);
+  const stepFn = opts.stepFn ?? ((v: number, shift: boolean) => dynamicWheelStep(v, shift));
 
   const nodeColorProp = opts.nodeColorProp ?? cell<NodeColorProp>("layer");
   const linkColorMode = opts.linkColorMode ?? cell<LinkColorMode>("source");
