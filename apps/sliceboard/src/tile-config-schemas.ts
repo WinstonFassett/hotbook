@@ -28,13 +28,13 @@ export const TILE_CONFIG_SCHEMAS: Map<TileKind, VizConfigSchema> = new Map([
   ['treetable', { pickers: { measure: true } }],
 
   // ─── bireactive LC-port flat charts ───────────────────────────────────────
-  ['br-lc-bar',             SORT_AND_GROUPBY],
+  ['br-lc-bar',             SORT_ONLY],
   ['br-lc-bands',           SORT_ONLY],
-  ['br-lc-line',            SORT_AND_GROUPBY],
-  ['br-lc-area',            SORT_AND_GROUPBY],
-  ['br-lc-pie',             SORT_AND_GROUPBY],
-  ['br-lc-radar',           SORT_AND_GROUPBY],
-  ['br-lc-concentric-arc',  SORT_AND_GROUPBY],
+  ['br-lc-line',            SORT_ONLY],
+  ['br-lc-area',            SORT_ONLY],
+  ['br-lc-pie',             SORT_ONLY],
+  ['br-lc-radar',           SORT_ONLY],
+  ['br-lc-concentric-arc',  SORT_ONLY],
 
   // ─── scatter — its own X/Y key pickers, no shared measure picker ─────────
   ['br-lc-scatter', {
@@ -49,11 +49,11 @@ export const TILE_CONFIG_SCHEMAS: Map<TileKind, VizConfigSchema> = new Map([
 
   // ─── bireactive LC-port graph charts ──────────────────────────────────────
   ['br-lc-sankey', {
-    pickers: { measure: true, sort: true, groupBy: true },
+    pickers: { measure: true, sort: true },
     scrollBody: true,
   }],
   ['br-lc-sankey-flow', { pickers: { measure: true, sort: true } }],
-  ['br-lc-tree', SORT_AND_GROUPBY],
+  ['br-lc-tree', SORT_ONLY],
 
   // ─── Retired kinds: no pickers, no scroll — entries exist so a lookup
   //     never returns undefined for a legacy persisted tile.
