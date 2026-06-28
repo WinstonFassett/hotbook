@@ -1,16 +1,17 @@
-// Segmented gauge — same 270° sweep as the single-arc gauge, but partitioned
-// into N segments. Each segment is a Num cell; the segments sum to a fixed
-// total. Boundary knobs use the canonical Vec.lens([cellA, cellB]) pattern
-// (same as pie / icicle / sunburst) so neighbor pairs redistribute their
-// shared span, with Esc-revert via dragCancelable.
+// Segmented gauge — same single-value model as the gauge (one Num cell over a
+// 270° sweep), but rendered as N discrete arc segments that "light up" as the
+// value crosses each segment boundary (battery / capacity-meter idiom; see
+// layerchart's "Segmented Arc" example). NOT N independent values — there is
+// one number here, presented in discrete chunks.
 
 import {
   Anchor, cell, circle, derive, Diagram, effect as biEffect,
-  group, label, mount, type Mount, Num, num, pathD, Vec, type Writable,
+  group, label, mount, type Mount, Num, num, pathD, rect, Vec, type Writable,
 } from "bireactive";
 import { arc as d3Arc } from "d3-shape";
 import { wheelController } from "../lib/interaction";
 import { dragCancelable } from "../lib/esc-contract";
+import { numberDrag } from "../lib/number-drag";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 
@@ -23,45 +24,40 @@ const SWEEP_SPAN = SWEEP_END - SWEEP_START;
 
 const PALETTE = ['#e08888', '#d4a86c', '#ccc060', '#7ec87e', '#60c4c0', '#7aaae8', '#b090e0', '#8899b4'];
 
-function arcD(rOuter: number, rInner: number, startAngle: number, endAngle: number, cornerRadius: number): string {
+function arcD(rOuter: number, rInner: number, startAngle: number, endAngle: number, cornerRadius: number, padAngle: number): string {
   return d3Arc()
     .innerRadius(rInner)
     .outerRadius(rOuter)
     .startAngle(startAngle)
     .endAngle(endAngle)
-    .cornerRadius(cornerRadius)(null as any) ?? "";
+    .cornerRadius(cornerRadius)
+    .padAngle(padAngle)(null as any) ?? "";
 }
 
 function d3ToSvg(d3Angle: number): number { return d3Angle - Math.PI / 2; }
 
-interface Segment {
-  id: string;
-  label: string;
-  value: Writable<Num>;
-}
-
-function makeData(): Segment[] {
-  const labels = ["Idle", "Build", "Test", "Deploy", "Review"];
-  // Random values, then we let them sum to whatever; total stays fixed across
-  // gestures because boundary knobs conserve neighbor pairs.
-  return labels.map((l) => ({ id: l, label: l, value: num(Math.round(15 + Math.random() * 30)) }));
-}
-
 export class MdGaugeSegmentedLC extends Diagram {
   static styles = `text { pointer-events: none; }${FILL_STYLE}`;
 
-  readonly dataCell = cell<readonly Segment[]>(makeData());
+  /** Single value, 0–100 by default. Identical model to MdGaugeLC. */
+  readonly valueCell: Writable<Num> = num(50);
+  minValue = 0;
+  maxValue = 100;
+  segments = 24;
+  color = PALETTE[3]!;
+  metricLabel = "";
 
-  set externalData(v: { id?: string; label: string; value: number }[] | undefined) {
+  set externalData(v: { value: number; min?: number; max?: number; color?: string; label?: string; segments?: number } | undefined) {
     if (!v) return;
-    this.dataCell.value = v.map((d) => ({
-      id: d.id ?? d.label,
-      label: d.label,
-      value: num(Math.max(0, d.value)),
-    }));
+    if (typeof v.min === "number") this.minValue = v.min;
+    if (typeof v.max === "number") this.maxValue = v.max;
+    if (typeof v.color === "string") this.color = v.color;
+    if (typeof v.label === "string") this.metricLabel = v.label;
+    if (typeof v.segments === "number") this.segments = Math.max(2, Math.round(v.segments));
+    this.valueCell.value = Math.max(this.minValue, Math.min(this.maxValue, v.value));
   }
-  get externalData(): { id: string; label: string; value: number }[] {
-    return (this.dataCell.value as Segment[]).map((d) => ({ id: d.id, label: d.label, value: d.value.value }));
+  get externalData(): { value: number; min: number; max: number; color: string; label: string; segments: number } {
+    return { value: this.valueCell.value, min: this.minValue, max: this.maxValue, color: this.color, label: this.metricLabel, segments: this.segments };
   }
 
   protected scene(s: Mount): void {
@@ -70,231 +66,187 @@ export class MdGaugeSegmentedLC extends Diagram {
     this.tabIndex = 0;
     this.style.outline = "none";
 
-    const data = this.dataCell;
-    const rows = data.value as Segment[];
+    const value = this.valueCell;
+    const minV = this.minValue;
+    const maxV = this.maxValue;
+    const range = Math.max(1, maxV - minV);
+    const color = this.color;
+    const N = this.segments;
 
     const cx = Num.derive(() => Wc.value / 2);
     const cy = Num.derive(() => Hc.value * 0.58);
     const rOuter = Num.derive(() => Math.max(40, Math.min(Wc.value, Hc.value) * 0.45));
-    const thickness = Num.derive(() => Math.max(10, rOuter.value * 0.2));
+    const thickness = Num.derive(() => Math.max(10, rOuter.value * 0.22));
     const rInner = Num.derive(() => rOuter.value - thickness.value);
     const rMid = Num.derive(() => (rOuter.value + rInner.value) / 2);
 
-    const hovered = cell<Segment | null>(null);
-    const selected = cell<Segment | null>(null);
+    const frac = derive(() => Math.max(0, Math.min(1, (value.value - minV) / range)));
 
-    // Total — reactive sum of all segment values. Drives normalization so
-    // boundary edits (which conserve neighbor pairs) keep the gauge full.
-    const total = derive(() => (data.value as Segment[]).reduce((a, b) => a + b.value.value, 0));
+    const hovered = cell(false);
+    const focused = cell(false);
+    const active = cell(false);
 
-    // Reactive cumulative fractions in [0,1] for segment ENDS, in order.
-    // ends[i] = fraction-of-total after segment i. Length === rows.length.
-    const ends = derive(() => {
-      const rs = data.value as Segment[];
-      const t = total.value || 1;
-      const out: number[] = [];
-      let acc = 0;
-      for (const r of rs) { acc += r.value.value; out.push(acc / t); }
-      return out;
-    });
-
-    // All arcs render inside a centered group.
-    const g = s(group({ translate: Vec.derive(() => ({ x: cx.value, y: cy.value })) }));
+    const g = s(group({ translate: Vec.derive(() => ({ x: cx.value, y: cy.value }) ) }));
     const gs = mount(g);
 
-    for (let i = 0; i < rows.length; i++) {
-      const d = rows[i]!;
-      const color = PALETTE[i % PALETTE.length]!;
+    // Build N segments along the sweep. Each segment's color is "lit" when the
+    // value's fractional fill covers any part of it, and the lit color fades
+    // through the PALETTE accent (saturation/alpha) for a meter look.
+    const padAngle = 0.02;
+    for (let i = 0; i < N; i++) {
+      const segStartFrac = i / N;
+      const segEndFrac = (i + 1) / N;
+      const segStart = SWEEP_START + segStartFrac * SWEEP_SPAN;
+      const segEnd = SWEEP_START + segEndFrac * SWEEP_SPAN;
 
-      const startFrac = derive(() => (i === 0 ? 0 : ends.value[i - 1] ?? 0));
-      const endFrac = derive(() => ends.value[i] ?? 0);
-      const startAngle = derive(() => SWEEP_START + startFrac.value * SWEEP_SPAN);
-      const endAngle = derive(() => SWEEP_START + endFrac.value * SWEEP_SPAN);
+      // Lit if the value crosses the segment's midpoint (matches layerchart's
+      // (i/N) * 100 < value pattern).
+      const lit = derive(() => frac.value > (i + 0.5) / N);
+      // Subtle gradient across lit segments so it reads as a graduated meter.
+      const litColor = color;
 
-      const isActive = derive(() => hovered.value === d || selected.value === d);
-      const ro = derive(() => rOuter.value + (isActive.value ? 3 : 0));
-      const ri = derive(() => rInner.value - (isActive.value ? 1 : 0));
-
-      const seg = gs(pathD(
+      gs(pathD(
         derive(() => {
-          if (ri.value < 1 || ro.value <= ri.value) return "";
-          if (Math.abs(endAngle.value - startAngle.value) < 0.001) return "";
-          // No corner radius on segments so neighbors join cleanly along the
-          // boundary; the outer ends curve via the track padding instead.
-          return arcD(ro.value, ri.value, startAngle.value, endAngle.value, 0);
+          const ro = rOuter.value, ri = rInner.value;
+          if (ri < 1 || ro <= ri) return "";
+          return arcD(ro, ri, segStart, segEnd, Math.max(2, thickness.value * 0.18), padAngle);
         }),
         {
-          fill: color,
-          opacity: derive(() => selected.value && selected.value !== d ? 0.55 : 1),
+          fill: derive(() => lit.value ? litColor : color),
+          opacity: derive(() => lit.value ? 1 : 0.18),
         },
       ));
-      seg.el.style.cursor = "pointer";
-      seg.el.style.transition = "d 0.08s";
-      seg.el.addEventListener("pointerenter", () => { if (!wheelController.active) hovered.value = d; });
-      seg.el.addEventListener("pointerleave", () => { if (!wheelController.active && hovered.value === d) hovered.value = null; });
-      seg.el.addEventListener("click", () => { selected.value = selected.value === d ? null : d; this.focus(); });
-
-      // Per-segment mid-arc label.
-      const midPos = Vec.derive(() => {
-        const mid = (startAngle.value + endAngle.value) / 2;
-        const sa = d3ToSvg(mid);
-        return { x: cx.value + Math.cos(sa) * rMid.value, y: cy.value + Math.sin(sa) * rMid.value };
-      });
-      s(label(midPos, derive(() => {
-        const span = (endAngle.value - startAngle.value);
-        return span < 0.18 ? "" : d.label;
-      }), { size: 10, align: Anchor.Center, fill: "#0b0d12" }));
     }
 
-    // Boundary knobs between adjacent segments. Canonical Vec.lens pattern —
-    // sources = [a, b], read returns the boundary position, write redistributes
-    // the conserved span (va + vb) by the pointer's angular fraction.
-    if (!this.hasAttribute("no-handles")) {
-      for (let i = 0; i < rows.length - 1; i++) {
-        const a = rows[i]!.value;
-        const b = rows[i + 1]!.value;
+    // Draggable endpoint handle — same lens math as MdGaugeLC.
+    const handleTarget = Vec.lens(
+      [value] as const,
+      (vals: readonly [number]) => {
+        const [v] = vals;
+        const f = Math.max(0, Math.min(1, (v - minV) / range));
+        const d3a = SWEEP_START + f * SWEEP_SPAN;
+        const sa = d3ToSvg(d3a);
+        return { x: cx.peek() + Math.cos(sa) * rMid.peek(), y: cy.peek() + Math.sin(sa) * rMid.peek() };
+      },
+      (target) => {
+        const dx = target.x - cx.peek();
+        const dy = target.y - cy.peek();
+        let d3a = Math.atan2(dy, dx) + Math.PI / 2;
+        if (d3a > Math.PI) d3a -= 2 * Math.PI;
+        d3a = Math.max(SWEEP_START, Math.min(SWEEP_END, d3a));
+        const f = (d3a - SWEEP_START) / SWEEP_SPAN;
+        return [Math.max(minV, Math.min(maxV, minV + f * range))];
+      },
+    );
 
-        // Span endpoints of the (a, b) pair, in fractions of total — these
-        // are layout outputs, peeked (never lens sources).
-        const sFrac = derive(() => (i === 0 ? 0 : ends.value[i - 1] ?? 0));
-        const eFrac = derive(() => ends.value[i + 1] ?? 0);
+    const handlePos = Vec.derive(() => {
+      const f = Math.max(0, Math.min(1, (value.value - minV) / range));
+      const d3a = SWEEP_START + f * SWEEP_SPAN;
+      const sa = d3ToSvg(d3a);
+      return { x: cx.value + Math.cos(sa) * rMid.value, y: cy.value + Math.sin(sa) * rMid.value };
+    });
+    const handleR = derive(() => Math.max(6, thickness.value * 0.5));
+    const handle = s(circle(handlePos, handleR, {
+      fill: "#fff",
+      stroke: color,
+      strokeWidth: 2,
+      opacity: derive(() => (hovered.value || focused.value || active.value) ? 1 : 0.85),
+    }));
+    handle.el.style.cursor = "grab";
+    dragCancelable(handle, handleTarget, [value], {
+      host: this,
+      onStart: () => { active.value = true; (this as any).gestureActive = true; },
+      onEnd: () => { active.value = false; (this as any).gestureActive = false; this.dispatchEvent(new CustomEvent("gesturecommit")); },
+    });
+    handle.el.addEventListener("pointerenter", () => { hovered.value = true; });
+    handle.el.addEventListener("pointerleave", () => { if (!active.value) hovered.value = false; });
 
-        const knob = Vec.lens(
-          [a, b] as const,
-          (vals: readonly [number, number]) => {
-            const [va, vb] = vals;
-            const s0 = SWEEP_START + sFrac.peek() * SWEEP_SPAN;
-            const s1 = SWEEP_START + eFrac.peek() * SWEEP_SPAN;
-            const sum = va + vb;
-            const frac = sum === 0 ? 0.5 : va / sum;
-            const ang = s0 + frac * (s1 - s0);
-            const sa = d3ToSvg(ang);
-            return {
-              x: cx.peek() + Math.cos(sa) * rMid.peek(),
-              y: cy.peek() + Math.sin(sa) * rMid.peek(),
-            };
-          },
-          (target, vals: readonly [number, number]) => {
-            const [va, vb] = vals;
-            const sum = va + vb;
-            const s0 = SWEEP_START + sFrac.peek() * SWEEP_SPAN;
-            const s1 = SWEEP_START + eFrac.peek() * SWEEP_SPAN;
-            if (sum === 0 || s1 <= s0) return [va, vb];
-            const dx = target.x - cx.peek();
-            const dy = target.y - cy.peek();
-            let ang = Math.atan2(dy, dx) + Math.PI / 2;
-            if (ang > Math.PI) ang -= 2 * Math.PI;
-            ang = Math.max(s0, Math.min(s1, ang));
-            const frac = (ang - s0) / (s1 - s0);
-            const newA = frac * sum;
-            return [newA, sum - newA];
-          },
-        );
-
-        const knobPos = Vec.derive(() => {
-          const va = a.value, vb = b.value;
-          const s0 = SWEEP_START + sFrac.value * SWEEP_SPAN;
-          const s1 = SWEEP_START + eFrac.value * SWEEP_SPAN;
-          const sum = va + vb;
-          const frac = sum === 0 ? 0.5 : va / sum;
-          const ang = s0 + frac * (s1 - s0);
-          const sa = d3ToSvg(ang);
-          return { x: cx.value + Math.cos(sa) * rMid.value, y: cy.value + Math.sin(sa) * rMid.value };
-        });
-
-        const active = cell(false);
-        const dotR = derive(() => Math.max(5, thickness.value * 0.32));
-        const dot = s(circle(knobPos, dotR, {
-          fill: "#fff",
-          stroke: derive(() => active.value ? "#fff" : "#0b0d12"),
-          strokeWidth: 1.5,
-        }));
-        dot.el.style.cursor = "grab";
-        dragCancelable(dot, knob, [a, b], {
-          host: this,
-          onStart: () => { active.value = true; (this as any).gestureActive = true; },
-          onEnd: () => { active.value = false; (this as any).gestureActive = false; this.dispatchEvent(new CustomEvent("gesturecommit")); },
-        });
-        dot.el.addEventListener("pointerenter", () => { active.value = true; });
-        dot.el.addEventListener("pointerleave", () => { if (!(this as any).gestureActive) active.value = false; });
-      }
-    }
-
-    // Center readout — selected/hovered segment label + value (% of total).
+    // Center readout — metric label above, big value below.
     s(label(
-      Vec.derive(() => ({ x: cx.value, y: cy.value - rOuter.value * 0.2 })),
-      derive(() => (selected.value ?? hovered.value)?.label ?? ""),
+      Vec.derive(() => ({ x: cx.value, y: cy.value - rOuter.value * 0.18 })),
+      derive(() => this.metricLabel),
       { size: 11, align: Anchor.Center, opacity: 0.6 },
     ));
     s(label(
-      Vec.derive(() => ({ x: cx.value, y: cy.value + rOuter.value * 0.1 })),
+      Vec.derive(() => ({ x: cx.value, y: cy.value + rOuter.value * 0.12 })),
       derive(() => {
-        const p = selected.value ?? hovered.value;
-        if (!p) return "";
-        const t = total.value || 1;
-        return `${Math.round((p.value.value / t) * 100)}%`;
+        const v = value.value;
+        return Number.isInteger(v) ? `${v}` : v.toFixed(1);
       }),
-      { size: 28, align: Anchor.Center, fill: derive(() => {
-        const p = selected.value ?? hovered.value;
-        if (!p) return "#fff";
-        const i = (data.value as Segment[]).indexOf(p);
-        return PALETTE[i % PALETTE.length]!;
-      }) },
+      { size: 32, align: Anchor.Center, fill: color },
+    ));
+    // Small ↔ affordance hint under the number, so the scrub is discoverable.
+    s(label(
+      Vec.derive(() => ({ x: cx.value, y: cy.value + rOuter.value * 0.34 })),
+      "↔ drag",
+      { size: 9, align: Anchor.Center, opacity: 0.35 },
     ));
 
-    // Wheel edit — adjusts the hovered/selected segment. Drag conserves total;
-    // wheel edits change the total, intentionally (segments are independent
-    // Num cells; the boundary lens only conserves the (a,b) pair).
-    const mutateDatum = (d: Segment, delta: number) => {
-      d.value.value = Math.max(0, d.value.value + delta);
-    };
+    // Number-drag hitbox over the center.
+    const hitW = Num.derive(() => rOuter.value * 1.2);
+    const hitH = Num.derive(() => rOuter.value * 0.6);
+    const hitCenter = Vec.derive(() => ({ x: cx.value, y: cy.value + rOuter.value * 0.05 }));
+    const hit = s(rect(hitCenter, hitW, hitH, { fill: "#fff", opacity: 0 }));
+    hit.el.style.cursor = "ew-resize";
+    numberDrag(hit.el as unknown as SVGElement, {
+      get: () => value.value,
+      set: (v) => { value.value = Math.max(minV, Math.min(maxV, v)); },
+      min: minV,
+      max: maxV,
+      pxPerUnit: Math.max(1, 200 / range),
+      onStart: () => { active.value = true; (this as any).gestureActive = true; },
+      onEnd: () => { active.value = false; (this as any).gestureActive = false; this.dispatchEvent(new CustomEvent("gesturecommit")); },
+    });
+
+    // Min / max endpoint labels.
+    const minLabelPos = Vec.derive(() => {
+      const sa = d3ToSvg(SWEEP_START);
+      return { x: cx.value + Math.cos(sa) * (rOuter.value + 14), y: cy.value + Math.sin(sa) * (rOuter.value + 14) };
+    });
+    const maxLabelPos = Vec.derive(() => {
+      const sa = d3ToSvg(SWEEP_END);
+      return { x: cx.value + Math.cos(sa) * (rOuter.value + 14), y: cy.value + Math.sin(sa) * (rOuter.value + 14) };
+    });
+    s(label(minLabelPos, `${minV}`, { size: 10, align: Anchor.Center, opacity: 0.5 }));
+    s(label(maxLabelPos, `${maxV}`, { size: 10, align: Anchor.Center, opacity: 0.5 }));
+
+    // Wheel edit on the whole diagram (cmd/ctrl + wheel).
     const wheelConfig = {
-      snapshot: (d: Segment) => d.value.value,
-      restore: (d: Segment, v: number) => { d.value.value = Math.max(0, v); },
+      snapshot: () => value.value,
+      restore: (_t: unknown, snap: number) => { value.value = Math.max(minV, Math.min(maxV, snap)); },
       onEnd: () => { this.dispatchEvent(new CustomEvent("gesturecommit")); },
     };
     this.addEventListener("wheel", (e) => {
       const we = e as WheelEvent;
       if (!we.ctrlKey && !we.metaKey) return;
-      const target = selected.value ?? hovered.value;
-      const t = wheelController.begin(target, wheelConfig);
+      const t = wheelController.begin(this, wheelConfig);
       if (!t) return;
       we.preventDefault();
-      mutateDatum(t, we.deltaY < 0 ? (we.shiftKey ? 5 : 1) : (we.shiftKey ? -5 : -1));
+      const step = (we.shiftKey ? 5 : 1) * (we.altKey ? 0.1 : 1);
+      const delta = (we.deltaY < 0 ? step : -step) * (range / 100);
+      value.value = Math.max(minV, Math.min(maxV, value.value + delta));
     }, { passive: false });
 
+    // Keyboard nav.
+    this.addEventListener("focus", () => { focused.value = true; });
+    this.addEventListener("blur", () => { focused.value = false; });
     this.addEventListener("keydown", (e) => {
       const ke = e as KeyboardEvent;
-      const rs = data.value as Segment[];
-      if (ke.key === "Escape") {
-        if (selected.value != null) { selected.value = null; ke.preventDefault(); }
-        return;
+      const step = (ke.shiftKey ? 5 : 1) * (range / 100);
+      if (ke.key === "ArrowUp" || ke.key === "ArrowRight") {
+        value.value = Math.max(minV, Math.min(maxV, value.value + step)); ke.preventDefault();
+      } else if (ke.key === "ArrowDown" || ke.key === "ArrowLeft") {
+        value.value = Math.max(minV, Math.min(maxV, value.value - step)); ke.preventDefault();
       }
-      const cur = selected.value;
-      const i = cur ? rs.indexOf(cur) : -1;
-      if (ke.key === "Tab" || ke.key === "ArrowRight" || ke.key === "ArrowLeft") {
-        const next = (ke.key === "ArrowLeft" || (ke.key === "Tab" && ke.shiftKey))
-          ? rs[(i <= 0 ? rs.length : i) - 1] ?? null
-          : rs[(i + 1) % rs.length] ?? null;
-        selected.value = next; ke.preventDefault(); return;
-      }
-      const target = cur ?? hovered.value;
-      if (!target) return;
-      const step = ke.shiftKey ? 5 : 1;
-      if (ke.key === "ArrowUp") { mutateDatum(target, +step); ke.preventDefault(); }
-      else if (ke.key === "ArrowDown") { mutateDatum(target, -step); ke.preventDefault(); }
     });
 
-    // Cross-tile bridge — keyed on segment id.
-    const idOf = (d: Segment | null) => d?.id ?? null;
-    const datumAt = (id: string | null) => id == null ? null : (data.value as Segment[]).find(d => d.id === id) ?? null;
+    // Cross-tile bridge — single-value chart.
     let applyingExternal = false;
     const bridge = makeBridge({
-      setHover: (key) => { applyingExternal = true; hovered.value = datumAt(key); applyingExternal = false; },
-      setSelect: (key) => { applyingExternal = true; selected.value = datumAt(key); applyingExternal = false; },
+      setHover: (_key) => { /* no-op for single-value */ },
+      setSelect: (key) => { applyingExternal = true; focused.value = key === "value"; applyingExternal = false; },
     });
     (this as unknown as ElementWithBridge).brSync = bridge;
-    biEffect(() => { const h = hovered.value; if (applyingExternal) return; bridge.emitHover(idOf(h)); });
-    biEffect(() => { const sel = selected.value; if (applyingExternal) return; bridge.emitSelect(idOf(sel)); });
+    biEffect(() => { const f = focused.value; if (applyingExternal) return; bridge.emitSelect(f ? "value" : null); });
   }
 }

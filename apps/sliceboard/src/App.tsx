@@ -145,7 +145,7 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
   if (tile.kind === 'br-lc-radar')          return <BrLcRadar nodes={sortedNodes} measureKey={mk} onUpdate={onNodeUpdate} />
   if (tile.kind === 'br-lc-concentric-arc') return <BrLcConcentricArc nodes={sortedNodes} measureKey={mk} onUpdate={onNodeUpdate} />
   if (tile.kind === 'br-lc-gauge')          return <BrLcGauge nodes={sortedNodes} measureKey={mk} label={tile.title ?? mk} />
-  if (tile.kind === 'br-lc-gauge-segmented')return <BrLcGaugeSegmented nodes={sortedNodes} measureKey={mk} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
+  if (tile.kind === 'br-lc-gauge-segmented')return <BrLcGaugeSegmented nodes={sortedNodes} measureKey={mk} label={tile.title ?? mk} />
 
   // ── BR-LC hierarchical charts ────────────────────────────────────────────
   if (tile.kind === 'br-lc-pack')           return <BrLcPack nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
@@ -200,7 +200,7 @@ const HIER_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial', 'br-l
 // Kinds where Order/Value sort selector is shown
 const VIZ_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial', 'treemap', 'radial', 'bands', 'br-lc-bar', 'br-lc-bands', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie', 'br-lc-radar', 'br-lc-concentric-arc', 'br-lc-gauge', 'br-lc-gauge-segmented', 'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree'])
 // Kinds that accept groupBy to add hierarchy to flat data
-const GROUPBY_KINDS = new Set<TileKind>(['br-lc-bar', 'br-lc-line', 'br-lc-area', 'br-lc-pie', 'br-lc-radar', 'br-lc-concentric-arc', 'br-lc-gauge-segmented', 'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree'])
+const GROUPBY_KINDS = new Set<TileKind>(['br-lc-bar', 'br-lc-line', 'br-lc-area', 'br-lc-pie', 'br-lc-radar', 'br-lc-concentric-arc', 'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree'])
 // Kinds whose diagram can honestly exceed the tile (it announces its own bounds);
 // the tile body scrolls the overflow instead of clipping it. The data-driven
 // sankey grows tall with many links — scroll lets you reach all of it.

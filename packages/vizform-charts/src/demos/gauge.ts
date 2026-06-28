@@ -193,6 +193,13 @@ export class MdGaugeLC extends Diagram {
       { size: 30, align: Anchor.Center, fill: color },
     ));
 
+    // Small ↔ affordance hint so the number-drag scrub is discoverable.
+    s(label(
+      Vec.derive(() => ({ x: cx.value, y: cy.value + rOuter.value * 0.32 })),
+      "↔ drag",
+      { size: 9, align: Anchor.Center, opacity: 0.35 },
+    ));
+
     // Scrubber hitbox over the center readout — centered-Point overload.
     const hitW = Num.derive(() => rOuter.value * 1.2);
     const hitH = Num.derive(() => rOuter.value * 0.6);

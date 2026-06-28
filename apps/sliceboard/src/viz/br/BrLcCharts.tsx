@@ -222,21 +222,19 @@ export function BrLcGauge({ nodes, measureKey, min = 0, max = 100, label, color 
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }
 
-// ─── Gauge — segmented (one segment per leaf) ────────────────────────────────
+// ─── Gauge — segmented (same single value, rendered as N discrete cells) ──
 
-export function BrLcGaugeSegmented({ nodes, measureKey, onUpdateMany }: FlatProps) {
+export function BrLcGaugeSegmented({ nodes, measureKey, min = 0, max = 100, label, color, segments = 24 }: GaugeProps & { segments?: number }) {
   const leaves = leavesOfNodes(nodes)
-  const ids = leaves.map(n => n.id)
-  const shapeKey = `${measureKey}|${[...ids].sort().join(',')}|${[...leaves].sort((a,b)=>a.id<b.id?-1:1).map(n=>n.name).join(',')}`
-  const source = makeFlatSource<{ id: string; label: string; value: Writable<Num> }>({
-    tag: 'v-br-gauge-segmented', ids, measureKey,
-    values: leaves.map(n => n.measures[measureKey] ?? 0),
-    shapeKey,
-    build: () => leaves.map(n => ({ id: n.id, label: n.name, value: n.measures[measureKey] ?? 1 })) as never,
-    readValue: d => d.value.value, writeValue: (d, v) => { d.value.value = v }, idOf: d => d.id,
-    nodes, onUpdateMany,
-  })
-  return <BrLcTile source={source} />
+  const value = leaves.reduce((a, b) => a + (b.measures[measureKey] ?? 0), 0)
+  const text = label ?? measureKey
+  const data = { value, min, max, color, label: text, segments }
+  const ref = useBrElement<MdGaugeSegmentedLC>(
+    'v-br-gauge-segmented',
+    (el) => { el.externalData = data },
+    [value, min, max, color, text, segments],
+  )
+  return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }
 
 // ─── Scatter (two measures) ───────────────────────────────────────────────────
