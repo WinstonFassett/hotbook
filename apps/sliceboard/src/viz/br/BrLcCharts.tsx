@@ -327,7 +327,8 @@ export function BrLcPack(props: HierProps) {
 }
 
 export function BrLcTreemap(props: HierProps) {
-  return <BrLcTile source={makeHier('v-br-treemap', props)} />
+  const drillNodeId = useDrillNodeId(props.drillKey ?? 'default')
+  return <BrLcTile source={makeHier('v-br-treemap', { ...props, drillNodeId })} />
 }
 
 export function BrLcIcicle(props: HierProps) {
