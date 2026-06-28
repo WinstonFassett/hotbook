@@ -332,15 +332,18 @@ export function BrLcTreemap(props: HierProps) {
 }
 
 export function BrLcIcicle(props: HierProps) {
-  return <BrLcTile source={makeHier('v-br-icicle', props)} />
+  const drillNodeId = useDrillNodeId(props.drillKey ?? 'default')
+  return <BrLcTile source={makeHier('v-br-icicle', { ...props, drillNodeId })} />
 }
 
 export function BrLcSunburst(props: HierProps) {
-  return <BrLcTile source={makeHier('v-br-sunburst', props)} />
+  const drillNodeId = useDrillNodeId(props.drillKey ?? 'default')
+  return <BrLcTile source={makeHier('v-br-sunburst', { ...props, drillNodeId })} />
 }
 
 export function BrLcTree(props: HierProps) {
-  return <BrLcTile source={makeHier('v-br-tree', props)} />
+  const drillNodeId = useDrillNodeId(props.drillKey ?? 'default')
+  return <BrLcTile source={makeHier('v-br-tree', { ...props, drillNodeId })} />
 }
 
 // ─── Sankey (flat edge-list) ────────────────────────────────────────────────────
