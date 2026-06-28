@@ -130,7 +130,7 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
     return <Sunburst nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} onUpdate={onNodeUpdate} />
   }
   if (tile.kind === 'treetable') {
-    return <HTreetable nodes={nodes} measureKey={mk} />
+    return <HTreetable nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} />
   }
 
   // ── BR-LC flat charts ────────────────────────────────────────────────────
