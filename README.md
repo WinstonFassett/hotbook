@@ -92,6 +92,20 @@ npm run dev -w packages/vizform-core    # watch mode
 npm run dev -w apps/sliceboard          # Vite dev server
 ```
 
+### Chart demos
+
+The sliceboard app hosts a `/demos` surface (hash route: `#/demos`) that renders
+each chart in isolation against a small checked-in fixture — no tile plumbing,
+no persistence, no config UI. Use it as the canonical testing surface when
+developing or debugging a single chart.
+
+```sh
+npm run dev -w apps/sliceboard
+# then visit /#/demos
+```
+
+Fixtures live in [`apps/sliceboard/src/demos/fixtures/`](apps/sliceboard/src/demos/fixtures).
+
 ## License
 
 MIT
