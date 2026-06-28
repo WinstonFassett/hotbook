@@ -158,6 +158,32 @@ Key moves vs today:
 - **`bireactive` becomes a real, pinned dependency of `charts`** (today it's only
   ever an app dep).
 
+### What logic lives in each layer (concrete — current files → layer)
+
+| Layer | Owns | Current code today | Must NOT contain |
+|---|---|---|---|
+| **`@vizform/core`** (pure TS, zero deps) | Data shapes; the **view spec** type; the **sort/group/filter transform** (pure fns); color | `vizform-core/src/types.ts` (`PNode`,`PEdge`,`ColumnSchema`,`Dataset`); a `DataView`/`TileSpec` type (today sliceboard's `tile` in `persistence.ts`); `applyView`=`applyGroupBy`+`colorByGroup`+sort+reindex (today **inline in `App.tsx`** as `sortedNodes`); `colors.ts` (`PALETTE`,`colorFor`) | DOM, d3, bireactive, React |
+| **`@vizform/charts`** (bireactive + d3 → custom elements) | Layout math; gesture mechanics; hit-test; reactive draw; edit emission | `@br-lc/demos/*` chart classes (`MdBarChartLC`…`MdBudgetTree`); `@br-lc/lib/*`: `chart-context` (scale substrate), `axis`,`area`,`spline` (path math), `cartesian-gestures`,`gestures`,`interaction` (singleton wheel/drag + `applyDelta` redistribute), `esc-contract`, `host-size` (RO→fill), `hud-bridge` (id-based hover/select contract), `tree` (BiNode build), `sankey-layout` (pure solver) | sort *policy*, which dataset, tile arrangement, persistence |
+| **surface** (sliceboard; later apitable) | Data **source**→Dataset; `tile.kind`→element **dispatch**; view-edit **UI**; view **persistence**; cross-tile HUD; tile **layout** | `persistence.ts` (localStorage→Dataset), the `if (tile.kind===…)` ladder in `App.tsx`, sort/groupBy/measure/depth pickers, `hudStore`, `react-grid-layout`, **`BrLcCharts.tsx` React wrappers (throwaway — die with React)** | chart internals, layout math, gesture mechanics |
+
+**The runtime seam (the contract every surface obeys):**
+
+1. surface: data source → `Dataset` *(core shape)*
+2. surface: `applyView(Dataset, view)` → ordered `PNode[]` *(core pure fn — this is where sort/group/filter happen)*
+3. surface: `element.externalData = nodes`; mount the custom element *(charts)*
+4. chart: draws nodes **in given order, keyed by id**; on user edit → `dispatchEvent('gesturecommit')` / `onUpdate`
+5. surface: catch edit → write back to source → persist
+
+The "sortable data view" = **`DataView` type + `applyView` fn (both core)** + dumb
+chart element (charts) + sort control & storage (surface). The chart never sorts
+([[project_sort_identity_architecture]]); the surface owns only the control and
+where the choice is saved. That split is what lets sliceboard and apitable share
+the view logic — both call `applyView`, differing only in data source + storage.
+
+> **Demo/seed data is not chart code.** `@br-lc/lib/portfolio.ts` (hard-coded
+> holdings) is fixture data — it stays in the demo app / a fixtures path, **not**
+> in the shipped `@vizform/charts`.
+
 ### Why React comes out of the spine
 
 Every React pain in this repo is React fighting an element that already owns its
