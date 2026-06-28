@@ -164,13 +164,17 @@ export function bindTile(container: HTMLElement, source: TileSource): TileContro
         mount(nextSource)
       } else {
         // Same shape: sync internal refs on the MOUNTED source so its closures
-        // pick up latest callbacks/data (React re-creates callbacks each render).
-        // Then push data (freeze-aware). currentSourceRef.current is updated
-        // so the gesturecommit handler also uses fresh data.
-        currentSourceRef.current.syncFrom?.(nextSource)
-        currentSourceRef.current = nextSource
+        // pick up latest callbacks/data (React re-creates callbacks each render),
+        // then push data through the MOUNTED source — NOT nextSource. nextSource
+        // was never mounted, so its mount-time state (hier leavesRef) is empty;
+        // applyData on it would no-op and external edits would never reach the
+        // live tree. Flat keeps data on el.dataCell so it survived either way;
+        // hier did not. Keep currentSourceRef on the mounted source so the
+        // gesturecommit handler also applies to the populated tree.
+        const mounted = currentSourceRef.current
+        mounted.syncFrom?.(nextSource)
         if (el) {
-          nextSource.applyData(el, { gestureActive: !!el.gestureActive, lastRef })
+          mounted.applyData(el, { gestureActive: !!el.gestureActive, lastRef })
         }
       }
     },
