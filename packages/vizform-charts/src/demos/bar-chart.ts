@@ -218,10 +218,15 @@ export class MdBarChartLC extends Diagram {
       const rows = data.value as Bar[];
       const cur = selected.value;
       const i = cur ? rows.indexOf(cur) : -1;
-      if (ke.key === "Tab" || ke.key === "ArrowRight" || ke.key === "ArrowLeft") {
-        const next = (ke.key === "ArrowLeft" || (ke.key === "Tab" && ke.shiftKey))
-          ? rows[(i <= 0 ? rows.length : i) - 1] ?? null : rows[(i + 1) % rows.length] ?? null;
-        selected.value = next; ke.preventDefault(); return;
+      if (ke.key === "Tab") {
+        if (!ke.shiftKey && i >= rows.length - 1) { selected.value = null; return; }
+        if (ke.shiftKey && i <= 0) { selected.value = null; return; }
+        selected.value = ke.shiftKey ? rows[(i <= 0 ? rows.length : i) - 1] ?? null : rows[(i + 1) % rows.length] ?? null;
+        ke.preventDefault(); return;
+      }
+      if (ke.key === "ArrowRight" || ke.key === "ArrowLeft") {
+        selected.value = ke.key === "ArrowLeft" ? rows[(i <= 0 ? rows.length : i) - 1] ?? null : rows[(i + 1) % rows.length] ?? null;
+        ke.preventDefault(); return;
       }
       if (!cur) return;
       const step = dynamicWheelStep(cur.value, ke.shiftKey);
@@ -307,7 +312,7 @@ export class MdBarChartLC extends Diagram {
         } else {
           s(label(Vec.derive(() => ({ x: barCX.value, y: barY.value - 6 })),
             derive(() => { const d = di(); return d ? `${Math.round(d.value)}` : ""; }),
-            { size: 10, align: Anchor.Center, fill: "#888", opacity: derive(() => barH.value > 0 ? 1 : 0) }));
+            { size: 10, align: Anchor.Center, fill: "#888", opacity: derive(() => barH.value >= 8 ? 1 : 0) }));
         }
       }
 
@@ -451,10 +456,15 @@ export class MdBarChartLC extends Diagram {
       const rows = data.value as Bar[];
       const cur = selected.value;
       const i = cur ? rows.indexOf(cur) : -1;
-      if (ke.key === "Tab" || ke.key === "ArrowDown" || ke.key === "ArrowUp") {
-        const next = (ke.key === "ArrowUp" || (ke.key === "Tab" && ke.shiftKey))
-          ? rows[(i <= 0 ? rows.length : i) - 1] ?? null : rows[(i + 1) % rows.length] ?? null;
-        selected.value = next; ke.preventDefault(); return;
+      if (ke.key === "Tab") {
+        if (!ke.shiftKey && i >= rows.length - 1) { selected.value = null; return; }
+        if (ke.shiftKey && i <= 0) { selected.value = null; return; }
+        selected.value = ke.shiftKey ? rows[(i <= 0 ? rows.length : i) - 1] ?? null : rows[(i + 1) % rows.length] ?? null;
+        ke.preventDefault(); return;
+      }
+      if (ke.key === "ArrowDown" || ke.key === "ArrowUp") {
+        selected.value = ke.key === "ArrowUp" ? rows[(i <= 0 ? rows.length : i) - 1] ?? null : rows[(i + 1) % rows.length] ?? null;
+        ke.preventDefault(); return;
       }
       if (!cur) return;
       const step = ke.shiftKey ? 5 : 1;
