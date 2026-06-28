@@ -9,7 +9,7 @@ import { Anchor, cell, circle, derive, Diagram, effect as biEffect, label, line,
 import { scaleLinear, scaleBand } from "d3-scale";
 import { axis } from "../lib/axis";
 import { chartContext } from "../lib/chart-context";
-import { wheelController, dragController } from "../lib/interaction";
+import { wheelController, dragController, dynamicWheelStep } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE, type HostSize } from "../lib/host-size";
 
@@ -201,7 +201,8 @@ export class MdBarChartLC extends Diagram {
       we.stopPropagation();
       const t = wheelController.begin(hover.value ?? selected.value, wheelConfig);
       if (!t) return;
-      mutateDatum(t, we.deltaY < 0 ? (we.shiftKey ? 5 : 1) : (we.shiftKey ? -5 : -1));
+      const s = dynamicWheelStep(t.value, we.shiftKey);
+      mutateDatum(t, we.deltaY < 0 ? +s : -s);
     }, { passive: false });
     this.addEventListener("keydown", e => {
       const ke = e as KeyboardEvent;
@@ -215,7 +216,7 @@ export class MdBarChartLC extends Diagram {
         selected.value = next; ke.preventDefault(); return;
       }
       if (!cur) return;
-      const step = ke.shiftKey ? 5 : 1;
+      const step = dynamicWheelStep(cur.value, ke.shiftKey);
       if (ke.key === "ArrowUp") { mutateDatum(cur, +step); ke.preventDefault(); }
       else if (ke.key === "ArrowDown") { mutateDatum(cur, -step); ke.preventDefault(); }
     });
@@ -426,7 +427,8 @@ export class MdBarChartLC extends Diagram {
       we.stopPropagation();
       const t = wheelController.begin(hover.value ?? selected.value, wheelConfig);
       if (!t) return;
-      mutateDatum(t, we.deltaY < 0 ? (we.shiftKey ? 5 : 1) : (we.shiftKey ? -5 : -1));
+      const s = dynamicWheelStep(t.value, we.shiftKey);
+      mutateDatum(t, we.deltaY < 0 ? +s : -s);
     }, { passive: false });
     this.addEventListener("keydown", e => {
       const ke = e as KeyboardEvent;

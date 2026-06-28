@@ -23,6 +23,7 @@ import {
   updateRow, updateRows, reorderLeaves, applyGroupBy,
 } from './persistence'
 import type { Workspace, Dataset, Dashboard, Tile, TileKind, PNode } from './persistence'
+import { schemaFor } from './tile-config-schemas'
 import { hudStore, resetHudForDataset, useHudStore } from './store'
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
@@ -181,17 +182,6 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
 
 // ─── Tile wrapper ─────────────────────────────────────────────────────────────
 
-// Kinds where depth selector is wired
-const HIER_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial', 'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst'])
-// Kinds where Order/Value sort selector is shown
-const VIZ_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial', 'treemap', 'radial', 'bands', 'br-lc-bar', 'br-lc-bands', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie', 'br-lc-radar', 'br-lc-concentric-arc', 'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree'])
-// Kinds that accept groupBy to add hierarchy to flat data
-const GROUPBY_KINDS = new Set<TileKind>(['br-lc-bar', 'br-lc-line', 'br-lc-area', 'br-lc-pie', 'br-lc-radar', 'br-lc-concentric-arc', 'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree'])
-// Kinds whose diagram can honestly exceed the tile (it announces its own bounds);
-// the tile body scrolls the overflow instead of clipping it. The data-driven
-// sankey grows tall with many links — scroll lets you reach all of it.
-const SCROLL_KINDS = new Set<TileKind>(['bands', 'br-lc-sankey'])
-
 function TileCard({
   tile, ds, measureKey, onRemove, onMeasureChange, onXKeyChange, onYKeyChange, onDepthChange, onSortChange, onGroupByChange, onNodeUpdate, onNodesUpdate, onNodeReorder, availableMeasures,
 }: {
@@ -210,9 +200,9 @@ function TileCard({
   onNodeReorder: (orderedIds: string[]) => void
   availableMeasures: { key: string; label: string }[]
 }) {
-  const isHier = HIER_KINDS.has(tile.kind)
-  const isViz = VIZ_KINDS.has(tile.kind)
-  const showGroupBy = GROUPBY_KINDS.has(tile.kind) && ds.dimDefs.length > 0
+  const schema = schemaFor(tile.kind)
+  const pickers = schema.pickers
+  const showGroupBy = pickers.groupBy && ds.dimDefs.length > 0
   const depth = tile.depth ?? 0 // 0 = "All" (show full tree)
   const sortBy = tile.sortBy ?? 'index'
   return (
@@ -220,7 +210,7 @@ function TileCard({
       <div className="tile-header">
         <span className="tile-title">{tile.title ?? TILE_LABELS[tile.kind]}</span>
         <div className="tile-header-actions">
-          {isHier && (
+          {pickers.depth && (
             <select
               className="tile-measure-select"
               value={depth}
@@ -233,7 +223,7 @@ function TileCard({
               ))}
             </select>
           )}
-          {isViz && (
+          {pickers.sort && (
             <select
               className="tile-measure-select"
               value={sortBy}
@@ -244,7 +234,7 @@ function TileCard({
               <option value="value">Value</option>
             </select>
           )}
-          {tile.kind === 'br-lc-scatter' ? (
+          {pickers.xKey && pickers.yKey ? (
             <>
               <label className="tile-axis-label">X:</label>
               <select
@@ -268,7 +258,7 @@ function TileCard({
                 ))}
               </select>
             </>
-          ) : availableMeasures.length > 1 && (
+          ) : pickers.measure && availableMeasures.length > 1 && (
             <select
               className="tile-measure-select"
               value={tile.measureKey ?? measureKey}
@@ -296,7 +286,7 @@ function TileCard({
           <button className="tile-close-btn" onClick={onRemove}>×</button>
         </div>
       </div>
-      <div className={`tile-body${SCROLL_KINDS.has(tile.kind) ? ' tile-body--scroll' : ''}`}>
+      <div className={`tile-body${schema.scrollBody ? ' tile-body--scroll' : ''}`}>
         <TileContent tile={tile} ds={ds} measureKey={measureKey} onNodeUpdate={onNodeUpdate} onNodesUpdate={onNodesUpdate} onNodeReorder={onNodeReorder} />
       </div>
     </div>

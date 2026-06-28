@@ -97,3 +97,20 @@ export interface VizFormClickEvent {
 export type VizFormEvent = VizFormChangeEvent | VizFormClickEvent
 
 export type Cleanup = () => void
+
+export type ScalingMode = 'additive' | 'proportional-neighbor' | 'proportional-siblings'
+
+export interface VizConfigSchema {
+  pickers: {
+    measure?: boolean
+    depth?: boolean       // 1–5 level selector
+    sort?: boolean        // Order | Value
+    groupBy?: boolean
+    xKey?: boolean        // scatter only
+    yKey?: boolean        // scatter only
+  }
+  gestureModes?: ScalingMode[]
+  cascadeSupported?: boolean
+  fixedTotalSupported?: boolean
+  scrollBody?: boolean    // replaces SCROLL_KINDS
+}

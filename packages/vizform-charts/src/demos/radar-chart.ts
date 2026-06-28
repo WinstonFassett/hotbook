@@ -5,7 +5,7 @@
 import { Anchor, cell, circle, derive, Diagram, effect as biEffect, label, type Mount, pathD, Vec } from "bireactive";
 import { scaleLinear } from "d3-scale";
 import { extent, ticks as d3Ticks } from "d3-array";
-import { wheelController, dragController } from "../lib/interaction";
+import { wheelController, dragController, dynamicWheelStep } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 
@@ -292,7 +292,8 @@ export class MdRadarChartLC extends Diagram {
       const t = wheelController.begin(hover.value ?? selected.value, wheelConfig);
       if (!t) return;
       we.preventDefault();
-      mutateDatum(t, we.deltaY < 0 ? (we.shiftKey ? 5 : 1) : (we.shiftKey ? -5 : -1));
+      const s = dynamicWheelStep(t.value, we.shiftKey);
+      mutateDatum(t, we.deltaY < 0 ? +s : -s);
     }, { passive: false });
 
     this.addEventListener("keydown", (e) => {
@@ -313,7 +314,7 @@ export class MdRadarChartLC extends Diagram {
         ke.preventDefault(); return;
       }
       if (!cur) return;
-      const step = ke.shiftKey ? 5 : 1;
+      const step = dynamicWheelStep(cur.value, ke.shiftKey);
       if (ke.key === "ArrowUp") { mutateDatum(cur, +step); ke.preventDefault(); }
       else if (ke.key === "ArrowDown") { mutateDatum(cur, -step); ke.preventDefault(); }
     });
