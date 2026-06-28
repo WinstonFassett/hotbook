@@ -94,21 +94,17 @@ const TILE_LABELS: Record<TileKind, string> = {
 function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNodeReorder }: { tile: Tile; ds: Dataset; measureKey: string; onNodeUpdate: (rowId: string, measures: PNode['measures']) => void; onNodesUpdate: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void; onNodeReorder: (orderedIds: string[]) => void }) {
   const mk = tile.measureKey ?? measureKey
   const hud = useHudStore()
-  const { hoverId, selectionId, focusId, drillNodeId } = hud
+  const { hoverId, selectionId, focusId } = hud
   const onHover = (id: string | null) => hudStore.setHover(id)
   const onSelect = (id: string) => hudStore.setSelection(id)
   const onFocus = (id: string) => hudStore.setFocus(id)
 
   const depth = tile.depth || undefined // 0/undefined = all levels (chart shows full tree)
   const sortBy = tile.sortBy ?? 'index'
-  // Drill re-roots hierarchical tiles before any other transform. groupBy can
-  // synthesize a virtual parent on top of the drilled subtree; that's fine
-  // because drillSubtree returns plain PNodes the rest of the pipeline already
-  // understands. Drill only affects hier kinds — flat charts ignore it because
-  // their leaf set under the drill scope is just a subset of all leaves, which
-  // is still what we want (focused subset cross-tile).
-  const drilledRows = drillSubtree(ds.rows, drillNodeId)
-  const rawNodes = colorByGroup(tile.groupBy ? applyGroupBy(drilledRows, tile.groupBy) : drilledRows)
+  // No more global drillSubtree — each hier chart receives the full dataset and
+  // drills internally via scale remap (not data re-root). Flat charts get the
+  // full dataset as well; they just show all leaves.
+  const rawNodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.rows, tile.groupBy) : ds.rows)
   const nodes = sortBy === 'value'
     ? [...rawNodes]
         .sort((a, b) => (b.measures[mk] ?? 0) - (a.measures[mk] ?? 0))
@@ -312,23 +308,7 @@ function TileCard({
       </div>
       <div
         className={`tile-body${schema.scrollBody ? ' tile-body--scroll' : ''}`}
-        onDoubleClick={schema.pickers.depth ? (e) => {
-          // Drill-in via dblclick on any hierarchical tile. The chart's single
-          // click already set selectionId; hoverId is wherever the cursor is
-          // right now, which is the natural "what did the user mean" target.
-          // Prefer hover over selection (last touched > last clicked).
-          const target = hudStore.getSnapshot().hoverId ?? hudStore.getSnapshot().selectionId
-          if (!target) return
-          const cur = hudStore.getSnapshot().drillNodeId
-          if (target === cur) return // already drilled here
-          if (target === '__root__') return // gen-1 root sentinel — can't drill into it
-          // Only meaningful if the target has children in the dataset under the
-          // current drill scope (avoid drilling to a leaf, which renders blank).
-          const hasChildren = ds.rows.some(r => r.parentId === target)
-          if (!hasChildren) return
-          e.preventDefault()
-          hudStore.setDrill(target)
-        } : undefined}
+        // Drill is now handled inside each chart via dblclick on nodes
       >
         <TileContent tile={tile} ds={ds} measureKey={measureKey} onNodeUpdate={onNodeUpdate} onNodesUpdate={onNodesUpdate} onNodeReorder={onNodeReorder} />
       </div>
@@ -556,31 +536,32 @@ export function App() {
   const [ws, setWs] = useState<Workspace>(() => initWorkspace())
 
   // Unified idle Esc contract (bubble phase — a chart's own capture-phase Esc
-  // for drag-revert runs first and stops propagation). Priority order, per
-  // docs/interaction-principles.md and the drill ticket:
+  // for drag-revert runs first and stops propagation). Priority order:
   //   1. Drag active → chart cancels (handled in capture phase, never reaches here)
-  //   2. Selection active → clear selection
-  //   3. Drilled in → drill out one level (pop to parent of current drill root)
+  //   2. Drilled in → drill out one level (any drillKey)
+  //   3. Selection active → clear selection
   //   4. Else → fall through (browser default)
   useEffect(() => {
     const onEsc = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
       const s = hudStore.getSnapshot()
+      // Check if any drill is active (check 'default' key first, most common)
+      const activeDrillKey = Object.keys(s.drills).find(k => s.drills[k] != null)
+      if (activeDrillKey) {
+        const drillNodeId = s.drills[activeDrillKey]!
+        const dsNow = activeDataset(ws)
+        if (!dsNow) return
+        const path = drillPath(dsNow.rows, drillNodeId)
+        // path = [root, ..., current]; pop to parent = path[length-2], or null if at top
+        const parent = path.length >= 2 ? path[path.length - 2]! : null
+        e.preventDefault()
+        hudStore.setDrill(activeDrillKey, parent ? parent.id : null)
+        return
+      }
       if (s.selectionId != null) {
         e.preventDefault()
         hudStore.setSelection(null)
         return
-      }
-      if (s.drillNodeId != null) {
-        // Drill out one level. Active dataset's rows are the source of truth
-        // for the parent chain — drillPath walks it for us.
-        const dsNow = activeDataset(ws)
-        if (!dsNow) return
-        const path = drillPath(dsNow.rows, s.drillNodeId)
-        // path = [root, ..., current]; pop to parent = path[length-2], or null if at top
-        const parent = path.length >= 2 ? path[path.length - 2]! : null
-        e.preventDefault()
-        hudStore.setDrill(parent ? parent.id : null)
       }
     }
     window.addEventListener('keydown', onEsc)
@@ -597,23 +578,21 @@ export function App() {
   const measures = ds ? ds.measureDefs : []
 
   // Drill is two-sourced: hudStore for live cross-tile reactivity, Dashboard
-  // for persistence. Sync the two by always treating the dashboard as the
-  // source of truth on entry/switch, and the store as the leading edge of
-  // user intent on exit. Mirror store → dash via an effect; hydrate dash →
-  // store when the active dashboard's persisted value changes.
-  const liveDrill = useDrillNodeId()
-  const persistedDrill = dash?.drillNodeId ?? null
+  // for persistence. Migrate legacy drillNodeId to drills['default'] on load.
+  const liveDrills = useHudStore().drills
+  const persistedDrills = dash?.drills ?? (dash?.drillNodeId != null ? { default: dash.drillNodeId } : {})
   useEffect(() => {
-    if (hudStore.getSnapshot().drillNodeId !== persistedDrill) {
-      hudStore.hydrateDrill(persistedDrill)
+    const current = hudStore.getSnapshot().drills
+    if (JSON.stringify(current) !== JSON.stringify(persistedDrills)) {
+      hudStore.hydrateDrills(persistedDrills)
     }
-  }, [dash?.id, persistedDrill])
+  }, [dash?.id, persistedDrills])
   useEffect(() => {
     if (!dash) return
-    if ((dash.drillNodeId ?? null) === liveDrill) return
-    commit(updateDashboard(ws, { ...dash, drillNodeId: liveDrill }))
+    if (JSON.stringify(dash.drills ?? {}) === JSON.stringify(liveDrills)) return
+    commit(updateDashboard(ws, { ...dash, drills: liveDrills, drillNodeId: undefined }))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [liveDrill])
+  }, [liveDrills])
 
   const switchDataset = useCallback((id: string) => {
     const next = { ...ws, activeDatasetId: id }
@@ -752,7 +731,7 @@ export function App() {
         </div>
       </div>
 
-      {ds && <DrillBreadcrumb ds={ds} />}
+      {/* Breadcrumb now rendered inside each chart, not globally */}
 
       <div className="sb-grid-wrap">
         {ds && dash ? (

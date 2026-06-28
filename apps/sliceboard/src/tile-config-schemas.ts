@@ -21,6 +21,8 @@ const SORT_AND_GROUPBY: VizConfigSchema = {
 
 const HIER_FULL: VizConfigSchema = {
   pickers: { measure: true, sort: true, groupBy: true, depth: true },
+  drillKey: 'default',
+  showBreadcrumb: true,
 }
 
 export const TILE_CONFIG_SCHEMAS: Map<TileKind, VizConfigSchema> = new Map([
