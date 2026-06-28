@@ -58,6 +58,8 @@ export type TileKind =
   | 'br-lc-pie'
   | 'br-lc-radar'
   | 'br-lc-concentric-arc'
+  | 'br-lc-gauge'
+  | 'br-lc-gauge-segmented'
   | 'br-lc-pack'
   | 'br-lc-treemap'
   | 'br-lc-icicle'

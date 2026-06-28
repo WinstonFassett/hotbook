@@ -22,6 +22,8 @@ import {
   MdPieChartLC,
   MdRadarChartLC,
   MdConcentricArcLC,
+  MdGaugeLC,
+  MdGaugeSegmentedLC,
   MdPack,
   MdTreemapLC,
   MdIcicleLC,
@@ -40,6 +42,8 @@ const TAGS = [
   ['v-br-pie',            MdPieChartLC],
   ['v-br-radar',          MdRadarChartLC],
   ['v-br-concentric-arc', MdConcentricArcLC],
+  ['v-br-gauge',           MdGaugeLC],
+  ['v-br-gauge-segmented', MdGaugeSegmentedLC],
   ['v-br-pack',           MdPack],
   ['v-br-treemap',        MdTreemapLC],
   ['v-br-icicle',         MdIcicleLC],
@@ -187,6 +191,50 @@ export function BrLcConcentricArc({ nodes, measureKey, maxItems, onUpdate }: Fla
     mountProps: (el: any) => { if (maxItems !== undefined) el.maxRings = maxItems },
     readValue: d => d.value, writeValue: (d, v) => { d.value = Math.min(100, v) }, idOf: d => d.id,
     nodes, onUpdate,
+  })
+  return <BrLcTile source={source} />
+}
+
+// ─── Gauge — single value (uses sum of leaves on a measure key) ──────────────
+
+interface GaugeProps {
+  nodes: PNode[]
+  measureKey: string
+  min?: number
+  max?: number
+  label?: string
+  color?: string
+}
+
+export function BrLcGauge({ nodes, measureKey, min = 0, max = 100, label, color }: GaugeProps) {
+  // Sum all leaf values for the measure. The gauge is a single-value tile, so
+  // we collapse the dataset into one scalar; sum mirrors how the other
+  // single-readout charts surface a whole dataset.
+  const leaves = leavesOfNodes(nodes)
+  const value = leaves.reduce((a, b) => a + (b.measures[measureKey] ?? 0), 0)
+  const text = label ?? measureKey
+  const data = { value, min, max, color, label: text }
+  const ref = useBrElement<MdGaugeLC>(
+    'v-br-gauge',
+    (el) => { el.externalData = data },
+    [value, min, max, color, text],
+  )
+  return <div ref={ref} style={{ width: '100%', height: '100%' }} />
+}
+
+// ─── Gauge — segmented (one segment per leaf) ────────────────────────────────
+
+export function BrLcGaugeSegmented({ nodes, measureKey, onUpdateMany }: FlatProps) {
+  const leaves = leavesOfNodes(nodes)
+  const ids = leaves.map(n => n.id)
+  const shapeKey = `${measureKey}|${[...ids].sort().join(',')}|${[...leaves].sort((a,b)=>a.id<b.id?-1:1).map(n=>n.name).join(',')}`
+  const source = makeFlatSource<{ id: string; label: string; value: Writable<Num> }>({
+    tag: 'v-br-gauge-segmented', ids, measureKey,
+    values: leaves.map(n => n.measures[measureKey] ?? 0),
+    shapeKey,
+    build: () => leaves.map(n => ({ id: n.id, label: n.name, value: n.measures[measureKey] ?? 1 })) as never,
+    readValue: d => d.value.value, writeValue: (d, v) => { d.value.value = v }, idOf: d => d.id,
+    nodes, onUpdateMany,
   })
   return <BrLcTile source={source} />
 }
