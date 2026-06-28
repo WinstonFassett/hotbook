@@ -2,20 +2,92 @@ import { hierarchy } from "d3-hierarchy";
 import { effect as biEffect, batch } from "bireactive";
 import { leaves, type BiNode } from "./tree";
 
-export function applyDelta(node: BiNode, parent: BiNode | undefined, delta: number): void {
+/** Per-call scaling mode for {@link applyDelta}. Mirrors the public
+ *  `ScalingMode` in @winstonfassett/vizform-core; kept structural so this
+ *  package stays leaf-side and doesn't import core. `proportional-selected`
+ *  is reserved for the future multiselect work (WIN-38 follow-up) and
+ *  currently falls back to `additive`. */
+export type ScalingMode =
+  | "additive"
+  | "proportional-neighbor"
+  | "proportional-siblings"
+  | "proportional-selected";
+
+export interface ApplyDeltaOptions {
+  /** Override the scaling strategy for this call. Default: `proportional-siblings`. */
+  mode?: ScalingMode;
+  /** Cap for the parent's child-sum. When set, additive growth is clamped so
+   *  `sum(children) <= fixedTotal`; siblings are untouched until the cap is hit.
+   *  Unused by proportional modes (their sum is invariant by construction). */
+  fixedTotal?: number;
+}
+
+/** Dynamic wheel step — proportional to current value so the gesture feels the
+ *  same at value 5 and value 5000. Shift = fine grain. Always at least 1 so the
+ *  edit is observable on small values. */
+export function dynamicWheelStep(cur: number, shift: boolean): number {
+  const pct = shift ? 0.01 : 0.10;
+  return Math.max(1, Math.round(Math.abs(cur) * pct));
+}
+
+export function applyDelta(
+  node: BiNode,
+  parent: BiNode | undefined,
+  delta: number,
+  options: ApplyDeltaOptions = {},
+): void {
+  const mode: ScalingMode = options.mode ?? "proportional-siblings";
+
+  // Additive (and the multiselect stub) only touches the target. Still valid
+  // when there is no parent (root edit) — that's why this branches first.
+  if (mode === "additive" || mode === "proportional-selected") {
+    const cur = node.value.total.value;
+    let next = Math.max(0, cur + delta);
+    if (options.fixedTotal != null && parent) {
+      const sibSum = (parent.children as BiNode[])
+        .filter((c) => c !== node)
+        .reduce((a, b) => a + b.value.total.value, 0);
+      next = Math.min(next, Math.max(0, options.fixedTotal - sibSum));
+    }
+    if (next === cur) return;
+    node.value.total.value = next;
+    return;
+  }
+
   if (!parent || parent.children.length === 0) return;
   const siblings = parent.children.filter((c) => c !== node) as BiNode[];
   const cur = node.value.total.value;
   const next = Math.max(0, cur + delta);
   const real = next - cur;
   if (real === 0) return;
-  // Redistribute the whole resize in ONE batch so the edit fires a single
-  // reactive flush. Every sibling is written exactly once from pre-computed
-  // sums (poolSum / sibSum / shares captured before any write), so deferred
-  // backward writes coalescing inside the batch is safe. The single flush
-  // matters in embeddings (e.g. sliceboard) where each separate flush would
-  // round-trip through an external store and interleave, snapping the tree
-  // back between writes; standalone it's just one tidy update.
+
+  // proportional-neighbor: only the immediate next-or-prev sibling absorbs the
+  // delta. Fall back to proportional-siblings when there is no single neighbor.
+  if (mode === "proportional-neighbor" && siblings.length > 0) {
+    const kids = parent.children as BiNode[];
+    const idx = kids.indexOf(node);
+    const neighbor = (kids[idx + 1] ?? kids[idx - 1]) as BiNode | undefined;
+    if (neighbor) {
+      const nv = neighbor.value.total.value;
+      // Clamp so neither side goes negative.
+      const take = real > 0 ? Math.min(real, nv) : Math.max(real, -cur);
+      if (take === 0) return;
+      batch(() => {
+        node.value.total.value = cur + take;
+        neighbor.value.total.value = nv - take;
+      });
+      return;
+    }
+  }
+
+  // proportional-siblings (default): redistribute the whole resize in ONE
+  // batch so the edit fires a single reactive flush. Every sibling is written
+  // exactly once from pre-computed sums (poolSum / sibSum / shares captured
+  // before any write), so deferred backward writes coalescing inside the batch
+  // is safe. The single flush matters in embeddings (e.g. sliceboard) where
+  // each separate flush would round-trip through an external store and
+  // interleave, snapping the tree back between writes; standalone it's just
+  // one tidy update.
   batch(() => {
     node.value.total.value = next;
     let remaining = real;

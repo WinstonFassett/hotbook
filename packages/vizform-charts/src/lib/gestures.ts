@@ -1,4 +1,10 @@
-import { applyDelta, flatOrder, wheelController } from "./interaction";
+import {
+  applyDelta,
+  dynamicWheelStep,
+  flatOrder,
+  wheelController,
+  type ScalingMode,
+} from "./interaction";
 import { walkTree, effect as biEffect, batch } from "bireactive";
 import type { BiNode } from "./tree";
 import type { Writable, Cell } from "bireactive";
@@ -21,10 +27,15 @@ export interface ChartGestureSetup {
   root: BiNode;
   parentOf: (n: BiNode) => BiNode | undefined;
   state: SelectionState;
+  /** Default scaling mode for keyboard/arrow edits on this chart. Wheel is
+   *  always additive (per WIN-38 spec); drag mode lives on the per-handle
+   *  callsite. Alt held during arrow keys forces additive regardless. */
+  scalingMode?: ScalingMode;
 }
 
 export function attachChartGestures(host: HTMLElement | SVGElement, setup: ChartGestureSetup): () => void {
   const { root, parentOf, state } = setup;
+  const defaultMode: ScalingMode = setup.scalingMode ?? "proportional-siblings";
 
   // applyDelta redistributes a node's change across its siblings, so a revert
   // must restore the target AND every sibling — snapshot all their totals.
@@ -52,8 +63,11 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
     const target = wheelController.target as BiNode | null;
     if (!target || target === root) return;
     e.preventDefault();
-    const step = e.shiftKey ? 5 : 1;
-    applyDelta(target, parentOf(target), e.deltaY < 0 ? +step : -step);
+    // Wheel is always additive (per WIN-38 spec) with dynamic step scaled to
+    // current value, so a tick feels the same at value 5 and value 5000.
+    // Shift = fine grain (1% vs 10%).
+    const step = dynamicWheelStep(target.value.total.value, e.shiftKey);
+    applyDelta(target, parentOf(target), e.deltaY < 0 ? +step : -step, { mode: "additive" });
   };
 
   const onKeydown = (e: KeyboardEvent) => {
@@ -76,11 +90,14 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
     const f = state.focused.value;
     if (!f || f === root) return;
     const step = e.shiftKey ? 5 : 1;
+    // Alt forces additive override (only target moves) regardless of the
+    // chart's configured scalingMode.
+    const mode: ScalingMode = e.altKey ? "additive" : defaultMode;
     if (e.key === "ArrowUp" || e.key === "ArrowRight") {
-      applyDelta(f, parentOf(f), +step);
+      applyDelta(f, parentOf(f), +step, { mode });
       e.preventDefault();
     } else if (e.key === "ArrowDown" || e.key === "ArrowLeft") {
-      applyDelta(f, parentOf(f), -step);
+      applyDelta(f, parentOf(f), -step, { mode });
       e.preventDefault();
     }
   };

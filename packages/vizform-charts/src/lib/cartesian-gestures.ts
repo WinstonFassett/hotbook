@@ -1,7 +1,7 @@
 // Shared interaction layer for cartesian (x-bisect) charts.
 // Mirrors attachChartGestures for hierarchical charts.
 
-import { wheelController, dragController } from "./interaction";
+import { wheelController, dragController, dynamicWheelStep } from "./interaction";
 import type { ChartContext } from "./chart-context";
 import { bisector } from "d3-array";
 import { effect as biEffect } from "bireactive";
@@ -117,7 +117,7 @@ export function attachCartesianGestures<TData>(
     const target = wheelController.begin(state.hover.value ?? state.selected.value, wheelConfig);
     if (!target) return;
     we.preventDefault();
-    const step = we.shiftKey ? 5 : 1;
+    const step = dynamicWheelStep(ctx.yAcc(target) as number, we.shiftKey);
     mutateDatum(target, we.deltaY < 0 ? +step : -step);
   };
 
@@ -141,7 +141,7 @@ export function attachCartesianGestures<TData>(
     if (ke.key === "ArrowRight") { state.selected.value = rows[(i + 1) % rows.length] ?? null; ke.preventDefault(); return; }
     if (ke.key === "ArrowLeft") { state.selected.value = rows[(i <= 0 ? rows.length : i) - 1] ?? null; ke.preventDefault(); return; }
     if (!cur || !canEdit()) return;
-    const step = ke.shiftKey ? 5 : 1;
+    const step = dynamicWheelStep(ctx.yAcc(cur) as number, ke.shiftKey);
     if (ke.key === "ArrowUp") { mutateDatum(cur, +step); ke.preventDefault(); }
     else if (ke.key === "ArrowDown") { mutateDatum(cur, -step); ke.preventDefault(); }
   };

@@ -1,6 +1,6 @@
 import { Anchor, annularSector, cell, circle, derive, Diagram, effect as biEffect, label, type Mount, Num, num, Vec, type Writable } from "bireactive";
 import { pie } from "d3-shape";
-import { wheelController } from "../lib/interaction";
+import { wheelController, dynamicWheelStep } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { dragCancelable } from "../lib/esc-contract";
@@ -192,7 +192,8 @@ export class MdPieChartLC extends Diagram {
       const t = wheelController.begin(hover.value ?? selected.value, wheelConfig);
       if (!t) return;
       we.preventDefault();
-      mutateDatum(t, we.deltaY < 0 ? (we.shiftKey ? 5 : 1) : (we.shiftKey ? -5 : -1));
+      const s = dynamicWheelStep(t.value.value, we.shiftKey);
+      mutateDatum(t, we.deltaY < 0 ? +s : -s);
     }, { passive: false });
 
     this.addEventListener("keydown", (e) => {
@@ -214,7 +215,7 @@ export class MdPieChartLC extends Diagram {
         ke.preventDefault(); return;
       }
       if (!cur) return;
-      const step = ke.shiftKey ? 5 : 1;
+      const step = dynamicWheelStep(cur.value.value, ke.shiftKey);
       if (ke.key === "ArrowUp") { mutateDatum(cur, +step); ke.preventDefault(); }
       else if (ke.key === "ArrowDown") { mutateDatum(cur, -step); ke.preventDefault(); }
     });

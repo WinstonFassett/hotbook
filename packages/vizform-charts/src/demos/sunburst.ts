@@ -40,7 +40,7 @@ export class MdSunburstLC extends Diagram {
       hovered: { current: null },
       wheelLocked: { current: null },
     };
-    attachChartGestures(this, { root, parentOf, state });
+    attachChartGestures(this, { root, parentOf, state, scalingMode: "proportional-neighbor" });
     const hoverCell = cell<BiNode | null>(null);
     state.hoverCell = hoverCell;
 
