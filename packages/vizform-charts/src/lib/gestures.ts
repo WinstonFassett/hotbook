@@ -128,6 +128,15 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
   });
   (host as ElementWithBridge).brSync = bridge;
 
+  const onDblClick = () => {
+    const node = state.hovered.current ?? state.focused.value;
+    if (!node || node === root) return;
+    if ((node.children as BiNode[]).length === 0) return;
+    const drillKey = (host as any).drillKey ?? 'default';
+    bridge.emitDrill(drillKey, node.value.id);
+  };
+  host.addEventListener("dblclick", onDblClick);
+
   // Demos call this from their pointer handlers; emit out unless it's an echo.
   state.emitHover = (node) => {
     if (applyingExternal) return;
@@ -144,6 +153,7 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
   return () => {
     host.removeEventListener("wheel", onWheel as EventListener);
     host.removeEventListener("keydown", onKeydown as EventListener);
+    host.removeEventListener("dblclick", onDblClick);
     focusDispose();
     state.emitHover = undefined;
     (host as ElementWithBridge).brSync = undefined;

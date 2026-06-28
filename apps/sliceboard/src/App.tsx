@@ -101,10 +101,11 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
 
   const depth = tile.depth || undefined // 0/undefined = all levels (chart shows full tree)
   const sortBy = tile.sortBy ?? 'index'
-  // No more global drillSubtree — each hier chart receives the full dataset and
-  // drills internally via scale remap (not data re-root). Flat charts get the
-  // full dataset as well; they just show all leaves.
-  const rawNodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.rows, tile.groupBy) : ds.rows)
+  const schema = schemaFor(tile.kind)
+  const drillKey = tile.id
+  const drillNodeId = useDrillNodeId(drillKey)
+  const sourceRows = schema.drillKey ? drillSubtree(ds.rows, drillNodeId) : ds.rows
+  const rawNodes = colorByGroup(tile.groupBy ? applyGroupBy(sourceRows, tile.groupBy) : sourceRows)
   const nodes = sortBy === 'value'
     ? [...rawNodes]
         .sort((a, b) => (b.measures[mk] ?? 0) - (a.measures[mk] ?? 0))
@@ -144,10 +145,10 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
   if (tile.kind === 'br-lc-gauge-segmented')return <BrLcGaugeSegmented nodes={sortedNodes} measureKey={mk} label={tile.title ?? mk} />
 
   // ── BR-LC hierarchical charts ────────────────────────────────────────────
-  if (tile.kind === 'br-lc-pack')           return <BrLcPack nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
-  if (tile.kind === 'br-lc-treemap')        return <BrLcTreemap nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
-  if (tile.kind === 'br-lc-icicle')         return <BrLcIcicle nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
-  if (tile.kind === 'br-lc-sunburst')       return <BrLcSunburst nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
+  if (tile.kind === 'br-lc-pack')           return <BrLcPack nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} drillKey={drillKey} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
+  if (tile.kind === 'br-lc-treemap')        return <BrLcTreemap nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} drillKey={drillKey} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
+  if (tile.kind === 'br-lc-icicle')         return <BrLcIcicle nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} drillKey={drillKey} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
+  if (tile.kind === 'br-lc-sunburst')       return <BrLcSunburst nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} drillKey={drillKey} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
   if (tile.kind === 'br-lc-sankey')         return <BrLcSankey edges={ds.edges ?? []} />
   if (tile.kind === 'br-lc-sankey-flow')    return <BrLcSankeyFlow />
   if (tile.kind === 'br-lc-tree')           return <BrLcTree nodes={nodes} measureKey={mk} sortBy={sortBy} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
@@ -308,8 +309,8 @@ function TileCard({
       </div>
       <div
         className={`tile-body${schema.scrollBody ? ' tile-body--scroll' : ''}`}
-        // Drill is now handled inside each chart via dblclick on nodes
       >
+        {schema.drillKey && <DrillBreadcrumb ds={ds} drillKey={tile.id} />}
         <TileContent tile={tile} ds={ds} measureKey={measureKey} onNodeUpdate={onNodeUpdate} onNodesUpdate={onNodesUpdate} onNodeReorder={onNodeReorder} />
       </div>
     </div>
@@ -481,23 +482,21 @@ function DashboardPicker({
  * Cross-tile sync is implicit: this component talks to the same hudStore every
  * hierarchical tile reads from, so the whole dashboard updates atomically.
  */
-function DrillBreadcrumb({ ds }: { ds: Dataset }) {
-  const drillNodeId = useDrillNodeId()
-  if (!drillNodeId) return null
-  const path = drillPath(ds.rows, drillNodeId)
-  if (path.length === 0) {
-    // Stale drill id pointing at a removed/foreign node — clear it so the
-    // dashboard stops trying to render an empty subtree.
-    hudStore.setDrill(null)
-    return null
-  }
+function DrillBreadcrumb({ ds, drillKey = 'default' }: { ds: Dataset; drillKey?: string }) {
+  const drillNodeId = useDrillNodeId(drillKey)
+  const path = drillNodeId ? drillPath(ds.rows, drillNodeId) : []
+  const stale = drillNodeId != null && path.length === 0
+  useEffect(() => {
+    if (stale) hudStore.setDrill(drillKey, null)
+  }, [stale, drillKey])
+  if (!drillNodeId || path.length === 0) return null
   const parent = path.length >= 2 ? path[path.length - 2]! : null
   return (
     <div className="sb-drill-bar" role="navigation" aria-label="Drill path">
       <button
         type="button"
         className="sb-drill-crumb"
-        onClick={() => hudStore.setDrill(null)}
+        onClick={() => hudStore.setDrill(drillKey, null)}
       >
         Root
       </button>
@@ -509,7 +508,7 @@ function DrillBreadcrumb({ ds }: { ds: Dataset }) {
             <button
               type="button"
               className={`sb-drill-crumb${isCurrent ? ' sb-drill-crumb--current' : ''}`}
-              onClick={() => hudStore.setDrill(isCurrent ? null : n.id)}
+              onClick={() => hudStore.setDrill(drillKey, isCurrent ? null : n.id)}
               aria-current={isCurrent ? 'location' : undefined}
               title={isCurrent ? 'Click to drill out fully' : `Drill to ${n.name}`}
             >
@@ -521,7 +520,7 @@ function DrillBreadcrumb({ ds }: { ds: Dataset }) {
       <button
         type="button"
         className="sb-btn sb-drill-up"
-        onClick={() => hudStore.setDrill(parent ? parent.id : null)}
+        onClick={() => hudStore.setDrill(drillKey, parent ? parent.id : null)}
         title="Drill out one level (Esc)"
       >
         ↑ Up
@@ -730,8 +729,6 @@ export function App() {
           <AddTileMenu onAdd={handleAddTile} />
         </div>
       </div>
-
-      {/* Breadcrumb now rendered inside each chart, not globally */}
 
       <div className="sb-grid-wrap">
         {ds && dash ? (
