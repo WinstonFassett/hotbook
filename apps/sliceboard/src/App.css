@@ -408,3 +408,59 @@
 [data-edit-armed="true"] .viz-svg .goal-atom path.shape {
   cursor: ns-resize;
 }
+
+/* ─── Drill breadcrumb ─────────────────────────────────────────────────────
+   Shown only when drillNodeId != null. Sits between the topbar and the grid,
+   shows the current drill path, and is the only chrome that exposes
+   drill-out. The chart itself is the drill-in affordance (dblclick on a
+   node) per docs/interaction-principles.md Rule 8.
+   ──────────────────────────────────────────────────────────────────────── */
+.sb-drill-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border-bottom: 1px solid #222;
+  background: #0d0f14;
+  font-size: 12px;
+  animation: sb-drill-fade-in 180ms ease-out;
+}
+.sb-drill-crumb {
+  background: none;
+  border: none;
+  color: #888;
+  padding: 2px 6px;
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: 3px;
+}
+.sb-drill-crumb:hover {
+  color: #ddd;
+  background: #1a1d23;
+}
+.sb-drill-crumb--current {
+  color: #fff;
+  font-weight: 500;
+}
+.sb-drill-sep {
+  color: #555;
+  margin: 0 1px;
+}
+.sb-drill-seg {
+  display: inline-flex;
+  align-items: center;
+}
+.sb-drill-up {
+  margin-left: auto;
+  font-size: 11px;
+  padding: 3px 8px;
+}
+
+/* Animated transition placeholder per Rule 17. The hierarchical tile body
+   gets a brief fade-in whenever drilled in/out so the level change is
+   communicated visually, even though the underlying re-root is currently a
+   hard remount. Coordinate with feat/transitions for a proper morph later. */
+@keyframes sb-drill-fade-in {
+  from { opacity: 0; transform: translateY(-3px); }
+  to   { opacity: 1; transform: none; }
+}
