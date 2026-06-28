@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react'
+import React, { useEffect, useMemo, useRef } from 'react'
 import {
   initializeWidget,
   useActiveViewId,
@@ -11,9 +11,31 @@ import {
   useViewMeta,
   FieldType,
 } from '@apitable/widget-sdk'
-import { Viz, HViz } from '@winstonfassett/vizform-react-d3'
 import { colorFor } from '@winstonfassett/vizform-core'
-import type { Goal, GoalTree, ViewMode } from '@winstonfassett/vizform-react-d3'
+import {
+  MdBarChartLC,
+  MdPieChartLC,
+  MdConcentricArcLC,
+  MdTreemapLC,
+  MdIcicleLC,
+  MdSunburstLC,
+  group,
+  leaf,
+  type BiNode,
+} from '@winstonfassett/vizform-charts'
+
+// Register custom elements once
+const TAGS: Array<[string, CustomElementConstructor]> = [
+  ['v-apitable-bar', MdBarChartLC as unknown as CustomElementConstructor],
+  ['v-apitable-pie', MdPieChartLC as unknown as CustomElementConstructor],
+  ['v-apitable-arc', MdConcentricArcLC as unknown as CustomElementConstructor],
+  ['v-apitable-treemap', MdTreemapLC as unknown as CustomElementConstructor],
+  ['v-apitable-icicle', MdIcicleLC as unknown as CustomElementConstructor],
+  ['v-apitable-sunburst', MdSunburstLC as unknown as CustomElementConstructor],
+]
+for (const [tag, cls] of TAGS) {
+  if (!customElements.get(tag)) customElements.define(tag, cls)
+}
 
 const NUMERIC_TYPES = new Set<string>([
   FieldType.Number,
@@ -22,32 +44,50 @@ const NUMERIC_TYPES = new Set<string>([
   FieldType.Rating,
 ])
 
-const FLAT_MODES: ViewMode[] = ['treemap', 'radial', 'bands']
-const HIER_MODES: ViewMode[] = ['h-treemap', 'h-icicle', 'h-radial']
-const HIER_LABELS: Record<string, string> = { 'h-treemap': 'tree', 'h-icicle': 'icicle', 'h-radial': 'sunburst' }
+type FlatMode = 'treemap' | 'bands' | 'pie' | 'arc'
+type HierMode = 'h-treemap' | 'h-icicle' | 'h-sunburst'
+type ViewMode = FlatMode | HierMode
 
-// Build a hierarchical GoalTree from records + multi-level group fields.
-function buildGroupedTree(
+const FLAT_MODES: FlatMode[] = ['treemap', 'bands', 'pie', 'arc']
+const HIER_MODES: HierMode[] = ['h-treemap', 'h-icicle', 'h-sunburst']
+const HIER_LABELS: Record<HierMode, string> = {
+  'h-treemap': 'tree',
+  'h-icicle': 'icicle',
+  'h-sunburst': 'sunburst',
+}
+const FLAT_TAG: Record<FlatMode, string> = {
+  treemap: 'v-apitable-treemap',
+  bands: 'v-apitable-bar',
+  pie: 'v-apitable-pie',
+  arc: 'v-apitable-arc',
+}
+const HIER_TAG: Record<HierMode, string> = {
+  'h-treemap': 'v-apitable-treemap',
+  'h-icicle': 'v-apitable-icicle',
+  'h-sunburst': 'v-apitable-sunburst',
+}
+
+interface FlatDatum { id: string; label: string; value: number }
+
+function buildHierRoot(
   records: ReturnType<typeof useRecords>,
   groupFieldIds: string[],
   valueFieldId: string,
-  activeUnit: string,
-  getFieldName: (id: string) => string,
-): GoalTree {
-  // get string value of a group field for a record (for bucketing)
+): BiNode {
   function bucket(rec: (typeof records)[0], fieldId: string): string {
     const v = rec.getCellValueString(fieldId)
     return v != null && v !== '' ? v : '(empty)'
   }
 
-  function buildLevel(recs: typeof records, depth: number, parentColor: string): GoalTree[] {
+  function buildLevel(recs: typeof records, depth: number): BiNode[] {
     if (depth >= groupFieldIds.length) {
-      return recs.map((r) => ({
-        id: r.id,
-        name: r.title ?? r.id,
-        color: colorFor(r.title ?? r.id),
-        value: Number(r.getCellValue(valueFieldId)) || 0,
-      }))
+      return recs.map((r) =>
+        leaf(
+          r.title ?? r.id,
+          Number(r.getCellValue(valueFieldId)) || 0,
+          colorFor(r.title ?? r.id),
+        ),
+      )
     }
     const fid = groupFieldIds[depth]
     const groups = new Map<string, typeof records>()
@@ -56,27 +96,69 @@ function buildGroupedTree(
       if (!groups.has(key)) groups.set(key, [])
       groups.get(key)!.push(rec)
     }
-    return Array.from(groups.entries()).map(([key, groupRecs]) => {
-      const color = colorFor(key)
-      return {
-        id: `__grp__d${depth}__${key}`,
-        name: key,
-        color,
-        value: 0,
-        children: buildLevel(groupRecs, depth + 1, color),
-      }
-    })
+    return Array.from(groups.entries()).map(([key, groupRecs]) =>
+      group(key, colorFor(key), buildLevel(groupRecs, depth + 1)),
+    )
   }
 
-  const children = buildLevel(records, 0, '#888')
-  return { id: '__root__', name: 'All', color: 'oklch(0.28 0 0)', value: 0, children }
+  const children = buildLevel(records, 0)
+  return group('All', 'oklch(0.28 0 0)', children)
+}
+
+interface ChartMountProps {
+  mode: ViewMode
+  flatData: FlatDatum[]
+  hierRoot: BiNode
+}
+
+function ChartMount({ mode, flatData, hierRoot }: ChartMountProps) {
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+    const isHier = (HIER_MODES as string[]).includes(mode)
+    const tag = isHier ? HIER_TAG[mode as HierMode] : FLAT_TAG[mode as FlatMode]
+    const el = document.createElement(tag) as HTMLElement & {
+      externalData?: unknown
+      externalRoot?: BiNode
+    }
+    el.setAttribute('no-source', '')
+    el.style.width = '100%'
+    el.style.height = '100%'
+    if (isHier) {
+      el.externalRoot = hierRoot
+    } else if (mode === 'bands') {
+      ;(el as any).orientation = 'horizontal'
+      ;(el as any).colorMode = 'palette'
+      ;(el as any).labelMode = 'inside'
+      ;(el as any).valueMode = 'inside'
+      el.externalData = flatData.map((d) => ({ label: d.label, value: d.value }))
+    } else if (mode === 'pie') {
+      el.externalData = flatData.map((d) => ({ id: d.id, label: d.label, value: d.value }))
+    } else if (mode === 'arc') {
+      el.externalData = flatData.map((d) => ({ label: d.label, value: Math.min(100, d.value) }))
+    } else {
+      // flat treemap: wrap as a single-level hier root
+      el.externalRoot = group(
+        'All',
+        'oklch(0.28 0 0)',
+        flatData.map((d) => leaf(d.label, d.value, colorFor(d.label))),
+      )
+    }
+    container.appendChild(el)
+    return () => {
+      if (container.contains(el)) container.removeChild(el)
+    }
+  }, [mode, flatData, hierRoot])
+
+  return <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
 }
 
 function AllocVizWidget() {
   const [isShowingSettings, toggleSettings] = useSettingsButton()
   const [vizMode, setVizMode] = useCloudStorage<ViewMode>('vizMode', 'treemap')
   const [activeFieldId, setActiveFieldId, canEditSettings] = useCloudStorage<string>('activeFieldId', '')
-  const [sortMode, setSortMode] = useCloudStorage<'index' | 'size'>('sortMode', 'index')
 
   const viewId = useActiveViewId()
   const records = useRecords(viewId)
@@ -89,20 +171,14 @@ function AllocVizWidget() {
   const hasGroups = groupInfo.length > 0
 
   const numericFields = useMemo(
-    () => fields.filter(f => NUMERIC_TYPES.has(f.type as string)),
-    [fields]
+    () => fields.filter((f) => NUMERIC_TYPES.has(f.type as string)),
+    [fields],
   )
 
   const resolvedFieldId =
-    numericFields.find(f => f.id === activeFieldId)?.id ?? numericFields[0]?.id ?? ''
-  const activeField = fields.find(f => f.id === resolvedFieldId)
+    numericFields.find((f) => f.id === activeFieldId)?.id ?? numericFields[0]?.id ?? ''
+  const activeField = fields.find((f) => f.id === resolvedFieldId)
   const activeUnit = activeField?.name ?? 'value'
-
-  const fieldIdByName = useMemo(() => {
-    const m: Record<string, string> = {}
-    for (const f of fields) m[f.name] = f.id
-    return m
-  }, [fields])
 
   const fieldNameById = useMemo(() => {
     const m: Record<string, string> = {}
@@ -110,58 +186,34 @@ function AllocVizWidget() {
     return m
   }, [fields])
 
-  const goals = useMemo<Goal[]>(() =>
-    records.map((record, idx) => ({
-      id: record.id,
-      name: record.title ?? record.id,
-      color: colorFor(record.title ?? record.id),
-      measurements: {
-        [activeUnit]: Number(record.getCellValue(resolvedFieldId)) || 0,
-        _index: idx,
-      },
-      archived: false,
-      tags: [],
-      urgent: false,
-      important: false,
-      createdAt: '',
-      updatedAt: '',
-    })),
-    [records, resolvedFieldId, activeUnit]
-  )
+  const flatData = useMemo<FlatDatum[]>(() => {
+    if (!resolvedFieldId) return []
+    return records.map((r) => ({
+      id: r.id,
+      label: r.title ?? r.id,
+      value: Number(r.getCellValue(resolvedFieldId)) || 0,
+    }))
+  }, [records, resolvedFieldId])
 
-  const groupedTree = useMemo<GoalTree>(() => {
-    if (!resolvedFieldId) return { id: '__root__', name: 'All', color: 'oklch(0.28 0 0)', value: 0, children: [] }
+  const hierRoot = useMemo<BiNode>(() => {
+    if (!resolvedFieldId) return group('All', 'oklch(0.28 0 0)', [])
     if (hasGroups) {
-      const groupFieldIds = groupInfo.map(g => g.fieldId)
-      return buildGroupedTree(records, groupFieldIds, resolvedFieldId, activeUnit, id => fieldNameById[id] ?? id)
+      return buildHierRoot(records, groupInfo.map((g) => g.fieldId), resolvedFieldId)
     }
-    // Flat: wrap all records in a single-level tree
-    return {
-      id: '__root__', name: 'All', color: 'oklch(0.28 0 0)', value: 0,
-      children: records.map((r) => ({
-        id: r.id,
-        name: r.title ?? r.id,
-        color: colorFor(r.title ?? r.id),
-        value: Number(r.getCellValue(resolvedFieldId)) || 0,
-      })),
-    }
-  }, [records, groupInfo, resolvedFieldId, activeUnit, hasGroups, fieldNameById])
+    return group(
+      'All',
+      'oklch(0.28 0 0)',
+      records.map((r) =>
+        leaf(
+          r.title ?? r.id,
+          Number(r.getCellValue(resolvedFieldId)) || 0,
+          colorFor(r.title ?? r.id),
+        ),
+      ),
+    )
+  }, [records, groupInfo, resolvedFieldId, hasGroups])
 
   const isHierMode = (HIER_MODES as string[]).includes(vizMode)
-  const effectiveMode: ViewMode = vizMode
-
-  const handleUpdate = (id: string, patch: Partial<Goal>) => {
-    if (!patch.measurements || !datasheet) return
-    const updates: Record<string, unknown> = {}
-    for (const [unitName, val] of Object.entries(patch.measurements)) {
-      const fid = fieldIdByName[unitName]
-      if (fid) updates[fid] = val
-    }
-    if (Object.keys(updates).length) datasheet.setRecord(id, updates as never)
-  }
-
-  const handleGoalClick = (goal: Goal) => expandRecord({ recordIds: [goal.id] })
-  const handleLeafClick = (id: string) => expandRecord({ recordIds: [id] })
 
   const btnBase: React.CSSProperties = {
     padding: '2px 10px', borderRadius: 4, border: '1px solid #444',
@@ -174,21 +226,17 @@ function AllocVizWidget() {
 
       {/* Mode strip */}
       <div style={{ display: 'flex', gap: 4, padding: '4px 8px', borderBottom: '1px solid #2a2a2a', flexShrink: 0, alignItems: 'center', flexWrap: 'wrap' }}>
-        {FLAT_MODES.map(m => (
-          <button key={m} style={effectiveMode === m ? btnActive : btnBase} onClick={() => setVizMode(m)}>
+        {FLAT_MODES.map((m) => (
+          <button key={m} style={vizMode === m ? btnActive : btnBase} onClick={() => setVizMode(m)}>
             {m}
           </button>
         ))}
         <span style={{ color: '#444', fontSize: 11 }}>|</span>
-        {HIER_MODES.map(m => (
-          <button key={m} style={effectiveMode === m ? btnActive : btnBase} onClick={() => setVizMode(m)}>
+        {HIER_MODES.map((m) => (
+          <button key={m} style={vizMode === m ? btnActive : btnBase} onClick={() => setVizMode(m)}>
             {HIER_LABELS[m]}
           </button>
         ))}
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
-          <button style={sortMode === 'index' ? btnActive : btnBase} onClick={() => setSortMode('index')} title="Sort by view order">idx</button>
-          <button style={sortMode === 'size' ? btnActive : btnBase} onClick={() => setSortMode('size')} title="Sort by value">↓val</button>
-        </div>
       </div>
 
       {/* Settings panel */}
@@ -196,7 +244,7 @@ function AllocVizWidget() {
         <div style={{ padding: '8px', borderBottom: '1px solid #2a2a2a', flexShrink: 0, fontSize: 12 }}>
           <div style={{ marginBottom: 4, color: '#888' }}>Size field</div>
           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-            {numericFields.map(f => (
+            {numericFields.map((f) => (
               <button key={f.id} disabled={!canEditSettings}
                 style={f.id === resolvedFieldId ? btnActive : btnBase}
                 onClick={() => setActiveFieldId(f.id)}>
@@ -206,7 +254,7 @@ function AllocVizWidget() {
           </div>
           {hasGroups && (
             <div style={{ marginTop: 6, color: '#666', fontSize: 11 }}>
-              Grouped by: {groupInfo.map(g => fieldNameById[g.fieldId] ?? g.fieldId).join(' › ')}
+              Grouped by: {groupInfo.map((g) => fieldNameById[g.fieldId] ?? g.fieldId).join(' › ')}
             </div>
           )}
         </div>
@@ -222,21 +270,11 @@ function AllocVizWidget() {
       {/* Viz */}
       {numericFields.length > 0 && (
         <div style={{ flex: 1, overflow: 'hidden' }}>
-          {isHierMode ? (
-            <HViz tree={groupedTree} mode={effectiveMode as 'h-treemap' | 'h-icicle' | 'h-radial'} onLeafClick={handleLeafClick} />
-          ) : (
-            <Viz
-              goals={goals}
-              mode={effectiveMode as 'treemap' | 'radial' | 'bands'}
-              activeUnit={activeUnit}
-              unitKind="size"
-              sortUnit={sortMode === 'index' ? '_index' : activeUnit}
-              sortUnitKind={sortMode === 'index' ? 'order' : 'size'}
-              frame={undefined}
-              onUpdate={handleUpdate}
-              onGoalClick={handleGoalClick}
-            />
-          )}
+          <ChartMount
+            mode={vizMode}
+            flatData={flatData}
+            hierRoot={hierRoot}
+          />
         </div>
       )}
     </div>
