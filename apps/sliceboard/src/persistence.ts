@@ -1,5 +1,5 @@
 import type { PNode } from '@winstonfassett/vizform-react-d3'
-import type { PEdge } from '@winstonfassett/vizform-core'
+import type { PEdge, ScalingMode } from '@winstonfassett/vizform-core'
 import { colorFor } from '@winstonfassett/vizform-core'
 import type { LayoutItem } from 'react-grid-layout'
 
@@ -83,6 +83,9 @@ export interface Tile {
   valueMode?: 'inside' | 'outside' | 'none'
   minBandSize?: number
   maxItems?: number
+  scalingMode?: ScalingMode
+  cascadeEnabled?: boolean
+  fixedTotal?: number | null
 }
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
