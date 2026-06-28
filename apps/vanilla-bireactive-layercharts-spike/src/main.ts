@@ -1,19 +1,23 @@
 import { Diagram } from "bireactive";
-import { MdPack } from "./demos/pack";
-import { MdTreemapLC } from "./demos/treemap";
-import { MdIcicleLC } from "./demos/icicle";
-import { MdSunburstLC } from "./demos/sunburst";
-import { MdLineChartLC } from "./demos/line-chart";
-import { MdAreaChartLC } from "./demos/area-chart";
-import { MdBarChartLC } from "./demos/bar-chart";
-import { MdScatterChartLC } from "./demos/scatter-chart";
-import { MdPieChartLC } from "./demos/pie-chart";
-import { MdRadarChartLC } from "./demos/radar-chart";
-import { MdConcentricArcLC } from "./demos/concentric-arc";
-import { MdSankeySimple, MdSankeyComplex, MdSankeyHierarchy } from "./demos/sankey";
-import { MdSankeyFlow } from "./demos/sankey-flow";
-import { MdTreeChart } from "./demos/tree-chart";
-import { MdBudgetTree } from "./demos/budget-tree";
+import {
+  MdPack,
+  MdTreemapLC,
+  MdIcicleLC,
+  MdSunburstLC,
+  MdLineChartLC,
+  MdAreaChartLC,
+  MdBarChartLC,
+  MdScatterChartLC,
+  MdPieChartLC,
+  MdRadarChartLC,
+  MdConcentricArcLC,
+  MdSankeySimple,
+  MdSankeyComplex,
+  MdSankeyHierarchy,
+  MdSankeyFlow,
+  MdTreeChart,
+  MdBudgetTree,
+} from "@winstonfassett/vizform-charts";
 
 class MdBandsChartLC extends MdBarChartLC {
   constructor() { super(); this.orientation = 'horizontal'; this.colorMode = 'palette'; this.labelMode = 'inside'; this.valueMode = 'inside'; }

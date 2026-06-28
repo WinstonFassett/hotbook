@@ -1,4 +1,4 @@
-import { group, leaf, type BiNode } from "./tree";
+import { group, leaf, type BiNode } from "@winstonfassett/vizform-charts";
 
 export function portfolio(): BiNode {
   return group("Portfolio", "#222", [
