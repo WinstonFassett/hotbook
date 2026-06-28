@@ -10,6 +10,7 @@ import {
   Vec,
 } from "bireactive";
 import { partition, type HierarchyRectangularNode } from "d3-hierarchy";
+import { depthFill } from "../lib/depth-color";
 import { buildHierarchy } from "../lib/interaction";
 import { buildParentIndex, type BiNode } from "../lib/tree";
 import { portfolio, walkWithDepth } from "../lib/portfolio";
@@ -72,9 +73,12 @@ export class MdSunburstLC extends Diagram {
       );
       const strokeWidth = derive(() => (state.focused.value === node || hoverCell.value === node ? 2 : 1));
 
+      // Color-by-parent (mirrors LayerChart): every node keeps its group hue,
+      // but each deeper ring is brightened so the center stays saturated and the
+      // outer rings wash out toward the leaves. Replaces the old uniform opacity
+      // dim, which darkened every inner ring to the same mud on the dark ground.
       const arc = s(annularSector(center, rOut, rIn, a0, a1, {
-        fill: node.value.color,
-        opacity: isLeaf ? 0.95 : 0.5,
+        fill: depthFill(node.value.color, depth).toString(),
         stroke,
         strokeWidth,
       }));

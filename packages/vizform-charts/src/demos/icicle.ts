@@ -11,6 +11,7 @@ import {
   Vec,
 } from "bireactive";
 import { partition, type HierarchyRectangularNode } from "d3-hierarchy";
+import { depthFill, labelInk } from "../lib/depth-color";
 import { buildHierarchy } from "../lib/interaction";
 import { buildParentIndex, type BiNode } from "../lib/tree";
 import { portfolio, walkWithDepth } from "../lib/portfolio";
@@ -82,9 +83,12 @@ export class MdIcicleLC extends Diagram {
       );
       const strokeWidth = derive(() => (state.focused.value === node || hoverCell.value === node ? 2 : 1));
 
+      // Color-by-parent: brighten by depth so the root band stays saturated and
+      // deeper bands wash out toward the leaves (mirrors LayerChart; replaces the
+      // uniform opacity dim that muddied every non-leaf band identically).
+      const nodeFill = depthFill(node.value.color, depth);
       const tile = s(rect(x, y, w, h, {
-        fill: node.value.color,
-        opacity: isLeaf ? 0.95 : 0.5,
+        fill: nodeFill.toString(),
         stroke,
         strokeWidth,
         corner: 2,
@@ -104,7 +108,7 @@ export class MdIcicleLC extends Diagram {
       s(label(
         Vec.derive(() => ({ x: x.value + w.value / 2, y: y.value + h.value / 2 })),
         text,
-        { size: isLeaf ? 11 : 10, align: Anchor.Center, fill: "#fff", bold: !isLeaf },
+        { size: isLeaf ? 11 : 10, align: Anchor.Center, fill: labelInk(nodeFill), bold: !isLeaf },
       ));
     }
 

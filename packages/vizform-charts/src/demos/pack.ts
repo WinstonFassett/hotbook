@@ -9,6 +9,7 @@ import {
   Vec,
 } from "bireactive";
 import { pack as d3pack, type HierarchyCircularNode } from "d3-hierarchy";
+import { depthFill, labelInk } from "../lib/depth-color";
 import { buildHierarchy } from "../lib/interaction";
 import { buildParentIndex, type BiNode } from "../lib/tree";
 import { portfolio, walkWithDepth } from "../lib/portfolio";
@@ -63,10 +64,13 @@ export class MdPack extends Diagram {
       );
       const strokeWidth = derive(() => (state.focused.value === node || hoverCell.value === node ? 2 : 1));
 
+      // Color-by-parent: brighten by depth (deeper circles wash out). Root is
+      // kept as a faint backdrop. Replaces the uniform opacity dim.
+      const nodeFill = depthFill(node.value.color, depth);
       const disc = s(
         circle(Vec.derive(() => ({ x: cx.value, y: cy.value })), r, {
-          fill: node.value.color,
-          opacity: depth === 0 ? 0.12 : isLeaf ? 0.95 : 0.4,
+          fill: depth === 0 ? node.value.color : nodeFill.toString(),
+          opacity: depth === 0 ? 0.12 : 1,
           stroke,
           strokeWidth,
         }),
@@ -83,7 +87,7 @@ export class MdPack extends Diagram {
           return `${node.value.label}\n${node.value.total.value.toFixed(0)}`;
         });
         s(label(Vec.derive(() => ({ x: cx.value, y: cy.value })), text, {
-          size: 10, align: Anchor.Center, fill: "#fff",
+          size: 10, align: Anchor.Center, fill: labelInk(nodeFill),
         }));
       }
     }

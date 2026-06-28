@@ -9,6 +9,7 @@ import {
   Vec,
 } from "bireactive";
 import { treemap, treemapSquarify, type HierarchyRectangularNode } from "d3-hierarchy";
+import { depthFill, labelInk } from "../lib/depth-color";
 import { buildHierarchy } from "../lib/interaction";
 import { buildParentIndex, type BiNode } from "../lib/tree";
 import { portfolio, walkWithDepth } from "../lib/portfolio";
@@ -72,9 +73,12 @@ export class MdTreemapLC extends Diagram {
       );
       const strokeWidth = derive(() => (state.focused.value === node || hoverCell.value === node ? 2 : 1));
 
+      // Color-by-parent: brighten by depth (deeper tiles wash out). Root kept as
+      // a faint backdrop. Replaces the uniform opacity dim.
+      const nodeFill = depthFill(node.value.color, depth);
       const tile = s(rect(x, y, w, h, {
-        fill: node.value.color,
-        opacity: depth === 0 ? 0.12 : isLeaf ? 0.95 : 0.45,
+        fill: depth === 0 ? node.value.color : nodeFill.toString(),
+        opacity: depth === 0 ? 0.12 : 1,
         stroke,
         strokeWidth,
         corner: 3,
@@ -95,7 +99,7 @@ export class MdTreemapLC extends Diagram {
         s(label(
           Vec.derive(() => ({ x: x.value + w.value / 2, y: y.value + (isLeaf ? h.value / 2 : 10) })),
           text,
-          { size: isLeaf ? 11 : 10, align: Anchor.Center, fill: "#fff", bold: !isLeaf },
+          { size: isLeaf ? 11 : 10, align: Anchor.Center, fill: labelInk(nodeFill), bold: !isLeaf },
         ));
       }
     }
