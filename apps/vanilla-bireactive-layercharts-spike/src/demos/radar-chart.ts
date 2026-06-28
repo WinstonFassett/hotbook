@@ -3,7 +3,7 @@
 // Grid: polygon rings at radius ticks + spoke lines. Points on polygon are clickable/editable.
 
 import { Anchor, cell, circle, derive, Diagram, effect as biEffect, label, type Mount, pathD, Vec } from "bireactive";
-import { scaleBand, scaleLinear } from "d3-scale";
+import { scaleLinear } from "d3-scale";
 import { extent, ticks as d3Ticks } from "d3-array";
 import { wheelController, dragController } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
@@ -64,15 +64,7 @@ export class MdRadarChartLC extends Diagram {
       onEnd: () => { hover.value = null; this.dispatchEvent(new CustomEvent("gesturecommit")); },
     };
 
-    // x: scaleBand over category names → angle at band center
     // y: scaleLinear 0–100 → radius 0–R_MAX
-    const xScale = derive(() => {
-      const rows = data.value as Spoke[];
-      return scaleBand<string>()
-        .domain(rows.map((d) => d.name))
-        .range([0, 2 * Math.PI])
-        .padding(0);
-    });
     // Dynamic domain: extent of current data, niced to clean tick values.
     const domainMin = derive(() => {
       const rows = data.value as Spoke[];
@@ -93,11 +85,10 @@ export class MdRadarChartLC extends Diagram {
       scaleLinear().domain([0, domainMax.value]).range([0, rMax.value])
     );
 
-    // Angle for spoke i (band center)
+    // Angle for spoke i: evenly distributed by index so duplicate names never collapse spokes.
     const angle = (i: number): number => {
-      const rows = data.value as Spoke[];
-      const xs = xScale.value;
-      return (xs(rows[i]!.name) ?? 0) + xs.bandwidth() / 2 - Math.PI / 2;
+      const n = (data.value as Spoke[]).length;
+      return (2 * Math.PI / n) * i - Math.PI / 2;
     };
 
     // Reactive grid rings — pool of MAX_RINGS slots driven by ticks.value.
