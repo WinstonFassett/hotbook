@@ -1,7 +1,9 @@
-import type { PNode } from '@winstonfassett/vizform-react'
+import type { PNode } from '@winstonfassett/vizform-react-d3'
+import type { PEdge } from '@winstonfassett/vizform-core'
+import { colorFor } from '@winstonfassett/vizform-core'
 import type { LayoutItem } from 'react-grid-layout'
 
-export type { PNode }
+export type { PNode, PEdge }
 
 // ─── Schema defs ──────────────────────────────────────────────────────────────
 
@@ -9,6 +11,12 @@ export interface MeasureDef {
   key: string
   label: string
   unit?: string
+}
+
+export interface PEdge {
+  source: string
+  target: string
+  value: number
 }
 
 export interface DimDef {
@@ -23,30 +31,58 @@ export interface Dataset {
   id: string
   name: string
   createdAt: string
+  shape: 'flat' | 'tree' | 'graph'
   rows: PNode[]
+  edges?: PEdge[]
   measureDefs: MeasureDef[]
   dimDefs: DimDef[]
 }
 
 // ─── Dashboard tile ───────────────────────────────────────────────────────────
 
+// Gen-0 and Svelte variants are retired from the picker but kept as string literals
+// so old persisted dashboards don't crash if encountered.
+export type RetiredTileKind =
+  | 'treemap' | 'radial' | 'bands'           // gen-0 flat morph trio
+  | 'h-treemap' | 'h-icicle' | 'h-radial'   // gen-0 hier D3
+  | 'svelte-br-lc-sunburst' | 'svelte-br-lc-icicle' | 'svelte-br-lc-pack' | 'svelte-br-lc-treemap' | 'svelte-treemap-demo'
+
 export type TileKind =
   | 'treetable'
-  | 'treemap'
-  | 'radial'
-  | 'bands'
-  | 'h-treemap'
-  | 'h-icicle'
-  | 'h-radial'
+  // bireactive LC-port charts (canon)
+  | 'br-lc-bar'
+  | 'br-lc-bands'
+  | 'br-lc-line'
+  | 'br-lc-area'
+  | 'br-lc-scatter'
+  | 'br-lc-pie'
+  | 'br-lc-radar'
+  | 'br-lc-concentric-arc'
+  | 'br-lc-pack'
+  | 'br-lc-treemap'
+  | 'br-lc-icicle'
+  | 'br-lc-sunburst'
+  | 'br-lc-sankey'
+  | 'br-lc-sankey-flow'
+  | 'br-lc-tree'
+  | RetiredTileKind
 
 export interface Tile {
   id: string
   kind: TileKind
   title?: string
   measureKey?: string
+  xKey?: string
+  yKey?: string
   groupBy?: string
   depth?: number
   sortBy?: 'index' | 'value'
+  orientation?: 'vertical' | 'horizontal'
+  colorMode?: 'single' | 'palette'
+  labelMode?: 'axis' | 'inside' | 'both'
+  valueMode?: 'inside' | 'outside' | 'none'
+  minBandSize?: number
+  maxItems?: number
 }
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
@@ -72,7 +108,7 @@ export interface Workspace {
 
 // ─── Storage ──────────────────────────────────────────────────────────────────
 
-const LS_KEY = 'sb:workspace:v5'
+const LS_KEY = 'sb:workspace:v10'
 
 function genId(): string {
   return Math.random().toString(36).slice(2, 10)
@@ -89,6 +125,34 @@ function row(name: string, measures: Record<string, number>, dims: Record<string
   return { id: nid(), parentId: parentId ?? null, index: _idc, name, measures, dims, ...(color ? { color } : {}) }
 }
 
+// ─── Seed datasets ────────────────────────────────────────────────────────────
+//
+// Dataset 1 — Fruit (flat + groupBy demo)
+//   Shape: flat (no parentId). 12 rows, 1 measure (value), 2 dims (group, season).
+//   Groups: Alpha (Apples/Bananas/Grapes), Beta (Carrots/Dates/Elderberry),
+//           Gamma (Eggplant/Fennel/Honeydew), Delta (Jackfruit/Kale/Lemon).
+//   Use: exercises flat charts (bar/line/area/pie/radar/concentric-arc/scatter),
+//        groupBy demos (group or season → hierarchy for pack/treemap/icicle/sunburst).
+//
+// Dataset 2 — Team Allocation (2-level hierarchy)
+//   Shape: tree (3 quarter roots Q2/Q3/Q4 → team leaves). 16 rows total.
+//   Measures: budget (k), headcount. Dims: team, role.
+//   Teams per quarter: Design, Frontend, Backend, Infra (+ PM in Q4).
+//   Use: exercises hier charts natively (no groupBy needed), scatter (budget vs headcount),
+//        multi-measure selector, cross-quarter comparison via flat charts on leaves.
+//
+// Dataset 3 — Life Areas (4-level hierarchy: goal → project → subproject → task)
+//   Shape: tree (5-6 top-level goals, each with 2-3 projects, 2-3 subprojects, 2-5 tasks).
+//   Measures: est (hours estimated), act (hours actual, optional).
+//   Dims: level (goal/project/subproject/task), status (done/doing/todo).
+//   Colors: each goal has a distinct palette color; descendants inherit it.
+//   Use: deep hier charts (icicle/sunburst/pack/treemap — depth selector meaningful here),
+//        groupBy:'level' groups leaves by level for flat charts,
+//        groupBy:'status' clusters by done/doing/todo.
+//   Note: all nodes already have parentId (fully hierarchical), so applyGroupBy only
+//         re-roots the top-level goal nodes under a virtual parent named by the dim value.
+//
+// ─────────────────────────────────────────────────────────────────────────────
 // ─── Dataset 1: Fruit (flat + groupBy demo) ───────────────────────────────────
 
 function buildFruitDataset(): Dataset {
@@ -111,6 +175,7 @@ function buildFruitDataset(): Dataset {
     id: 'ds-fruit',
     name: 'Fruit (demo)',
     createdAt: NOW,
+    shape: 'flat' as const,
     rows,
     measureDefs: [{ key: 'value', label: 'Value' }],
     dimDefs: [
@@ -148,6 +213,7 @@ function buildTeamDataset(): Dataset {
     id: 'ds-team',
     name: 'Team allocation (demo)',
     createdAt: NOW,
+    shape: 'tree' as const,
     rows,
     measureDefs: [
       { key: 'budget', label: 'Budget', unit: 'k' },
@@ -402,6 +468,7 @@ function buildLifeDataset(): Dataset {
     id: 'ds-life',
     name: 'Life areas',
     createdAt: NOW,
+    shape: 'tree' as const,
     rows,
     measureDefs: [
       { key: 'est', label: 'Estimate', unit: 'h' },
@@ -414,63 +481,82 @@ function buildLifeDataset(): Dataset {
   }
 }
 
+// ─── Dataset 4: Supply chain (flat edge-list for Sankey) ──────────────────────
+
+function buildSupplyChainDataset(): Dataset {
+  const NODES = ['Mining', 'Refining', 'Manufacturing', 'Warehouse', 'Retail', 'Export']
+  const edges: PEdge[] = [
+    { source: 'Mining',        target: 'Refining',       value: 80 },
+    { source: 'Mining',        target: 'Export',         value: 20 },
+    { source: 'Refining',      target: 'Manufacturing',  value: 65 },
+    { source: 'Refining',      target: 'Export',         value: 15 },
+    { source: 'Manufacturing', target: 'Warehouse',      value: 50 },
+    { source: 'Manufacturing', target: 'Retail',         value: 15 },
+    { source: 'Warehouse',     target: 'Retail',         value: 40 },
+    { source: 'Warehouse',     target: 'Export',         value: 10 },
+  ]
+  return {
+    id: 'ds-supply',
+    name: 'Supply chain (sankey)',
+    createdAt: NOW,
+    rows: [],
+    edges,
+    measureDefs: [],
+    dimDefs: [],
+  }
+}
+
 function buildSeedWorkspace(): Workspace {
   const fruit = buildFruitDataset()
   const team  = buildTeamDataset()
   const life  = buildLifeDataset()
 
-  // Fruit: flat viz
-  const fruitTiles: Tile[] = [
-    { id: 'ft-treemap', kind: 'treemap', title: 'Treemap' },
-    { id: 'ft-radial',  kind: 'radial',  title: 'Radial' },
-    { id: 'ft-bands',   kind: 'bands',   title: 'Bands' },
-  ]
-  const fruitLayout: LayoutItem[] = [
-    { i: 'ft-treemap', x: 0, y: 0,  w: 6, h: 10 },
-    { i: 'ft-radial',  x: 6, y: 0,  w: 6, h: 10 },
-    { i: 'ft-bands',   x: 0, y: 10, w: 12, h: 8 },
+  // Canon viz kinds for seed dashboard (retired gen-0/Svelte kinds excluded)
+  const ALL_KINDS: TileKind[] = [
+    'treetable',
+    'br-lc-bar', 'br-lc-bands', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie',
+    'br-lc-radar', 'br-lc-concentric-arc',
+    'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-sankey-flow', 'br-lc-tree',
   ]
 
-  // Team: hier + groupBy
-  const teamTiles: Tile[] = [
-    { id: 'tm-htreemap', kind: 'h-treemap', title: 'By Quarter' },
-    { id: 'tm-hicicle',  kind: 'h-icicle',  title: 'Icicle', groupBy: 'role' },
-  ]
-  const teamLayout: LayoutItem[] = [
-    { i: 'tm-htreemap', x: 0, y: 0, w: 6, h: 12 },
-    { i: 'tm-hicicle',  x: 6, y: 0, w: 6, h: 12 },
-  ]
+  const GROUPBY_KINDS = new Set<TileKind>([
+    'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree',
+  ])
 
-  // Life: 4-level hierarchy, two dashboards
-  const lifeTiles1: Tile[] = [
-    { id: 'lf-table',    kind: 'treetable', title: 'Tasks' },
-    { id: 'lf-htreemap', kind: 'h-treemap', title: 'Treemap' },
-    { id: 'lf-hicicle',  kind: 'h-icicle',  title: 'Icicle' },
-  ]
-  const lifeLayout1: LayoutItem[] = [
-    { i: 'lf-table',    x: 0, y: 0, w: 6, h: 12 },
-    { i: 'lf-htreemap', x: 6, y: 0, w: 6, h: 6 },
-    { i: 'lf-hicicle',  x: 6, y: 6, w: 6, h: 6 },
-  ]
-  const lifeTiles2: Tile[] = [
-    { id: 'lf-radial',   kind: 'radial',   title: 'Flat radial' },
-    { id: 'lf-hradial',  kind: 'h-radial', title: 'Sunburst' },
-  ]
-  const lifeLayout2: LayoutItem[] = [
-    { i: 'lf-radial',  x: 0, y: 0, w: 6, h: 12 },
-    { i: 'lf-hradial', x: 6, y: 0, w: 6, h: 12 },
-  ]
+  function makeAllVizDash(prefix: string, flatGroupBy?: string): { tiles: Tile[]; layout: LayoutItem[] } {
+    const tiles: Tile[] = ALL_KINDS.map((kind, i) => ({
+      id: `${prefix}-${i}`,
+      kind,
+      title: kind,
+      ...(flatGroupBy && GROUPBY_KINDS.has(kind) ? { groupBy: flatGroupBy } : {}),
+    }))
+    const layout: LayoutItem[] = ALL_KINDS.map((_, i) => ({
+      i: `${prefix}-${i}`,
+      x: (i % 4) * 3,
+      y: Math.floor(i / 4) * 5,
+      w: 3,
+      h: 5,
+    }))
+    return { tiles, layout }
+  }
+
+  const lifeViz  = makeAllVizDash('lf', 'level')
+  const fruitViz = makeAllVizDash('fr', 'group')
+  const teamViz  = makeAllVizDash('tm', 'role')
+  const supply   = buildSupplyChainDataset()
+  const supplyTiles: Tile[] = [{ id: 'sp-0', kind: 'br-lc-sankey', title: 'Supply chain' }]
+  const supplyLayout: LayoutItem[] = [{ i: 'sp-0', x: 0, y: 0, w: 12, h: 8 }]
 
   return {
-    datasets: [life, fruit, team],
+    datasets: [life, fruit, team, supply],
     dashboards: [
-      { id: 'dash-life-overview', datasetId: life.id, name: 'Overview', createdAt: NOW, layout: lifeLayout1, tiles: lifeTiles1, measureKey: 'est' },
-      { id: 'dash-life-shape',    datasetId: life.id, name: 'Shape',    createdAt: NOW, layout: lifeLayout2, tiles: lifeTiles2, measureKey: 'est' },
-      { id: 'dash-fruit',         datasetId: fruit.id, name: 'Overview', createdAt: NOW, layout: fruitLayout, tiles: fruitTiles, measureKey: 'value' },
-      { id: 'dash-team',          datasetId: team.id,  name: 'Allocation', createdAt: NOW, layout: teamLayout, tiles: teamTiles, measureKey: 'budget' },
+      { id: 'dash-life',   datasetId: life.id,   name: 'Life',          createdAt: NOW, layout: lifeViz.layout,   tiles: lifeViz.tiles,   measureKey: 'est' },
+      { id: 'dash-fruit',  datasetId: fruit.id,  name: 'Fruit',         createdAt: NOW, layout: fruitViz.layout,  tiles: fruitViz.tiles,  measureKey: 'value' },
+      { id: 'dash-team',   datasetId: team.id,   name: 'Team',          createdAt: NOW, layout: teamViz.layout,   tiles: teamViz.tiles,   measureKey: 'budget' },
+      { id: 'dash-supply', datasetId: supply.id, name: 'Supply chain',  createdAt: NOW, layout: supplyLayout,     tiles: supplyTiles,     measureKey: 'value' },
     ],
     activeDatasetId: life.id,
-    activeDashboardId: 'dash-life-overview',
+    activeDashboardId: 'dash-life',
   }
 }
 
@@ -522,7 +608,14 @@ export function applyGroupBy(rows: PNode[], dimKey: string): PNode[] {
     if (!groups.has(val)) {
       const gid = `__grp__${dimKey}__${val}`
       groups.set(val, gid)
-      groupNodes.push({ id: gid, parentId: null, index: gi++, name: val, measures: {}, dims: {} })
+      // Color the synthetic group by its members' shared color so the inner ring
+      // matches the outer ring (members carry explicit hues in flat datasets).
+      // Fall back to a palette pick from the group name when members are uncolored.
+      const members = roots.filter(m => (m.dims[dimKey] ?? '(none)') === val)
+      const memberColors = new Set(members.map(m => m.color).filter(Boolean))
+      const groupColor = memberColors.size === 1 ? members.find(m => m.color)!.color! : colorFor(val)
+      groupNodes.push({ id: gid, parentId: null, index: gi, name: val, measures: {}, dims: {}, color: groupColor })
+      gi++
     }
   }
 
@@ -543,6 +636,25 @@ export function updateRow(ws: Workspace, dsId: string, rowId: string, patch: Par
       ds.id !== dsId ? ds : {
         ...ds,
         rows: ds.rows.map(r => r.id !== rowId ? r : { ...r, ...patch }),
+      }
+    ),
+  }
+}
+
+// Apply many row patches in a SINGLE workspace update. Parent-resize gestures
+// redistribute across siblings, changing several leaves on one tick; emitting
+// them as separate updateRow calls would clobber each other (each starts from
+// the same stale workspace, so only the last write survives). Batching keeps
+// every changed leaf in one commit.
+export function updateRows(ws: Workspace, dsId: string, patches: Array<{ id: string; patch: Partial<PNode> }>): Workspace {
+  if (patches.length === 0) return ws
+  const byId = new Map(patches.map(p => [p.id, p.patch]))
+  return {
+    ...ws,
+    datasets: ws.datasets.map(ds =>
+      ds.id !== dsId ? ds : {
+        ...ds,
+        rows: ds.rows.map(r => { const p = byId.get(r.id); return p ? { ...r, ...p } : r }),
       }
     ),
   }

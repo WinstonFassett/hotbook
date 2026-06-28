@@ -1,18 +1,26 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { GridLayout, useContainerWidth } from 'react-grid-layout'
 import type { LayoutItem } from 'react-grid-layout'
-import { Viz, HTreetable, pickColor } from '@winstonfassett/vizform-react'
-import type { Goal } from '@winstonfassett/vizform-react'
-import { leavesOf } from '@winstonfassett/vizform-core'
+import { Viz, HTreetable } from '@winstonfassett/vizform-react-d3'
+import { colorFor } from '@winstonfassett/vizform-core'
+import type { Goal } from '@winstonfassett/vizform-react-d3'
+import { leavesOf } from '@winstonfassett/vizform-vanilla-d3'
 import { Treemap } from './viz/Treemap'
 import { Icicle } from './viz/Icicle'
 import { Sunburst } from './viz/Sunburst'
+import {
+  BrLcBar, BrLcLine, BrLcArea, BrLcScatter, BrLcPie, BrLcRadar, BrLcConcentricArc,
+  BrLcPack, BrLcTreemap, BrLcIcicle, BrLcSunburst, BrLcSankey, BrLcSankeyFlow, BrLcTree,
+} from './viz/br/BrLcCharts'
+import {
+  SvelteLcSunburst, SvelteLcIcicle, SvelteLcPack, SvelteLcTreemap, SvelteTreemapDemo,
+} from './viz/br/SvelteLcCharts'
 import {
   initWorkspace, saveWorkspace,
   createDataset, createDashboard, updateDataset, updateDashboard,
   addTile, removeTile, deleteDashboard, deleteDataset,
   activeDataset, activeDashboard, dashboardsForDataset,
-  updateRow, reorderLeaves, applyGroupBy,
+  updateRow, updateRows, reorderLeaves, applyGroupBy,
 } from './persistence'
 import type { Workspace, Dataset, Dashboard, Tile, TileKind, PNode } from './persistence'
 import { hudStore, resetHudForDataset, useHudStore } from './store'
@@ -20,20 +28,65 @@ import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
 import './App.css'
 
-const TILE_KINDS: TileKind[] = ['treetable', 'h-treemap', 'h-icicle', 'h-radial', 'treemap', 'radial', 'bands']
+// Pre-color nodes by root-ancestor identity so gen-0 Viz components (which don't
+// walk ancestors internally) get the right hue. colorFor is sort-stable: same
+// root name → same color regardless of position.
+function colorByGroup(nodes: PNode[]): PNode[] {
+  const byId = new Map(nodes.map(n => [n.id, n]))
+  // Walk up to the nearest ancestor that has an explicit color (not the synthetic
+  // groupBy virtual root, which has no color and would collapse all children to one hue).
+  const nearestColor = (n: PNode): string => {
+    let cur = n
+    while (true) {
+      if (cur.color) return cur.color
+      if (!cur.parentId || !byId.has(cur.parentId)) return colorFor(cur.name)
+      cur = byId.get(cur.parentId)!
+    }
+  }
+  return nodes.map(n => ({ ...n, color: n.color ?? nearestColor(n) }))
+}
+
+// Canon picker — retired gen-0/Svelte kinds excluded
+const TILE_KINDS: TileKind[] = [
+  'treetable',
+  'br-lc-bar', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie',
+  'br-lc-radar', 'br-lc-concentric-arc',
+  'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-sankey-flow', 'br-lc-tree',
+]
 const TILE_LABELS: Record<TileKind, string> = {
-  'treetable': 'Table',
-  'h-treemap': 'H-Treemap',
-  'h-icicle': 'Icicle',
-  'h-radial': 'Sunburst',
-  'treemap': 'Treemap',
-  'radial': 'Radial',
-  'bands': 'Bands',
+  'treetable':            'Table',
+  'br-lc-bar':            'Bar',
+  'br-lc-bands':          'Bands',
+  'br-lc-line':           'Line',
+  'br-lc-area':           'Area',
+  'br-lc-scatter':        'Scatter',
+  'br-lc-pie':            'Pie',
+  'br-lc-radar':          'Radar',
+  'br-lc-concentric-arc': 'Concentric Arc',
+  'br-lc-pack':           'Pack',
+  'br-lc-treemap':        'Treemap',
+  'br-lc-icicle':         'Icicle',
+  'br-lc-sunburst':       'Sunburst',
+  'br-lc-sankey':         'Sankey',
+  'br-lc-sankey-flow':    'Sankey Flow',
+  'br-lc-tree':           'Tree',
+  // retired — still rendered if encountered in stored dashboards
+  'h-treemap':            'H-Treemap (retired)',
+  'h-icicle':             'Icicle (retired)',
+  'h-radial':             'Sunburst (retired)',
+  'treemap':              'Treemap (retired)',
+  'radial':               'Radial (retired)',
+  'bands':                'Bands (retired)',
+  'svelte-br-lc-sunburst':'Sunburst (Svelte, retired)',
+  'svelte-br-lc-icicle':  'Icicle (Svelte, retired)',
+  'svelte-br-lc-pack':    'Pack (Svelte, retired)',
+  'svelte-br-lc-treemap': 'Treemap (Svelte, retired)',
+  'svelte-treemap-demo':  'Treemap demo (Svelte, retired)',
 }
 
 // ─── Tile content ─────────────────────────────────────────────────────────────
 
-function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodeReorder }: { tile: Tile; ds: Dataset; measureKey: string; onNodeUpdate: (rowId: string, measures: PNode['measures']) => void; onNodeReorder: (orderedIds: string[]) => void }) {
+function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNodeReorder }: { tile: Tile; ds: Dataset; measureKey: string; onNodeUpdate: (rowId: string, measures: PNode['measures']) => void; onNodesUpdate: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void; onNodeReorder: (orderedIds: string[]) => void }) {
   const mk = tile.measureKey ?? measureKey
   const hud = useHudStore()
   const { hoverId, selectionId, focusId } = hud
@@ -41,9 +94,19 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodeReorder }: { ti
   const onSelect = (id: string) => hudStore.setSelection(id)
   const onFocus = (id: string) => hudStore.setFocus(id)
 
-  const depth = tile.depth ?? 2
+  const depth = tile.depth || undefined // 0/undefined = all levels (chart shows full tree)
   const sortBy = tile.sortBy ?? 'index'
-  const nodes = tile.groupBy ? applyGroupBy(ds.rows, tile.groupBy) : ds.rows
+  const rawNodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.rows, tile.groupBy) : ds.rows)
+  const nodes = sortBy === 'value'
+    ? [...rawNodes]
+        .sort((a, b) => (b.measures[mk] ?? 0) - (a.measures[mk] ?? 0))
+        .map((n, i) => ({ ...n, index: i }))
+    : rawNodes
+  // Line/area/scatter use array position for x-axis — sorting is the reorder,
+  // but index remapping scrambles their x-axis. Sort without remapping.
+  const sortedNodes = sortBy === 'value'
+    ? [...rawNodes].sort((a, b) => (b.measures[mk] ?? 0) - (a.measures[mk] ?? 0))
+    : rawNodes
 
   if (tile.kind === 'h-treemap') {
     return <Treemap nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} onUpdate={onNodeUpdate} />
@@ -58,16 +121,40 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodeReorder }: { ti
     return <HTreetable nodes={nodes} measureKey={mk} />
   }
 
-  // For flat viz with groupBy, assign color by group dim value
-  const groupColorMap = new Map<string, string>()
-  if (tile.groupBy) {
-    const vals = [...new Set(ds.rows.map(r => r.dims[tile.groupBy!] ?? ''))].filter(Boolean)
-    vals.forEach((v, i) => groupColorMap.set(v, pickColor(i * 3)))
-  }
+  // ── BR-LC flat charts ────────────────────────────────────────────────────
+  // All BR-LC flat charts get the same value-ordered nodes (natural order when
+  // sortBy='index'). The chart draws the order it's handed; it owns no sort.
+  if (tile.kind === 'br-lc-bar')            return <BrLcBar nodes={sortedNodes} measureKey={mk} maxItems={tile.maxItems} orientation={tile.orientation} colorMode={tile.colorMode} labelMode={tile.labelMode} valueMode={tile.valueMode} minBandSize={tile.minBandSize} onUpdate={onNodeUpdate} />
+  if (tile.kind === 'br-lc-bands')          return <BrLcBar nodes={sortedNodes} measureKey={mk} maxItems={tile.maxItems} orientation="horizontal" colorMode="palette" labelMode="inside" valueMode="inside" onUpdate={onNodeUpdate} />
+  if (tile.kind === 'br-lc-line')           return <BrLcLine nodes={sortedNodes} measureKey={mk} onUpdate={onNodeUpdate} />
+  if (tile.kind === 'br-lc-area')           return <BrLcArea nodes={sortedNodes} measureKey={mk} onUpdate={onNodeUpdate} />
+  if (tile.kind === 'br-lc-scatter')        return <BrLcScatter nodes={sortedNodes} xKey={tile.xKey ?? '_index'} yKey={tile.yKey ?? mk} onUpdate={onNodeUpdate} />
+  if (tile.kind === 'br-lc-pie')            return <BrLcPie nodes={sortedNodes} measureKey={mk} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
+  if (tile.kind === 'br-lc-radar')          return <BrLcRadar nodes={sortedNodes} measureKey={mk} onUpdate={onNodeUpdate} />
+  if (tile.kind === 'br-lc-concentric-arc') return <BrLcConcentricArc nodes={sortedNodes} measureKey={mk} onUpdate={onNodeUpdate} />
+
+  // ── BR-LC hierarchical charts ────────────────────────────────────────────
+  if (tile.kind === 'br-lc-pack')           return <BrLcPack nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
+  if (tile.kind === 'br-lc-treemap')        return <BrLcTreemap nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
+  if (tile.kind === 'br-lc-icicle')         return <BrLcIcicle nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
+  if (tile.kind === 'br-lc-sunburst')       return <BrLcSunburst nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
+  if (tile.kind === 'br-lc-sankey')         return <BrLcSankey edges={ds.edges ?? []} />
+  if (tile.kind === 'br-lc-sankey-flow')    return <BrLcSankeyFlow />
+  if (tile.kind === 'br-lc-tree')           return <BrLcTree nodes={nodes} measureKey={mk} sortBy={sortBy} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
+
+  // ── Svelte LayerChart charts (real Svelte+LayerChart, live data + sync) ────
+  if (tile.kind === 'svelte-br-lc-sunburst') return <SvelteLcSunburst nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
+  if (tile.kind === 'svelte-br-lc-icicle')   return <SvelteLcIcicle nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
+  if (tile.kind === 'svelte-br-lc-pack')     return <SvelteLcPack nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
+  if (tile.kind === 'svelte-br-lc-treemap')  return <SvelteLcTreemap nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
+  if (tile.kind === 'svelte-treemap-demo')   return <SvelteTreemapDemo />
+
+  // Flat Viz uses the same group-coherent colors as every other chart: `nodes`
+  // is already colored by `colorByGroup` (each leaf carries its group's hue), so
+  // just read `n.color` — no separate per-tile recolor that would diverge.
   const goals: Goal[] = leavesOf(nodes).map((n, idx) => {
-    const groupColor = tile.groupBy ? groupColorMap.get(n.dims[tile.groupBy] ?? '') : undefined
     return {
-      id: n.id, name: n.name, color: groupColor ?? n.color ?? pickColor(idx),
+      id: n.id, name: n.name, color: n.color ?? colorFor(n.name),
       measurements: { ...n.measures, _index: idx },
       archived: false, tags: [], urgent: false, important: false,
       createdAt: '', updatedAt: '',
@@ -83,6 +170,8 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodeReorder }: { ti
         sortUnit={sortBy === 'index' ? '_index' : mk}
         sortUnitKind={sortBy === 'index' ? 'order' : 'size'}
         frame={undefined}
+        hoverId={hoverId} selectionId={selectionId}
+        onHover={onHover} onSelect={onSelect}
         onUpdate={(id, patch) => { if (patch.measurements) onNodeUpdate(id, patch.measurements as PNode['measures']) }}
         onReorder={onNodeReorder}
       />
@@ -92,27 +181,39 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodeReorder }: { ti
 
 // ─── Tile wrapper ─────────────────────────────────────────────────────────────
 
-const HIER_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial'])
-const VIZ_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial', 'treemap', 'radial', 'bands'])
+// Kinds where depth selector is wired
+const HIER_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial', 'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst'])
+// Kinds where Order/Value sort selector is shown
+const VIZ_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial', 'treemap', 'radial', 'bands', 'br-lc-bar', 'br-lc-bands', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie', 'br-lc-radar', 'br-lc-concentric-arc', 'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree'])
+// Kinds that accept groupBy to add hierarchy to flat data
+const GROUPBY_KINDS = new Set<TileKind>(['br-lc-bar', 'br-lc-line', 'br-lc-area', 'br-lc-pie', 'br-lc-radar', 'br-lc-concentric-arc', 'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree'])
+// Kinds whose diagram can honestly exceed the tile (it announces its own bounds);
+// the tile body scrolls the overflow instead of clipping it. The data-driven
+// sankey grows tall with many links — scroll lets you reach all of it.
+const SCROLL_KINDS = new Set<TileKind>(['bands', 'br-lc-sankey'])
 
 function TileCard({
-  tile, ds, measureKey, onRemove, onMeasureChange, onDepthChange, onSortChange, onGroupByChange, onNodeUpdate, onNodeReorder, availableMeasures,
+  tile, ds, measureKey, onRemove, onMeasureChange, onXKeyChange, onYKeyChange, onDepthChange, onSortChange, onGroupByChange, onNodeUpdate, onNodesUpdate, onNodeReorder, availableMeasures,
 }: {
   tile: Tile
   ds: Dataset
   measureKey: string
   onRemove: () => void
   onMeasureChange: (key: string) => void
+  onXKeyChange: (key: string) => void
+  onYKeyChange: (key: string) => void
   onDepthChange: (depth: number) => void
   onSortChange: (sortBy: 'index' | 'value') => void
   onGroupByChange: (key: string | undefined) => void
   onNodeUpdate: (rowId: string, measures: PNode['measures']) => void
+  onNodesUpdate: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
   onNodeReorder: (orderedIds: string[]) => void
   availableMeasures: { key: string; label: string }[]
 }) {
   const isHier = HIER_KINDS.has(tile.kind)
   const isViz = VIZ_KINDS.has(tile.kind)
-  const depth = tile.depth ?? 2
+  const showGroupBy = GROUPBY_KINDS.has(tile.kind) && ds.dimDefs.length > 0
+  const depth = tile.depth ?? 0 // 0 = "All" (show full tree)
   const sortBy = tile.sortBy ?? 'index'
   return (
     <div className="tile-card">
@@ -126,6 +227,7 @@ function TileCard({
               onChange={e => onDepthChange(Number(e.target.value))}
               title="Levels to show"
             >
+              <option value={0}>All</option>
               {[1, 2, 3, 4, 5].map(n => (
                 <option key={n} value={n}>{n}L</option>
               ))}
@@ -142,7 +244,31 @@ function TileCard({
               <option value="value">Value</option>
             </select>
           )}
-          {availableMeasures.length > 1 && (
+          {tile.kind === 'br-lc-scatter' ? (
+            <>
+              <label className="tile-axis-label">X:</label>
+              <select
+                className="tile-measure-select"
+                value={tile.xKey ?? '_index'}
+                onChange={e => onXKeyChange(e.target.value)}
+              >
+                <option value="_index">Index</option>
+                {availableMeasures.map(m => (
+                  <option key={m.key} value={m.key}>{m.label}</option>
+                ))}
+              </select>
+              <label className="tile-axis-label">Y:</label>
+              <select
+                className="tile-measure-select"
+                value={tile.yKey ?? measureKey}
+                onChange={e => onYKeyChange(e.target.value)}
+              >
+                {availableMeasures.map(m => (
+                  <option key={m.key} value={m.key}>{m.label}</option>
+                ))}
+              </select>
+            </>
+          ) : availableMeasures.length > 1 && (
             <select
               className="tile-measure-select"
               value={tile.measureKey ?? measureKey}
@@ -153,10 +279,11 @@ function TileCard({
               ))}
             </select>
           )}
-          {ds.dimDefs.length > 0 && (
+          {showGroupBy && (
             <select
               className="tile-measure-select"
-              value={tile.groupBy ?? ''}
+              key={`${tile.id}-${tile.groupBy ?? ''}`}
+              defaultValue={tile.groupBy ?? ''}
               onChange={e => onGroupByChange(e.target.value || undefined)}
               title="Group by"
             >
@@ -169,8 +296,8 @@ function TileCard({
           <button className="tile-close-btn" onClick={onRemove}>×</button>
         </div>
       </div>
-      <div className={`tile-body${tile.kind === 'bands' ? ' tile-body--scroll' : ''}`}>
-        <TileContent tile={tile} ds={ds} measureKey={measureKey} onNodeUpdate={onNodeUpdate} onNodeReorder={onNodeReorder} />
+      <div className={`tile-body${SCROLL_KINDS.has(tile.kind) ? ' tile-body--scroll' : ''}`}>
+        <TileContent tile={tile} ds={ds} measureKey={measureKey} onNodeUpdate={onNodeUpdate} onNodesUpdate={onNodesUpdate} onNodeReorder={onNodeReorder} />
       </div>
     </div>
   )
@@ -335,13 +462,29 @@ function DashboardPicker({
 export function App() {
   const [ws, setWs] = useState<Workspace>(() => initWorkspace())
 
+  // Unified idle Esc: clear the current selection across every tile. Runs in the
+  // bubble phase, so a chart's own Esc (e.g. gen-1 VizRenderer's capture-phase
+  // drag-cancel) takes precedence and stops propagation before this fires — a
+  // drag-in-progress reverts instead of clearing selection. Does NOT touch focus
+  // (drill state) — Esc clears selection, not navigation.
+  useEffect(() => {
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      if (hudStore.getSnapshot().selectionId == null) return // nothing to clear → let Esc fall through
+      e.preventDefault()
+      hudStore.setSelection(null)
+    }
+    window.addEventListener('keydown', onEsc)
+    return () => window.removeEventListener('keydown', onEsc)
+  }, [])
+
   function commit(next: Workspace) {
     setWs(next)
     saveWorkspace(next)
   }
 
-  const ds = activeDataset(ws)
   const dash = activeDashboard(ws)
+  const ds = dash ? ws.datasets.find(d => d.id === dash.datasetId) : activeDataset(ws)
   const measures = ds ? ds.measureDefs : []
 
   const switchDataset = useCallback((id: string) => {
@@ -411,9 +554,27 @@ export function App() {
     commit(updateDashboard(ws, next))
   }, [ws, dash])
 
+  const handleTileXKey = useCallback((tileId: string, key: string) => {
+    if (!dash) return
+    commit(updateDashboard(ws, { ...dash, tiles: dash.tiles.map(t => t.id === tileId ? { ...t, xKey: key } : t) }))
+  }, [ws, dash])
+
+  const handleTileYKey = useCallback((tileId: string, key: string) => {
+    if (!dash) return
+    commit(updateDashboard(ws, { ...dash, tiles: dash.tiles.map(t => t.id === tileId ? { ...t, yKey: key } : t) }))
+  }, [ws, dash])
+
   const handleNodeUpdate = useCallback((rowId: string, measures: PNode['measures']) => {
     if (!ds) return
     commit(updateRow(ws, ds.id, rowId, { measures }))
+  }, [ws, ds])
+
+  // Batch variant: a single gesture tick may change several leaves at once
+  // (parent resize redistributes across siblings). Commit them together so they
+  // don't clobber each other through the stale-workspace closure.
+  const handleNodesUpdate = useCallback((updates: Array<{ id: string; measures: PNode['measures'] }>) => {
+    if (!ds) return
+    commit(updateRows(ws, ds.id, updates.map(u => ({ id: u.id, patch: { measures: u.measures } }))))
   }, [ws, ds])
 
   const handleNodeReorder = useCallback((orderedIds: string[]) => {
@@ -472,10 +633,13 @@ export function App() {
             onLayoutChange={handleLayoutChange}
             onRemoveTile={handleRemoveTile}
             onTileMeasure={handleTileMeasure}
+            onTileXKey={handleTileXKey}
+            onTileYKey={handleTileYKey}
             onTileDepth={handleTileDepth}
             onTileSort={handleTileSort}
             onTileGroupBy={handleTileGroupBy}
             onNodeUpdate={handleNodeUpdate}
+            onNodesUpdate={handleNodesUpdate}
             onNodeReorder={handleNodeReorder}
           />
         ) : null}
@@ -484,17 +648,20 @@ export function App() {
   )
 }
 
-function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeasure, onTileDepth, onTileSort, onTileGroupBy, onNodeUpdate, onNodeReorder }: {
+function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeasure, onTileXKey, onTileYKey, onTileDepth, onTileSort, onTileGroupBy, onNodeUpdate, onNodesUpdate, onNodeReorder }: {
   dash: Dashboard
   ds: Dataset
   measures: { key: string; label: string }[]
   onLayoutChange: (layout: readonly LayoutItem[]) => void
   onRemoveTile: (id: string) => void
   onTileMeasure: (tileId: string, key: string) => void
+  onTileXKey: (tileId: string, key: string) => void
+  onTileYKey: (tileId: string, key: string) => void
   onTileDepth: (tileId: string, depth: number) => void
   onTileSort: (tileId: string, sortBy: 'index' | 'value') => void
   onTileGroupBy: (tileId: string, key: string | undefined) => void
   onNodeUpdate: (rowId: string, measures: PNode['measures']) => void
+  onNodesUpdate: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
   onNodeReorder: (orderedIds: string[]) => void
 }) {
   const { width, containerRef, mounted } = useContainerWidth()
@@ -518,10 +685,13 @@ function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeas
                 availableMeasures={measures}
                 onRemove={() => onRemoveTile(tile.id)}
                 onMeasureChange={key => onTileMeasure(tile.id, key)}
+                onXKeyChange={key => onTileXKey(tile.id, key)}
+                onYKeyChange={key => onTileYKey(tile.id, key)}
                 onDepthChange={d => onTileDepth(tile.id, d)}
                 onSortChange={s => onTileSort(tile.id, s)}
                 onGroupByChange={k => onTileGroupBy(tile.id, k)}
                 onNodeUpdate={onNodeUpdate}
+                onNodesUpdate={onNodesUpdate}
                 onNodeReorder={onNodeReorder}
               />
             </div>

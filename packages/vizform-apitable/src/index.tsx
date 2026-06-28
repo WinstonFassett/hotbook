@@ -11,8 +11,9 @@ import {
   useViewMeta,
   FieldType,
 } from '@apitable/widget-sdk'
-import { Viz, HViz, pickColor } from '@winstonfassett/vizform-react'
-import type { Goal, GoalTree, ViewMode } from '@winstonfassett/vizform-react'
+import { Viz, HViz } from '@winstonfassett/vizform-react-d3'
+import { colorFor } from '@winstonfassett/vizform-core'
+import type { Goal, GoalTree, ViewMode } from '@winstonfassett/vizform-react-d3'
 
 const NUMERIC_TYPES = new Set<string>([
   FieldType.Number,
@@ -41,10 +42,10 @@ function buildGroupedTree(
 
   function buildLevel(recs: typeof records, depth: number, parentColor: string): GoalTree[] {
     if (depth >= groupFieldIds.length) {
-      return recs.map((r, i) => ({
+      return recs.map((r) => ({
         id: r.id,
         name: r.title ?? r.id,
-        color: pickColor(i),
+        color: colorFor(r.title ?? r.id),
         value: Number(r.getCellValue(valueFieldId)) || 0,
       }))
     }
@@ -55,8 +56,8 @@ function buildGroupedTree(
       if (!groups.has(key)) groups.set(key, [])
       groups.get(key)!.push(rec)
     }
-    return Array.from(groups.entries()).map(([key, groupRecs], i) => {
-      const color = pickColor(i * 7 + depth * 3)
+    return Array.from(groups.entries()).map(([key, groupRecs]) => {
+      const color = colorFor(key)
       return {
         id: `__grp__d${depth}__${key}`,
         name: key,
@@ -113,7 +114,7 @@ function AllocVizWidget() {
     records.map((record, idx) => ({
       id: record.id,
       name: record.title ?? record.id,
-      color: pickColor(idx),
+      color: colorFor(record.title ?? record.id),
       measurements: {
         [activeUnit]: Number(record.getCellValue(resolvedFieldId)) || 0,
         _index: idx,
@@ -137,10 +138,10 @@ function AllocVizWidget() {
     // Flat: wrap all records in a single-level tree
     return {
       id: '__root__', name: 'All', color: 'oklch(0.28 0 0)', value: 0,
-      children: records.map((r, i) => ({
+      children: records.map((r) => ({
         id: r.id,
         name: r.title ?? r.id,
-        color: pickColor(i),
+        color: colorFor(r.title ?? r.id),
         value: Number(r.getCellValue(resolvedFieldId)) || 0,
       })),
     }

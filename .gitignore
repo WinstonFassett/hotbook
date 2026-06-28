@@ -1,6 +1,11 @@
+.webdev/
 node_modules/
 dist/
 inspo/
 *.zip
 .DS_Store
 .apitable.yml
+.claude/worktrees/
+
+# Local Netlify folder
+.netlify

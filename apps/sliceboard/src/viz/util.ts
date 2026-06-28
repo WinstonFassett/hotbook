@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import * as d3 from 'd3'
+import { colorFor } from '@winstonfassett/vizform-core'
 import type { PNode } from '../persistence'
 
 // ─── Resize-aware dimensions ──────────────────────────────────────────────────
@@ -41,7 +42,7 @@ export function useAltScroll(
     const el = ref.current
     if (!el) return
     const handler = (e: WheelEvent) => {
-      if (!e.altKey) return
+      if (!(e.metaKey || e.ctrlKey)) return
       const hit = document.elementFromPoint(e.clientX, e.clientY) as Element | null
       const cell = hit?.closest(cellSelector) as SVGElement | null
       if (!cell) return
@@ -103,8 +104,13 @@ export function explodePulse(t: number): number {
 export function nodeColor(nodes: PNode[], id: string): string {
   const byId = new Map(nodes.map(n => [n.id, n]))
   let cur = byId.get(id)
-  while (cur && !cur.color) cur = cur.parentId ? byId.get(cur.parentId) : undefined
-  return cur?.color ?? 'oklch(0.55 0.01 250)'
+  let root = cur
+  while (cur) {
+    if (cur.color) return cur.color
+    root = cur
+    cur = cur.parentId ? byId.get(cur.parentId) : undefined
+  }
+  return colorFor(root?.name ?? id)
 }
 
 export function statusVar(status: string): string {
