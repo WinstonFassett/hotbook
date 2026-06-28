@@ -98,6 +98,9 @@ export interface Dashboard {
   layout: LayoutItem[]
   tiles: Tile[]
   measureKey: string
+  /** Persisted drill scope (cross-tile). null/undefined = full tree from real
+   *  root; non-null = every hierarchical tile re-roots at this PNode id. */
+  drillNodeId?: string | null
 }
 
 // ─── Workspace ────────────────────────────────────────────────────────────────
@@ -628,6 +631,54 @@ export function applyGroupBy(rows: PNode[], dimKey: string): PNode[] {
   }))
 
   return [...groupNodes, ...regrouped, ...nonRoots]
+}
+
+// ─── Drill helpers ────────────────────────────────────────────────────────────
+
+/**
+ * Walk a node's parent chain via PNode.parentId until a root is reached.
+ * Returns [root, ..., node] — empty if drillNodeId is null or not found.
+ * Useful for breadcrumbs.
+ */
+export function drillPath(rows: PNode[], drillNodeId: string | null): PNode[] {
+  if (!drillNodeId) return []
+  const byId = new Map(rows.map(n => [n.id, n]))
+  const target = byId.get(drillNodeId)
+  if (!target) return []
+  const path: PNode[] = []
+  let cur: PNode | undefined = target
+  while (cur) {
+    path.unshift(cur)
+    cur = cur.parentId ? byId.get(cur.parentId) : undefined
+  }
+  return path
+}
+
+/**
+ * Filter `rows` to the subtree rooted at `drillNodeId` (the drilled node plus
+ * all descendants). The drilled node's `parentId` is rewritten to `null` so
+ * downstream buildBiTree treats it as the real root. null/missing → identity.
+ */
+export function drillSubtree(rows: PNode[], drillNodeId: string | null): PNode[] {
+  if (!drillNodeId) return rows
+  const byId = new Map(rows.map(n => [n.id, n]))
+  const root = byId.get(drillNodeId)
+  if (!root) return rows // stale drill id (e.g. from another dataset) — fall back to full tree
+  // BFS down through children
+  const keep = new Set<string>([root.id])
+  const queue = [root.id]
+  while (queue.length) {
+    const pid = queue.shift()!
+    for (const r of rows) {
+      if (r.parentId === pid && !keep.has(r.id)) {
+        keep.add(r.id)
+        queue.push(r.id)
+      }
+    }
+  }
+  return rows
+    .filter(r => keep.has(r.id))
+    .map(r => r.id === root.id ? { ...r, parentId: null } : r)
 }
 
 // ─── Mutations ────────────────────────────────────────────────────────────────

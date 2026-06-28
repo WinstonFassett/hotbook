@@ -21,10 +21,11 @@ import {
   addTile, removeTile, deleteDashboard, deleteDataset,
   activeDataset, activeDashboard, dashboardsForDataset,
   updateRow, updateRows, reorderLeaves, applyGroupBy,
+  drillSubtree, drillPath,
 } from './persistence'
 import type { Workspace, Dataset, Dashboard, Tile, TileKind, PNode } from './persistence'
 import { schemaFor } from './tile-config-schemas'
-import { hudStore, resetHudForDataset, useHudStore } from './store'
+import { hudStore, resetHudForDataset, useHudStore, useDrillNodeId } from './store'
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
 import './App.css'
@@ -90,14 +91,21 @@ const TILE_LABELS: Record<TileKind, string> = {
 function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNodeReorder }: { tile: Tile; ds: Dataset; measureKey: string; onNodeUpdate: (rowId: string, measures: PNode['measures']) => void; onNodesUpdate: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void; onNodeReorder: (orderedIds: string[]) => void }) {
   const mk = tile.measureKey ?? measureKey
   const hud = useHudStore()
-  const { hoverId, selectionId, focusId } = hud
+  const { hoverId, selectionId, focusId, drillNodeId } = hud
   const onHover = (id: string | null) => hudStore.setHover(id)
   const onSelect = (id: string) => hudStore.setSelection(id)
   const onFocus = (id: string) => hudStore.setFocus(id)
 
   const depth = tile.depth || undefined // 0/undefined = all levels (chart shows full tree)
   const sortBy = tile.sortBy ?? 'index'
-  const rawNodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.rows, tile.groupBy) : ds.rows)
+  // Drill re-roots hierarchical tiles before any other transform. groupBy can
+  // synthesize a virtual parent on top of the drilled subtree; that's fine
+  // because drillSubtree returns plain PNodes the rest of the pipeline already
+  // understands. Drill only affects hier kinds — flat charts ignore it because
+  // their leaf set under the drill scope is just a subset of all leaves, which
+  // is still what we want (focused subset cross-tile).
+  const drilledRows = drillSubtree(ds.rows, drillNodeId)
+  const rawNodes = colorByGroup(tile.groupBy ? applyGroupBy(drilledRows, tile.groupBy) : drilledRows)
   const nodes = sortBy === 'value'
     ? [...rawNodes]
         .sort((a, b) => (b.measures[mk] ?? 0) - (a.measures[mk] ?? 0))
@@ -286,7 +294,26 @@ function TileCard({
           <button className="tile-close-btn" onClick={onRemove}>×</button>
         </div>
       </div>
-      <div className={`tile-body${schema.scrollBody ? ' tile-body--scroll' : ''}`}>
+      <div
+        className={`tile-body${schema.scrollBody ? ' tile-body--scroll' : ''}`}
+        onDoubleClick={schema.pickers.depth ? (e) => {
+          // Drill-in via dblclick on any hierarchical tile. The chart's single
+          // click already set selectionId; hoverId is wherever the cursor is
+          // right now, which is the natural "what did the user mean" target.
+          // Prefer hover over selection (last touched > last clicked).
+          const target = hudStore.getSnapshot().hoverId ?? hudStore.getSnapshot().selectionId
+          if (!target) return
+          const cur = hudStore.getSnapshot().drillNodeId
+          if (target === cur) return // already drilled here
+          if (target === '__root__') return // gen-1 root sentinel — can't drill into it
+          // Only meaningful if the target has children in the dataset under the
+          // current drill scope (avoid drilling to a leaf, which renders blank).
+          const hasChildren = ds.rows.some(r => r.parentId === target)
+          if (!hasChildren) return
+          e.preventDefault()
+          hudStore.setDrill(target)
+        } : undefined}
+      >
         <TileContent tile={tile} ds={ds} measureKey={measureKey} onNodeUpdate={onNodeUpdate} onNodesUpdate={onNodesUpdate} onNodeReorder={onNodeReorder} />
       </div>
     </div>
@@ -447,26 +474,102 @@ function DashboardPicker({
   )
 }
 
+// ─── Drill breadcrumb ─────────────────────────────────────────────────────────
+
+/**
+ * Renders the current drill path as clickable crumbs ahead of the dashboard:
+ *   Root › Goal › Project   [↑ up]
+ * Clicking any crumb (incl. "Root") drills directly to that level. The "↑ up"
+ * button drills out one level. Hidden entirely when no drill is active.
+ *
+ * Cross-tile sync is implicit: this component talks to the same hudStore every
+ * hierarchical tile reads from, so the whole dashboard updates atomically.
+ */
+function DrillBreadcrumb({ ds }: { ds: Dataset }) {
+  const drillNodeId = useDrillNodeId()
+  if (!drillNodeId) return null
+  const path = drillPath(ds.rows, drillNodeId)
+  if (path.length === 0) {
+    // Stale drill id pointing at a removed/foreign node — clear it so the
+    // dashboard stops trying to render an empty subtree.
+    hudStore.setDrill(null)
+    return null
+  }
+  const parent = path.length >= 2 ? path[path.length - 2]! : null
+  return (
+    <div className="sb-drill-bar" role="navigation" aria-label="Drill path">
+      <button
+        type="button"
+        className="sb-drill-crumb"
+        onClick={() => hudStore.setDrill(null)}
+      >
+        Root
+      </button>
+      {path.map((n, i) => {
+        const isCurrent = i === path.length - 1
+        return (
+          <span key={n.id} className="sb-drill-seg">
+            <span className="sb-drill-sep">›</span>
+            <button
+              type="button"
+              className={`sb-drill-crumb${isCurrent ? ' sb-drill-crumb--current' : ''}`}
+              onClick={() => hudStore.setDrill(isCurrent ? null : n.id)}
+              aria-current={isCurrent ? 'location' : undefined}
+              title={isCurrent ? 'Click to drill out fully' : `Drill to ${n.name}`}
+            >
+              {n.name}
+            </button>
+          </span>
+        )
+      })}
+      <button
+        type="button"
+        className="sb-btn sb-drill-up"
+        onClick={() => hudStore.setDrill(parent ? parent.id : null)}
+        title="Drill out one level (Esc)"
+      >
+        ↑ Up
+      </button>
+    </div>
+  )
+}
+
 // ─── Main app ─────────────────────────────────────────────────────────────────
 
 export function App() {
   const [ws, setWs] = useState<Workspace>(() => initWorkspace())
 
-  // Unified idle Esc: clear the current selection across every tile. Runs in the
-  // bubble phase, so a chart's own Esc (e.g. gen-1 VizRenderer's capture-phase
-  // drag-cancel) takes precedence and stops propagation before this fires — a
-  // drag-in-progress reverts instead of clearing selection. Does NOT touch focus
-  // (drill state) — Esc clears selection, not navigation.
+  // Unified idle Esc contract (bubble phase — a chart's own capture-phase Esc
+  // for drag-revert runs first and stops propagation). Priority order, per
+  // docs/interaction-principles.md and the drill ticket:
+  //   1. Drag active → chart cancels (handled in capture phase, never reaches here)
+  //   2. Selection active → clear selection
+  //   3. Drilled in → drill out one level (pop to parent of current drill root)
+  //   4. Else → fall through (browser default)
   useEffect(() => {
     const onEsc = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
-      if (hudStore.getSnapshot().selectionId == null) return // nothing to clear → let Esc fall through
-      e.preventDefault()
-      hudStore.setSelection(null)
+      const s = hudStore.getSnapshot()
+      if (s.selectionId != null) {
+        e.preventDefault()
+        hudStore.setSelection(null)
+        return
+      }
+      if (s.drillNodeId != null) {
+        // Drill out one level. Active dataset's rows are the source of truth
+        // for the parent chain — drillPath walks it for us.
+        const dsNow = activeDataset(ws)
+        if (!dsNow) return
+        const path = drillPath(dsNow.rows, s.drillNodeId)
+        // path = [root, ..., current]; pop to parent = path[length-2], or null if at top
+        const parent = path.length >= 2 ? path[path.length - 2]! : null
+        e.preventDefault()
+        hudStore.setDrill(parent ? parent.id : null)
+      }
     }
     window.addEventListener('keydown', onEsc)
     return () => window.removeEventListener('keydown', onEsc)
-  }, [])
+  }, [ws])
 
   function commit(next: Workspace) {
     setWs(next)
@@ -476,6 +579,25 @@ export function App() {
   const dash = activeDashboard(ws)
   const ds = dash ? ws.datasets.find(d => d.id === dash.datasetId) : activeDataset(ws)
   const measures = ds ? ds.measureDefs : []
+
+  // Drill is two-sourced: hudStore for live cross-tile reactivity, Dashboard
+  // for persistence. Sync the two by always treating the dashboard as the
+  // source of truth on entry/switch, and the store as the leading edge of
+  // user intent on exit. Mirror store → dash via an effect; hydrate dash →
+  // store when the active dashboard's persisted value changes.
+  const liveDrill = useDrillNodeId()
+  const persistedDrill = dash?.drillNodeId ?? null
+  useEffect(() => {
+    if (hudStore.getSnapshot().drillNodeId !== persistedDrill) {
+      hudStore.hydrateDrill(persistedDrill)
+    }
+  }, [dash?.id, persistedDrill])
+  useEffect(() => {
+    if (!dash) return
+    if ((dash.drillNodeId ?? null) === liveDrill) return
+    commit(updateDashboard(ws, { ...dash, drillNodeId: liveDrill }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveDrill])
 
   const switchDataset = useCallback((id: string) => {
     const next = { ...ws, activeDatasetId: id }
@@ -613,6 +735,8 @@ export function App() {
           <AddTileMenu onAdd={handleAddTile} />
         </div>
       </div>
+
+      {ds && <DrillBreadcrumb ds={ds} />}
 
       <div className="sb-grid-wrap">
         {ds && dash ? (
