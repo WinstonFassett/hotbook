@@ -4,7 +4,7 @@
  * Each chart renders against a checked-in fixture (no sliceboard, no config UI,
  * no persistence). Spike harness for developing chart features in isolation.
  */
-import { useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { HTreetable } from '@winstonfassett/vizform-react-d3'
 import {
   BrLcBar, BrLcLine, BrLcArea, BrLcScatter, BrLcPie, BrLcRadar, BrLcConcentricArc,
@@ -22,70 +22,89 @@ const FRUIT: FlatFixture = fruitFlat as FlatFixture
 const TEAM:  FlatFixture = teamHier  as FlatFixture
 const SUPPLY: EdgeFixture = supplyEdges as EdgeFixture
 
+type OnNodeUpdate = (nodeId: string, measures: PNode['measures']) => void
+type OnNodesUpdate = (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
+
 interface DemoDef {
   slug: string
   label: string
   fixtureName: string
   fixture: unknown
-  render: () => ReactNode
+  initRows?: PNode[]
+  initEdges?: PEdge[]
+  render: (rows: PNode[], edges: PEdge[], onNodeUpdate: OnNodeUpdate, onNodesUpdate: OnNodesUpdate) => ReactNode
 }
 
 const DEMOS: DemoDef[] = [
   {
     slug: 'treetable', label: 'Treetable', fixtureName: 'team-hier', fixture: TEAM,
-    render: () => <HTreetable nodes={TEAM.rows} measureKey="budget" />,
+    initRows: TEAM.rows,
+    render: (rows) => <HTreetable nodes={rows} measureKey="budget" />,
   },
   {
     slug: 'br-lc-bar', label: 'Bar', fixtureName: 'fruit-flat', fixture: FRUIT,
-    render: () => <BrLcBar nodes={FRUIT.rows} measureKey="value" />,
+    initRows: FRUIT.rows,
+    render: (rows, _edges, onNodeUpdate) => <BrLcBar nodes={rows} measureKey="value" onUpdate={onNodeUpdate} />,
   },
   {
     slug: 'br-lc-line', label: 'Line', fixtureName: 'fruit-flat', fixture: FRUIT,
-    render: () => <BrLcLine nodes={FRUIT.rows} measureKey="value" />,
+    initRows: FRUIT.rows,
+    render: (rows, _edges, onNodeUpdate) => <BrLcLine nodes={rows} measureKey="value" onUpdate={onNodeUpdate} />,
   },
   {
     slug: 'br-lc-area', label: 'Area', fixtureName: 'fruit-flat', fixture: FRUIT,
-    render: () => <BrLcArea nodes={FRUIT.rows} measureKey="value" />,
+    initRows: FRUIT.rows,
+    render: (rows, _edges, onNodeUpdate) => <BrLcArea nodes={rows} measureKey="value" onUpdate={onNodeUpdate} />,
   },
   {
     slug: 'br-lc-scatter', label: 'Scatter', fixtureName: 'fruit-flat', fixture: FRUIT,
-    render: () => <BrLcScatter nodes={FRUIT.rows} xKey="value" yKey="value2" />,
+    initRows: FRUIT.rows,
+    render: (rows, _edges, onNodeUpdate) => <BrLcScatter nodes={rows} xKey="value" yKey="value2" onUpdate={onNodeUpdate} />,
   },
   {
     slug: 'br-lc-pie', label: 'Pie', fixtureName: 'fruit-flat', fixture: FRUIT,
-    render: () => <BrLcPie nodes={FRUIT.rows} measureKey="value" />,
+    initRows: FRUIT.rows,
+    render: (rows, _edges, onNodeUpdate, onNodesUpdate) => <BrLcPie nodes={rows} measureKey="value" onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />,
   },
   {
     slug: 'br-lc-radar', label: 'Radar', fixtureName: 'fruit-flat', fixture: FRUIT,
-    render: () => <BrLcRadar nodes={FRUIT.rows} measureKey="value" />,
+    initRows: FRUIT.rows,
+    render: (rows, _edges, onNodeUpdate) => <BrLcRadar nodes={rows} measureKey="value" onUpdate={onNodeUpdate} />,
   },
   {
     slug: 'br-lc-concentric-arc', label: 'Concentric Arc', fixtureName: 'fruit-flat', fixture: FRUIT,
-    render: () => <BrLcConcentricArc nodes={FRUIT.rows} measureKey="value" />,
+    initRows: FRUIT.rows,
+    render: (rows, _edges, onNodeUpdate) => <BrLcConcentricArc nodes={rows} measureKey="value" onUpdate={onNodeUpdate} />,
   },
   {
     slug: 'br-lc-pack', label: 'Pack', fixtureName: 'team-hier', fixture: TEAM,
-    render: () => <BrLcPack nodes={TEAM.rows} measureKey="budget" />,
+    initRows: TEAM.rows,
+    render: (rows, _edges, onNodeUpdate, onNodesUpdate) => <BrLcPack nodes={rows} measureKey="budget" onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />,
   },
   {
     slug: 'br-lc-treemap', label: 'Treemap', fixtureName: 'team-hier', fixture: TEAM,
-    render: () => <BrLcTreemap nodes={TEAM.rows} measureKey="budget" />,
+    initRows: TEAM.rows,
+    render: (rows, _edges, onNodeUpdate, onNodesUpdate) => <BrLcTreemap nodes={rows} measureKey="budget" onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />,
   },
   {
     slug: 'br-lc-icicle', label: 'Icicle', fixtureName: 'team-hier', fixture: TEAM,
-    render: () => <BrLcIcicle nodes={TEAM.rows} measureKey="budget" />,
+    initRows: TEAM.rows,
+    render: (rows, _edges, onNodeUpdate, onNodesUpdate) => <BrLcIcicle nodes={rows} measureKey="budget" onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />,
   },
   {
     slug: 'br-lc-sunburst', label: 'Sunburst', fixtureName: 'team-hier', fixture: TEAM,
-    render: () => <BrLcSunburst nodes={TEAM.rows} measureKey="budget" />,
+    initRows: TEAM.rows,
+    render: (rows, _edges, onNodeUpdate, onNodesUpdate) => <BrLcSunburst nodes={rows} measureKey="budget" onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />,
   },
   {
     slug: 'br-lc-tree', label: 'Tree', fixtureName: 'team-hier', fixture: TEAM,
-    render: () => <BrLcTree nodes={TEAM.rows} measureKey="budget" />,
+    initRows: TEAM.rows,
+    render: (rows, _edges, onNodeUpdate, onNodesUpdate) => <BrLcTree nodes={rows} measureKey="budget" onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />,
   },
   {
     slug: 'br-lc-sankey', label: 'Sankey', fixtureName: 'supply-edges', fixture: SUPPLY,
-    render: () => <BrLcSankey edges={SUPPLY.edges} />,
+    initEdges: SUPPLY.edges,
+    render: (_rows, edges) => <BrLcSankey edges={edges} />,
   },
   {
     slug: 'br-lc-sankey-flow', label: 'Sankey Flow', fixtureName: '(built-in)', fixture: { note: 'conservation-flow demo uses element internal data' },
@@ -107,12 +126,49 @@ function useHashRoute(): string {
 
 export function Demos() {
   const slug = useHashRoute()
+
+  // Reactive fixture state — keyed by slug so navigation preserves edits.
+  const [rowsMap, setRowsMap] = useState<Record<string, PNode[]>>(() =>
+    Object.fromEntries(
+      DEMOS.filter(d => d.initRows).map(d => [d.slug, d.initRows!])
+    )
+  )
+  const [edgesMap, setEdgesMap] = useState<Record<string, PEdge[]>>(() =>
+    Object.fromEntries(
+      DEMOS.filter(d => d.initEdges).map(d => [d.slug, d.initEdges!])
+    )
+  )
+
+  const handleNodeUpdate = useCallback((demoSlug: string, nodeId: string, measures: PNode['measures']) => {
+    setRowsMap(prev => ({
+      ...prev,
+      [demoSlug]: (prev[demoSlug] ?? []).map(r => r.id !== nodeId ? r : { ...r, measures }),
+    }))
+  }, [])
+
+  const handleNodesUpdate = useCallback((demoSlug: string, updates: Array<{ id: string; measures: PNode['measures'] }>) => {
+    const byId = new Map(updates.map(u => [u.id, u.measures]))
+    setRowsMap(prev => ({
+      ...prev,
+      [demoSlug]: (prev[demoSlug] ?? []).map(r => {
+        const m = byId.get(r.id)
+        return m !== undefined ? { ...r, measures: m } : r
+      }),
+    }))
+  }, [])
+
   if (!slug) return <DemoIndex />
   const demo = DEMOS.find(d => d.slug === slug)
   if (!demo) return <NotFound slug={slug} />
+
+  const rows = rowsMap[slug] ?? []
+  const edges = edgesMap[slug] ?? []
+  const onNodeUpdate: OnNodeUpdate = (nodeId, measures) => handleNodeUpdate(slug, nodeId, measures)
+  const onNodesUpdate: OnNodesUpdate = (updates) => handleNodesUpdate(slug, updates)
+
   return (
     <DemoFrame title={demo.label} fixtureName={demo.fixtureName} fixture={demo.fixture}>
-      {demo.render()}
+      {demo.render(rows, edges, onNodeUpdate, onNodesUpdate)}
     </DemoFrame>
   )
 }
@@ -159,4 +215,3 @@ function NotFound({ slug }: { slug: string }) {
     </div>
   )
 }
-
