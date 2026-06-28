@@ -16,8 +16,8 @@ export default defineConfig({
   // The svelte plugin compiles the Svelte-LayerChart spike's *.svelte source
   // (aliased as @svelte-lc below) directly into this React app. The components
   // use <svelte:options customElement> so they register as web components on
-  // import — same no-build live-dev model as the @br-lc TS source alias. The
-  // `extensions` guard keeps the plugin off .ts/.tsx (React owns those).
+  // import — same no-build live-dev model as the @winstonfassett/vizform-charts package.
+  // The `extensions` guard keeps the plugin off .ts/.tsx (React owns those).
   plugins: [
     react(),
     // customElement: true so <svelte:options customElement="…"> actually emits a
@@ -41,10 +41,10 @@ export default defineConfig({
     // over `default`, resolving svelte to its client build.
     conditions: ['browser', 'node'],
     // Source-resolved packages must share this app's single React copy, else a
-    // second instance loads and hooks crash (useState null).
-    dedupe: ['react', 'react-dom'],
+    // second instance loads and hooks crash (useState null). bireactive is deduped
+    // so the package-resolved source and sliceboard share ONE runtime instance.
+    dedupe: ['react', 'react-dom', 'bireactive'],
     alias: {
-      '@br-lc': path.resolve(__dirname, '../../apps/vanilla-bireactive-layercharts-spike/src'),
       '@svelte-lc': path.resolve(__dirname, '../../apps/svelte-layerchart-spike/src'),
     },
   },

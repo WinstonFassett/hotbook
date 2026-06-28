@@ -57,20 +57,22 @@ function bindHudSync(el: ElWithBrSync): () => void {
   return () => { offHover(); offSelect(); unsub() }
 }
 
-import { MdBarChartLC } from '@br-lc/demos/bar-chart'
-import { MdLineChartLC } from '@br-lc/demos/line-chart'
-import { MdAreaChartLC } from '@br-lc/demos/area-chart'
-import { MdScatterChartLC } from '@br-lc/demos/scatter-chart'
-import { MdPieChartLC } from '@br-lc/demos/pie-chart'
-import { MdRadarChartLC } from '@br-lc/demos/radar-chart'
-import { MdConcentricArcLC } from '@br-lc/demos/concentric-arc'
-import { MdPack } from '@br-lc/demos/pack'
-import { MdTreemapLC } from '@br-lc/demos/treemap'
-import { MdIcicleLC } from '@br-lc/demos/icicle'
-import { MdSunburstLC } from '@br-lc/demos/sunburst'
-import { MdSankeySimple } from '@br-lc/demos/sankey'
-import { MdSankeyFlow } from '@br-lc/demos/sankey-flow'
-import { MdTreeChart } from '@br-lc/demos/tree-chart'
+import {
+  MdBarChartLC,
+  MdLineChartLC,
+  MdAreaChartLC,
+  MdScatterChartLC,
+  MdPieChartLC,
+  MdRadarChartLC,
+  MdConcentricArcLC,
+  MdPack,
+  MdTreemapLC,
+  MdIcicleLC,
+  MdSunburstLC,
+  MdSankeySimple,
+  MdSankeyFlow,
+  MdTreeChart,
+} from '@winstonfassett/vizform-charts'
 
 // Register custom elements once
 const TAGS = [
