@@ -15,12 +15,8 @@ const SORT_ONLY: VizConfigSchema = {
   pickers: { measure: true, sort: true },
 }
 
-const SORT_AND_GROUPBY: VizConfigSchema = {
-  pickers: { measure: true, sort: true, groupBy: true },
-}
-
 const HIER_FULL: VizConfigSchema = {
-  pickers: { measure: true, sort: true, groupBy: true, depth: true },
+  pickers: { measure: true, sort: true, depth: true },
 }
 
 export const TILE_CONFIG_SCHEMAS: Map<TileKind, VizConfigSchema> = new Map([
