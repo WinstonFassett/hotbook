@@ -23,13 +23,14 @@ import { portfolio, walkWithDepth } from "../lib/portfolio";
 import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { dragCancelable } from "../lib/esc-contract";
+import { GESTURE_SUPPRESSION_CSS, settleTransition } from "../lib/transitions";
 
 const W = 480;
 const H = 480;
 const DRILL_DURATION = 800;
 
 export class MdSunburstLC extends Diagram {
-  static styles = `text { pointer-events: none; }${FILL_STYLE}`
+  static styles = `text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}`
   externalRoot?: BiNode
   maxDepth?: number
   drillKey?: string
@@ -154,6 +155,7 @@ export class MdSunburstLC extends Diagram {
         strokeWidth,
       }));
       arc.el.style.cursor = "pointer";
+      arc.el.style.transition = settleTransition("d");
       arc.el.addEventListener("click", () => { state.focused.value = node; });
       arc.el.addEventListener("pointerenter", () => { state.hovered.current = node; hoverCell.value = node; state.emitHover?.(node); });
       arc.el.addEventListener("pointerleave", () => { if (state.hovered.current === node) { state.hovered.current = null; hoverCell.value = null; state.emitHover?.(null); } });

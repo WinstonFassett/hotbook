@@ -21,6 +21,7 @@ import { buildParentIndex, type BiNode } from "../lib/tree";
 import { portfolio, walkWithDepth } from "../lib/portfolio";
 import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
+import { GESTURE_SUPPRESSION_CSS, settleTransition } from "../lib/transitions";
 
 const W = 480;
 const H = 480;
@@ -28,7 +29,7 @@ const PAD = 2;
 const DRILL_DURATION = 800;
 
 export class MdPack extends Diagram {
-  static styles = `text { pointer-events: none; }${FILL_STYLE}`
+  static styles = `text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}`
   externalRoot?: BiNode
   maxDepth?: number
   drillKey?: string
@@ -155,6 +156,7 @@ export class MdPack extends Diagram {
         }),
       );
       disc.el.style.cursor = "pointer";
+      disc.el.style.transition = settleTransition(["cx", "cy", "r"]);
       disc.el.addEventListener("click", () => { state.focused.value = node; });
       disc.el.addEventListener("pointerenter", () => { state.hovered.current = node; hoverCell.value = node; state.emitHover?.(node); });
       disc.el.addEventListener("pointerleave", () => { if (state.hovered.current === node) { state.hovered.current = null; hoverCell.value = null; state.emitHover?.(null); } });

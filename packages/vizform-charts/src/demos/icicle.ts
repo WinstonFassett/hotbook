@@ -23,6 +23,7 @@ import { buildParentIndex, type BiNode } from "../lib/tree";
 import { portfolio, walkWithDepth } from "../lib/portfolio";
 import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
+import { GESTURE_SUPPRESSION_CSS, settleTransition } from "../lib/transitions";
 import { dragCancelable } from "../lib/esc-contract";
 
 const W = 720;
@@ -30,7 +31,7 @@ const H = 360;
 const DRILL_DURATION = 800;
 
 export class MdIcicleLC extends Diagram {
-  static styles = `text { pointer-events: none; }${FILL_STYLE}`
+  static styles = `text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}`
   externalRoot?: BiNode
   maxDepth?: number
   drillKey?: string
@@ -170,6 +171,7 @@ export class MdIcicleLC extends Diagram {
         corner: 2,
       }));
       tile.el.style.cursor = "pointer";
+      tile.el.style.transition = settleTransition(["x", "y", "width", "height"]);
       tile.el.addEventListener("click", () => { state.focused.value = node; });
       tile.el.addEventListener("pointerenter", () => { state.hovered.current = node; hoverCell.value = node; state.emitHover?.(node); });
       tile.el.addEventListener("pointerleave", () => { if (state.hovered.current === node) { state.hovered.current = null; hoverCell.value = null; state.emitHover?.(null); } });
