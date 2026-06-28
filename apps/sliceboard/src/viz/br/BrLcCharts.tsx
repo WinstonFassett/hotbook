@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { effect as biEffect, leavesOf } from 'bireactive'
 import type { Cell, Num, Writable } from 'bireactive'
 import type { PNode } from '../../persistence'
@@ -53,41 +53,6 @@ function bindHudSync(el: ElWithBrSync): () => void {
   lastInHover = s0.hoverId; lastInSelect = s0.selectionId
   bridge.setExternalHover(s0.hoverId)
   bridge.setExternalSelect(s0.selectionId)
-
-  return () => { offHover(); offSelect(); unsub() }
-}
-
-// Flat-chart variant: the element's bridge keys on datum INDEX (flat datums
-// have no id), so translate index ↔ PNode id through the parallel `ids[]` the
-// wrapper already holds. `idsRef` is read live so it tracks data reshapes.
-function bindHudSyncFlat(el: ElWithBrSync, idsRef: { current: string[] }): () => void {
-  const bridge = el.brSync
-  if (!bridge) return () => {}
-  const idToIdx = (id: string | null): string | null => {
-    if (id == null) return null
-    const i = idsRef.current.indexOf(id)
-    return i < 0 ? null : String(i)
-  }
-  const idxToId = (key: string | null): string | null => {
-    if (key == null) return null
-    const i = Number(key)
-    return Number.isInteger(i) ? idsRef.current[i] ?? null : null
-  }
-  let lastInHover: string | null = null
-  let lastInSelect: string | null = null
-
-  const offHover = bridge.onHover(key => { const id = idxToId(key); if (id !== lastInHover) hudStore.setHover(id) })
-  const offSelect = bridge.onSelect(key => { const id = idxToId(key); if (id !== lastInSelect) hudStore.setSelection(id) })
-
-  const unsub = hudStore.subscribe(() => {
-    const s = hudStore.getSnapshot()
-    if (s.hoverId !== lastInHover) { lastInHover = s.hoverId; bridge.setExternalHover(idToIdx(s.hoverId)) }
-    if (s.selectionId !== lastInSelect) { lastInSelect = s.selectionId; bridge.setExternalSelect(idToIdx(s.selectionId)) }
-  })
-  const s0 = hudStore.getSnapshot()
-  lastInHover = s0.hoverId; lastInSelect = s0.selectionId
-  bridge.setExternalHover(idToIdx(s0.hoverId))
-  bridge.setExternalSelect(idToIdx(s0.selectionId))
 
   return () => { offHover(); offSelect(); unsub() }
 }
@@ -187,6 +152,12 @@ interface LiveFlatSpec<D> {
   readValue: (d: D) => number
   /** Write a datum's value (for applying store changes in place). */
   writeValue: (d: D, v: number) => void
+  /** Stable identity of a datum (its PNode id). Bridge + reorder key on this. */
+  idOf: (d: D) => string
+  /** Optional: reassign a datum's positional x when it moves to displayIndex.
+   *  line/area/scatter(_index) use this so sort reorders the x-axis; categorical
+   *  charts (bar/pie/radar/arc) leave it undefined (x is slot-positional). */
+  reindex?: (d: D, displayIndex: number) => void
   /** Current store values per id, in the same order as `ids`. */
   values: number[]
   /** Shape key: rebuild when this changes (row set / names / measure — NOT sort order). */
@@ -206,12 +177,14 @@ function useLiveFlatElement<D>(
   const containerRef = useRef<HTMLDivElement>(null)
   const elRef = useRef<ElWithDataCell<D> | null>(null)
   const disposeRef = useRef<(() => void) | undefined>(undefined)
-  // `last[i]` = the exact value we consider already in sync for datum at
-  // build-time position i. Keyed by build-time index, not sort-time index.
-  const lastRef = useRef<number[]>(spec.values.slice())
-  // Build-time id order — stable across sort reorders (set at mount, cleared on unmount).
-  // arr[i] in the element always corresponds to buildIds[i].
-  const buildIdsRef = useRef<string[]>(spec.ids.slice())
+  // Bumped when the element fires `gesturecommit` (gesture just ended). The last
+  // value change happens DURING the frozen gesture, so without this nudge the
+  // apply-in effect never re-runs after the freeze lifts and the commit re-sort
+  // would never happen.
+  const [commitTick, setCommitTick] = useState(0)
+  // id → last value considered already in sync (echo suppression). Keyed by the
+  // datum's stable id, so it survives any reorder.
+  const lastRef = useRef<Map<string, number>>(new Map())
   // Latest spec/nodes/onUpdate for the (stable) edit-out subscription to read.
   const specRef = useRef(spec); specRef.current = spec
   const nodesRef = useRef(nodes); nodesRef.current = nodes
@@ -227,33 +200,37 @@ function useLiveFlatElement<D>(
     el.externalData = spec.build()
     container.appendChild(el)
     elRef.current = el
-    // Snapshot the id order at build time — arr[i] always matches buildIds[i].
-    buildIdsRef.current = specRef.current.ids.slice()
-    lastRef.current = specRef.current.values.slice()
+    const s0 = specRef.current
+    lastRef.current = new Map((el.dataCell.value as D[]).map(d => [s0.idOf(d), s0.readValue(d)]))
 
-    // Cross-tile hover/select sync (index ↔ id via build-time order, not sort order).
-    // buildIdsRef is frozen at mount so element index i always maps to buildIds[i].
-    const unbindHud = bindHudSyncFlat(el as ElWithBrSync, buildIdsRef)
+    // Cross-tile hover/select sync. The element now emits a datum's stable id
+    // directly (not an array index), so the plain id-keyed bridge wires straight
+    // through to the store — no index↔id translation, no frozen build order.
+    const unbindHud = bindHudSync(el as ElWithBrSync)
 
-    // Edit-out: when the element's own gesture changes a value, push to store.
-    // Uses buildIds (frozen at mount) not spec.ids (current sort order), so
-    // arr[i] always maps to the correct node even after a sort reorder.
+    // Gesture-commit nudge: the element fires this when a drag/wheel ends, so the
+    // apply-in effect re-runs with gestureActive=false → the single commit re-sort.
+    const onCommit = () => setCommitTick(t => t + 1)
+    el.addEventListener('gesturecommit', onCommit)
+
+    // Edit-out: the element's own gesture changed a value → push to store, keyed
+    // by the datum's stable id (correct regardless of display order).
     disposeRef.current = biEffect(() => {
-      const arr = el.dataCell.value
+      const arr = el.dataCell.value as D[]
       const s = specRef.current
       const cb = onUpdateRef.current
       const cbMany = onUpdateManyRef.current
       const last = lastRef.current
-      const buildIds = buildIdsRef.current
-      if (!cb && !cbMany) { for (let i = 0; i < arr.length; i++) last[i] = s.readValue(arr[i]!); return }
+      if (!cb && !cbMany) { for (const d of arr) last.set(s.idOf(d), s.readValue(d)); return }
       const byId = new Map(nodesRef.current.map(n => [n.id, n]))
       const pending: Array<{ id: string; measures: PNode['measures'] }> = []
-      for (let i = 0; i < arr.length; i++) {
-        const v = s.readValue(arr[i]!)
-        if (!near(v, last[i]!)) {
-          last[i] = v
-          const node = byId.get(buildIds[i]!)
-          if (node) pending.push({ id: node.id, measures: { ...node.measures, [s.measureKey]: v } })
+      for (const d of arr) {
+        const id = s.idOf(d)
+        const v = s.readValue(d)
+        if (!near(v, last.get(id) ?? NaN)) {
+          last.set(id, v)
+          const node = byId.get(id)
+          if (node) pending.push({ id, measures: { ...node.measures, [s.measureKey]: v } })
         }
       }
       // Defer out of the bireactive flush. When multiple datums change in one
@@ -269,6 +246,7 @@ function useLiveFlatElement<D>(
 
     return () => {
       unbindHud()
+      el.removeEventListener('gesturecommit', onCommit)
       disposeRef.current?.()
       disposeRef.current = undefined
       if (container.contains(el)) container.removeChild(el)
@@ -277,46 +255,59 @@ function useLiveFlatElement<D>(
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [spec.tag, spec.shapeKey])
 
-  // Apply store changes in place — update values AND reorder to match current sort.
-  // Reconciles by id: builds a map from id→datum, then writes spec.ids order into
-  // the element's array so the reactive band/domain derives pick up the new order.
+  // Apply store changes. SORT LIVES HERE (sliceboard), not in the chart.
+  //
+  // Sliceboard hands the element its data in the desired DISPLAY order (spec.ids,
+  // value-sorted upstream when the tile sorts by value). This effect rebuilds the
+  // element's array into that order, reusing the SAME datum objects so the
+  // element's hover/selection refs survive the reorder. The chart just draws the
+  // array order it's given — it owns no sort.
+  //
+  // FREEZE (interaction-principles Rule 7): while a gesture is live we do NOT
+  // reorder — we only write values in place, holding the order the user grabbed.
+  // The freeze releases on gesture end; the next apply-in reorders once — the
+  // single deliberate commit re-sort.
   useEffect(() => {
     const el = elRef.current
     if (!el) return
-    if (el.gestureActive) return
+    const s = spec
     const arr = el.dataCell.value as D[]
-    // Build id→datum map from the element's current array and buildIds.
-    const buildIds = buildIdsRef.current
-    const datumById = new Map<string, D>()
-    for (let i = 0; i < arr.length; i++) datumById.set(buildIds[i]!, arr[i]!)
-    // Apply new values and produce array in current spec.ids order.
-    let changed = false
-    const next: D[] = []
-    for (let j = 0; j < spec.ids.length; j++) {
-      const id = spec.ids[j]!
+    const valueById = new Map<string, number>()
+    for (let j = 0; j < s.ids.length; j++) valueById.set(s.ids[j]!, s.values[j]!)
+
+    if (el.gestureActive) {
+      // Frozen: values update live, order held.
+      let touched = false
+      for (const d of arr) {
+        const id = s.idOf(d); const target = valueById.get(id)
+        if (target !== undefined && !near(s.readValue(d), target)) {
+          s.writeValue(d, target); lastRef.current.set(id, target); touched = true
+        }
+      }
+      if (touched) el.dataCell.value = [...arr]
+      return
+    }
+
+    // Idle/commit: rebuild in display order (same datum objects), write values,
+    // reassign positional x where the chart needs it.
+    const datumById = new Map<string, D>(arr.map(d => [s.idOf(d), d]))
+    const newArr: D[] = []
+    let orderChanged = false
+    let touched = false
+    for (let k = 0; k < s.ids.length; k++) {
+      const id = s.ids[k]!
       const d = datumById.get(id)
       if (!d) continue
-      const target = spec.values[j]!
-      // Find this datum's build-time index for lastRef.
-      const bi = buildIds.indexOf(id)
-      if (!near(spec.readValue(d), target)) {
-        spec.writeValue(d, target)
-        if (bi >= 0) lastRef.current[bi] = target
-        changed = true
-      }
-      next.push(d)
+      const target = valueById.get(id)
+      if (target !== undefined && !near(s.readValue(d), target)) { s.writeValue(d, target); touched = true }
+      lastRef.current.set(id, s.readValue(d))
+      s.reindex?.(d, k)
+      if (arr[k] !== d) orderChanged = true
+      newArr.push(d)
     }
-    // Check if order changed.
-    const reordered = next.some((d, i) => d !== arr[i])
-    if (changed || reordered) {
-      // Update buildIdsRef to reflect new order (edit-out and HUD use it).
-      buildIdsRef.current = spec.ids.slice()
-      el.dataCell.value = next
-      // Rebuild lastRef in new order.
-      lastRef.current = next.map(d => spec.readValue(d))
-    }
+    if (orderChanged || touched || newArr.length !== arr.length) el.dataCell.value = newArr
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [spec.values.join(','), spec.ids.join(',')])
+  }, [spec.values.join(','), spec.ids.join(','), commitTick])
 
   return containerRef
 }
@@ -326,7 +317,6 @@ function useLiveFlatElement<D>(
 interface FlatProps {
   nodes: PNode[]
   measureKey: string
-  sortBy?: 'index' | 'value'
   maxItems?: number
   onUpdate?: (nodeId: string, measures: PNode['measures']) => void
   onUpdateMany?: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
@@ -334,14 +324,6 @@ interface FlatProps {
 
 function leavesOfNodes(nodes: PNode[]): PNode[] {
   return nodes.filter(n => !nodes.some(m => m.parentId === n.id))
-}
-
-function useElProp(containerRef: ReturnType<typeof useRef<HTMLDivElement | null>>, prop: string, value: unknown) {
-  // Run after every render — ensures prop is current even after a shapeKey-triggered remount.
-  useEffect(() => {
-    const el = containerRef.current?.firstElementChild as any
-    if (el) el[prop] = value
-  })
 }
 
 interface BarProps extends FlatProps {
@@ -352,69 +334,65 @@ interface BarProps extends FlatProps {
   minBandSize?: number
 }
 
-export function BrLcBar({ nodes, measureKey, sortBy = 'index', maxItems, orientation = 'vertical', colorMode = 'single', labelMode = 'axis', valueMode = 'none', minBandSize = 0, onUpdate }: BarProps) {
+export function BrLcBar({ nodes, measureKey, maxItems, orientation = 'vertical', colorMode = 'single', labelMode = 'axis', valueMode = 'none', minBandSize = 0, onUpdate }: BarProps) {
   const leaves = leavesOfNodes(nodes)
   const ids = leaves.map(n => n.id)
   // orientation + display options in shapeKey so changing any forces a remount (re-runs scene()).
   const displayKey = `${orientation}|${colorMode}|${labelMode}|${valueMode}|${minBandSize}|${maxItems ?? 0}`
   const maxProp = orientation === 'horizontal' ? 'maxBands' : 'maxBars'
-  const ref = useLiveFlatElement<{ label: string; value: number }>({
+  const ref = useLiveFlatElement<{ id: string; label: string; value: number }>({
     tag: 'v-br-bar', ids, measureKey,
     values: leaves.map(n => n.measures[measureKey] ?? 0),
     shapeKey: `${displayKey}|${measureKey}|${[...ids].sort().join(',')}|${[...leaves].sort((a,b)=>a.id<b.id?-1:1).map(n=>n.name).join(',')}`,
-    build: () => leaves.map(n => ({ label: n.name, value: n.measures[measureKey] ?? 1 })),
-    onMount: (el: any) => { el.orientation = orientation; el.sortBy = sortBy; el.colorMode = colorMode; el.labelMode = labelMode; el.valueMode = valueMode; el.minBandSize = minBandSize; if (maxItems !== undefined) el[maxProp] = maxItems },
-    readValue: d => d.value, writeValue: (d, v) => { d.value = v },
+    build: () => leaves.map(n => ({ id: n.id, label: n.name, value: n.measures[measureKey] ?? 1 })),
+    onMount: (el: any) => { el.orientation = orientation; el.colorMode = colorMode; el.labelMode = labelMode; el.valueMode = valueMode; el.minBandSize = minBandSize; if (maxItems !== undefined) el[maxProp] = maxItems },
+    readValue: d => d.value, writeValue: (d, v) => { d.value = v }, idOf: d => d.id,
   }, nodes, onUpdate)
-  useElProp(ref, 'sortBy', sortBy)
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }
 
-export function BrLcPie({ nodes, measureKey, sortBy = 'index', onUpdate, onUpdateMany }: FlatProps) {
+export function BrLcPie({ nodes, measureKey, onUpdate, onUpdateMany }: FlatProps) {
   const leaves = leavesOfNodes(nodes)
   const ids = leaves.map(n => n.id)
   // MdPieChartLC backs each slice's value with a Num CELL (so the boundary
   // knob can use the canonical Vec.lens([a,b],...) pattern). build() passes
   // plain numbers (externalData's setter wraps them in num()); read/write go
   // through the live datum, whose .value IS the cell — hence d.value.value.
-  const ref = useLiveFlatElement<{ label: string; value: Writable<Num> }>({
+  const ref = useLiveFlatElement<{ id: string; label: string; value: Writable<Num> }>({
     tag: 'v-br-pie', ids, measureKey,
     values: leaves.map(n => n.measures[measureKey] ?? 0),
     shapeKey: `${measureKey}|${[...ids].sort().join(',')}|${[...leaves].sort((a,b)=>a.id<b.id?-1:1).map(n=>n.name).join(',')}`,
-    build: () => leaves.map(n => ({ label: n.name, value: n.measures[measureKey] ?? 1 })) as never,
-    readValue: d => d.value.value, writeValue: (d, v) => { d.value.value = v },
+    build: () => leaves.map(n => ({ id: n.id, label: n.name, value: n.measures[measureKey] ?? 1 })) as never,
+    readValue: d => d.value.value, writeValue: (d, v) => { d.value.value = v }, idOf: d => d.id,
   }, nodes, onUpdate, onUpdateMany)
-  useElProp(ref, 'sortBy', sortBy)
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }
 
-export function BrLcRadar({ nodes, measureKey, sortBy = 'index', onUpdate }: FlatProps) {
+export function BrLcRadar({ nodes, measureKey, onUpdate }: FlatProps) {
   const leaves = leavesOfNodes(nodes)
   const ids = leaves.map(n => n.id)
-  const ref = useLiveFlatElement<{ name: string; value: number }>({
+  const ref = useLiveFlatElement<{ id: string; name: string; value: number }>({
     tag: 'v-br-radar', ids, measureKey,
     values: leaves.map(n => n.measures[measureKey] ?? 0),
     shapeKey: `${measureKey}|${[...ids].sort().join(',')}|${[...leaves].sort((a,b)=>a.id<b.id?-1:1).map(n=>n.name).join(',')}`,
-    build: () => leaves.map(n => ({ name: n.name, value: n.measures[measureKey] ?? 1 })),
-    readValue: d => d.value, writeValue: (d, v) => { d.value = v },
+    build: () => leaves.map(n => ({ id: n.id, name: n.name, value: n.measures[measureKey] ?? 1 })),
+    readValue: d => d.value, writeValue: (d, v) => { d.value = v }, idOf: d => d.id,
   }, nodes, onUpdate)
-  useElProp(ref, 'sortBy', sortBy)
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }
 
-export function BrLcConcentricArc({ nodes, measureKey, sortBy = 'index', maxItems, onUpdate }: FlatProps) {
+export function BrLcConcentricArc({ nodes, measureKey, maxItems, onUpdate }: FlatProps) {
   const leaves = leavesOfNodes(nodes)
   const ids = leaves.map(n => n.id)
   const palette = ['#e05c5c', '#f0a742', '#4cba6e', '#5b8def', '#b76de0', '#44c4c4']
-  const ref = useLiveFlatElement<{ label: string; color: string; value: number }>({
+  const ref = useLiveFlatElement<{ id: string; label: string; color: string; value: number }>({
     tag: 'v-br-concentric-arc', ids, measureKey,
     values: leaves.map(n => Math.min(100, n.measures[measureKey] ?? 0)),
     shapeKey: `${measureKey}|${maxItems ?? ''}|${[...ids].sort().join(',')}|${[...leaves].sort((a,b)=>a.id<b.id?-1:1).map(n=>n.name).join(',')}`,
-    build: () => leaves.map((n, i) => ({ label: n.name, color: palette[i % 6]!, value: Math.min(100, n.measures[measureKey] ?? 0) })),
+    build: () => leaves.map((n, i) => ({ id: n.id, label: n.name, color: palette[i % 6]!, value: Math.min(100, n.measures[measureKey] ?? 0) })),
     onMount: (el: any) => { if (maxItems !== undefined) el.maxRings = maxItems },
-    readValue: d => d.value, writeValue: (d, v) => { d.value = Math.min(100, v) },
+    readValue: d => d.value, writeValue: (d, v) => { d.value = Math.min(100, v) }, idOf: d => d.id,
   }, nodes, onUpdate)
-  useElProp(ref, 'sortBy', sortBy)
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }
 
@@ -430,12 +408,14 @@ interface ScatterProps {
 export function BrLcScatter({ nodes, xKey, yKey, onUpdate }: ScatterProps) {
   const leaves = leavesOfNodes(nodes)
   const ids = leaves.map(n => n.id)
-  const ref = useLiveFlatElement<{ x: number; y: number }>({
+  const ref = useLiveFlatElement<{ id: string; x: number; y: number }>({
     tag: 'v-br-scatter', ids, measureKey: yKey,
     values: leaves.map(n => n.measures[yKey] ?? 0),
     shapeKey: `${xKey}|${yKey}|${[...ids].sort().join(',')}`,
-    build: () => leaves.map((n, i) => ({ x: xKey === '_index' ? i : (n.measures[xKey] ?? 0), y: n.measures[yKey] ?? 0 })),
-    readValue: d => d.y, writeValue: (d, v) => { d.y = v },
+    build: () => leaves.map((n, i) => ({ id: n.id, x: xKey === '_index' ? i : (n.measures[xKey] ?? 0), y: n.measures[yKey] ?? 0 })),
+    readValue: d => d.y, writeValue: (d, v) => { d.y = v }, idOf: d => d.id,
+    // Only synthetic-index scatter reorders its x; a real measure x stays put.
+    reindex: xKey === '_index' ? (d, k) => { d.x = k } : undefined,
   }, nodes, onUpdate)
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }
@@ -445,28 +425,31 @@ export function BrLcScatter({ nodes, xKey, yKey, onUpdate }: ScatterProps) {
 const SERIES_START = new Date(2026, 0, 1).getTime()
 const DAY_MS = 86400 * 1000
 
-export function BrLcLine({ nodes, measureKey, onUpdate }: Omit<FlatProps, 'sortBy'>) {
+export function BrLcLine({ nodes, measureKey, onUpdate }: FlatProps) {
   const leaves = leavesOfNodes(nodes)
   const ids = leaves.map(n => n.id)
-  const ref = useLiveFlatElement<{ date: Date; value: number }>({
+  const ref = useLiveFlatElement<{ id: string; date: Date; value: number }>({
     tag: 'v-br-line', ids, measureKey,
     values: leaves.map(n => n.measures[measureKey] ?? 0),
     shapeKey: `${measureKey}|${[...ids].sort().join(',')}`,
-    build: () => leaves.map((n, i) => ({ date: new Date(SERIES_START + i * DAY_MS), value: n.measures[measureKey] ?? 0 })),
-    readValue: d => d.value, writeValue: (d, v) => { d.value = v },
+    build: () => leaves.map((n, i) => ({ id: n.id, date: new Date(SERIES_START + i * DAY_MS), value: n.measures[measureKey] ?? 0 })),
+    readValue: d => d.value, writeValue: (d, v) => { d.value = v }, idOf: d => d.id,
+    // x is positional: when sort reorders the series, the date follows the slot.
+    reindex: (d, k) => { d.date = new Date(SERIES_START + k * DAY_MS) },
   }, nodes, onUpdate)
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }
 
-export function BrLcArea({ nodes, measureKey, onUpdate }: Omit<FlatProps, 'sortBy'>) {
+export function BrLcArea({ nodes, measureKey, onUpdate }: FlatProps) {
   const leaves = leavesOfNodes(nodes)
   const ids = leaves.map(n => n.id)
-  const ref = useLiveFlatElement<{ date: Date; value: number }>({
+  const ref = useLiveFlatElement<{ id: string; date: Date; value: number }>({
     tag: 'v-br-area', ids, measureKey,
     values: leaves.map(n => n.measures[measureKey] ?? 0),
     shapeKey: `${measureKey}|${[...ids].sort().join(',')}`,
-    build: () => leaves.map((n, i) => ({ date: new Date(SERIES_START + i * DAY_MS), value: n.measures[measureKey] ?? 0 })),
-    readValue: d => d.value, writeValue: (d, v) => { d.value = v },
+    build: () => leaves.map((n, i) => ({ id: n.id, date: new Date(SERIES_START + i * DAY_MS), value: n.measures[measureKey] ?? 0 })),
+    readValue: d => d.value, writeValue: (d, v) => { d.value = v }, idOf: d => d.id,
+    reindex: (d, k) => { d.date = new Date(SERIES_START + k * DAY_MS) },
   }, nodes, onUpdate)
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }

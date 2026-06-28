@@ -11,6 +11,7 @@ const W = 720;
 const H = 360;
 
 interface Point {
+  id?: string;
   date: Date;
   value: number;
 }
@@ -22,7 +23,7 @@ function makeSeries(): Point[] {
   let v = 100;
   for (let i = 0; i < 30; i++) {
     v += (Math.random() - 0.45) * 6;
-    out.push({ date: new Date(start + i * day), value: Math.max(50, v) });
+    out.push({ id: String(i), date: new Date(start + i * day), value: Math.max(50, v) });
   }
   return out;
 }
@@ -30,7 +31,6 @@ function makeSeries(): Point[] {
 export class MdLineChartLC extends Diagram {
   static styles = `text { pointer-events: none; }${FILL_STYLE}`
   readonly dataCell = cell<readonly Point[]>(makeSeries());
-  sortBy: 'index' | 'value' = 'index';
   set externalData(v: { date: Date; value: number }[] | undefined) {
     if (v) this.dataCell.value = v as Point[];
   }

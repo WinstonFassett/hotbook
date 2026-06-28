@@ -29,13 +29,14 @@ const RING_DEFS = [
 ];
 
 interface Ring {
+  id?: string;
   label: string;
   color: string;
   value: number; // 0–100
 }
 
 function makeData(): Ring[] {
-  return RING_DEFS.slice(0, DEFAULT_MAX_RINGS).map((r) => ({ ...r, value: Math.round(20 + Math.random() * 70) }));
+  return RING_DEFS.slice(0, DEFAULT_MAX_RINGS).map((r) => ({ ...r, id: r.label, value: Math.round(20 + Math.random() * 70) }));
 }
 
 // Build rounded arc path-d centered at 0,0 (caller applies group translate).
@@ -57,7 +58,6 @@ const MIN_VALUE = 3;
 export class MdConcentricArcLC extends Diagram {
   static styles = `text { pointer-events: none; }${FILL_STYLE}`
   readonly dataCell = cell<readonly Ring[]>(makeData());
-  sortBy: 'index' | 'value' = 'index';
   maxRings: number = DEFAULT_MAX_RINGS;
   set externalData(v: { label: string; value: number }[] | undefined) {
     if (v) this.dataCell.value = (v as unknown as Ring[]).slice(0, this.maxRings);
@@ -103,6 +103,7 @@ export class MdConcentricArcLC extends Diagram {
     const wheelConfig = {
       snapshot: (d: Ring) => d.value,
       restore: (d: Ring, v: number) => mutateDatum(d, v - d.value),
+      onEnd: () => { this.dispatchEvent(new CustomEvent("gesturecommit")); },
     };
     // Last ring the pointer was over — kept past pointerleave so a wheel edit can
     // still target it for a moment after the cursor exits the ring band.
@@ -143,6 +144,8 @@ export class MdConcentricArcLC extends Diagram {
           (this as any).releasePointerCapture(dragPointerId);
         }
         dragPointerId = -1;
+        (this as any).gestureActive = false;
+        this.dispatchEvent(new CustomEvent("gesturecommit"));
       },
     };
 
@@ -154,18 +157,9 @@ export class MdConcentricArcLC extends Diagram {
     // di() reads the live datum at slot i so external data replacements are picked up.
     for (let i = 0; i < maxRings; i++) {
       const di = (): Ring | null => (data.value as Ring[])[i] ?? null;
-      // Derive radius from the ring's current visual rank. When sortBy=value, rank by descending value.
-      const rankOf = () => {
-        const rows = data.value as Ring[];
-        const d = di();
-        if (!d) return i; // hidden slot — park at its index
-        if (this.sortBy === 'value') {
-          const sorted = [...rows].sort((a, b) => b.value - a.value);
-          return sorted.indexOf(d);
-        }
-        return rows.indexOf(d);
-      };
-      const rOuter = derive(() => rOuterStart.value - rankOf() * ringStep.value);
+      // Radius from the slot's array position. Sliceboard already hands data in
+      // display order, so position IS the rank — the chart owns no sort.
+      const rOuter = derive(() => rOuterStart.value - i * ringStep.value);
       const rInner = derive(() => rOuter.value - ringThickness.value);
       const corner = derive(() => Math.min(ringThickness.value / 2, 14));
 
@@ -236,6 +230,7 @@ export class MdConcentricArcLC extends Diagram {
         if (!d) return;
         const pe = e as PointerEvent;
         dragPointerId = pe.pointerId;
+        (this as any).gestureActive = true;
         selected.value = d;
         try { (this as any).setPointerCapture(pe.pointerId); } catch { /* ok */ }
         dragController.begin(d, dragConfig);
@@ -254,7 +249,7 @@ export class MdConcentricArcLC extends Diagram {
         const rMid = (rOuter.value + rInner.value) / 2;
         return { x: cx.value + Math.cos(svgAngle) * (rMid + 22), y: cy.value + Math.sin(svgAngle) * (rMid + 22) };
       });
-      s(label(lblPos, slotDef.label, { size: 10, fill: slotDef.color, opacity: 0.85 }));
+      s(label(lblPos, derive(() => di()?.label ?? ""), { size: 10, fill: derive(() => di()?.color ?? slotDef.color), opacity: 0.85 }));
     }
 
     // Center readout.
@@ -285,16 +280,14 @@ export class MdConcentricArcLC extends Diagram {
       const lx = (pe.clientX - r.left) * sx - cx.peek();
       const ly = (pe.clientY - r.top) * sy - cy.peek();
       const dist = Math.sqrt(lx * lx + ly * ly);
-      // Find which ring the pointer is over by radius. Use visual rank order.
+      // Find which ring the pointer is over by radius. data.value is already in
+      // display (rank) order — position is the radius rank.
       const rows = data.value as Ring[];
-      const ordered = this.sortBy === 'value'
-        ? [...rows].sort((a, b) => b.value - a.value)
-        : rows;
       let hit: Ring | null = null;
-      for (let rank = 0; rank < ordered.length; rank++) {
+      for (let rank = 0; rank < rows.length; rank++) {
         const ro = rOuterStart.peek() - rank * ringStep.peek();
         const ri = ro - ringThickness.peek();
-        if (dist >= ri - 4 && dist <= ro + 4) { hit = ordered[rank]!; break; }
+        if (dist >= ri - 4 && dist <= ro + 4) { hit = rows[rank]!; break; }
       }
       if (!selected.value) hover.value = hit;
       lastRing = hit;
@@ -335,17 +328,16 @@ export class MdConcentricArcLC extends Diagram {
       return `${p.label}  ${Math.round(p.value)}%`;
     }), { size: 11, align: Anchor.Center, opacity: 0.7 }));
 
-    // Cross-tile hover/select sync bridge.
-    const ORDER = data.value as Ring[];
-    const idxOf = (d: Ring | null) => { if (d == null) return null; const i = ORDER.indexOf(d); return i < 0 ? null : String(i); };
-    const datumAt = (key: string | null) => { if (key == null) return null; const i = Number(key); return Number.isInteger(i) && i >= 0 && i < ORDER.length ? ORDER[i]! : null; };
+    // Cross-tile hover/select sync bridge — keyed on the datum's stable id.
+    const idOf = (d: Ring | null) => d?.id ?? null;
+    const datumAt = (id: string | null) => id == null ? null : (data.value as Ring[]).find(d => d.id === id) ?? null;
     let applyingExternal = false;
     const bridge = makeBridge({
       setHover: (key) => { applyingExternal = true; hover.value = datumAt(key); applyingExternal = false; },
       setSelect: (key) => { applyingExternal = true; selected.value = datumAt(key); applyingExternal = false; },
     });
     (this as unknown as ElementWithBridge).brSync = bridge;
-    biEffect(() => { const h = hover.value; if (applyingExternal) return; bridge.emitHover(idxOf(h)); });
-    biEffect(() => { const sel = selected.value; if (applyingExternal) return; bridge.emitSelect(idxOf(sel)); });
+    biEffect(() => { const h = hover.value; if (applyingExternal) return; bridge.emitHover(idOf(h)); });
+    biEffect(() => { const sel = selected.value; if (applyingExternal) return; bridge.emitSelect(idOf(sel)); });
   }
 }

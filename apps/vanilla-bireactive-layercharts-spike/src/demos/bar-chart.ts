@@ -26,11 +26,11 @@ function lightenHex(hex: string, t: number): string {
   return `#${m(r)}${m(g)}${m(b)}`;
 }
 
-interface Bar { label: string; value: number; }
+interface Bar { id?: string; label: string; value: number; }
 
 function makeData(): Bar[] {
   const labels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  return labels.map((l) => ({ label: l, value: Math.round(20 + Math.random() * 80) }));
+  return labels.map((l) => ({ id: l, label: l, value: Math.round(20 + Math.random() * 80) }));
 }
 
 export class MdBarChartLC extends Diagram {
@@ -43,7 +43,6 @@ export class MdBarChartLC extends Diagram {
   labelMode: 'axis' | 'inside' | 'both' = 'axis';
   valueMode: 'inside' | 'outside' | 'none' = 'outside';
   minBandSize: number = 0;
-  sortBy: 'index' | 'value' = 'index';
   /** Max bands before overflow-scroll kicks in. */
   maxBands: number = 10;
   /** Max bars before overflow-scroll kicks in. */
@@ -165,7 +164,7 @@ export class MdBarChartLC extends Diagram {
     const wheelConfig = {
       snapshot: (d: Bar) => d.value,
       restore: (d: Bar, v: number) => mutateDatum(d, v - d.value),
-      onEnd: () => { hover.value = null; },
+      onEnd: () => { hover.value = null; this.dispatchEvent(new CustomEvent("gesturecommit")); },
     };
     let dragPointerId = -1;
     const dragConfig = {
@@ -180,6 +179,7 @@ export class MdBarChartLC extends Diagram {
         if (dragPointerId >= 0 && (this as any).hasPointerCapture?.(dragPointerId)) (this as any).releasePointerCapture(dragPointerId);
         dragPointerId = -1;
         (this as any).gestureActive = false;
+        this.dispatchEvent(new CustomEvent("gesturecommit"));
       },
     };
 
@@ -389,7 +389,7 @@ export class MdBarChartLC extends Diagram {
     const wheelConfig = {
       snapshot: (d: Bar) => d.value,
       restore: (d: Bar, v: number) => mutateDatum(d, v - d.value),
-      onEnd: () => { hover.value = null; },
+      onEnd: () => { hover.value = null; this.dispatchEvent(new CustomEvent("gesturecommit")); },
     };
     let dragPointerId = -1;
     const dragConfig = {
@@ -404,6 +404,7 @@ export class MdBarChartLC extends Diagram {
         if (dragPointerId >= 0 && (this as any).hasPointerCapture?.(dragPointerId)) (this as any).releasePointerCapture(dragPointerId);
         dragPointerId = -1;
         (this as any).gestureActive = false;
+        this.dispatchEvent(new CustomEvent("gesturecommit"));
       },
     };
 
@@ -552,16 +553,16 @@ export class MdBarChartLC extends Diagram {
   }
 
   #bridge(data: ReturnType<typeof cell<readonly Bar[]>>, hover: ReturnType<typeof cell<Bar | null>>, selected: ReturnType<typeof cell<Bar | null>>) {
-    const ORDER = data.value as Bar[];
-    const idxOf = (d: Bar | null) => { if (d == null) return null; const i = ORDER.indexOf(d); return i < 0 ? null : String(i); };
-    const datumAt = (key: string | null) => { if (key == null) return null; const i = Number(key); return Number.isInteger(i) && i >= 0 && i < ORDER.length ? ORDER[i]! : null; };
+    // Key on the datum's stable id; look up live (data.value reorders on sort).
+    const idOf = (d: Bar | null) => d?.id ?? null;
+    const datumAt = (id: string | null) => id == null ? null : (data.value as Bar[]).find(d => d.id === id) ?? null;
     let applying = false;
     const bridge = makeBridge({
       setHover: key => { applying = true; hover.value = datumAt(key); applying = false; },
       setSelect: key => { applying = true; selected.value = datumAt(key); applying = false; },
     });
     (this as unknown as ElementWithBridge).brSync = bridge;
-    biEffect(() => { if (!applying) bridge.emitHover(idxOf(hover.value)); });
-    biEffect(() => { if (!applying) bridge.emitSelect(idxOf(selected.value)); });
+    biEffect(() => { if (!applying) bridge.emitHover(idOf(hover.value)); });
+    biEffect(() => { if (!applying) bridge.emitSelect(idOf(selected.value)); });
   }
 }

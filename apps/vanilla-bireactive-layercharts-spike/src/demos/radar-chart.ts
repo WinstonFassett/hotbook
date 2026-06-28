@@ -15,12 +15,14 @@ const H = 640;
 const COLOR = "#7aaae8";
 
 interface Spoke {
+  id?: string;
   name: string;
   value: number; // 0–100
 }
 
 function makeData(): Spoke[] {
   return ["Speed", "Power", "Agility", "Defense", "Stamina", "Technique"].map((name) => ({
+    id: name,
     name,
     value: Math.round(30 + Math.random() * 60),
   }));
@@ -29,7 +31,6 @@ function makeData(): Spoke[] {
 export class MdRadarChartLC extends Diagram {
   static styles = `text { pointer-events: none; }${FILL_STYLE}`
   readonly dataCell = cell<readonly Spoke[]>(makeData());
-  sortBy: 'index' | 'value' = 'index';
   tickCount = 4;
   set externalData(v: { label: string; value: number }[] | undefined) {
     if (v) this.dataCell.value = v as unknown as Spoke[];
@@ -60,7 +61,7 @@ export class MdRadarChartLC extends Diagram {
     const wheelConfig = {
       snapshot: (d: Spoke) => d.value,
       restore: (d: Spoke, v: number) => mutateDatum(d, v - d.value),
-      onEnd: () => { hover.value = null; },
+      onEnd: () => { hover.value = null; this.dispatchEvent(new CustomEvent("gesturecommit")); },
     };
 
     // x: scaleBand over category names → angle at band center
@@ -269,6 +270,8 @@ export class MdRadarChartLC extends Diagram {
           (this as any).releasePointerCapture(dragPointerId);
         }
         dragPointerId = -1;
+        (this as any).gestureActive = false;
+        this.dispatchEvent(new CustomEvent("gesturecommit"));
       },
     };
     this.addEventListener("pointerdown", (e) => {
@@ -285,6 +288,7 @@ export class MdRadarChartLC extends Diagram {
       const dy = y - (cy.peek() + Math.sin(a) * r);
       if (Math.sqrt(dx*dx + dy*dy) > 20) return;
       dragPointerId = pe.pointerId;
+      (this as any).gestureActive = true;
       selected.value = spoke;
       (this as any).setPointerCapture(pe.pointerId);
       dragController.begin(spoke, dragConfig); // controller owns move/up/Esc from here
@@ -335,16 +339,15 @@ export class MdRadarChartLC extends Diagram {
     ));
 
     // Cross-tile hover/select sync bridge.
-    const ORDER = data.value as Spoke[];
-    const idxOf = (d: Spoke | null) => { if (d == null) return null; const i = ORDER.indexOf(d); return i < 0 ? null : String(i); };
-    const datumAt = (key: string | null) => { if (key == null) return null; const i = Number(key); return Number.isInteger(i) && i >= 0 && i < ORDER.length ? ORDER[i]! : null; };
+    const idOf = (d: Spoke | null) => d?.id ?? null;
+    const datumAt = (id: string | null) => id == null ? null : (data.value as Spoke[]).find(d => d.id === id) ?? null;
     let applyingExternal = false;
     const bridge = makeBridge({
       setHover: (key) => { applyingExternal = true; hover.value = datumAt(key); applyingExternal = false; },
       setSelect: (key) => { applyingExternal = true; selected.value = datumAt(key); applyingExternal = false; },
     });
     (this as unknown as ElementWithBridge).brSync = bridge;
-    biEffect(() => { const h = hover.value; if (applyingExternal) return; bridge.emitHover(idxOf(h)); });
-    biEffect(() => { const sel = selected.value; if (applyingExternal) return; bridge.emitSelect(idxOf(sel)); });
+    biEffect(() => { const h = hover.value; if (applyingExternal) return; bridge.emitHover(idOf(h)); });
+    biEffect(() => { const sel = selected.value; if (applyingExternal) return; bridge.emitSelect(idOf(sel)); });
   }
 }

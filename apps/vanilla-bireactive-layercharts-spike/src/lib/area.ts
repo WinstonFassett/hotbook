@@ -31,12 +31,19 @@ export function area<TData>(ctx: ChartContext<TData>, opts: AreaOpts = {}) {
     const y0Default = Math.max(...yRange);
     const y0 = Number.isFinite(baseline) ? Math.min(baseline, y0Default) : y0Default;
 
+    // An area, like a line, is an x-ordered path. d3Area connects in ARRAY
+    // order, but the source array may be value-sorted (shared with bar/pie).
+    // Sort the render projection by x so the band can never fold back on itself
+    // when the shared array is y-sorted. (d3Area also genuinely requires
+    // x-monotonic input to render a sane band.)
+    const xv = ctx.xAcc;
+    const ordered = [...(rows as TData[])].sort((a, b) => +xv(a) - +xv(b));
     const gen = d3Area<TData>()
       .x((dp) => gx(dp as TData))
       .y0(opts.y0 ?? (() => y0))
       .y1((dp) => gy(dp as TData));
     if (opts.curve) gen.curve(opts.curve);
-    return gen(rows as TData[]) ?? "";
+    return gen(ordered) ?? "";
   });
 
   return pathD(d, {

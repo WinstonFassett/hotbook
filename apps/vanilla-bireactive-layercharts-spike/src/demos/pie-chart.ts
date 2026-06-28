@@ -12,6 +12,7 @@ const R_INNER = 0;
 const PALETTE = ['#e08888', '#d4a86c', '#ccc060', '#7ec87e', '#60c4c0', '#7aaae8', '#b090e0', '#8899b4'];
 
 interface Slice {
+  id?: string;
   label: string;
   // Writable Num cell — same shape as the hierarchical charts' node.value.total.
   // This is what lets the boundary knob use the canonical Vec.lens([a,b],...)
@@ -21,6 +22,7 @@ interface Slice {
 
 function makeData(): Slice[] {
   return ["Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta"].map((l) => ({
+    id: l,
     label: l,
     value: num(Math.round(10 + Math.random() * 90)),
   }));
@@ -29,12 +31,11 @@ function makeData(): Slice[] {
 export class MdPieChartLC extends Diagram {
   static styles = `text { pointer-events: none; }${FILL_STYLE}`
   readonly dataCell = cell<readonly Slice[]>(makeData());
-  sortBy: 'index' | 'value' = 'index';
-  set externalData(v: { label: string; value: number }[] | undefined) {
-    if (v) this.dataCell.value = v.map((d) => ({ label: d.label, value: num(d.value) }));
+  set externalData(v: { id?: string; label: string; value: number }[] | undefined) {
+    if (v) this.dataCell.value = v.map((d) => ({ id: d.id, label: d.label, value: num(d.value) }));
   }
-  get externalData(): { label: string; value: number }[] | undefined {
-    return this.dataCell.value.map((d) => ({ label: d.label, value: d.value.value }));
+  get externalData(): { id?: string; label: string; value: number }[] | undefined {
+    return this.dataCell.value.map((d) => ({ id: d.id, label: d.label, value: d.value.value }));
   }
   protected scene(s: Mount): void {
     const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
@@ -61,7 +62,7 @@ export class MdPieChartLC extends Diagram {
     const wheelConfig = {
       snapshot: (d: Slice) => d.value.value,
       restore: (d: Slice, v: number) => { d.value.value = Math.max(1, v); },
-      onEnd: () => { hover.value = null; },
+      onEnd: () => { hover.value = null; this.dispatchEvent(new CustomEvent("gesturecommit")); },
     };
 
     // Pie layout (reactive). Reads each slice's value CELL so the layout
@@ -177,7 +178,7 @@ export class MdPieChartLC extends Diagram {
         dragCancelable(dot, knob, [a, b], {
           host: this,
           onStart: () => { active.value = true; (this as any).gestureActive = true; },
-          onEnd: () => { active.value = false; (this as any).gestureActive = false; },
+          onEnd: () => { active.value = false; (this as any).gestureActive = false; this.dispatchEvent(new CustomEvent("gesturecommit")); },
         });
         dot.el.style.cursor = "grab";
         dot.el.addEventListener("pointerenter", () => { active.value = true; });
@@ -229,16 +230,15 @@ export class MdPieChartLC extends Diagram {
       { size: 11, align: Anchor.Center, opacity: 0.7 },
     ));
 
-    const ORDER = data.value as Slice[];
-    const idxOf = (d: Slice | null) => { if (d == null) return null; const i = ORDER.indexOf(d); return i < 0 ? null : String(i); };
-    const datumAt = (key: string | null) => { if (key == null) return null; const i = Number(key); return Number.isInteger(i) && i >= 0 && i < ORDER.length ? ORDER[i]! : null; };
+    const idOf = (d: Slice | null) => d?.id ?? null;
+    const datumAt = (id: string | null) => id == null ? null : (data.value as Slice[]).find(d => d.id === id) ?? null;
     let applyingExternal = false;
     const bridge = makeBridge({
       setHover: (key) => { applyingExternal = true; hover.value = datumAt(key); applyingExternal = false; },
       setSelect: (key) => { applyingExternal = true; selected.value = datumAt(key); applyingExternal = false; },
     });
     (this as unknown as ElementWithBridge).brSync = bridge;
-    biEffect(() => { const h = hover.value; if (applyingExternal) return; bridge.emitHover(idxOf(h)); });
-    biEffect(() => { const sel = selected.value; if (applyingExternal) return; bridge.emitSelect(idxOf(sel)); });
+    biEffect(() => { const h = hover.value; if (applyingExternal) return; bridge.emitHover(idOf(h)); });
+    biEffect(() => { const sel = selected.value; if (applyingExternal) return; bridge.emitSelect(idOf(sel)); });
   }
 }

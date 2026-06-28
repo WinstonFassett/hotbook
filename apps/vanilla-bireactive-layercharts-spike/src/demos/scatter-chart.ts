@@ -11,12 +11,14 @@ const H = 360;
 const COLOR = "#7aaae8";
 
 interface Point {
+  id?: string;
   x: number;
   y: number;
 }
 
 function makeData(): Point[] {
   return Array.from({ length: 40 }, (_, i) => ({
+    id: String(i),
     x: i * 2.5 + (Math.random() - 0.5) * 2,
     y: 20 + i * 1.8 + (Math.random() - 0.5) * 20,
   })).sort((a, b) => a.x - b.x);

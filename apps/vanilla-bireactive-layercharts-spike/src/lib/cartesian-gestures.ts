@@ -49,9 +49,9 @@ export function attachCartesianGestures<TData>(
     return { x: (e.clientX - rect.left) * sx, y: (e.clientY - rect.top) * sy };
   };
 
-  // Frozen snapshot of order() taken at gesture-start. When sorted-by-value,
-  // mid-gesture mutations shift order() — idxOf/datumAt must use the pre-gesture
-  // snapshot so the bridge doesn't resolve a different datum from a shifted index.
+  // Frozen snapshot of order() taken at gesture-start, used by keyboard nav and
+  // datumAt during a gesture so they read a stable list while values churn.
+  // (Bridge identity is by datum id now, so a shifted order can't mis-resolve.)
   let gestureOrder: TData[] | null = null;
 
   // Per-gesture value-mapping handed to the SHARED wheel/drag controllers (app-
@@ -59,30 +59,45 @@ export function attachCartesianGestures<TData>(
   const wheelConfig = {
     snapshot: (d: TData) => ctx.yAcc(d) as number,
     restore: (d: TData, v: number) => mutateDatum(d, v - (ctx.yAcc(d) as number)),
-    onEnd: () => { state.hover.value = null; gestureOrder = null; },
+    onEnd: () => { state.hover.value = null; gestureOrder = null; host.dispatchEvent(new CustomEvent("gesturecommit")); },
   };
 
+  // Captured at pointerdown, read by dragConfig.snapshot (called inside begin()).
+  let dragStartY = 0;
+  let dragStartScale: any = null;
+
   // Move handler the drag controller invokes while a drag is live.
+  // snapshot = { origValue, startY, startScale } captured at pointerdown.
+  // We derive delta from (currentY - startY) in the ORIGINAL scale, so the
+  // computed delta is immune to domain re-derivation mid-drag (which would
+  // cause the "spike" bug: scale shifts → invert(y) jumps → value rockets).
   let dragPointerId = -1;
-  const onDragMove = (pe: PointerEvent) => {
+  const onDragMove = (pe: PointerEvent, snap: { origValue: number; startY: number; startScale: any }) => {
     const t = dragController.target as TData | null;
     if (!t) return;
     const { y } = localPoint(pe);
-    const ys = ctx.yScale.value as any;
-    mutateDatum(t, ys.invert(y) - (ctx.yAcc(t) as number));
+    const valueDelta = snap.startScale.invert(y) - snap.startScale.invert(snap.startY);
+    mutateDatum(t, snap.origValue + valueDelta - (ctx.yAcc(t) as number));
   };
   const dragConfig = {
-    snapshot: (d: TData) => ctx.yAcc(d) as number,
-    restore: (d: TData, v: number) => mutateDatum(d, v - (ctx.yAcc(d) as number)),
+    snapshot: (d: TData) => ({
+      origValue: ctx.yAcc(d) as number,
+      startY: dragStartY,
+      startScale: dragStartScale,
+    }),
+    restore: (d: TData, snap: { origValue: number }) => mutateDatum(d, snap.origValue - (ctx.yAcc(d) as number)),
     onMove: onDragMove,
     onEnd: () => {
       if (dragPointerId >= 0 && (host as any).hasPointerCapture?.(dragPointerId)) {
         (host as any).releasePointerCapture(dragPointerId);
       }
       dragPointerId = -1;
+      dragStartY = 0;
+      dragStartScale = null;
       gestureOrder = null;
       host.style.cursor = "";
       (host as any).gestureActive = false;
+      host.dispatchEvent(new CustomEvent("gesturecommit"));
     },
   };
 
@@ -141,6 +156,8 @@ export function attachCartesianGestures<TData>(
     if (Math.abs(y - yPixel(pt)) > 12) return;
     gestureOrder = order();
     dragPointerId = pe.pointerId;
+    dragStartY = y;
+    dragStartScale = ctx.yScale.value;
     state.selected.value = pt;
     host.style.cursor = "ns-resize";
     (host as any).gestureActive = true;
@@ -170,16 +187,12 @@ export function attachCartesianGestures<TData>(
   // ── Cross-tile sync bridge ──────────────────────────────────────────────
   // Flat datums carry no PNode id, so the bridge keys on the datum's index in
   // `order()`; the React wrapper maps index ↔ PNode id via its parallel `ids[]`.
-  const idxOf = (d: TData | null): string | null => {
-    if (d == null) return null;
-    const i = (gestureOrder ?? order()).indexOf(d);
-    return i < 0 ? null : String(i);
-  };
-  const datumAt = (key: string | null): TData | null => {
-    if (key == null) return null;
-    const i = Number(key);
+  const idOf = (d: TData | null): string | null =>
+    d == null ? null : ((d as { id?: string }).id ?? null);
+  const datumAt = (id: string | null): TData | null => {
+    if (id == null) return null;
     const rows = gestureOrder ?? order();
-    return Number.isInteger(i) && i >= 0 && i < rows.length ? rows[i]! : null;
+    return rows.find(d => (d as { id?: string }).id === id) ?? null;
   };
 
   let applyingExternal = false;
@@ -192,12 +205,12 @@ export function attachCartesianGestures<TData>(
   const hoverDispose = biEffect(() => {
     const h = state.hover.value;
     if (applyingExternal) return;
-    bridge.emitHover(idxOf(h));
+    bridge.emitHover(idOf(h));
   });
   const selectDispose = biEffect(() => {
     const sel = state.selected.value;
     if (applyingExternal) return;
-    bridge.emitSelect(idxOf(sel));
+    bridge.emitSelect(idOf(sel));
   });
 
   return () => {
