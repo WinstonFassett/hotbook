@@ -608,7 +608,13 @@ export function applyGroupBy(rows: PNode[], dimKey: string): PNode[] {
     if (!groups.has(val)) {
       const gid = `__grp__${dimKey}__${val}`
       groups.set(val, gid)
-      groupNodes.push({ id: gid, parentId: null, index: gi, name: val, measures: {}, dims: {}, color: colorFor(val) })
+      // Color the synthetic group by its members' shared color so the inner ring
+      // matches the outer ring (members carry explicit hues in flat datasets).
+      // Fall back to a palette pick from the group name when members are uncolored.
+      const members = roots.filter(m => (m.dims[dimKey] ?? '(none)') === val)
+      const memberColors = new Set(members.map(m => m.color).filter(Boolean))
+      const groupColor = memberColors.size === 1 ? members.find(m => m.color)!.color! : colorFor(val)
+      groupNodes.push({ id: gid, parentId: null, index: gi, name: val, measures: {}, dims: {}, color: groupColor })
       gi++
     }
   }

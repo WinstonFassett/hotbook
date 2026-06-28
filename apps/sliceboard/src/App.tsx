@@ -94,7 +94,7 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
   const onSelect = (id: string) => hudStore.setSelection(id)
   const onFocus = (id: string) => hudStore.setFocus(id)
 
-  const depth = tile.depth ?? 2
+  const depth = tile.depth || undefined // 0/undefined = all levels (chart shows full tree)
   const sortBy = tile.sortBy ?? 'index'
   const rawNodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.rows, tile.groupBy) : ds.rows)
   const nodes = sortBy === 'value'
@@ -213,7 +213,7 @@ function TileCard({
   const isHier = HIER_KINDS.has(tile.kind)
   const isViz = VIZ_KINDS.has(tile.kind)
   const showGroupBy = GROUPBY_KINDS.has(tile.kind) && ds.dimDefs.length > 0
-  const depth = tile.depth ?? 2
+  const depth = tile.depth ?? 0 // 0 = "All" (show full tree)
   const sortBy = tile.sortBy ?? 'index'
   return (
     <div className="tile-card">
@@ -227,6 +227,7 @@ function TileCard({
               onChange={e => onDepthChange(Number(e.target.value))}
               title="Levels to show"
             >
+              <option value={0}>All</option>
               {[1, 2, 3, 4, 5].map(n => (
                 <option key={n} value={n}>{n}L</option>
               ))}
