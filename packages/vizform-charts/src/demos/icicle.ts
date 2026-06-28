@@ -9,6 +9,12 @@ import {
   Num,
   rect,
   Vec,
+  num,
+  play,
+  tween,
+  easeOut,
+  effect as biEffect,
+  untracked,
 } from "bireactive";
 import { partition, type HierarchyRectangularNode } from "d3-hierarchy";
 import { depthFill, labelInk } from "../lib/depth-color";
@@ -21,11 +27,18 @@ import { dragCancelable } from "../lib/esc-contract";
 
 const W = 720;
 const H = 360;
+const DRILL_DURATION = 800;
 
 export class MdIcicleLC extends Diagram {
   static styles = `text { pointer-events: none; }${FILL_STYLE}`
   externalRoot?: BiNode
   maxDepth?: number
+  drillKey?: string
+
+  private _drillIdCell = cell<string | null>(null)
+  get drillNodeId(): string | null { return this._drillIdCell.value }
+  set drillNodeId(id: string | null) { this._drillIdCell.value = id ?? null }
+
   protected scene(s: Mount): void {
     const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
     const view = this.view(Wc, Hc);
@@ -44,6 +57,12 @@ export class MdIcicleLC extends Diagram {
     attachChartGestures(this, { root, parentOf, state, scalingMode: "proportional-neighbor" });
     const hoverCell = cell<BiNode | null>(null);
     state.hoverCell = hoverCell;
+
+    // Build id→BiNode index for drill lookup.
+    const nodeById = new Map<string, BiNode>();
+    for (const { node } of walkWithDepth(root)) {
+      if (node.value.id) nodeById.set(node.value.id, node);
+    }
 
     const maxD = this.maxDepth
     const layout = derive(() => {
@@ -69,13 +88,70 @@ export class MdIcicleLC extends Diagram {
       });
       return map;
     });
+    // Viewport cells: region of layout-space mapped to canvas. Default: full canvas.
+    const vx0 = num(0);
+    const vy0 = num(0);
+    const vx1 = num(W);
+    const vy1 = num(H);
+
+    let drillInited = false;
+    let lastDrillId: string | null = null;
+    biEffect(() => {
+      const id = this._drillIdCell.value;
+      const W0 = Wc.value, H0 = Hc.value;
+      let tx0: number, ty0: number, tx1: number, ty1: number;
+      if (id) {
+        const lmap = untracked(() => layout.value);
+        const biNode = nodeById.get(id);
+        const lnode = biNode ? lmap.get(biNode) : null;
+        if (lnode) {
+          tx0 = lnode.x0; ty0 = lnode.y0; tx1 = lnode.x1; ty1 = lnode.y1;
+        } else {
+          tx0 = 0; ty0 = 0; tx1 = W0; ty1 = H0;
+        }
+      } else {
+        tx0 = 0; ty0 = 0; tx1 = W0; ty1 = H0;
+      }
+      const drillChanged = id !== lastDrillId;
+      lastDrillId = id;
+      if (!drillInited || !drillChanged) {
+        vx0.value = tx0; vy0.value = ty0; vx1.value = tx1; vy1.value = ty1;
+        drillInited = true;
+        return;
+      }
+      play(tween(vx0, tx0, DRILL_DURATION, easeOut));
+      play(tween(vy0, ty0, DRILL_DURATION, easeOut));
+      play(tween(vx1, tx1, DRILL_DURATION, easeOut));
+      play(tween(vy1, ty1, DRILL_DURATION, easeOut));
+    });
+
+    // Helper: remap raw layout coordinate through animated viewport.
+    const remapX = (rawX: number) => {
+      const spanW = vx1.value - vx0.value;
+      return spanW === 0 ? 0 : (rawX - vx0.value) / spanW * Wc.value;
+    };
+    const remapY = (rawY: number) => {
+      const spanH = vy1.value - vy0.value;
+      return spanH === 0 ? 0 : (rawY - vy0.value) / spanH * Hc.value;
+    };
+
     for (const { node, depth, isLeaf } of walkWithDepth(root)) {
       if (depth === 0) continue;
       if (maxD !== undefined && depth > maxD) continue;
-      const x = derive(() => layout.value.get(node)?.x0 ?? 0);
-      const y = derive(() => layout.value.get(node)?.y0 ?? 0);
-      const w = derive(() => Math.max(0, (layout.value.get(node)?.x1 ?? 0) - (layout.value.get(node)?.x0 ?? 0)));
-      const h = derive(() => Math.max(0, (layout.value.get(node)?.y1 ?? 0) - (layout.value.get(node)?.y0 ?? 0)));
+      const x = derive(() => remapX(layout.value.get(node)?.x0 ?? 0));
+      const y = derive(() => remapY(layout.value.get(node)?.y0 ?? 0));
+      const w = derive(() => {
+        const lnode = layout.value.get(node);
+        const rawW = Math.max(0, (lnode?.x1 ?? 0) - (lnode?.x0 ?? 0));
+        const spanW = vx1.value - vx0.value;
+        return spanW === 0 ? 0 : rawW / spanW * Wc.value;
+      });
+      const h = derive(() => {
+        const lnode = layout.value.get(node);
+        const rawH = Math.max(0, (lnode?.y1 ?? 0) - (lnode?.y0 ?? 0));
+        const spanH = vy1.value - vy0.value;
+        return spanH === 0 ? 0 : rawH / spanH * Hc.value;
+      });
       const stroke = derive(() =>
         state.focused.value === node ? "#fff"
         : hoverCell.value === node ? "#c8cdd6"
@@ -151,15 +227,21 @@ export class MdIcicleLC extends Diagram {
               const x1 = spanX1.peek();
               const sum = va + vb;
               const frac = sum === 0 ? 0.5 : va / sum;
-              return { x: x0 + frac * (x1 - x0), y: (rowY0.peek() + rowY1.peek()) / 2 };
+              // Return screen-space coords so drag() uses consistent space.
+              const lx = x0 + frac * (x1 - x0);
+              const ly = (rowY0.peek() + rowY1.peek()) / 2;
+              return { x: remapX(lx), y: remapY(ly) };
             },
             (target, vals) => {
               const [va, vb] = vals;
+              // Convert screen-space target back to layout-space for fraction math.
+              const svxSpan = vx1.value - vx0.value;
+              const layoutX = svxSpan === 0 ? 0 : vx0.value + (target.x / Wc.value) * svxSpan;
               const x0 = spanX0.peek();
               const x1 = spanX1.peek();
               const sum = va + vb;
               if (sum === 0 || x1 <= x0) return [va, vb];
-              let frac = (target.x - x0) / (x1 - x0);
+              let frac = (layoutX - x0) / (x1 - x0);
               frac = Math.max(0, Math.min(1, frac));
               const newA = frac * sum;
               return [newA, sum - newA];
@@ -171,7 +253,9 @@ export class MdIcicleLC extends Diagram {
             const x0 = spanX0.value, x1 = spanX1.value;
             const sum = va + vb;
             const frac = sum === 0 ? 0.5 : va / sum;
-            return { x: x0 + frac * (x1 - x0), y: (rowY0.value + rowY1.value) / 2 };
+            const lx = x0 + frac * (x1 - x0);
+            const ly = (rowY0.value + rowY1.value) / 2;
+            return { x: remapX(lx), y: remapY(ly) };
           });
           const active = cell(false);
           const dot = s(

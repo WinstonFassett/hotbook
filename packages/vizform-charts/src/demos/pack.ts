@@ -7,6 +7,12 @@ import {
   cell,
   circle,
   Vec,
+  num,
+  play,
+  tween,
+  easeOut,
+  effect as biEffect,
+  untracked,
 } from "bireactive";
 import { pack as d3pack, type HierarchyCircularNode } from "d3-hierarchy";
 import { depthFill, labelInk } from "../lib/depth-color";
@@ -19,11 +25,20 @@ import { useHostSize, FILL_STYLE } from "../lib/host-size";
 const W = 480;
 const H = 480;
 const PAD = 2;
+const DRILL_DURATION = 800;
 
 export class MdPack extends Diagram {
   static styles = `text { pointer-events: none; }${FILL_STYLE}`
   externalRoot?: BiNode
   maxDepth?: number
+  drillKey?: string
+
+  // Internal reactive cell updated by the drillNodeId setter.
+  private _drillIdCell = cell<string | null>(null)
+
+  get drillNodeId(): string | null { return this._drillIdCell.value }
+  set drillNodeId(id: string | null) { this._drillIdCell.value = id ?? null }
+
   protected scene(s: Mount): void {
     const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
     const view = this.view(Wc, Hc);
@@ -51,12 +66,76 @@ export class MdPack extends Diagram {
       return map;
     });
 
+    // Build a flat id→BiNode index for drill lookup.
+    const nodeById = new Map<string, BiNode>();
+    for (const { node } of walkWithDepth(root)) {
+      if (node.value.id) nodeById.set(node.value.id, node);
+    }
+
+    // Viewport cells: the region of layout-space currently mapped to canvas.
+    // Default: full canvas (x in [0,W], y in [0,H]).
+    const vx0 = num(0);
+    const vy0 = num(0);
+    const vx1 = num(W);
+    const vy1 = num(H);
+
+    // Watch drillNodeId; on change tween the viewport to the drilled node bounds.
+    // Reads Wc/Hc (tracked) so viewport resets correctly on resize.
+    // Reads layout via untracked so value edits don't re-fire the tween.
+    let drillInited = false;
+    let lastDrillId: string | null = null;
+    biEffect(() => {
+      const id = this._drillIdCell.value;
+      const W0 = Wc.value, H0 = Hc.value;
+      let tx0: number, ty0: number, tx1: number, ty1: number;
+      if (id) {
+        const lmap = untracked(() => layout.value);
+        const biNode = nodeById.get(id);
+        const lnode = biNode ? lmap.get(biNode) : null;
+        if (lnode) {
+          tx0 = lnode.x - lnode.r;
+          ty0 = lnode.y - lnode.r;
+          tx1 = lnode.x + lnode.r;
+          ty1 = lnode.y + lnode.r;
+        } else {
+          tx0 = 0; ty0 = 0; tx1 = W0; ty1 = H0;
+        }
+      } else {
+        tx0 = 0; ty0 = 0; tx1 = W0; ty1 = H0;
+      }
+      // Animate only when drill id changes; snap for initial load and resize.
+      const drillChanged = id !== lastDrillId;
+      lastDrillId = id;
+      if (!drillInited || !drillChanged) {
+        vx0.value = tx0; vy0.value = ty0; vx1.value = tx1; vy1.value = ty1;
+        drillInited = true;
+        return;
+      }
+      play(tween(vx0, tx0, DRILL_DURATION, easeOut));
+      play(tween(vy0, ty0, DRILL_DURATION, easeOut));
+      play(tween(vx1, tx1, DRILL_DURATION, easeOut));
+      play(tween(vy1, ty1, DRILL_DURATION, easeOut));
+    });
+
     const maxD = this.maxDepth
     for (const { node, depth, isLeaf } of walkWithDepth(root)) {
       if (maxD !== undefined && depth > maxD) continue;
-      const cx = derive(() => layout.value.get(node)?.x ?? 0);
-      const cy = derive(() => layout.value.get(node)?.y ?? 0);
-      const r = derive(() => layout.value.get(node)?.r ?? 0);
+      // Remap layout coords through the animated viewport.
+      const cx = derive(() => {
+        const raw = layout.value.get(node)?.x ?? 0;
+        const spanW = vx1.value - vx0.value;
+        return spanW === 0 ? 0 : (raw - vx0.value) / spanW * Wc.value;
+      });
+      const cy = derive(() => {
+        const raw = layout.value.get(node)?.y ?? 0;
+        const spanH = vy1.value - vy0.value;
+        return spanH === 0 ? 0 : (raw - vy0.value) / spanH * Hc.value;
+      });
+      const r = derive(() => {
+        const raw = layout.value.get(node)?.r ?? 0;
+        const spanW = vx1.value - vx0.value;
+        return spanW === 0 ? 0 : raw / spanW * Wc.value;
+      });
       const stroke = derive(() =>
         state.focused.value === node ? "#fff"
         : hoverCell.value === node ? "#c8cdd6"
@@ -82,8 +161,7 @@ export class MdPack extends Diagram {
 
       if (isLeaf) {
         const text = derive(() => {
-          const r0 = layout.value.get(node)?.r ?? 0;
-          if (r0 <= 14) return "";
+          if (r.value <= 14) return "";
           return `${node.value.label}\n${node.value.total.value.toFixed(0)}`;
         });
         s(label(Vec.derive(() => ({ x: cx.value, y: cy.value })), text, {

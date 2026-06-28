@@ -308,16 +308,17 @@ interface HierProps {
   depth?: number
   sortBy?: 'index' | 'value'
   drillKey?: string
+  drillNodeId?: string | null
   showBreadcrumb?: boolean
   onUpdate?: (nodeId: string, measures: PNode['measures']) => void
   onUpdateMany?: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
 }
 
-function makeHier(tag: string, { nodes, measureKey, depth, sortBy, drillKey = 'default', showBreadcrumb = true, onUpdate, onUpdateMany }: HierProps) {
+function makeHier(tag: string, { nodes, measureKey, depth, sortBy, drillKey = 'default', drillNodeId, showBreadcrumb = true, onUpdate, onUpdateMany }: HierProps) {
   const shapeKey = hierShapeKey(tag, nodes, measureKey, depth, sortBy)
   const valueKey = hierValueKey(nodes, measureKey)
   return makeHierSource({
-    tag, nodes, measureKey, depth, sortBy, shapeKey, valueKey, drillKey, showBreadcrumb, onUpdate, onUpdateMany,
+    tag, nodes, measureKey, depth, sortBy, shapeKey, valueKey, drillKey, drillNodeId, showBreadcrumb, onUpdate, onUpdateMany,
   })
 }
 
