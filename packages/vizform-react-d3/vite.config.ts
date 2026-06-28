@@ -15,7 +15,7 @@ export default defineConfig({
       fileName: 'vizform-react-d3',
     },
     rollupOptions: {
-      external: ['react', 'react/jsx-runtime', '@winstonfassett/vizform-vanilla-d3'],
+      external: ['react', 'react/jsx-runtime', '@winstonfassett/vizform-vanilla-d3', '@winstonfassett/vizform-charts'],
       output: {
         globals: { react: 'React' },
       },
