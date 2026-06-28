@@ -485,11 +485,15 @@ export function useLiveHierElement(
   const onUpdateRef = useRef(onUpdate); onUpdateRef.current = onUpdate
   const onUpdateManyRef = useRef(onUpdateMany); onUpdateManyRef.current = onUpdateMany
 
-  // Shape: rebuild when tree structure, measureKey, or depth changes.
-  const shapeKey = `${measureKey}|${depth ?? 'all'}|${nodes.map(n => `${n.id}:${n.parentId ?? ''}`).join(',')}`
+  // Shape: rebuild when tree STRUCTURE, measureKey, or depth changes. The tree is
+  // built from parentId (order-independent), so the key must be too — otherwise a
+  // value-sort that reorders `nodes` flips the key and remounts the element
+  // mid-edit, dropping the in-flight gesture. Sort the pairs to make it stable.
+  const shapeKey = `${measureKey}|${depth ?? 'all'}|${nodes.map(n => `${n.id}:${n.parentId ?? ''}`).sort().join(',')}`
   // Per-leaf store values, applied in place on change. Keyed on the exact
-  // (precision-stable) value so fractional edits still trigger apply-in.
-  const valueKey = nodes.map(n => `${n.id}:${vkey(n.measures[measureKey] ?? 0)}`).join(',')
+  // (precision-stable) value so fractional edits still trigger apply-in. Sorted
+  // by id so reorder alone doesn't churn it (only real value changes do).
+  const valueKey = nodes.map(n => `${n.id}:${vkey(n.measures[measureKey] ?? 0)}`).sort().join(',')
 
   useEffect(() => {
     const container = containerRef.current
