@@ -21,7 +21,7 @@ graph TD
 
   subgraph apps["apps/"]
     slice["sliceboard<br/><b>main app</b>"]
-    brlc["layercharts-bireactive-spike<br/><i>@br-lc source</i>"]
+    brlc["layercharts-bireactive-spike<br/><i>spike/demo harness</i>"]
     sveltelc["layerchart-direct-spike<br/><i>@svelte-lc source</i>"]
     nativelayout["bireactive-layout-spike"]
     brspike["bireactive-spike"]
@@ -33,14 +33,14 @@ graph TD
   apitable --> core
   apitable --> reactd3
   slice --> reactd3
-  slice -. "source alias @br-lc" .-> brlc
   slice -. "source alias @svelte-lc" .-> sveltelc
 ```
 
 Solid arrows = real `package.json` dependencies. Dotted arrows = **vite source
-aliases** in `apps/sliceboard/vite.config.ts` — sliceboard imports the two spike
-apps' `src/` directly (`@br-lc`, `@svelte-lc`) for no-build live HMR; they are
-*not* workspace package deps.
+aliases** in `apps/sliceboard/vite.config.ts` — sliceboard imports the svelte spike
+app's `src/` directly (`@svelte-lc`) for no-build live HMR; it is
+*not* a workspace package dep. (The `@winstonfassett/vizform-charts` package is a
+real workspace dep — no alias needed.)
 
 ## The package split (post-rename nuance)
 
@@ -70,8 +70,8 @@ safe to delete.
 
 | App (dir) | package name | Internal / alias | Notable external |
 |---|---|---|---|
-| `sliceboard` | sliceboard | react-d3 + `@webdev/vite`; aliases `@br-lc`, `@svelte-lc` | `bireactive ^0.3.4`, `d3 ^7`, `react ^18.3` |
-| `vanilla-bireactive-layercharts-spike` | layercharts-bireactive-spike | — (consumed by sliceboard as `@br-lc`) | `bireactive`, `d3-array/hierarchy/sankey/scale/scale-chromatic/shape` |
+| `sliceboard` | sliceboard | react-d3 + `@webdev/vite`; `vizform-charts`; alias `@svelte-lc` | `bireactive ^0.3.4`, `d3 ^7`, `react ^18.3` |
+| `vanilla-bireactive-layercharts-spike` | layercharts-bireactive-spike | `vizform-charts` (workspace dep) | `bireactive`, `d3-array/hierarchy/sankey/scale/scale-chromatic/shape` |
 | `svelte-layerchart-spike` | layerchart-direct-spike | — (consumed as `@svelte-lc`) | `bireactive`, `d3-hierarchy/sankey`, `layerchart ^1`, `svelte ^5` |
 | `vanilla-bireactive-native-layout-spike` | bireactive-layout-spike | — | `d3-force/hierarchy` |
 | `vanilla-bireactive-spike` | bireactive-spike | — | `bireactive`, `d3-hierarchy` |
@@ -163,7 +163,7 @@ Key moves vs today:
 | Layer | Owns | Current code today | Must NOT contain |
 |---|---|---|---|
 | **`@vizform/core`** (pure TS, zero deps) | Data shapes; the **view spec** type; the **sort/group/filter transform** (pure fns); color | `vizform-core/src/types.ts` (`PNode`,`PEdge`,`ColumnSchema`,`Dataset`); a `DataView`/`TileSpec` type (today sliceboard's `tile` in `persistence.ts`); `applyView`=`applyGroupBy`+`colorByGroup`+sort+reindex (today **inline in `App.tsx`** as `sortedNodes`); `colors.ts` (`PALETTE`,`colorFor`) | DOM, d3, bireactive, React |
-| **`@vizform/charts`** (bireactive + d3 → custom elements) | Layout math; gesture mechanics; hit-test; reactive draw; edit emission | `@br-lc/demos/*` chart classes (`MdBarChartLC`…`MdBudgetTree`); `@br-lc/lib/*`: `chart-context` (scale substrate), `axis`,`area`,`spline` (path math), `cartesian-gestures`,`gestures`,`interaction` (singleton wheel/drag + `applyDelta` redistribute), `esc-contract`, `host-size` (RO→fill), `hud-bridge` (id-based hover/select contract), `tree` (BiNode build), `sankey-layout` (pure solver) | sort *policy*, which dataset, tile arrangement, persistence |
+| **`@vizform/charts`** (bireactive + d3 → custom elements) | Layout math; gesture mechanics; hit-test; reactive draw; edit emission | `demos/*` chart classes (`MdBarChartLC`…`MdBudgetTree`); `lib/*`: `chart-context` (scale substrate), `axis`,`area`,`spline` (path math), `cartesian-gestures`,`gestures`,`interaction` (singleton wheel/drag + `applyDelta` redistribute), `esc-contract`, `host-size` (RO→fill), `hud-bridge` (id-based hover/select contract), `tree` (BiNode build), `sankey-layout` (pure solver) | sort *policy*, which dataset, tile arrangement, persistence |
 | **surface** (sliceboard; later apitable) | Data **source**→Dataset; `tile.kind`→element **dispatch**; view-edit **UI**; view **persistence**; cross-tile HUD; tile **layout** | `persistence.ts` (localStorage→Dataset), the `if (tile.kind===…)` ladder in `App.tsx`, sort/groupBy/measure/depth pickers, `hudStore`, `react-grid-layout`, **`BrLcCharts.tsx` React wrappers (throwaway — die with React)** | chart internals, layout math, gesture mechanics |
 
 **The runtime seam (the contract every surface obeys):**
@@ -180,7 +180,7 @@ chart element (charts) + sort control & storage (surface). The chart never sorts
 where the choice is saved. That split is what lets sliceboard and apitable share
 the view logic — both call `applyView`, differing only in data source + storage.
 
-> **Demo/seed data is not chart code.** `@br-lc/lib/portfolio.ts` (hard-coded
+> **Demo/seed data is not chart code.** `portfolio.ts` (hard-coded
 > holdings) is fixture data — it stays in the demo app / a fixtures path, **not**
 > in the shipped `@vizform/charts`.
 
@@ -209,7 +209,7 @@ public surface; npm scope (`@vizform/*` vs `@winstonfassett/*`).
 
 1. The `vizform-*-d3` packages expose a `node` export condition → `./src/index.ts`,
    so sliceboard resolves them to **TS source**, not built `dist`.
-2. The `@br-lc` / `@svelte-lc` aliases point at sibling-app `src/`.
+2. `@winstonfassett/vizform-charts` also exposes a `node` export condition → `./src/index.ts` for the same reason. The `@svelte-lc` alias still points at the svelte spike's `src/`.
 3. `dedupe: ['react','react-dom']` forces a single React copy across all
    source-resolved packages (else a second instance crashes hooks).
 
