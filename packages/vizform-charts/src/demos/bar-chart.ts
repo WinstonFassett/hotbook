@@ -16,7 +16,7 @@ import {
   GESTURE_ACTIVE_CLASS,
   GESTURE_SUPPRESSION_CSS,
   hoverTransition,
-  settleTransition,
+  staggeredSettleTransition,
 } from "../lib/transitions";
 
 const W = 720;
@@ -132,14 +132,23 @@ export class MdBarChartLC extends Diagram {
       Vec.derive(() => ({ x: plotX + plotW.value, y: ay1.value })),
       { thin: true, opacity: 0.5, stroke: "#888" }
     ));
-    for (let i = 0; i < rows0.length; i++) {
-      const key = String(i);
-      const tx = derive(() => (xBand.value(key) ?? 0) + xBand.value.bandwidth() / 2);
-      s(
-        line(Vec.derive(() => ({ x: tx.value, y: ay1.value })), Vec.derive(() => ({ x: tx.value, y: ay1.value + 4 })), { thin: true, stroke: "#888", opacity: 0.6 }),
-        // Live read so the category label follows its bar after a re-sort.
-        label(Vec.derive(() => ({ x: tx.value, y: ay1.value + 16 })), derive(() => (data.value as Bar[])[i]?.label ?? ""), { size: 10, align: Anchor.Center, fill: "#888", opacity: 0.8 }),
-      );
+    // Identity-keyed: each label/tick tracks one datum so it slides on reorder.
+    const identV = rows0.slice();
+    const idOf = (d: Bar, fallback: number) => d.id ?? String(fallback);
+    const curIdxOfV = (id: string, oi: number) => derive(() => {
+      const i = (data.value as Bar[]).findIndex(d => (d.id ?? d.label) === id);
+      return i >= 0 ? i : oi;
+    });
+    for (let oi = 0; oi < identV.length; oi++) {
+      const d0 = identV[oi]!;
+      const id = idOf(d0, oi);
+      const cur = curIdxOfV(id, oi);
+      const tx = derive(() => (xBand.value(String(cur.value)) ?? 0) + xBand.value.bandwidth() / 2);
+      s(line(Vec.derive(() => ({ x: tx.value, y: ay1.value })), Vec.derive(() => ({ x: tx.value, y: ay1.value + 4 })), { thin: true, stroke: "#888", opacity: 0.6 }));
+      const lbl = s(label(Vec.derive(() => ({ x: tx.value, y: ay1.value + 16 })), d0.label, { size: 10, align: Anchor.Center, fill: "#888", opacity: 0.8 }));
+      biEffect(() => {
+        (lbl.el as SVGElement).style.transition = staggeredSettleTransition([], "x", cur.value);
+      });
     }
 
     const hover = cell<Bar | null>(null);
@@ -261,15 +270,23 @@ export class MdBarChartLC extends Diagram {
     hlRect.el.style.transition = "x 0.15s ease, opacity 0.1s ease";
     hlRect.el.style.pointerEvents = "none";
 
-    // Bars — MAX_ROWS slots; each reads data.value[idx] live so sort reorders visually.
-    const MAX_ROWS = rows0.length;
-    for (let idx = 0; idx < MAX_ROWS; idx++) {
-      const di = (): Bar | null => (data.value as Bar[])[idx] ?? null;
-      const key = String(idx);
+    // Bars — identity-keyed by Bar.id so each rect's x slides to its new slot
+    // on reorder (Part 3). Hit-testing still walks slots — that's correct
+    // because data.value is reordered in lockstep.
+    for (let oi = 0; oi < identV.length; oi++) {
+      const d0 = identV[oi]!;
+      const id = idOf(d0, oi);
+      const idx = oi; // stable color slot — color stays with the datum
+      const di = (): Bar | null => {
+        const arr = data.value as Bar[];
+        const i = arr.findIndex(d => (d.id ?? d.label) === id);
+        return i >= 0 ? arr[i]! : (arr[oi] ?? null);
+      };
+      const cur = curIdxOfV(id, oi);
       const base = this.#barColor(idx);
       const hoverColor = this.#hoverColor(idx);
 
-      const barX = derive(() => xBand.value(key) ?? 0);
+      const barX = derive(() => xBand.value(String(cur.value)) ?? 0);
       const barW = derive(() => xBand.value.bandwidth());
       const barY = derive(() => { const d = di(); return d ? (ctx.yScale.value as any)(d.value) : plotY + plotH.value; });
       const barH = derive(() => Math.max(0, plotY + plotH.value - barY.value));
@@ -277,23 +294,29 @@ export class MdBarChartLC extends Diagram {
 
       const tile = s(rect(barX, barY, barW, barH, { fill, corner: 2 }));
       tile.el.style.cursor = "pointer";
-      // Value-change settle: height/y interpolate when value changes outside a
-      // gesture (external data, arrow-key edit, wheel-commit). Suppressed
-      // during active wheel/drag via .vf-gesture-active on the host, so
-      // cursor feedback stays instant (Part 2 / Interaction Principle 4).
-      tile.el.style.transition = settleTransition(["y", "height", "fill"]);
+      // Value-change settle on y/height/fill; reorder slide on x with stagger
+      // proportional to the bar's final-order slot. Suppressed during active
+      // wheel/drag via .vf-gesture-active on the host so cursor feedback
+      // stays instant (Part 2 / Interaction Principle 4).
+      biEffect(() => {
+        tile.el.style.transition = staggeredSettleTransition(["y", "height", "fill"], "x", cur.value);
+      });
       tile.el.addEventListener("pointerenter", () => { const d = di(); if (!wheelController.active && d) hover.value = d; });
       tile.el.addEventListener("pointerleave", () => { const d = di(); if (!wheelController.active && d && hover.value === d) hover.value = null; });
       tile.el.addEventListener("click", () => { const d = di(); if (!d) return; selected.value = selected.value === d ? null : d; });
 
       const barCX = derive(() => barX.value + barW.value / 2);
 
+      // Track per-bar overlays so they slide together with the rect on reorder.
+      const slideTargets: SVGElement[] = [];
+
       // Inside label (labelMode: inside | both).
       if (this.labelMode === 'inside' || this.labelMode === 'both') {
         const insideOpacity = derive(() => barH.value >= (this.minBandSize || 48) ? 1 : 0);
         const labelFill = derive(() => { const d = di(); return selected.value === d ? base : "#fff"; });
-        s(label(Vec.derive(() => ({ x: barCX.value, y: barY.value + 14 })), derive(() => di()?.label ?? ""),
+        const insideLbl = s(label(Vec.derive(() => ({ x: barCX.value, y: barY.value + 14 })), derive(() => di()?.label ?? ""),
           { size: 10, align: Anchor.Center, fill: labelFill, opacity: insideOpacity }));
+        slideTargets.push(insideLbl.el as SVGElement);
       }
 
       // Value label.
@@ -301,13 +324,15 @@ export class MdBarChartLC extends Diagram {
         if (this.valueMode === 'inside') {
           const insideOpacity = derive(() => barH.value >= (this.minBandSize || 48) ? 1 : 0);
           const labelFill = derive(() => { const d = di(); return selected.value === d ? base : "#fff"; });
-          s(label(Vec.derive(() => ({ x: barCX.value, y: barY.value + (this.labelMode !== 'axis' ? 28 : 14) })),
+          const vLbl = s(label(Vec.derive(() => ({ x: barCX.value, y: barY.value + (this.labelMode !== 'axis' ? 28 : 14) })),
             derive(() => { const d = di(); return d ? `${Math.round(d.value)}` : ""; }),
             { size: 10, align: Anchor.Center, fill: labelFill, opacity: insideOpacity }));
+          slideTargets.push(vLbl.el as SVGElement);
         } else {
-          s(label(Vec.derive(() => ({ x: barCX.value, y: barY.value - 6 })),
+          const vLbl = s(label(Vec.derive(() => ({ x: barCX.value, y: barY.value - 6 })),
             derive(() => { const d = di(); return d ? `${Math.round(d.value)}` : ""; }),
             { size: 10, align: Anchor.Center, fill: "#888", opacity: derive(() => barH.value > 0 ? 1 : 0) }));
+          slideTargets.push(vLbl.el as SVGElement);
         }
       }
 
@@ -319,9 +344,18 @@ export class MdBarChartLC extends Diagram {
         stroke: "#0b0d12", strokeWidth: 1.5, opacity: handleOpacity,
       }));
       handle.el.style.cursor = "ns-resize";
-      handle.el.style.transition = hoverTransition("opacity");
       handle.el.addEventListener("pointerenter", () => { const d = di(); if (!wheelController.active && d) hover.value = d; });
       handle.el.addEventListener("pointerleave", () => { const d = di(); if (!wheelController.active && d && hover.value === d) hover.value = null; });
+      // Slide handle's cx with the bar on reorder, keep its hover opacity feedback.
+      biEffect(() => {
+        const delay = cur.value;
+        handle.el.style.transition = `${hoverTransition("opacity")}, ${staggeredSettleTransition([], "cx", delay)}`;
+      });
+      // Per-bar labels: slide their x in lockstep with the bar.
+      biEffect(() => {
+        const t = staggeredSettleTransition([], "x", cur.value);
+        for (const el of slideTargets) el.style.transition = t;
+      });
     }
 
     s(label(Vec.derive(() => ({ x: Wc.value / 2, y: 12 })), derive(() => {
@@ -494,23 +528,44 @@ export class MdBarChartLC extends Diagram {
     hlRect.el.style.transition = "y 0.15s ease, opacity 0.1s ease";
     hlRect.el.style.pointerEvents = "none";
 
-    // Axis labels on left — live read so sort reorders.
+    // Identity-keyed (Part 3): one element per stable Bar.id so y slides on reorder.
+    const identH = rows0.slice();
+    const idOfH = (d: Bar, fallback: number) => d.id ?? String(fallback);
+    const curIdxOfH = (id: string, oi: number) => derive(() => {
+      const i = (data.value as Bar[]).findIndex(d => (d.id ?? d.label) === id);
+      return i >= 0 ? i : oi;
+    });
+
+    // Axis labels on left — keyed by identity, slide y to follow their bar.
     if (this.labelMode === 'axis' || this.labelMode === 'both') {
-      for (let i = 0; i < rows0.length; i++) {
-        const barCY = derive(() => (yBand.value(String(i)) ?? 0) + yBand.value.bandwidth() / 2);
-        s(label(Vec.derive(() => ({ x: plotX - 6, y: barCY.value })), derive(() => (data.value as Bar[])[i]?.label ?? ""),
+      for (let oi = 0; oi < identH.length; oi++) {
+        const d0 = identH[oi]!;
+        const id = idOfH(d0, oi);
+        const cur = curIdxOfH(id, oi);
+        const barCY = derive(() => (yBand.value(String(cur.value)) ?? 0) + yBand.value.bandwidth() / 2);
+        const lbl = s(label(Vec.derive(() => ({ x: plotX - 6, y: barCY.value })), d0.label,
           { size: 11, align: Anchor.Right, fill: "#888", opacity: 0.8 }));
+        biEffect(() => {
+          (lbl.el as SVGElement).style.transition = staggeredSettleTransition([], "y", cur.value);
+        });
       }
     }
 
-    // Bars — live read from data.value[idx] so sort reorders visually.
-    for (let idx = 0; idx < rows0.length; idx++) {
-      const di = (): Bar | null => (data.value as Bar[])[idx] ?? null;
-      const key = String(idx);
+    // Bars — identity-keyed; y slides to new slot on reorder with stagger.
+    for (let oi = 0; oi < identH.length; oi++) {
+      const d0 = identH[oi]!;
+      const id = idOfH(d0, oi);
+      const idx = oi;
+      const di = (): Bar | null => {
+        const arr = data.value as Bar[];
+        const i = arr.findIndex(d => (d.id ?? d.label) === id);
+        return i >= 0 ? arr[i]! : (arr[oi] ?? null);
+      };
+      const cur = curIdxOfH(id, oi);
       const base = this.#barColor(idx);
       const hoverColor = this.#hoverColor(idx);
 
-      const barY = derive(() => yBand.value(key) ?? 0);
+      const barY = derive(() => yBand.value(String(cur.value)) ?? 0);
       const barH = derive(() => yBand.value.bandwidth());
       const barW = derive(() => { const d = di(); return d ? Math.max(0, (xLinear.value as any)(d.value) - plotX) : 0; });
       const fill = derive(() => { const d = di(); return selected.value === d ? "#fff" : hover.value === d ? hoverColor : base; });
@@ -518,7 +573,9 @@ export class MdBarChartLC extends Diagram {
 
       const tile = s(rect(plotX, barY, barW, barH, { fill, corner: 3 }));
       tile.el.style.cursor = "pointer";
-      tile.el.style.transition = settleTransition(["width", "fill"]);
+      biEffect(() => {
+        tile.el.style.transition = staggeredSettleTransition(["width", "fill"], "y", cur.value);
+      });
       tile.el.addEventListener("pointerenter", () => { const d = di(); if (!wheelController.active && d) hover.value = d; });
       tile.el.addEventListener("pointerleave", () => { const d = di(); if (!wheelController.active && d && hover.value === d) hover.value = null; });
       tile.el.addEventListener("click", () => { const d = di(); if (!d) return; selected.value = selected.value === d ? null : d; });
@@ -526,29 +583,35 @@ export class MdBarChartLC extends Diagram {
       const barCY = derive(() => barY.value + barH.value / 2);
       const minBand = this.minBandSize || 60;
 
+      const slideTargets: SVGElement[] = [];
+
       // Inside label (labelMode: inside | both).
       if (this.labelMode === 'inside' || this.labelMode === 'both') {
         const insideOpacity = derive(() => barW.value >= minBand ? 1 : 0);
-        s(label(Vec.derive(() => ({ x: plotX + 8, y: barCY.value })), derive(() => di()?.label ?? ""),
+        const insideLbl = s(label(Vec.derive(() => ({ x: plotX + 8, y: barCY.value })), derive(() => di()?.label ?? ""),
           { size: 11, align: Anchor.Left, fill: labelFill, opacity: insideOpacity }));
+        slideTargets.push(insideLbl.el as SVGElement);
       }
 
       // Value label.
       if (this.valueMode !== 'none') {
         if (this.valueMode === 'inside') {
           const insideOpacity = derive(() => barW.value >= minBand ? 1 : 0);
-          s(label(Vec.derive(() => ({ x: plotX + barW.value - 8, y: barCY.value })),
+          const vLbl = s(label(Vec.derive(() => ({ x: plotX + barW.value - 8, y: barCY.value })),
             derive(() => { const d = di(); return d ? `${Math.round(d.value)}` : ""; }),
             { size: 11, align: Anchor.Right, fill: labelFill, opacity: insideOpacity }));
+          slideTargets.push(vLbl.el as SVGElement);
           // Fallback value outside when bar too short.
           const outsideOpacity = derive(() => barW.value < minBand ? 1 : 0);
-          s(label(Vec.derive(() => ({ x: plotX + barW.value + 6, y: barCY.value })),
+          const vOut = s(label(Vec.derive(() => ({ x: plotX + barW.value + 6, y: barCY.value })),
             derive(() => { const d = di(); return d ? `${Math.round(d.value)}` : ""; }),
             { size: 11, align: Anchor.Left, fill: "#aaa", opacity: outsideOpacity }));
+          slideTargets.push(vOut.el as SVGElement);
         } else {
-          s(label(Vec.derive(() => ({ x: plotX + barW.value + 6, y: barCY.value })),
+          const vLbl = s(label(Vec.derive(() => ({ x: plotX + barW.value + 6, y: barCY.value })),
             derive(() => { const d = di(); return d ? `${Math.round(d.value)}` : ""; }),
             { size: 11, align: Anchor.Left, fill: "#888", opacity: derive(() => barW.value > 0 ? 1 : 0) }));
+          slideTargets.push(vLbl.el as SVGElement);
         }
       }
 
@@ -560,9 +623,15 @@ export class MdBarChartLC extends Diagram {
         stroke: "#0b0d12", strokeWidth: 1.5, opacity: handleOpacity,
       }));
       handle.el.style.cursor = "ew-resize";
-      handle.el.style.transition = hoverTransition("opacity");
       handle.el.addEventListener("pointerenter", () => { const d = di(); if (!wheelController.active && d) hover.value = d; });
       handle.el.addEventListener("pointerleave", () => { const d = di(); if (!wheelController.active && d && hover.value === d) hover.value = null; });
+      biEffect(() => {
+        handle.el.style.transition = `${hoverTransition("opacity")}, ${staggeredSettleTransition([], "cy", cur.value)}`;
+      });
+      biEffect(() => {
+        const t = staggeredSettleTransition([], "y", cur.value);
+        for (const el of slideTargets) el.style.transition = t;
+      });
     }
 
     s(label(Vec.derive(() => ({ x: Wc.value / 2, y: 8 })), derive(() => {
