@@ -134,7 +134,12 @@ Then a behavior smoke (per repo memory — real Playwright, not synthetic events
 
 ## Out of scope (explicitly deferred — do not start)
 - Lifting `applyView`/sort/group into `@vizform/core`.
-- De-Reacting sliceboard / removing `selfSig`/dedupe machinery.
+- **De-Reacting sliceboard / removing `selfSig`/dedupe machinery — this is the
+  IMMEDIATE NEXT plan (Winston wants it very soon). Do not start it here, but
+  keep this extraction's diff a clean pure-move so the de-React lands on a stable
+  packaged target.** Target end state: `BrLcCharts.tsx`'s two mega-hooks +
+  echo-suppression + `shapeKey`/`commitTick`/`gestureActive` membrane collapse to
+  one framework-agnostic `bindTile(el, source)`.
 - Moving the Svelte charts (`@svelte-lc`) into the package.
 - npm-scope rename to `@vizform/*`.
 - apitable peer surface.
