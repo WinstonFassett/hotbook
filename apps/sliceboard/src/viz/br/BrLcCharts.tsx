@@ -22,6 +22,8 @@ import {
   MdPieChartLC,
   MdRadarChartLC,
   MdConcentricArcLC,
+  MdGaugeLC,
+  MdGaugeSegmentedLC,
   MdPack,
   MdTreemapLC,
   MdIcicleLC,
@@ -40,6 +42,8 @@ const TAGS = [
   ['v-br-pie',            MdPieChartLC],
   ['v-br-radar',          MdRadarChartLC],
   ['v-br-concentric-arc', MdConcentricArcLC],
+  ['v-br-gauge',           MdGaugeLC],
+  ['v-br-gauge-segmented', MdGaugeSegmentedLC],
   ['v-br-pack',           MdPack],
   ['v-br-treemap',        MdTreemapLC],
   ['v-br-icicle',         MdIcicleLC],
@@ -189,6 +193,48 @@ export function BrLcConcentricArc({ nodes, measureKey, maxItems, onUpdate }: Fla
     nodes, onUpdate,
   })
   return <BrLcTile source={source} />
+}
+
+// ─── Gauge — single value (uses sum of leaves on a measure key) ──────────────
+
+interface GaugeProps {
+  nodes: PNode[]
+  measureKey: string
+  min?: number
+  max?: number
+  label?: string
+  color?: string
+}
+
+export function BrLcGauge({ nodes, measureKey, min = 0, max = 100, label, color }: GaugeProps) {
+  // Sum all leaf values for the measure. The gauge is a single-value tile, so
+  // we collapse the dataset into one scalar; sum mirrors how the other
+  // single-readout charts surface a whole dataset.
+  const leaves = leavesOfNodes(nodes)
+  const value = leaves.reduce((a, b) => a + (b.measures[measureKey] ?? 0), 0)
+  const text = label ?? measureKey
+  const data = { value, min, max, color, label: text }
+  const ref = useBrElement<MdGaugeLC>(
+    'v-br-gauge',
+    (el) => { el.externalData = data },
+    [value, min, max, color, text],
+  )
+  return <div ref={ref} style={{ width: '100%', height: '100%' }} />
+}
+
+// ─── Gauge — segmented (same single value, rendered as N discrete cells) ──
+
+export function BrLcGaugeSegmented({ nodes, measureKey, min = 0, max = 100, label, color, segments = 24 }: GaugeProps & { segments?: number }) {
+  const leaves = leavesOfNodes(nodes)
+  const value = leaves.reduce((a, b) => a + (b.measures[measureKey] ?? 0), 0)
+  const text = label ?? measureKey
+  const data = { value, min, max, color, label: text, segments }
+  const ref = useBrElement<MdGaugeSegmentedLC>(
+    'v-br-gauge-segmented',
+    (el) => { el.externalData = data },
+    [value, min, max, color, text, segments],
+  )
+  return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }
 
 // ─── Scatter (two measures) ───────────────────────────────────────────────────

@@ -10,6 +10,7 @@ import { Icicle } from './viz/Icicle'
 import { Sunburst } from './viz/Sunburst'
 import {
   BrLcBar, BrLcLine, BrLcArea, BrLcScatter, BrLcPie, BrLcRadar, BrLcConcentricArc,
+  BrLcGauge, BrLcGaugeSegmented,
   BrLcPack, BrLcTreemap, BrLcIcicle, BrLcSunburst, BrLcSankey, BrLcSankeyFlow, BrLcTree,
 } from './viz/br/BrLcCharts'
 import {
@@ -52,7 +53,7 @@ function colorByGroup(nodes: PNode[]): PNode[] {
 const TILE_KINDS: TileKind[] = [
   'treetable',
   'br-lc-bar', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie',
-  'br-lc-radar', 'br-lc-concentric-arc',
+  'br-lc-radar', 'br-lc-concentric-arc', 'br-lc-gauge', 'br-lc-gauge-segmented',
   'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-sankey-flow', 'br-lc-tree',
 ]
 const TILE_LABELS: Record<TileKind, string> = {
@@ -65,6 +66,8 @@ const TILE_LABELS: Record<TileKind, string> = {
   'br-lc-pie':            'Pie',
   'br-lc-radar':          'Radar',
   'br-lc-concentric-arc': 'Concentric Arc',
+  'br-lc-gauge':          'Gauge',
+  'br-lc-gauge-segmented':'Gauge (segmented)',
   'br-lc-pack':           'Pack',
   'br-lc-treemap':        'Treemap',
   'br-lc-icicle':         'Icicle',
@@ -127,7 +130,7 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
     return <Sunburst nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} onUpdate={onNodeUpdate} />
   }
   if (tile.kind === 'treetable') {
-    return <HTreetable nodes={nodes} measureKey={mk} />
+    return <HTreetable nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} />
   }
 
   // ── BR-LC flat charts ────────────────────────────────────────────────────
@@ -141,6 +144,8 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
   if (tile.kind === 'br-lc-pie')            return <BrLcPie nodes={sortedNodes} measureKey={mk} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
   if (tile.kind === 'br-lc-radar')          return <BrLcRadar nodes={sortedNodes} measureKey={mk} onUpdate={onNodeUpdate} />
   if (tile.kind === 'br-lc-concentric-arc') return <BrLcConcentricArc nodes={sortedNodes} measureKey={mk} onUpdate={onNodeUpdate} />
+  if (tile.kind === 'br-lc-gauge')          return <BrLcGauge nodes={sortedNodes} measureKey={mk} label={tile.title ?? mk} />
+  if (tile.kind === 'br-lc-gauge-segmented')return <BrLcGaugeSegmented nodes={sortedNodes} measureKey={mk} label={tile.title ?? mk} />
 
   // ── BR-LC hierarchical charts ────────────────────────────────────────────
   if (tile.kind === 'br-lc-pack')           return <BrLcPack nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
@@ -189,6 +194,17 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
 }
 
 // ─── Tile wrapper ─────────────────────────────────────────────────────────────
+
+// Kinds where depth selector is wired
+const HIER_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial', 'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst'])
+// Kinds where Order/Value sort selector is shown
+const VIZ_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial', 'treemap', 'radial', 'bands', 'br-lc-bar', 'br-lc-bands', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie', 'br-lc-radar', 'br-lc-concentric-arc', 'br-lc-gauge', 'br-lc-gauge-segmented', 'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree'])
+// Kinds that accept groupBy to add hierarchy to flat data
+const GROUPBY_KINDS = new Set<TileKind>(['br-lc-bar', 'br-lc-line', 'br-lc-area', 'br-lc-pie', 'br-lc-radar', 'br-lc-concentric-arc', 'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree'])
+// Kinds whose diagram can honestly exceed the tile (it announces its own bounds);
+// the tile body scrolls the overflow instead of clipping it. The data-driven
+// sankey grows tall with many links — scroll lets you reach all of it.
+const SCROLL_KINDS = new Set<TileKind>(['bands', 'br-lc-sankey'])
 
 function TileCard({
   tile, ds, measureKey, onRemove, onMeasureChange, onXKeyChange, onYKeyChange, onDepthChange, onSortChange, onGroupByChange, onNodeUpdate, onNodesUpdate, onNodeReorder, availableMeasures,
