@@ -41,6 +41,22 @@ export function settleTransition(properties: string | readonly string[]): string
   return props.map(p => `${p} ${TRANSITION_DURATION.settle}ms ${TRANSITION_EASING}`).join(", ");
 }
 
+/** Compose a settle-rhythm transition that also stagger-animates one specific
+ *  property (typically `x` or `y` on a reordering element). `staggerIndex` is
+ *  the item's *final-order* slot — multiplied by `TRANSITION_DURATION.reorderStagger`
+ *  to produce a cascading delay. Returns "none" under reduced motion. */
+export function staggeredSettleTransition(
+  settleProps: readonly string[],
+  staggerProp: string,
+  staggerIndex: number,
+): string {
+  if (prefersReducedMotion()) return "none";
+  const parts = settleProps.map(p => `${p} ${TRANSITION_DURATION.settle}ms ${TRANSITION_EASING}`);
+  const delay = Math.max(0, staggerIndex) * TRANSITION_DURATION.reorderStagger;
+  parts.push(`${staggerProp} ${TRANSITION_DURATION.reorder}ms ${TRANSITION_EASING} ${delay}ms`);
+  return parts.join(", ");
+}
+
 export function hoverTransition(properties: string | readonly string[]): string {
   const props = typeof properties === "string" ? [properties] : properties;
   return props.map(p => `${p} ${TRANSITION_DURATION.hover}ms ${TRANSITION_EASING}`).join(", ");
