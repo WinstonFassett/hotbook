@@ -1,0 +1,25 @@
+{
+  "name": "team-hier",
+  "description": "2-level hierarchy (Q2/Q3/Q4 quarter roots → team leaves). 'budget' (k) + 'headcount' measures. Drives hier charts (pack/treemap/icicle/sunburst/tree) without needing groupBy.",
+  "rows": [
+    { "id": "q2", "parentId": null, "index": 1, "name": "Q2", "measures": {}, "dims": {}, "color": "#7ec87e" },
+    { "id": "q3", "parentId": null, "index": 2, "name": "Q3", "measures": {}, "dims": {}, "color": "#7aaae8" },
+    { "id": "q4", "parentId": null, "index": 3, "name": "Q4", "measures": {}, "dims": {}, "color": "#b090e0" },
+
+    { "id": "q2-design",   "parentId": "q2", "index": 1, "name": "Design",   "measures": { "budget": 20, "headcount": 2 }, "dims": { "team": "Design" } },
+    { "id": "q2-frontend", "parentId": "q2", "index": 2, "name": "Frontend", "measures": { "budget": 35, "headcount": 3 }, "dims": { "team": "Frontend" } },
+    { "id": "q2-backend",  "parentId": "q2", "index": 3, "name": "Backend",  "measures": { "budget": 30, "headcount": 3 }, "dims": { "team": "Backend" } },
+    { "id": "q2-infra",    "parentId": "q2", "index": 4, "name": "Infra",    "measures": { "budget": 15, "headcount": 1 }, "dims": { "team": "Infra" } },
+
+    { "id": "q3-design",   "parentId": "q3", "index": 1, "name": "Design",   "measures": { "budget": 25, "headcount": 2 }, "dims": { "team": "Design" } },
+    { "id": "q3-frontend", "parentId": "q3", "index": 2, "name": "Frontend", "measures": { "budget": 40, "headcount": 4 }, "dims": { "team": "Frontend" } },
+    { "id": "q3-backend",  "parentId": "q3", "index": 3, "name": "Backend",  "measures": { "budget": 25, "headcount": 3 }, "dims": { "team": "Backend" } },
+    { "id": "q3-infra",    "parentId": "q3", "index": 4, "name": "Infra",    "measures": { "budget": 10, "headcount": 1 }, "dims": { "team": "Infra" } },
+
+    { "id": "q4-design",   "parentId": "q4", "index": 1, "name": "Design",   "measures": { "budget": 30, "headcount": 2 }, "dims": { "team": "Design" } },
+    { "id": "q4-frontend", "parentId": "q4", "index": 2, "name": "Frontend", "measures": { "budget": 45, "headcount": 4 }, "dims": { "team": "Frontend" } },
+    { "id": "q4-backend",  "parentId": "q4", "index": 3, "name": "Backend",  "measures": { "budget": 35, "headcount": 3 }, "dims": { "team": "Backend" } },
+    { "id": "q4-infra",    "parentId": "q4", "index": 4, "name": "Infra",    "measures": { "budget": 20, "headcount": 2 }, "dims": { "team": "Infra" } },
+    { "id": "q4-pm",       "parentId": "q4", "index": 5, "name": "PM",       "measures": { "budget": 18, "headcount": 1 }, "dims": { "team": "PM" } }
+  ]
+}
