@@ -127,12 +127,12 @@ export class MdBarChartLC extends Diagram {
       { thin: true, opacity: 0.5, stroke: "#888" }
     ));
     for (let i = 0; i < rows0.length; i++) {
-      const d = rows0[i]!;
       const key = String(i);
       const tx = derive(() => (xBand.value(key) ?? 0) + xBand.value.bandwidth() / 2);
       s(
         line(Vec.derive(() => ({ x: tx.value, y: ay1.value })), Vec.derive(() => ({ x: tx.value, y: ay1.value + 4 })), { thin: true, stroke: "#888", opacity: 0.6 }),
-        label(Vec.derive(() => ({ x: tx.value, y: ay1.value + 16 })), d.label, { size: 10, align: Anchor.Center, fill: "#888", opacity: 0.8 }),
+        // Live read so the category label follows its bar after a re-sort.
+        label(Vec.derive(() => ({ x: tx.value, y: ay1.value + 16 })), derive(() => (data.value as Bar[])[i]?.label ?? ""), { size: 10, align: Anchor.Center, fill: "#888", opacity: 0.8 }),
       );
     }
 
@@ -150,9 +150,13 @@ export class MdBarChartLC extends Diagram {
     const findAtPixel = (px: number): Bar | null => {
       const xs = xBand.value;
       const step = xs.step();
-      for (let i = 0; i < rows0.length; i++) {
+      // Read data.value LIVE — slot i draws data.value[i], so hit-testing must
+      // resolve against the same live array, not the stale scene-time `rows0`
+      // snapshot (else hover/handle land on the wrong bar after a re-sort).
+      const rows = data.value as Bar[];
+      for (let i = 0; i < rows.length; i++) {
         const bx = xs(String(i)) ?? -1;
-        if (px >= bx && px < bx + step) return rows0[i]!;
+        if (px >= bx && px < bx + step) return rows[i]!;
       }
       return null;
     };
