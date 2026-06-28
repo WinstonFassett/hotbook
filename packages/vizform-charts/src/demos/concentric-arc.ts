@@ -7,6 +7,7 @@ import { arc as d3Arc } from "d3-shape";
 import { wheelController, dragController } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
+import { GESTURE_ACTIVE_CLASS, GESTURE_SUPPRESSION_CSS, hoverTransition, settleTransition } from "../lib/transitions";
 
 const W = 640;
 const H = 640;
@@ -56,7 +57,7 @@ const START = 0; // d3Arc: 0 = top (12 o'clock), clockwise
 const MIN_VALUE = 3;
 
 export class MdConcentricArcLC extends Diagram {
-  static styles = `text { pointer-events: none; }${FILL_STYLE}`
+  static styles = `text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}`
   readonly dataCell = cell<readonly Ring[]>(makeData());
   maxRings: number = DEFAULT_MAX_RINGS;
   set externalData(v: { label: string; value: number }[] | undefined) {
@@ -99,11 +100,12 @@ export class MdConcentricArcLC extends Diagram {
     };
     const mutateDatum = (d: Ring, delta: number) => setValue(d, d.value + delta);
 
+    const setGestureActive = (on: boolean) => this.classList.toggle(GESTURE_ACTIVE_CLASS, on);
     // Config handed to the SHARED wheel controller (app-wide singleton).
     const wheelConfig = {
-      snapshot: (d: Ring) => d.value,
+      snapshot: (d: Ring) => { setGestureActive(true); return d.value; },
       restore: (d: Ring, v: number) => mutateDatum(d, v - d.value),
-      onEnd: () => { this.dispatchEvent(new CustomEvent("gesturecommit")); },
+      onEnd: () => { setGestureActive(false); this.dispatchEvent(new CustomEvent("gesturecommit")); },
     };
     // Last ring the pointer was over — kept past pointerleave so a wheel edit can
     // still target it for a moment after the cursor exits the ring band.
@@ -136,7 +138,7 @@ export class MdConcentricArcLC extends Diagram {
       setValue(t, angleToValue(x, y));
     };
     const dragConfig = {
-      snapshot: (d: Ring) => d.value,
+      snapshot: (d: Ring) => { setGestureActive(true); return d.value; },
       restore: (d: Ring, v: number) => setValue(d, v),
       onMove: onDragMove,
       onEnd: () => {
@@ -145,6 +147,7 @@ export class MdConcentricArcLC extends Diagram {
         }
         dragPointerId = -1;
         (this as any).gestureActive = false;
+        setGestureActive(false);
         this.dispatchEvent(new CustomEvent("gesturecommit"));
       },
     };
@@ -194,7 +197,7 @@ export class MdConcentricArcLC extends Diagram {
       const valueStrokeW = derive(() => { const d = di(); return selected.value === d ? 1.5 : hover.value === d ? 3 : 0; });
       const valueEl = gs(pathD(valueD, { fill: slotColor, stroke: valueStroke, strokeWidth: valueStrokeW }));
       valueEl.el.style.cursor = "pointer";
-      valueEl.el.style.transition = "d 0.1s";
+      valueEl.el.style.transition = settleTransition("d");
       valueEl.el.addEventListener("pointerenter", () => { const d = di(); if (d && !wheelController.active) hover.value = d; });
       valueEl.el.addEventListener("pointerleave", () => { const d = di(); if (d && !wheelController.active && hover.value === d) hover.value = null; });
       valueEl.el.addEventListener("click", () => { const d = di(); if (!d) return; selected.value = selected.value === d ? null : d; this.focus(); });
@@ -219,7 +222,7 @@ export class MdConcentricArcLC extends Diagram {
         opacity: handleOpacity,
       }));
       handleEl.el.style.cursor = "grab";
-      handleEl.el.style.transition = "opacity 0.12s";
+      handleEl.el.style.transition = hoverTransition("opacity");
       handleEl.el.addEventListener("pointerenter", () => { const d = di(); if (!dragController.active && d) hover.value = d; });
       handleEl.el.addEventListener("pointerleave", () => { const d = di(); if (!dragController.active && d && hover.value === d) hover.value = null; });
       // Drag the handle around the ring to set its value; the shared controller

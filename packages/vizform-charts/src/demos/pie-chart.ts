@@ -4,6 +4,7 @@ import { wheelController } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { dragCancelable } from "../lib/esc-contract";
+import { GESTURE_ACTIVE_CLASS, GESTURE_SUPPRESSION_CSS, settleTransition } from "../lib/transitions";
 
 const W = 640;
 const H = 640;
@@ -29,7 +30,7 @@ function makeData(): Slice[] {
 }
 
 export class MdPieChartLC extends Diagram {
-  static styles = `text { pointer-events: none; }${FILL_STYLE}`
+  static styles = `text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}`
   readonly dataCell = cell<readonly Slice[]>(makeData());
   set externalData(v: { id?: string; label: string; value: number }[] | undefined) {
     if (v) this.dataCell.value = v.map((d) => ({ id: d.id, label: d.label, value: num(d.value) }));
@@ -58,11 +59,12 @@ export class MdPieChartLC extends Diagram {
       d.value.value = Math.max(1, d.value.value + delta);
     };
 
+    const setGestureActive = (on: boolean) => this.classList.toggle(GESTURE_ACTIVE_CLASS, on);
     // Config handed to the SHARED wheel controller (app-wide singleton).
     const wheelConfig = {
-      snapshot: (d: Slice) => d.value.value,
+      snapshot: (d: Slice) => { setGestureActive(true); return d.value.value; },
       restore: (d: Slice, v: number) => { d.value.value = Math.max(1, v); },
-      onEnd: () => { hover.value = null; this.dispatchEvent(new CustomEvent("gesturecommit")); },
+      onEnd: () => { setGestureActive(false); hover.value = null; this.dispatchEvent(new CustomEvent("gesturecommit")); },
     };
 
     // Pie layout (reactive). Reads each slice's value CELL so the layout
@@ -92,6 +94,9 @@ export class MdPieChartLC extends Diagram {
         opacity,
       }));
       sector.el.style.cursor = "pointer";
+      // Settle slice arc `d` on value change (Chrome/Safari interpolate; Firefox
+      // steps — acceptable degradation, see docs/transitions-decision.md).
+      sector.el.style.transition = settleTransition("d");
       sector.el.addEventListener("pointerenter", () => { if (!wheelController.active) hover.value = d; });
       sector.el.addEventListener("pointerleave", () => { if (!wheelController.active && hover.value === d) hover.value = null; });
       sector.el.addEventListener("click", () => { selected.value = selected.value === d ? null : d; });
@@ -177,8 +182,8 @@ export class MdPieChartLC extends Diagram {
         // there is no sort-order concern here.
         dragCancelable(dot, knob, [a, b], {
           host: this,
-          onStart: () => { active.value = true; (this as any).gestureActive = true; },
-          onEnd: () => { active.value = false; (this as any).gestureActive = false; this.dispatchEvent(new CustomEvent("gesturecommit")); },
+          onStart: () => { active.value = true; (this as any).gestureActive = true; setGestureActive(true); },
+          onEnd: () => { active.value = false; (this as any).gestureActive = false; setGestureActive(false); this.dispatchEvent(new CustomEvent("gesturecommit")); },
         });
         dot.el.style.cursor = "grab";
         dot.el.addEventListener("pointerenter", () => { active.value = true; });

@@ -6,6 +6,7 @@ import { chartContext } from "../lib/chart-context";
 import { attachCartesianGestures, makeBisectFinder } from "../lib/cartesian-gestures";
 import { spline } from "../lib/spline";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
+import { GESTURE_SUPPRESSION_CSS, settleTransition } from "../lib/transitions";
 
 const W = 720;
 const H = 360;
@@ -29,7 +30,7 @@ function makeSeries(): Point[] {
 }
 
 export class MdLineChartLC extends Diagram {
-  static styles = `text { pointer-events: none; }${FILL_STYLE}`
+  static styles = `text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}`
   readonly dataCell = cell<readonly Point[]>(makeSeries());
   set externalData(v: { date: Date; value: number }[] | undefined) {
     if (v) this.dataCell.value = v as Point[];
@@ -54,7 +55,10 @@ export class MdLineChartLC extends Diagram {
 
     axis(s, ctx, { placement: "bottom" });
     axis(s, ctx, { placement: "left" });
-    s(spline(ctx, { stroke: "#7aaae8", strokeWidth: 2 }));
+    const splineEl = s(spline(ctx, { stroke: "#7aaae8", strokeWidth: 2 }));
+    // Settle the line path `d` on value change (Chrome/Safari interpolate; Firefox
+    // steps — acceptable degradation, see docs/transitions-decision.md).
+    splineEl.el.style.transition = settleTransition("d");
 
     const hover = cell<Point | null>(null);
     const selected = cell<Point | null>(null);
