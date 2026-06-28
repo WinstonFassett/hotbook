@@ -473,6 +473,7 @@ export function useLiveHierElement(
   onUpdate?: (nodeId: string, measures: PNode['measures']) => void,
   onUpdateMany?: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void,
   depth?: number,
+  sortBy?: 'index' | 'value',
 ) {
   const containerRef = useRef<HTMLDivElement>(null)
   const elRef = useRef<ElWithRoot | null>(null)
@@ -485,11 +486,13 @@ export function useLiveHierElement(
   const onUpdateRef = useRef(onUpdate); onUpdateRef.current = onUpdate
   const onUpdateManyRef = useRef(onUpdateMany); onUpdateManyRef.current = onUpdateMany
 
-  // Shape: rebuild when tree STRUCTURE, measureKey, or depth changes. The tree is
-  // built from parentId (order-independent), so the key must be too — otherwise a
-  // value-sort that reorders `nodes` flips the key and remounts the element
-  // mid-edit, dropping the in-flight gesture. Sort the pairs to make it stable.
-  const shapeKey = `${measureKey}|${depth ?? 'all'}|${nodes.map(n => `${n.id}:${n.parentId ?? ''}`).sort().join(',')}`
+  // Shape: rebuild when tree STRUCTURE, measureKey, depth, or sort MODE changes.
+  // Structure is built from parentId (order-independent), so the id:parent pairs
+  // are sorted — a value-sort that reorders `nodes` mid-edit must NOT flip the key
+  // (that remounts and drops the in-flight gesture). But the sort MODE belongs in
+  // the key: buildBiTree orders children by n.index, which App reassigns on a sort
+  // toggle, so toggling must rebuild (else the new order needs a page reload).
+  const shapeKey = `${measureKey}|${depth ?? 'all'}|${sortBy ?? 'index'}|${nodes.map(n => `${n.id}:${n.parentId ?? ''}`).sort().join(',')}`
   // Per-leaf store values, applied in place on change. Keyed on the exact
   // (precision-stable) value so fractional edits still trigger apply-in. Sorted
   // by id so reorder alone doesn't churn it (only real value changes do).
@@ -591,32 +594,33 @@ interface HierProps {
   nodes: PNode[]
   measureKey: string
   depth?: number
+  sortBy?: 'index' | 'value'
   onUpdate?: (nodeId: string, measures: PNode['measures']) => void
   onUpdateMany?: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
 }
 
-export function BrLcPack({ nodes, measureKey, depth, onUpdate, onUpdateMany }: HierProps) {
-  const ref = useLiveHierElement('v-br-pack', nodes, measureKey, onUpdate, onUpdateMany, depth)
+export function BrLcPack({ nodes, measureKey, depth, sortBy, onUpdate, onUpdateMany }: HierProps) {
+  const ref = useLiveHierElement('v-br-pack', nodes, measureKey, onUpdate, onUpdateMany, depth, sortBy)
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }
 
-export function BrLcTreemap({ nodes, measureKey, depth, onUpdate, onUpdateMany }: HierProps) {
-  const ref = useLiveHierElement('v-br-treemap', nodes, measureKey, onUpdate, onUpdateMany, depth)
+export function BrLcTreemap({ nodes, measureKey, depth, sortBy, onUpdate, onUpdateMany }: HierProps) {
+  const ref = useLiveHierElement('v-br-treemap', nodes, measureKey, onUpdate, onUpdateMany, depth, sortBy)
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }
 
-export function BrLcIcicle({ nodes, measureKey, depth, onUpdate, onUpdateMany }: HierProps) {
-  const ref = useLiveHierElement('v-br-icicle', nodes, measureKey, onUpdate, onUpdateMany, depth)
+export function BrLcIcicle({ nodes, measureKey, depth, sortBy, onUpdate, onUpdateMany }: HierProps) {
+  const ref = useLiveHierElement('v-br-icicle', nodes, measureKey, onUpdate, onUpdateMany, depth, sortBy)
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }
 
-export function BrLcSunburst({ nodes, measureKey, depth, onUpdate, onUpdateMany }: HierProps) {
-  const ref = useLiveHierElement('v-br-sunburst', nodes, measureKey, onUpdate, onUpdateMany, depth)
+export function BrLcSunburst({ nodes, measureKey, depth, sortBy, onUpdate, onUpdateMany }: HierProps) {
+  const ref = useLiveHierElement('v-br-sunburst', nodes, measureKey, onUpdate, onUpdateMany, depth, sortBy)
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }
 
-export function BrLcTree({ nodes, measureKey, onUpdate, onUpdateMany }: HierProps) {
-  const ref = useLiveHierElement('v-br-tree', nodes, measureKey, onUpdate, onUpdateMany)
+export function BrLcTree({ nodes, measureKey, sortBy, onUpdate, onUpdateMany }: HierProps) {
+  const ref = useLiveHierElement('v-br-tree', nodes, measureKey, onUpdate, onUpdateMany, undefined, sortBy)
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }
 
