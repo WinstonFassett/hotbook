@@ -13,6 +13,7 @@ import type { Num, Writable } from 'bireactive'
 import type { PNode, PEdge } from '../../persistence'
 import { makeFlatSource, makeHierSource, hierShapeKey, hierValueKey } from './bindTile'
 import { BrLcTile } from './BrLcTile'
+import { useDrillNodeId } from '../../store'
 
 import {
   MdBarChartLC,
@@ -306,20 +307,23 @@ interface HierProps {
   measureKey: string
   depth?: number
   sortBy?: 'index' | 'value'
+  drillKey?: string
+  showBreadcrumb?: boolean
   onUpdate?: (nodeId: string, measures: PNode['measures']) => void
   onUpdateMany?: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
 }
 
-function makeHier(tag: string, { nodes, measureKey, depth, sortBy, onUpdate, onUpdateMany }: HierProps) {
+function makeHier(tag: string, { nodes, measureKey, depth, sortBy, drillKey = 'default', showBreadcrumb = true, onUpdate, onUpdateMany }: HierProps) {
   const shapeKey = hierShapeKey(tag, nodes, measureKey, depth, sortBy)
   const valueKey = hierValueKey(nodes, measureKey)
   return makeHierSource({
-    tag, nodes, measureKey, depth, sortBy, shapeKey, valueKey, onUpdate, onUpdateMany,
+    tag, nodes, measureKey, depth, sortBy, shapeKey, valueKey, drillKey, showBreadcrumb, onUpdate, onUpdateMany,
   })
 }
 
 export function BrLcPack(props: HierProps) {
-  return <BrLcTile source={makeHier('v-br-pack', props)} />
+  const drillNodeId = useDrillNodeId(props.drillKey ?? 'default')
+  return <BrLcTile source={makeHier('v-br-pack', { ...props, drillNodeId })} />
 }
 
 export function BrLcTreemap(props: HierProps) {
