@@ -7,6 +7,7 @@ import { bisector } from "d3-array";
 import { effect as biEffect } from "bireactive";
 import type { Cell, Writable } from "bireactive";
 import { makeBridge, type ElementWithBridge } from "./hud-bridge";
+import { GESTURE_ACTIVE_CLASS } from "./transitions";
 
 export interface CartesianGestureState<TData> {
   hover: Writable<Cell<TData | null>>;
@@ -56,10 +57,12 @@ export function attachCartesianGestures<TData>(
 
   // Per-gesture value-mapping handed to the SHARED wheel/drag controllers (app-
   // wide singletons; one pointer → one live gesture).
+  const setGestureActive = (on: boolean) => host.classList.toggle(GESTURE_ACTIVE_CLASS, on);
+
   const wheelConfig = {
-    snapshot: (d: TData) => ctx.yAcc(d) as number,
+    snapshot: (d: TData) => { setGestureActive(true); return ctx.yAcc(d) as number; },
     restore: (d: TData, v: number) => mutateDatum(d, v - (ctx.yAcc(d) as number)),
-    onEnd: () => { state.hover.value = null; gestureOrder = null; host.dispatchEvent(new CustomEvent("gesturecommit")); },
+    onEnd: () => { setGestureActive(false); state.hover.value = null; gestureOrder = null; host.dispatchEvent(new CustomEvent("gesturecommit")); },
   };
 
   // Captured at pointerdown, read by dragConfig.snapshot (called inside begin()).
@@ -80,11 +83,14 @@ export function attachCartesianGestures<TData>(
     mutateDatum(t, snap.origValue + valueDelta - (ctx.yAcc(t) as number));
   };
   const dragConfig = {
-    snapshot: (d: TData) => ({
-      origValue: ctx.yAcc(d) as number,
-      startY: dragStartY,
-      startScale: dragStartScale,
-    }),
+    snapshot: (d: TData) => {
+      setGestureActive(true);
+      return {
+        origValue: ctx.yAcc(d) as number,
+        startY: dragStartY,
+        startScale: dragStartScale,
+      };
+    },
     restore: (d: TData, snap: { origValue: number }) => mutateDatum(d, snap.origValue - (ctx.yAcc(d) as number)),
     onMove: onDragMove,
     onEnd: () => {
@@ -97,6 +103,7 @@ export function attachCartesianGestures<TData>(
       gestureOrder = null;
       host.style.cursor = "";
       (host as any).gestureActive = false;
+      setGestureActive(false);
       host.dispatchEvent(new CustomEvent("gesturecommit"));
     },
   };

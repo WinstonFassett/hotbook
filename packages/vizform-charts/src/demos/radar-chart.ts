@@ -8,6 +8,7 @@ import { extent, ticks as d3Ticks } from "d3-array";
 import { wheelController, dragController, dynamicWheelStep } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
+import { GESTURE_ACTIVE_CLASS, GESTURE_SUPPRESSION_CSS, settleTransition } from "../lib/transitions";
 
 const W = 640;
 const H = 640;
@@ -29,7 +30,7 @@ function makeData(): Spoke[] {
 }
 
 export class MdRadarChartLC extends Diagram {
-  static styles = `text { pointer-events: none; }${FILL_STYLE}`
+  static styles = `text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}`
   readonly dataCell = cell<readonly Spoke[]>(makeData());
   tickCount = 4;
   set externalData(v: { label: string; value: number }[] | undefined) {
@@ -57,11 +58,12 @@ export class MdRadarChartLC extends Diagram {
       data.value = [...data.value];
     };
 
+    const setGestureActive = (on: boolean) => this.classList.toggle(GESTURE_ACTIVE_CLASS, on);
     // Config handed to the SHARED wheel controller (app-wide singleton).
     const wheelConfig = {
-      snapshot: (d: Spoke) => d.value,
+      snapshot: (d: Spoke) => { setGestureActive(true); return d.value; },
       restore: (d: Spoke, v: number) => mutateDatum(d, v - d.value),
-      onEnd: () => { hover.value = null; this.dispatchEvent(new CustomEvent("gesturecommit")); },
+      onEnd: () => { setGestureActive(false); hover.value = null; this.dispatchEvent(new CustomEvent("gesturecommit")); },
     };
 
     // y: scaleLinear 0–100 → radius 0–R_MAX
@@ -172,8 +174,13 @@ export class MdRadarChartLC extends Diagram {
       return pts.join(" ") + " Z";
     });
 
-    s(pathD(polyD, { fill: COLOR, stroke: "none", opacity: 0.18 }));
-    s(pathD(polyD, { fill: "none", stroke: COLOR, strokeWidth: 2, opacity: 0.85 }));
+    // Settle path `d` on value change. Radar polygons are rendered as M/L path
+    // commands (not <polyline points>), so Chrome/Safari interpolate; Firefox
+    // steps. See docs/transitions-decision.md for the polyline caveat.
+    const polyFill = s(pathD(polyD, { fill: COLOR, stroke: "none", opacity: 0.18 }));
+    const polyStroke = s(pathD(polyD, { fill: "none", stroke: COLOR, strokeWidth: 2, opacity: 0.85 }));
+    polyFill.el.style.transition = settleTransition("d");
+    polyStroke.el.style.transition = settleTransition("d");
 
     // Data points — one slot per MAX_SPOKES; each reads data.value[i] reactively.
     for (let i = 0; i < MAX_SPOKES; i++) {
@@ -253,7 +260,7 @@ export class MdRadarChartLC extends Diagram {
     };
     // Config handed to the SHARED drag controller (app-wide singleton).
     const dragConfig = {
-      snapshot: (d: Spoke) => d.value,
+      snapshot: (d: Spoke) => { setGestureActive(true); return d.value; },
       restore: (d: Spoke, v: number) => mutateDatum(d, v - d.value),
       onMove: onDragMove,
       onEnd: () => {
@@ -262,6 +269,7 @@ export class MdRadarChartLC extends Diagram {
         }
         dragPointerId = -1;
         (this as any).gestureActive = false;
+        setGestureActive(false);
         this.dispatchEvent(new CustomEvent("gesturecommit"));
       },
     };
