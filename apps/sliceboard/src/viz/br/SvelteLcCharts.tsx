@@ -17,7 +17,8 @@
 
 import { useEffect, useRef } from 'react'
 import type { PNode } from '../../persistence'
-import { useLiveHierElement } from './BrLcCharts'
+import { makeHierSource, hierShapeKey, hierValueKey } from './bindTile'
+import { BrLcTile } from './BrLcTile'
 
 // Importing each component runs its <svelte:options customElement="…"> which
 // registers the element with customElements — no manual define() needed.
@@ -34,24 +35,31 @@ interface HierProps {
   onUpdateMany?: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
 }
 
-export function SvelteLcSunburst({ nodes, measureKey, onUpdate, onUpdateMany }: HierProps) {
-  const ref = useLiveHierElement('lc-sunburst-lc', nodes, measureKey, onUpdate, onUpdateMany)
-  return <div ref={ref} style={{ width: '100%', height: '100%' }} />
+// Build a hier TileSource for a Svelte custom-element tag (same path as the
+// vanilla `makeHier`; Svelte charts take no depth/sortBy).
+function makeHier(tag: string, { nodes, measureKey, onUpdate, onUpdateMany }: HierProps) {
+  return makeHierSource({
+    tag, nodes, measureKey,
+    shapeKey: hierShapeKey(tag, nodes, measureKey),
+    valueKey: hierValueKey(nodes, measureKey),
+    onUpdate, onUpdateMany,
+  })
 }
 
-export function SvelteLcIcicle({ nodes, measureKey, onUpdate, onUpdateMany }: HierProps) {
-  const ref = useLiveHierElement('lc-icicle-lc', nodes, measureKey, onUpdate, onUpdateMany)
-  return <div ref={ref} style={{ width: '100%', height: '100%' }} />
+export function SvelteLcSunburst(props: HierProps) {
+  return <BrLcTile source={makeHier('lc-sunburst-lc', props)} />
 }
 
-export function SvelteLcPack({ nodes, measureKey, onUpdate, onUpdateMany }: HierProps) {
-  const ref = useLiveHierElement('lc-pack-lc', nodes, measureKey, onUpdate, onUpdateMany)
-  return <div ref={ref} style={{ width: '100%', height: '100%' }} />
+export function SvelteLcIcicle(props: HierProps) {
+  return <BrLcTile source={makeHier('lc-icicle-lc', props)} />
 }
 
-export function SvelteLcTreemap({ nodes, measureKey, onUpdate, onUpdateMany }: HierProps) {
-  const ref = useLiveHierElement('lc-treemap-lc', nodes, measureKey, onUpdate, onUpdateMany)
-  return <div ref={ref} style={{ width: '100%', height: '100%' }} />
+export function SvelteLcPack(props: HierProps) {
+  return <BrLcTile source={makeHier('lc-pack-lc', props)} />
+}
+
+export function SvelteLcTreemap(props: HierProps) {
+  return <BrLcTile source={makeHier('lc-treemap-lc', props)} />
 }
 
 // The non-LayerChart d3 Svelte demo. NOT bireactive/LC and has no external-data
