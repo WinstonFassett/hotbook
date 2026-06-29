@@ -25,7 +25,17 @@ function makeData(): Point[] {
 }
 
 export class MdScatterChartLC extends Diagram {
-  static styles = `text { pointer-events: none; }${FILL_STYLE}`
+  static styles = `
+    text { pointer-events: none; }
+    ${FILL_STYLE}
+    [data-focusable]:focus {
+      outline: 2px solid #4a9eff;
+      outline-offset: 2px;
+    }
+    [data-focusable]:focus:not(:focus-visible) {
+      outline: none;
+    }
+  `
   readonly dataCell = cell<readonly Point[]>(makeData());
   set externalData(v: { x: number; y: number }[] | undefined) {
     if (v) this.dataCell.value = v as Point[];
@@ -36,7 +46,7 @@ export class MdScatterChartLC extends Diagram {
   protected scene(s: Mount): void {
     const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
     this.view(Wc, Hc);
-    this.tabIndex = 0;
+    this.tabIndex = -1; // Container not directly focusable, items are
     this.style.outline = "none";
 
     const data = this.dataCell;
@@ -62,26 +72,37 @@ export class MdScatterChartLC extends Diagram {
       data.value = [...data.value];
     };
 
-    attachCartesianGestures(this, svgEl, {
-      ctx, state: { hover, selected },
-      findAtPixel: (px) => bisectFind(px, ctx.xScale.value),
-      yPixel: (d) => (ctx.yScale.value as any)(d.y),
-      mutateDatum: (d, delta) => mutateDatum(d, delta),
-      order: () => data.value as Point[],
-    });
-
-    // Draw dots.
+    // Draw dots with focusable support.
+    const dotElements: SVGCircleElement[] = [];
+    let idx = 0;
     for (const d of data.value as Point[]) {
       const pos = Vec.derive(() => ({ x: ctx.xGet.value(d), y: ctx.yGet.value(d) }));
       const fill = derive(() =>
         selected.value === d ? "#fff" : hover.value === d ? "#a4c0f0" : COLOR
       );
       const dot = s(circle(pos, 5, { fill, stroke: "#0b0d12", strokeWidth: 1 }));
+      dotElements[idx] = dot.el as SVGCircleElement;
       dot.el.style.cursor = "pointer";
+      // Make each dot individually focusable
+      dot.el.setAttribute('tabindex', '0');
+      dot.el.setAttribute('data-focusable', 'point');
+      dot.el.setAttribute('aria-label', `x: ${d.x.toFixed(1)}, y: ${d.y.toFixed(1)}`);
       dot.el.addEventListener("pointerenter", () => { hover.value = d; });
       dot.el.addEventListener("pointerleave", () => { if (hover.value === d) hover.value = null; });
       dot.el.addEventListener("click", () => { selected.value = selected.value === d ? null : d; });
+      dot.el.addEventListener("focus", () => { selected.value = d; });
+      dot.el.addEventListener("blur", () => { if (selected.value === d) selected.value = null; });
+      idx++;
     }
+
+    attachCartesianGestures(this, svgEl, {
+      ctx, state: { hover, selected },
+      findAtPixel: (px) => bisectFind(px, ctx.xScale.value),
+      yPixel: (d) => (ctx.yScale.value as any)(d.y),
+      mutateDatum: (d, delta) => mutateDatum(d, delta),
+      order: () => data.value as Point[],
+      elements: dotElements,
+    });
 
     // Selection ring.
     const selPos = Vec.derive(() => {

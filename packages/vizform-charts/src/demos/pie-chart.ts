@@ -29,7 +29,17 @@ function makeData(): Slice[] {
 }
 
 export class MdPieChartLC extends Diagram {
-  static styles = `text { pointer-events: none; }${FILL_STYLE}`
+  static styles = `
+    text { pointer-events: none; }
+    ${FILL_STYLE}
+    [data-focusable]:focus {
+      outline: 2px solid #4a9eff;
+      outline-offset: 2px;
+    }
+    [data-focusable]:focus:not(:focus-visible) {
+      outline: none;
+    }
+  `
   readonly dataCell = cell<readonly Slice[]>(makeData());
   set externalData(v: { id?: string; label: string; value: number }[] | undefined) {
     if (v) this.dataCell.value = v.map((d) => ({ id: d.id, label: d.label, value: num(d.value) }));
@@ -40,7 +50,7 @@ export class MdPieChartLC extends Diagram {
   protected scene(s: Mount): void {
     const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
     this.view(Wc, Hc);
-    this.tabIndex = 0;
+    this.tabIndex = -1; // Container not directly focusable, items are
     this.style.outline = "none";
 
     const data = this.dataCell;
@@ -73,6 +83,7 @@ export class MdPieChartLC extends Diagram {
     });
 
     // Draw slices.
+    const sliceElements: SVGElement[] = []; // Track elements by index for focus management
     for (let i = 0; i < (data.value as Slice[]).length; i++) {
       const d = (data.value as Slice[])[i]!;
       const color = PALETTE[i % PALETTE.length]!;
@@ -91,10 +102,17 @@ export class MdPieChartLC extends Diagram {
         strokeWidth: 1,
         opacity,
       }));
+      sliceElements[i] = sector.el; // Store for focus management
       sector.el.style.cursor = "pointer";
+      // Make each slice individually focusable
+      sector.el.setAttribute('tabindex', '0');
+      sector.el.setAttribute('data-focusable', 'slice');
+      sector.el.setAttribute('aria-label', `${d.label}: ${Math.round(d.value.value)}`);
       sector.el.addEventListener("pointerenter", () => { if (!wheelController.active) hover.value = d; });
       sector.el.addEventListener("pointerleave", () => { if (!wheelController.active && hover.value === d) hover.value = null; });
       sector.el.addEventListener("click", () => { selected.value = selected.value === d ? null : d; });
+      sector.el.addEventListener("focus", () => { selected.value = d; });
+      sector.el.addEventListener("blur", () => { if (selected.value === d) selected.value = null; });
 
       const labelPos = Vec.derive(() => {
         const arc = arcDatum.value;
@@ -208,9 +226,12 @@ export class MdPieChartLC extends Diagram {
       const cur = selected.value;
       const i = cur ? rows.indexOf(cur) : -1;
       if (ke.key === "ArrowRight" || ke.key === "ArrowLeft") {
-        selected.value = ke.key === "ArrowLeft"
-          ? rows[(i <= 0 ? rows.length : i) - 1] ?? null
-          : rows[(i + 1) % rows.length] ?? null;
+        const nextIdx = ke.key === "ArrowLeft"
+          ? (i <= 0 ? rows.length : i) - 1
+          : (i + 1) % rows.length;
+        selected.value = rows[nextIdx] ?? null;
+        // Move focus to the newly selected slice
+        sliceElements[nextIdx]?.focus();
         ke.preventDefault(); return;
       }
       if (!cur) return;

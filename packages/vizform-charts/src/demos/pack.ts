@@ -2,6 +2,7 @@ import {
   Anchor,
   Diagram,
   derive,
+  effect as biEffect,
   label,
   type Mount,
   cell,
@@ -21,13 +22,23 @@ const H = 480;
 const PAD = 2;
 
 export class MdPack extends Diagram {
-  static styles = `text { pointer-events: none; }${FILL_STYLE}`
+  static styles = `
+    text { pointer-events: none; }
+    ${FILL_STYLE}
+    [data-focusable]:focus {
+      outline: 2px solid #4a9eff;
+      outline-offset: 2px;
+    }
+    [data-focusable]:focus:not(:focus-visible) {
+      outline: none;
+    }
+  `
   externalRoot?: BiNode
   maxDepth?: number
   protected scene(s: Mount): void {
     const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
     const view = this.view(Wc, Hc);
-    this.tabIndex = 0;
+    this.tabIndex = -1;
     this.style.outline = "none";
 
     const root = this.externalRoot ?? portfolio();
@@ -52,6 +63,7 @@ export class MdPack extends Diagram {
     });
 
     const maxD = this.maxDepth
+    const discElements = new Map<BiNode, SVGCircleElement>();
     for (const { node, depth, isLeaf } of walkWithDepth(root)) {
       if (maxD !== undefined && depth > maxD) continue;
       const cx = derive(() => layout.value.get(node)?.x ?? 0);
@@ -75,8 +87,16 @@ export class MdPack extends Diagram {
           strokeWidth,
         }),
       );
+      discElements.set(node, disc.el);
       disc.el.style.cursor = "pointer";
+      disc.el.setAttribute('tabindex', '0');
+      disc.el.setAttribute('data-focusable', 'circle');
+      biEffect(() => {
+        disc.el.setAttribute('aria-label', `${node.value.label}: ${node.value.total.value.toFixed(0)}`);
+      });
       disc.el.addEventListener("click", () => { state.focused.value = node; });
+      disc.el.addEventListener("focus", () => { state.focused.value = node; });
+      disc.el.addEventListener("blur", () => { if (state.focused.value === node) state.focused.value = null; });
       disc.el.addEventListener("pointerenter", () => { state.hovered.current = node; hoverCell.value = node; state.emitHover?.(node); });
       disc.el.addEventListener("pointerleave", () => { if (state.hovered.current === node) { state.hovered.current = null; hoverCell.value = null; state.emitHover?.(null); } });
 

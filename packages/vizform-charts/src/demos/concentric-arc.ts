@@ -56,7 +56,17 @@ const START = 0; // d3Arc: 0 = top (12 o'clock), clockwise
 const MIN_VALUE = 3;
 
 export class MdConcentricArcLC extends Diagram {
-  static styles = `text { pointer-events: none; }${FILL_STYLE}`
+  static styles = `
+    text { pointer-events: none; }
+    ${FILL_STYLE}
+    [data-focusable]:focus {
+      outline: 2px solid #4a9eff;
+      outline-offset: 2px;
+    }
+    [data-focusable]:focus:not(:focus-visible) {
+      outline: none;
+    }
+  `
   readonly dataCell = cell<readonly Ring[]>(makeData());
   maxRings: number = DEFAULT_MAX_RINGS;
   set externalData(v: { label: string; value: number }[] | undefined) {
@@ -68,7 +78,7 @@ export class MdConcentricArcLC extends Diagram {
   protected scene(s: Mount): void {
     const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
     this.view(Wc, Hc);
-    this.tabIndex = 0;
+    this.tabIndex = -1; // Container not directly focusable, items are
     this.style.outline = "none";
 
     const cx = derive(() => Wc.value / 2);
@@ -155,6 +165,7 @@ export class MdConcentricArcLC extends Diagram {
 
     // Always mount maxRings slots; slots past nCell.value are hidden.
     // di() reads the live datum at slot i so external data replacements are picked up.
+    const ringElements: SVGElement[] = [];
     for (let i = 0; i < maxRings; i++) {
       const di = (): Ring | null => (data.value as Ring[])[i] ?? null;
       // Radius from the slot's array position. Sliceboard already hands data in
@@ -171,10 +182,20 @@ export class MdConcentricArcLC extends Diagram {
         derive(() => visible.value && rInner.value >= 1 ? arcD(rOuter.value, rInner.value, START, START + TWO_PI, corner.value) : ""),
         { fill: slotColor, opacity: derive(() => { const d = di(); return hover.value === d || selected.value === d ? 0.25 : 0.18; }) }
       ));
+      ringElements[i] = trackEl.el;
       trackEl.el.style.cursor = "pointer";
+      // Make each ring individually focusable
+      trackEl.el.setAttribute('tabindex', '0');
+      trackEl.el.setAttribute('data-focusable', 'ring');
+      biEffect(() => {
+        const d = di();
+        if (d) trackEl.el.setAttribute('aria-label', `${d.label}: ${Math.round(d.value)}`);
+      });
       trackEl.el.addEventListener("pointerenter", () => { const d = di(); if (d && !wheelController.active && !dragController.active) hover.value = d; });
       trackEl.el.addEventListener("pointerleave", () => { const d = di(); if (d && !wheelController.active && !dragController.active && hover.value === d) hover.value = null; });
       trackEl.el.addEventListener("click", () => { const d = di(); if (!d) return; selected.value = selected.value === d ? null : d; this.focus(); });
+      trackEl.el.addEventListener("focus", () => { const d = di(); if (d) selected.value = d; });
+      trackEl.el.addEventListener("blur", () => { const d = di(); if (d && selected.value === d) selected.value = null; });
 
       // Value arc.
       const valueD = derive(() => {
@@ -309,9 +330,12 @@ export class MdConcentricArcLC extends Diagram {
       const cur = selected.value;
       const i = cur ? rows.indexOf(cur) : -1;
       if (ke.key === "ArrowRight" || ke.key === "ArrowLeft") {
-        selected.value = ke.key === "ArrowLeft"
-          ? rows[(i <= 0 ? rows.length : i) - 1] ?? null
-          : rows[(i + 1) % rows.length] ?? null;
+        const nextIdx = ke.key === "ArrowLeft"
+          ? (i <= 0 ? rows.length : i) - 1
+          : (i + 1) % rows.length;
+        selected.value = rows[nextIdx] ?? null;
+        // Move focus to the newly selected ring
+        ringElements[nextIdx]?.focus();
         ke.preventDefault(); return;
       }
       const target = cur ?? hover.value;

@@ -3,6 +3,7 @@ import {
   circle,
   Diagram,
   derive,
+  effect as biEffect,
   label,
   type Mount,
   cell,
@@ -23,13 +24,23 @@ const W = 720;
 const H = 360;
 
 export class MdIcicleLC extends Diagram {
-  static styles = `text { pointer-events: none; }${FILL_STYLE}`
+  static styles = `
+    text { pointer-events: none; }
+    ${FILL_STYLE}
+    [data-focusable]:focus {
+      outline: 2px solid #4a9eff;
+      outline-offset: 2px;
+    }
+    [data-focusable]:focus:not(:focus-visible) {
+      outline: none;
+    }
+  `
   externalRoot?: BiNode
   maxDepth?: number
   protected scene(s: Mount): void {
     const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
     const view = this.view(Wc, Hc);
-    this.tabIndex = 0;
+    this.tabIndex = -1;
     this.style.outline = "none";
 
     const root = this.externalRoot ?? portfolio();
@@ -69,6 +80,7 @@ export class MdIcicleLC extends Diagram {
       });
       return map;
     });
+    const tileElements = new Map<BiNode, SVGRectElement>();
     for (const { node, depth, isLeaf } of walkWithDepth(root)) {
       if (depth === 0) continue;
       if (maxD !== undefined && depth > maxD) continue;
@@ -93,8 +105,16 @@ export class MdIcicleLC extends Diagram {
         strokeWidth,
         corner: 2,
       }));
+      tileElements.set(node, tile.el);
       tile.el.style.cursor = "pointer";
+      tile.el.setAttribute('tabindex', '0');
+      tile.el.setAttribute('data-focusable', 'tile');
+      biEffect(() => {
+        tile.el.setAttribute('aria-label', `${node.value.label}: ${node.value.total.value.toFixed(0)}`);
+      });
       tile.el.addEventListener("click", () => { state.focused.value = node; });
+      tile.el.addEventListener("focus", () => { state.focused.value = node; });
+      tile.el.addEventListener("blur", () => { if (state.focused.value === node) state.focused.value = null; });
       tile.el.addEventListener("pointerenter", () => { state.hovered.current = node; hoverCell.value = node; state.emitHover?.(node); });
       tile.el.addEventListener("pointerleave", () => { if (state.hovered.current === node) { state.hovered.current = null; hoverCell.value = null; state.emitHover?.(null); } });
 

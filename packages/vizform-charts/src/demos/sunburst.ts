@@ -2,6 +2,7 @@ import {
   Anchor,
   Diagram,
   derive,
+  effect as biEffect,
   label,
   type Mount,
   cell,
@@ -22,13 +23,23 @@ const W = 480;
 const H = 480;
 
 export class MdSunburstLC extends Diagram {
-  static styles = `text { pointer-events: none; }${FILL_STYLE}`
+  static styles = `
+    text { pointer-events: none; }
+    ${FILL_STYLE}
+    [data-focusable]:focus {
+      outline: 2px solid #4a9eff;
+      outline-offset: 2px;
+    }
+    [data-focusable]:focus:not(:focus-visible) {
+      outline: none;
+    }
+  `
   externalRoot?: BiNode
   maxDepth?: number
   protected scene(s: Mount): void {
     const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
     const view = this.view(Wc, Hc);
-    this.tabIndex = 0;
+    this.tabIndex = -1;
     this.style.outline = "none";
 
     const root = this.externalRoot ?? portfolio();
@@ -59,6 +70,7 @@ export class MdSunburstLC extends Diagram {
     });
 
     const center = Vec.derive(() => ({ x: Wc.value / 2, y: Hc.value / 2 }));
+    const arcElements = new Map<BiNode, SVGPathElement>();
     for (const { node, depth, isLeaf } of walkWithDepth(root)) {
       if (depth === 0) continue;
       if (maxD !== undefined && depth > maxD) continue;
@@ -82,8 +94,16 @@ export class MdSunburstLC extends Diagram {
         stroke,
         strokeWidth,
       }));
+      arcElements.set(node, arc.el);
       arc.el.style.cursor = "pointer";
+      arc.el.setAttribute('tabindex', '0');
+      arc.el.setAttribute('data-focusable', 'arc');
+      biEffect(() => {
+        arc.el.setAttribute('aria-label', `${node.value.label}: ${node.value.total.value.toFixed(0)}`);
+      });
       arc.el.addEventListener("click", () => { state.focused.value = node; });
+      arc.el.addEventListener("focus", () => { state.focused.value = node; });
+      arc.el.addEventListener("blur", () => { if (state.focused.value === node) state.focused.value = null; });
       arc.el.addEventListener("pointerenter", () => { state.hovered.current = node; hoverCell.value = node; state.emitHover?.(node); });
       arc.el.addEventListener("pointerleave", () => { if (state.hovered.current === node) { state.hovered.current = null; hoverCell.value = null; state.emitHover?.(null); } });
     }

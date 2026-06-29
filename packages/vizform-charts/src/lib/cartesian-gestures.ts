@@ -31,6 +31,8 @@ export interface CartesianGestureOpts<TData> {
    * disable editing.
    */
   canEdit?: () => boolean;
+  /** Optional: element array for focus management. */
+  elements?: SVGElement[];
 }
 
 export function attachCartesianGestures<TData>(
@@ -38,7 +40,7 @@ export function attachCartesianGestures<TData>(
   svgEl: SVGSVGElement,
   opts: CartesianGestureOpts<TData>,
 ): () => void {
-  const { ctx, state, findAtPixel, yPixel, mutateDatum, order } = opts;
+  const { ctx, state, findAtPixel, yPixel, mutateDatum, order, elements } = opts;
   const canEdit = opts.canEdit ?? (() => true);
 
   const localPoint = (e: PointerEvent): { x: number; y: number } => {
@@ -132,8 +134,16 @@ export function attachCartesianGestures<TData>(
     if (rows.length === 0) return;
     const cur = state.selected.value;
     const i = cur ? rows.indexOf(cur) : -1;
-    if (ke.key === "ArrowRight") { state.selected.value = rows[(i + 1) % rows.length] ?? null; ke.preventDefault(); return; }
-    if (ke.key === "ArrowLeft") { state.selected.value = rows[(i <= 0 ? rows.length : i) - 1] ?? null; ke.preventDefault(); return; }
+    if (ke.key === "ArrowRight" || ke.key === "ArrowLeft") {
+      const nextIdx = ke.key === "ArrowLeft"
+        ? (i <= 0 ? rows.length : i) - 1
+        : (i + 1) % rows.length;
+      state.selected.value = rows[nextIdx] ?? null;
+      // Move focus to the newly selected element if elements array provided
+      if (elements) elements[nextIdx]?.focus();
+      ke.preventDefault();
+      return;
+    }
     if (!cur || !canEdit()) return;
     const step = dynamicWheelStep(ctx.yAcc(cur) as number, ke.shiftKey);
     if (ke.key === "ArrowUp") { mutateDatum(cur, +step); ke.preventDefault(); }

@@ -29,7 +29,17 @@ function makeData(): Spoke[] {
 }
 
 export class MdRadarChartLC extends Diagram {
-  static styles = `text { pointer-events: none; }${FILL_STYLE}`
+  static styles = `
+    text { pointer-events: none; }
+    ${FILL_STYLE}
+    [data-focusable]:focus {
+      outline: 2px solid #4a9eff;
+      outline-offset: 2px;
+    }
+    [data-focusable]:focus:not(:focus-visible) {
+      outline: none;
+    }
+  `
   readonly dataCell = cell<readonly Spoke[]>(makeData());
   tickCount = 4;
   set externalData(v: { label: string; value: number }[] | undefined) {
@@ -41,7 +51,7 @@ export class MdRadarChartLC extends Diagram {
   protected scene(s: Mount): void {
     const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
     this.view(Wc, Hc);
-    this.tabIndex = 0;
+    this.tabIndex = -1; // Container not directly focusable, items are
     this.style.outline = "none";
 
     const cx = derive(() => Wc.value / 2);
@@ -176,6 +186,7 @@ export class MdRadarChartLC extends Diagram {
     s(pathD(polyD, { fill: "none", stroke: COLOR, strokeWidth: 2, opacity: 0.85 }));
 
     // Data points — one slot per MAX_SPOKES; each reads data.value[i] reactively.
+    const spokeElements: SVGCircleElement[] = [];
     for (let i = 0; i < MAX_SPOKES; i++) {
       const dotPos = Vec.derive(() => {
         const rows = data.value as Spoke[];
@@ -202,7 +213,15 @@ export class MdRadarChartLC extends Diagram {
         return d && selected.value === d ? 2.5 : 1.5;
       });
       const dot = s(circle(dotPos, dotR, { fill: COLOR, stroke: dotStroke, strokeWidth: dotStrokeW }));
+      spokeElements[i] = dot.el as SVGCircleElement;
       dot.el.style.cursor = "ns-resize";
+      // Make each spoke individually focusable
+      dot.el.setAttribute('tabindex', '0');
+      dot.el.setAttribute('data-focusable', 'spoke');
+      biEffect(() => {
+        const d = (data.value as Spoke[])[i];
+        if (d) dot.el.setAttribute('aria-label', `${d.name}: ${Math.round(d.value)}`);
+      });
       dot.el.addEventListener("pointerenter", () => {
         const d = (data.value as Spoke[])[i];
         if (d && !wheelController.active) hover.value = d;
@@ -215,6 +234,14 @@ export class MdRadarChartLC extends Diagram {
         const d = (data.value as Spoke[])[i];
         if (!d) return;
         selected.value = selected.value === d ? null : d;
+      });
+      dot.el.addEventListener("focus", () => {
+        const d = (data.value as Spoke[])[i];
+        if (d) selected.value = d;
+      });
+      dot.el.addEventListener("blur", () => {
+        const d = (data.value as Spoke[])[i];
+        if (d && selected.value === d) selected.value = null;
       });
     }
 
@@ -307,9 +334,12 @@ export class MdRadarChartLC extends Diagram {
       const cur = selected.value;
       const i = cur ? rows.indexOf(cur) : -1;
       if (ke.key === "ArrowRight" || ke.key === "ArrowLeft") {
-        selected.value = ke.key === "ArrowLeft"
-          ? rows[(i <= 0 ? rows.length : i) - 1] ?? null
-          : rows[(i + 1) % rows.length] ?? null;
+        const nextIdx = ke.key === "ArrowLeft"
+          ? (i <= 0 ? rows.length : i) - 1
+          : (i + 1) % rows.length;
+        selected.value = rows[nextIdx] ?? null;
+        // Move focus to the newly selected spoke
+        spokeElements[nextIdx]?.focus();
         ke.preventDefault(); return;
       }
       if (!cur) return;
