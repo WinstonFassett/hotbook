@@ -30,6 +30,11 @@ import { scaleBand, scaleTime } from "d3-scale";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE, type HostSize } from "../lib/host-size";
 import {
+  dragController,
+  dynamicWheelStep,
+  wheelController,
+} from "../lib/interaction";
+import {
   GESTURE_ACTIVE_CLASS,
   GESTURE_SUPPRESSION_CSS,
   hoverTransition,
@@ -177,20 +182,49 @@ export class MdGanttChartLC extends Diagram {
     };
 
     // ─── Pointer drag (body / start / end) ─────────────────────────────────
+    //
+    // Uses the shared `dragController` — one app-wide drag, with snapshot /
+    // restore on Esc (Interaction Principle Rule 6). Snapshot captures both
+    // start and end ms so Esc reverts the full task range. The controller
+    // owns move/up/cancel/Esc/blur listeners for the lifetime of the gesture.
     let dragPointerId = -1;
-    let dragKind: DragKind | null = null;
-    let dragTarget: GanttTask | null = null;
-    let dragOriginMs = 0;     // pointer x at drag start (in ms)
-    let dragOriginStart = 0;  // task.start at drag start (ms)
-    let dragOriginEnd = 0;    // task.end   at drag start (ms)
 
     const xToMs = (px: number): number => (xScale.value as any).invert(px).getTime();
 
+    interface DragSnap { start: number; end: number; originMs: number; kind: DragKind }
+
+    const dragConfig = (kind: DragKind, originMs: number) => ({
+      snapshot: (t: GanttTask): DragSnap => {
+        setGestureActive(true);
+        return { start: t.start.getTime(), end: t.end.getTime(), originMs, kind };
+      },
+      restore: (t: GanttTask, snap: DragSnap) => {
+        setRange(t, snap.start, snap.end);
+      },
+      onMove: (pe: PointerEvent, snap: DragSnap) => {
+        const t = dragController.target as GanttTask | null;
+        if (!t) return;
+        const dms = xToMs(localPoint(pe).x) - snap.originMs;
+        if (snap.kind === 'move')      setRange(t, snap.start + dms, snap.end + dms);
+        else if (snap.kind === 'start') setRange(t, snap.start + dms, snap.end);
+        else                            setRange(t, snap.start,        snap.end + dms);
+      },
+      onEnd: (_canceled: boolean) => {
+        if (dragPointerId >= 0 && (this as any).hasPointerCapture?.(dragPointerId)) {
+          (this as any).releasePointerCapture(dragPointerId);
+        }
+        dragPointerId = -1;
+        setGestureActive(false);
+        commit();
+      },
+    });
+
     this.addEventListener("pointerleave", () => {
-      if (dragKind == null) hover.value = null;
+      if (!dragController.active) hover.value = null;
     });
 
     this.addEventListener("pointerdown", (e) => {
+      if (dragController.active) return;
       const pe = e as PointerEvent;
       const { x, y } = localPoint(pe);
       const t = findAtPixelY(y);
@@ -206,51 +240,16 @@ export class MdGanttChartLC extends Diagram {
       else return;
 
       dragPointerId = pe.pointerId;
-      dragKind = kind;
-      dragTarget = t;
-      dragOriginMs = xToMs(x);
-      dragOriginStart = t.start.getTime();
-      dragOriginEnd = t.end.getTime();
       selected.value = t;
       (this as any).setPointerCapture(pe.pointerId);
-      setGestureActive(true);
+      dragController.begin(t, dragConfig(kind, xToMs(x)));
       pe.preventDefault();
     });
 
-    this.addEventListener("pointermove", (e) => {
-      const pe = e as PointerEvent;
-      if (dragKind == null || !dragTarget) {
-        hover.value = findAtPixelY(localPoint(pe).y);
-        return;
-      }
-      const ms = xToMs(localPoint(pe).x);
-      const dms = ms - dragOriginMs;
-      if (dragKind === 'move') {
-        setRange(dragTarget, dragOriginStart + dms, dragOriginEnd + dms);
-      } else if (dragKind === 'start') {
-        setRange(dragTarget, dragOriginStart + dms, dragOriginEnd);
-      } else {
-        setRange(dragTarget, dragOriginStart, dragOriginEnd + dms);
-      }
-    });
-
-    const endDrag = () => {
-      if (dragKind == null) return;
-      if (dragPointerId >= 0 && (this as any).hasPointerCapture?.(dragPointerId)) {
-        (this as any).releasePointerCapture(dragPointerId);
-      }
-      dragPointerId = -1;
-      dragKind = null;
-      dragTarget = null;
-      setGestureActive(false);
-      commit();
-    };
-    this.addEventListener("pointerup", endDrag);
-    this.addEventListener("pointercancel", endDrag);
-
     this.addEventListener("click", (e) => {
-      // Only treat a click as selection if it wasn't a drag commit.
-      if (dragKind != null) return;
+      // A click here only fires when no drag is live (dragController consumes
+      // the gesture otherwise). Treat clicks outside any bar as deselect.
+      if (dragController.active) return;
       const { x, y } = localPoint(e as PointerEvent);
       const t = findAtPixelY(y);
       if (!t) { selected.value = null; return; }
@@ -260,6 +259,32 @@ export class MdGanttChartLC extends Diagram {
       selected.value = selected.value === t ? null : t;
     });
 
+    // ─── Wheel — ctrl/cmd+wheel resizes the hovered/selected task's end ───
+    // Shared wheelController gives us Esc-revert + meta-keyup commit for free.
+    const wheelConfig = {
+      snapshot: (t: GanttTask): DragSnap => {
+        setGestureActive(true);
+        return { start: t.start.getTime(), end: t.end.getTime(), originMs: 0, kind: 'end' as DragKind };
+      },
+      restore: (t: GanttTask, snap: DragSnap) => { setRange(t, snap.start, snap.end); },
+      onEnd: () => { setGestureActive(false); commit(); },
+    };
+    this.addEventListener("wheel", (e) => {
+      const we = e as WheelEvent;
+      if (!we.ctrlKey && !we.metaKey) return;
+      we.preventDefault(); we.stopPropagation();
+      const t = wheelController.begin(hover.value ?? selected.value, wheelConfig);
+      if (!t) return;
+      const curDays = Math.max(1, Math.round((t.end.getTime() - t.start.getTime()) / DAY_MS));
+      const step = dynamicWheelStep(curDays, we.shiftKey);
+      const delta = (we.deltaY < 0 ? +step : -step) * DAY_MS;
+      setRange(t, t.start.getTime(), t.end.getTime() + delta);
+    }, { passive: false });
+
+    // ─── Keyboard ────────────────────────────────────────────────────────
+    // Escape: if a gesture is live, the dragController/wheelController already
+    // owns it (capture-phase keydown reverts). The chart-level handler only
+    // sees Escape when no gesture is active — then it clears selection.
     this.addEventListener("keydown", (e) => {
       const ke = e as KeyboardEvent;
       const rows = data.value as GanttTask[];
@@ -527,7 +552,7 @@ export class MdGanttChartLC extends Diagram {
       Vec.derive(() => ({ x: Wc.value / 2, y: 12 })),
       derive(() => {
         const p = selected.value ?? hover.value;
-        if (!p) return "Gantt — click · Tab navigate · ←/→ nudge · drag body/handles";
+        if (!p) return "Gantt — click · Tab navigate · ←/→ nudge · drag body/handles · ctrl+wheel resize · Esc revert";
         const fmt = (d: Date) => d.toLocaleDateString();
         const days = Math.round((p.end.getTime() - p.start.getTime()) / DAY_MS);
         return `${p.label}  ${fmt(p.start)} → ${fmt(p.end)}  (${days}d)`;
