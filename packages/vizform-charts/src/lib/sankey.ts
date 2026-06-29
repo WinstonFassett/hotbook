@@ -235,9 +235,6 @@ export function sankeyScene(
     }
     if (e.key === "Tab") {
       const cur = focused.value;
-      const last = linkValues.length - 1;
-      if (!e.shiftKey && cur === last) { focused.value = null; return; }
-      if (e.shiftKey && cur === 0) { focused.value = null; return; }
       focused.value = e.shiftKey
         ? ((cur ?? 0) - 1 + linkValues.length) % linkValues.length
         : ((cur ?? -1) + 1) % linkValues.length;

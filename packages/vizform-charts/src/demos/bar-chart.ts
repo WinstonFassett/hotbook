@@ -219,8 +219,6 @@ export class MdBarChartLC extends Diagram {
       const cur = selected.value;
       const i = cur ? rows.indexOf(cur) : -1;
       if (ke.key === "Tab") {
-        if (!ke.shiftKey && i >= rows.length - 1) { selected.value = null; return; }
-        if (ke.shiftKey && i <= 0) { selected.value = null; return; }
         selected.value = ke.shiftKey ? rows[(i <= 0 ? rows.length : i) - 1] ?? null : rows[(i + 1) % rows.length] ?? null;
         ke.preventDefault(); return;
       }
@@ -457,8 +455,6 @@ export class MdBarChartLC extends Diagram {
       const cur = selected.value;
       const i = cur ? rows.indexOf(cur) : -1;
       if (ke.key === "Tab") {
-        if (!ke.shiftKey && i >= rows.length - 1) { selected.value = null; return; }
-        if (ke.shiftKey && i <= 0) { selected.value = null; return; }
         selected.value = ke.shiftKey ? rows[(i <= 0 ? rows.length : i) - 1] ?? null : rows[(i + 1) % rows.length] ?? null;
         ke.preventDefault(); return;
       }

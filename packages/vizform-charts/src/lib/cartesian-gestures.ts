@@ -133,8 +133,6 @@ export function attachCartesianGestures<TData>(
     const cur = state.selected.value;
     const i = cur ? rows.indexOf(cur) : -1;
     if (ke.key === "Tab") {
-      if (!ke.shiftKey && i >= rows.length - 1) { state.selected.value = null; return; }
-      if (ke.shiftKey && i <= 0) { state.selected.value = null; return; }
       state.selected.value = ke.shiftKey
         ? rows[(i <= 0 ? rows.length : i) - 1] ?? null
         : rows[(i + 1) % rows.length] ?? null;
