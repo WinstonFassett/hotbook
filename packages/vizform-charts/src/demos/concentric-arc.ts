@@ -129,6 +129,7 @@ export class MdConcentricArcLC extends Diagram {
     // Drag a ring's end-cap handle angularly to set its value; Esc reverts.
     // Config handed to the SHARED drag controller (one pointer, one live drag).
     let dragPointerId = -1;
+    let activeHandle: HTMLElement | null = null;
     const onDragMove = (pe: PointerEvent) => {
       const t = dragController.target as Ring | null;
       if (!t) return;
@@ -145,6 +146,8 @@ export class MdConcentricArcLC extends Diagram {
         }
         dragPointerId = -1;
         (this as any).gestureActive = false;
+        if (activeHandle) activeHandle.style.cursor = "grab";
+        activeHandle = null;
         this.dispatchEvent(new CustomEvent("gesturecommit"));
       },
     };
@@ -230,6 +233,8 @@ export class MdConcentricArcLC extends Diagram {
         dragPointerId = pe.pointerId;
         (this as any).gestureActive = true;
         selected.value = d;
+        activeHandle = handleEl.el;
+        handleEl.el.style.cursor = "grabbing";
         try { (this as any).setPointerCapture(pe.pointerId); } catch { /* ok */ }
         dragController.begin(d, dragConfig);
         pe.preventDefault();
