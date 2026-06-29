@@ -2,9 +2,14 @@ import type { PNode } from '@winstonfassett/vizform-react-d3'
 import type { PEdge, ScalingMode } from '@winstonfassett/vizform-core'
 import { colorFor } from '@winstonfassett/vizform-core'
 import type { LayoutItem } from 'react-grid-layout'
-import type { SplitNode } from './splits'
-import { reconcile as reconcileSplitTree, defaultTree as defaultSplitTree, splitLeaf as splitLeafTree } from './splits'
-import type { SplitDir } from './splits'
+import type { DockNode, LegacySplitNode } from './dock'
+import {
+  reconcile as reconcileDockTree,
+  defaultDockTree,
+  addTileToDock,
+  removeTileFromDock,
+  migrateFromSplits,
+} from './dock'
 
 export type { PNode, PEdge }
 
@@ -107,11 +112,13 @@ export interface Dashboard {
    *  root; non-null = every hierarchical tile re-roots at this PNode id. */
   drillNodeId?: string | null
   /** Layout engine for this dashboard. Defaults to 'grid' (react-grid-layout).
-   *  'splits' uses a tree of resizable row/column splits with tiles as leaves. */
+   *  'splits' uses a dockview-class tree of resizable splits and tab groups. */
   layoutMode?: 'grid' | 'splits'
-  /** Persisted split-tree for `layoutMode === 'splits'`. Reconciled against
-   *  `tiles` on load — see persistence.activeDashboard. */
-  splitTree?: SplitNode | null
+  /** Persisted dockview tree. Tabs + nested row/col splits; reconciled
+   *  against `tiles` on read. See dock.ts and docs/dockview-spec.md. */
+  dockTree?: DockNode | null
+  /** Legacy split-only tree from storage v11. Migrated on load. */
+  splitTree?: LegacySplitNode | null
 }
 
 // ─── Workspace ────────────────────────────────────────────────────────────────
@@ -125,7 +132,8 @@ export interface Workspace {
 
 // ─── Storage ──────────────────────────────────────────────────────────────────
 
-const LS_KEY = 'sb:workspace:v11'
+const LS_KEY = 'sb:workspace:v12'
+const LEGACY_KEYS = ['sb:workspace:v11', 'sb:workspace:v10']
 
 function genId(): string {
   return Math.random().toString(36).slice(2, 10)
@@ -582,11 +590,36 @@ function buildSeedWorkspace(): Workspace {
 function load(): Workspace | null {
   try {
     const raw = localStorage.getItem(LS_KEY)
-    if (!raw) return null
-    return JSON.parse(raw) as Workspace
+    if (raw) return JSON.parse(raw) as Workspace
+    // One-shot migration from older storage keys. We migrate the latest legacy
+    // shape we recognize (v11 → v12: splitTree → dockTree as single-panel groups).
+    for (const key of LEGACY_KEYS) {
+      const legacy = localStorage.getItem(key)
+      if (!legacy) continue
+      try {
+        const ws = JSON.parse(legacy) as Workspace
+        const migrated = migrateWorkspace(ws)
+        save(migrated)
+        return migrated
+      } catch { /* try next */ }
+    }
+    return null
   } catch {
     return null
   }
+}
+
+function migrateWorkspace(ws: Workspace): Workspace {
+  const dashboards = ws.dashboards.map(d => {
+    if (d.dockTree) return d
+    if (d.splitTree) {
+      const dockTree = migrateFromSplits(d.splitTree)
+      const { splitTree: _drop, ...rest } = d
+      return { ...rest, dockTree } as Dashboard
+    }
+    return d
+  })
+  return { ...ws, dashboards }
 }
 
 function save(ws: Workspace): void {
@@ -774,68 +807,47 @@ export function updateDashboard(ws: Workspace, dash: Dashboard): Workspace {
   return { ...ws, dashboards: ws.dashboards.map(d => d.id === dash.id ? dash : d) }
 }
 
-export function addTile(ws: Workspace, dashId: string, kind: TileKind): Workspace {
+export function addTile(ws: Workspace, dashId: string, kind: TileKind, targetGroupId?: string): Workspace {
   const dash = ws.dashboards.find(d => d.id === dashId)
   if (!dash) return ws
   const tile: Tile = { id: genId(), kind }
   const layout: LayoutItem = { i: tile.id, x: 0, y: Infinity, w: 6, h: 8 }
   const nextTiles = [...dash.tiles, tile]
-  const splitTree = reconcileSplitTree(dash.splitTree ?? null, nextTiles.map(t => t.id))
-  return updateDashboard(ws, { ...dash, tiles: nextTiles, layout: [...dash.layout, layout], splitTree })
+  const baseTree = dash.dockTree ?? null
+  const dockTree = targetGroupId
+    ? addTileToDock(baseTree, tile.id, targetGroupId)
+    : reconcileDockTree(baseTree, nextTiles.map(t => t.id))
+  return updateDashboard(ws, { ...dash, tiles: nextTiles, layout: [...dash.layout, layout], dockTree })
 }
 
 export function removeTile(ws: Workspace, dashId: string, tileId: string): Workspace {
   const dash = ws.dashboards.find(d => d.id === dashId)
   if (!dash) return ws
   const nextTiles = dash.tiles.filter(t => t.id !== tileId)
-  const splitTree = reconcileSplitTree(dash.splitTree ?? null, nextTiles.map(t => t.id))
+  const dockTree = removeTileFromDock(dash.dockTree ?? null, tileId)
   return updateDashboard(ws, {
     ...dash,
     tiles: nextTiles,
     layout: dash.layout.filter(l => l.i !== tileId),
-    splitTree,
+    dockTree,
   })
 }
 
-/** Switch a dashboard between grid and splits layout. When entering splits mode
- *  for the first time, lazily build a default row-of-leaves tree from the
- *  existing tile order. */
+/** Switch a dashboard between grid and splits layout. When entering splits
+ *  mode for the first time, lazily build a default dock tree from the
+ *  existing tile order — see dock.defaultDockTree for the seed shape. */
 export function setLayoutMode(ws: Workspace, dashId: string, mode: 'grid' | 'splits'): Workspace {
   const dash = ws.dashboards.find(d => d.id === dashId)
   if (!dash) return ws
-  let splitTree = dash.splitTree ?? null
-  if (mode === 'splits' && !splitTree) splitTree = defaultSplitTree(dash.tiles.map(t => t.id))
-  return updateDashboard(ws, { ...dash, layoutMode: mode, splitTree })
+  let dockTree = dash.dockTree ?? null
+  if (mode === 'splits' && !dockTree) dockTree = defaultDockTree(dash.tiles.map(t => t.id))
+  return updateDashboard(ws, { ...dash, layoutMode: mode, dockTree })
 }
 
-/** Add a new tile and place it as a sibling of the given existing leaf, in the
- *  requested direction/position. Bypasses the append-at-end reconcile path. */
-export function addTileAtLeaf(
-  ws: Workspace,
-  dashId: string,
-  leafId: string,
-  direction: SplitDir,
-  position: 'before' | 'after',
-  kind: TileKind,
-): Workspace {
+export function setDockTree(ws: Workspace, dashId: string, dockTree: DockNode | null): Workspace {
   const dash = ws.dashboards.find(d => d.id === dashId)
   if (!dash) return ws
-  const tile: Tile = { id: genId(), kind }
-  const layout: LayoutItem = { i: tile.id, x: 0, y: Infinity, w: 6, h: 8 }
-  const placed = splitLeafTree(dash.splitTree ?? null, leafId, direction, tile.id, position)
-    ?? defaultSplitTree([...dash.tiles.map(t => t.id), tile.id])
-  return updateDashboard(ws, {
-    ...dash,
-    tiles: [...dash.tiles, tile],
-    layout: [...dash.layout, layout],
-    splitTree: placed,
-  })
-}
-
-export function setSplitTree(ws: Workspace, dashId: string, splitTree: SplitNode | null): Workspace {
-  const dash = ws.dashboards.find(d => d.id === dashId)
-  if (!dash) return ws
-  return updateDashboard(ws, { ...dash, splitTree })
+  return updateDashboard(ws, { ...dash, dockTree })
 }
 
 export function deleteDashboard(ws: Workspace, dashId: string): Workspace {

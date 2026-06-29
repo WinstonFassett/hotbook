@@ -113,17 +113,25 @@
   overflow-y: auto;
 }
 
-/* Splits layout (alternative to react-grid-layout) */
+/* Dockview-class layout (Phase A) */
 .sb-splits-root {
   height: 100%;
   width: 100%;
-  padding: 12px;
+  padding: 8px;
   box-sizing: border-box;
   display: flex;
   min-height: 0;
+  position: relative;
 }
-.sb-splits-root > * { flex: 1; min-width: 0; min-height: 0; }
-.split-branch {
+.sb-splits-root > .dv-root { flex: 1; min-width: 0; min-height: 0; }
+.dv-root {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+.dv-branch {
   display: flex;
   flex: 1;
   min-width: 0;
@@ -131,62 +139,196 @@
   width: 100%;
   height: 100%;
 }
-.split-cell {
+.dv-cell {
   display: flex;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
 }
-.split-cell > .split-leaf,
-.split-cell > .split-branch { flex: 1; min-width: 0; min-height: 0; width: 100%; height: 100%; }
-.split-leaf {
-  display: flex;
-  min-width: 0;
-  min-height: 0;
-  width: 100%;
-  height: 100%;
-}
-.split-leaf > .tile-card { width: 100%; height: 100%; }
-.split-gutter {
+.dv-cell > .dv-group,
+.dv-cell > .dv-branch { flex: 1; min-width: 0; min-height: 0; width: 100%; height: 100%; }
+.dv-gutter {
   flex-shrink: 0;
   background: transparent;
   position: relative;
   z-index: 1;
 }
-.split-gutter--row {
+.dv-gutter--row {
   width: 6px;
   margin: 0 -2px;
   cursor: col-resize;
 }
-.split-gutter--col {
+.dv-gutter--col {
   height: 6px;
   margin: -2px 0;
   cursor: row-resize;
 }
-.split-gutter:hover { background: #2a2a2a; }
-.split-gutter:active { background: #3a3a3a; }
+.dv-gutter:hover { background: #2a2a2a; }
+.dv-gutter:active { background: #3a3a3a; }
 
-/* Per-pane split control inside the tile header */
-.tile-split-menu {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
+/* Dock group: tab strip + panel body */
+.dv-group {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  background: #111;
+  border: 1px solid #222;
+  border-radius: 4px;
+  overflow: hidden;
 }
-.tile-split-btn {
+.dv-tabstrip {
+  display: flex;
+  align-items: stretch;
+  height: 28px;
+  flex-shrink: 0;
+  border-bottom: 1px solid #1e1e1e;
+  background: #0d0d0d;
+}
+.dv-tabs {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: #333 transparent;
+}
+.dv-tabs::-webkit-scrollbar { height: 4px; }
+.dv-tabs::-webkit-scrollbar-thumb { background: #333; }
+.dv-tab {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  border-right: 1px solid #1e1e1e;
+  color: #666;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  cursor: pointer;
+  user-select: none;
+  max-width: 200px;
+  min-width: 60px;
+}
+.dv-tab:hover { color: #aaa; background: #131313; }
+.dv-tab--active {
+  color: #cbd5e1;
+  background: #1a1a1a;
+  border-bottom: 2px solid #4a90e2;
+}
+.dv-tab-label {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 10px;
+}
+.dv-tab-close {
+  background: none;
+  border: none;
+  color: #333;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+  border-radius: 2px;
+}
+.dv-tab-close:hover { color: #ccc; background: #222; }
+.dv-tabstrip-actions {
+  display: flex;
+  align-items: center;
+  padding: 0 4px;
+  flex-shrink: 0;
+}
+.dv-tab-add {
   background: none;
   border: 1px solid #2a2a2a;
   color: #555;
   cursor: pointer;
   font-size: 12px;
   line-height: 1;
-  padding: 1px 5px;
+  padding: 2px 6px;
   border-radius: 3px;
 }
-.tile-split-btn:hover { color: #aaa; border-color: #444; }
-.tile-split-dropdown {
-  right: 0;
-  left: auto;
+.dv-tab-add:hover { color: #aaa; border-color: #444; }
+
+.dv-body {
+  flex: 1;
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
+.dv-panel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+}
+.dv-panel > .tile-card { flex: 1; border: none; border-radius: 0; }
+.tile-card--chromeless .tile-header { padding: 2px 6px; border-bottom: none; }
+
+/* Drop indicators — speculative until release, rendered on top of the
+   group body. */
+.dv-drop-indicator {
+  position: absolute;
+  pointer-events: none;
+  background: rgba(74, 144, 226, 0.25);
+  border: 1px solid rgba(74, 144, 226, 0.6);
+  border-radius: 2px;
+}
+.dv-drop-indicator--left   { left: 0;  top: 0; bottom: 0; width: 50%; }
+.dv-drop-indicator--right  { right: 0; top: 0; bottom: 0; width: 50%; }
+.dv-drop-indicator--up     { left: 0; right: 0; top: 0; height: 50%; }
+.dv-drop-indicator--down   { left: 0; right: 0; bottom: 0; height: 50%; }
+.dv-drop-indicator--center { inset: 4px; }
+
+/* Floating tab ghost during drag */
+.dv-drag-ghost {
+  position: fixed;
+  pointer-events: none;
+  z-index: 9999;
+  background: #1a1a1a;
+  border: 1px solid #4a90e2;
+  color: #cbd5e1;
+  padding: 3px 8px;
+  border-radius: 3px;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.6);
+}
+
+/* Modal kind picker */
+.dv-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.dv-modal {
+  background: #111;
+  border: 1px solid #2a2a2a;
+  border-radius: 4px;
+  padding: 12px;
+  min-width: 240px;
+  max-height: 70%;
+  overflow-y: auto;
+}
+.dv-modal-title {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #666;
+  margin-bottom: 8px;
+}
+.dv-modal-list { display: flex; flex-direction: column; }
 
 /* Topbar extras */
 .sb-topbar-sep {

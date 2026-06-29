@@ -24,11 +24,18 @@ import {
   activeDataset, activeDashboard, dashboardsForDataset,
   updateRow, updateRows, reorderLeaves, applyGroupBy,
   drillSubtree, drillPath,
-  setLayoutMode, setSplitTree, addTileAtLeaf,
+  setLayoutMode, setDockTree,
 } from './persistence'
 import type { Workspace, Dataset, Dashboard, Tile, TileKind, PNode } from './persistence'
-import { SplitView } from './SplitView'
-import { setSizes as setSplitSizes } from './splits'
+import { DockView } from './DockView'
+import type { DropEvent } from './DockView'
+import {
+  setSizes as setDockSizes,
+  setActive as setDockActive,
+  movePanel as moveDockPanel,
+  dropOnEdge as dropDockOnEdge,
+  unsplit as unsplitDockTree,
+} from './dock'
 import { schemaFor } from './tile-config-schemas'
 import { hudStore, resetHudForDataset, useHudStore, useDrillNodeId } from './store'
 import 'react-grid-layout/css/styles.css'
@@ -211,12 +218,12 @@ const GROUPBY_KINDS = new Set<TileKind>(['br-lc-bar', 'br-lc-line', 'br-lc-area'
 const SCROLL_KINDS = new Set<TileKind>(['bands', 'br-lc-sankey'])
 
 function TileCard({
-  tile, ds, measureKey, onRemove, onMeasureChange, onXKeyChange, onYKeyChange, onDepthChange, onSortChange, onGroupByChange, onNodeUpdate, onNodesUpdate, onNodeReorder, availableMeasures, splitActions,
+  tile, ds, measureKey, onRemove, onMeasureChange, onXKeyChange, onYKeyChange, onDepthChange, onSortChange, onGroupByChange, onNodeUpdate, onNodesUpdate, onNodeReorder, availableMeasures, chromeless,
 }: {
   tile: Tile
   ds: Dataset
   measureKey: string
-  onRemove: () => void
+  onRemove?: () => void
   onMeasureChange: (key: string) => void
   onXKeyChange: (key: string) => void
   onYKeyChange: (key: string) => void
@@ -227,7 +234,8 @@ function TileCard({
   onNodesUpdate: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
   onNodeReorder: (orderedIds: string[]) => void
   availableMeasures: { key: string; label: string }[]
-  splitActions?: ReactNode
+  /** Suppress the title row entirely — caller (DockView) provides the tab strip. */
+  chromeless?: boolean
 }) {
   const schema = schemaFor(tile.kind)
   const pickers = schema.pickers
@@ -235,9 +243,9 @@ function TileCard({
   const depth = tile.depth ?? 0 // 0 = "All" (show full tree)
   const sortBy = tile.sortBy ?? 'index'
   return (
-    <div className="tile-card">
+    <div className={`tile-card${chromeless ? ' tile-card--chromeless' : ''}`}>
       <div className="tile-header">
-        <span className="tile-title">{tile.title ?? TILE_LABELS[tile.kind]}</span>
+        {!chromeless && <span className="tile-title">{tile.title ?? TILE_LABELS[tile.kind]}</span>}
         <div className="tile-header-actions">
           {pickers.depth && (
             <select
@@ -312,8 +320,7 @@ function TileCard({
               ))}
             </select>
           )}
-          {splitActions}
-          <button className="tile-close-btn" onClick={onRemove}>×</button>
+          {onRemove && <button className="tile-close-btn" onClick={onRemove}>×</button>}
         </div>
       </div>
       <div
@@ -663,9 +670,9 @@ export function App() {
     commit(deleteDashboard(ws, id))
   }, [ws])
 
-  const handleAddTile = useCallback((kind: TileKind) => {
+  const handleAddTile = useCallback((kind: TileKind, targetGroupId?: string) => {
     if (!dash) return
-    commit(addTile(ws, dash.id, kind))
+    commit(addTile(ws, dash.id, kind, targetGroupId))
   }, [ws, dash])
 
   const handleRemoveTile = useCallback((tileId: string) => {
@@ -743,13 +750,28 @@ export function App() {
 
   const handleSplitResize = useCallback((splitId: string, sizes: number[]) => {
     if (!dash) return
-    const nextTree = setSplitSizes(dash.splitTree ?? null, splitId, sizes)
-    commit(setSplitTree(ws, dash.id, nextTree))
+    const nextTree = setDockSizes(dash.dockTree ?? null, splitId, sizes)
+    commit(setDockTree(ws, dash.id, nextTree))
   }, [ws, dash])
 
-  const handleSplitAtLeaf = useCallback((leafId: string, direction: 'row' | 'col', kind: TileKind) => {
+  const handleActivatePanel = useCallback((groupId: string, panelId: string) => {
     if (!dash) return
-    commit(addTileAtLeaf(ws, dash.id, leafId, direction, 'after', kind))
+    const next = setDockActive(dash.dockTree ?? null, groupId, panelId)
+    commit(setDockTree(ws, dash.id, next))
+  }, [ws, dash])
+
+  const handleDropPanel = useCallback((ev: DropEvent) => {
+    if (!dash) return
+    const tree = dash.dockTree ?? null
+    if (!tree) return
+    let next = tree
+    if (ev.target.kind === 'tab') {
+      const idx = ev.target.index < 0 ? Number.MAX_SAFE_INTEGER : ev.target.index
+      next = moveDockPanel(tree, ev.panelId, ev.target.groupId, idx) ?? tree
+    } else {
+      next = dropDockOnEdge(tree, ev.panelId, ev.target.groupId, ev.target.edge) ?? tree
+    }
+    if (next !== tree) commit(setDockTree(ws, dash.id, next))
   }, [ws, dash])
 
   return (
@@ -789,12 +811,18 @@ export function App() {
       <div className="sb-grid-wrap">
         {ds && dash ? (
           (dash.layoutMode ?? 'grid') === 'splits' ? (
-            <TileSplits
+            <TileDock
               dash={dash}
               ds={ds}
               measures={measures}
               onSplitResize={handleSplitResize}
-              onSplitAtLeaf={handleSplitAtLeaf}
+              onActivatePanel={handleActivatePanel}
+              onDropPanel={handleDropPanel}
+              onAddTileToGroup={handleAddTile}
+              onUnsplit={(splitId) => {
+                const next = unsplitDockTree(dash.dockTree ?? null, splitId)
+                commit(setDockTree(ws, dash.id, next))
+              }}
               onRemoveTile={handleRemoveTile}
               onTileMeasure={handleTileMeasure}
               onTileXKey={handleTileXKey}
@@ -887,12 +915,15 @@ function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeas
   )
 }
 
-function TileSplits({ dash, ds, measures, onSplitResize, onSplitAtLeaf, onRemoveTile, onTileMeasure, onTileXKey, onTileYKey, onTileDepth, onTileSort, onTileGroupBy, onNodeUpdate, onNodesUpdate, onNodeReorder }: {
+function TileDock({ dash, ds, measures, onSplitResize, onActivatePanel, onDropPanel, onAddTileToGroup, onUnsplit, onRemoveTile, onTileMeasure, onTileXKey, onTileYKey, onTileDepth, onTileSort, onTileGroupBy, onNodeUpdate, onNodesUpdate, onNodeReorder }: {
   dash: Dashboard
   ds: Dataset
   measures: { key: string; label: string }[]
   onSplitResize: (splitId: string, sizes: number[]) => void
-  onSplitAtLeaf: (leafId: string, direction: 'row' | 'col', kind: TileKind) => void
+  onActivatePanel: (groupId: string, panelId: string) => void
+  onDropPanel: (ev: DropEvent) => void
+  onAddTileToGroup: (kind: TileKind, targetGroupId?: string) => void
+  onUnsplit: (splitId: string) => void
   onRemoveTile: (id: string) => void
   onTileMeasure: (tileId: string, key: string) => void
   onTileXKey: (tileId: string, key: string) => void
@@ -905,8 +936,16 @@ function TileSplits({ dash, ds, measures, onSplitResize, onSplitAtLeaf, onRemove
   onNodeReorder: (orderedIds: string[]) => void
 }) {
   const tilesById = new Map(dash.tiles.map(t => [t.id, t]))
-  const renderLeaf = (tileId: string, leafId: string) => {
+  const [pendingAddGroup, setPendingAddGroup] = useState<string | null>(null)
+
+  const panelLabel = (tileId: string) => {
     const tile = tilesById.get(tileId)
+    if (!tile) return '(missing)'
+    return tile.title ?? TILE_LABELS[tile.kind] ?? tile.kind
+  }
+
+  const renderPanel = (args: { tileId: string; groupId: string; panelId: string; isActive: boolean }) => {
+    const tile = tilesById.get(args.tileId)
     if (!tile) return <div className="sb-grid-empty">Missing tile</div>
     return (
       <TileCard
@@ -914,7 +953,7 @@ function TileSplits({ dash, ds, measures, onSplitResize, onSplitAtLeaf, onRemove
         ds={ds}
         measureKey={dash.measureKey}
         availableMeasures={measures}
-        onRemove={() => onRemoveTile(tile.id)}
+        chromeless
         onMeasureChange={key => onTileMeasure(tile.id, key)}
         onXKeyChange={key => onTileXKey(tile.id, key)}
         onYKeyChange={key => onTileYKey(tile.id, key)}
@@ -924,65 +963,78 @@ function TileSplits({ dash, ds, measures, onSplitResize, onSplitAtLeaf, onRemove
         onNodeUpdate={onNodeUpdate}
         onNodesUpdate={onNodesUpdate}
         onNodeReorder={onNodeReorder}
-        splitActions={
-          <SplitPaneMenu onSplit={(direction, kind) => onSplitAtLeaf(leafId, direction, kind)} />
-        }
       />
     )
   }
+
   return (
     <div className="sb-splits-root">
-      {dash.splitTree ? (
-        <SplitView node={dash.splitTree} renderLeaf={renderLeaf} onResize={onSplitResize} />
+      {dash.dockTree ? (
+        <DockView
+          node={dash.dockTree}
+          renderPanel={renderPanel}
+          panelLabel={panelLabel}
+          onResize={onSplitResize}
+          onActivate={onActivatePanel}
+          onClosePanel={(_groupId, panelId) => {
+            // Close the panel by closing its underlying tile (the dock tree
+            // reconciles automatically against the canonical tile list).
+            const panel = findPanelInDash(dash.dockTree, panelId)
+            if (panel) onRemoveTile(panel.tileId)
+          }}
+          onAddPanel={(groupId) => setPendingAddGroup(groupId)}
+          onUnsplit={onUnsplit}
+          onDrop={onDropPanel}
+        />
       ) : (
         <div className="sb-grid-empty">No tiles — click "+ Tile" to add one</div>
+      )}
+      {pendingAddGroup && (
+        <TileKindPickerModal
+          onPick={(kind) => { onAddTileToGroup(kind, pendingAddGroup); setPendingAddGroup(null) }}
+          onCancel={() => setPendingAddGroup(null)}
+        />
       )}
     </div>
   )
 }
 
-// Per-pane split control. Two-stage: pick direction, then pick kind. We keep
-// the menu in a single dropdown so the click target stays compact in the tile
-// header. Direction icons follow VS Code's mental model — "split right" / "split
-// down" both create a new pane positioned after the current one.
-function SplitPaneMenu({ onSplit }: { onSplit: (direction: 'row' | 'col', kind: TileKind) => void }) {
-  const [open, setOpen] = useState<null | 'row' | 'col'>(null)
-  const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!open) return
-    const h = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(null)
+function findPanelInDash(tree: Dashboard['dockTree'], panelId: string): { tileId: string } | null {
+  if (!tree) return null
+  const stack = [tree]
+  while (stack.length) {
+    const n = stack.pop()!
+    if (n.kind === 'group') {
+      const p = n.panels.find(p => p.id === panelId)
+      if (p) return { tileId: p.tileId }
+    } else {
+      for (const c of n.children) stack.push(c)
     }
-    document.addEventListener('mousedown', h)
-    return () => document.removeEventListener('mousedown', h)
-  }, [open])
+  }
+  return null
+}
+
+/** Modal-ish kind picker for the per-pane "+ Panel" action. Floats centered
+ *  over the dock; click-outside or Esc dismiss. Kept minimal — same kind list
+ *  as the topbar Add Tile menu. */
+function TileKindPickerModal({ onPick, onCancel }: { onPick: (kind: TileKind) => void; onCancel: () => void }) {
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel() }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [onCancel])
   return (
-    <div ref={ref} className="sb-menu-wrap tile-split-menu">
-      <button
-        className="tile-split-btn"
-        onClick={() => setOpen(o => (o === 'row' ? null : 'row'))}
-        title="Split right"
-        aria-label="Split right"
-      >⇥</button>
-      <button
-        className="tile-split-btn"
-        onClick={() => setOpen(o => (o === 'col' ? null : 'col'))}
-        title="Split down"
-        aria-label="Split down"
-      >⤓</button>
-      {open && (
-        <div className="sb-menu-dropdown tile-split-dropdown">
+    <div className="dv-modal-backdrop" onClick={onCancel}>
+      <div className="dv-modal" onClick={e => e.stopPropagation()}>
+        <div className="dv-modal-title">Add panel</div>
+        <div className="dv-modal-list">
           {TILE_KINDS.map(k => (
-            <button
-              key={k}
-              className="sb-menu-board-btn"
-              onClick={() => { onSplit(open, k); setOpen(null) }}
-            >
+            <button key={k} className="sb-menu-board-btn" onClick={() => onPick(k)}>
               {TILE_LABELS[k]}
             </button>
           ))}
         </div>
-      )}
+      </div>
     </div>
   )
 }
