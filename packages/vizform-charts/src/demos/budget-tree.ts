@@ -8,8 +8,10 @@
 
 import {
   Anchor,
+  cell,
   Diagram,
   derive,
+  effect as biEffect,
   label,
   type Mount,
   Num,
@@ -93,10 +95,22 @@ const CAT_FILLS = ["#5b8def", "#7ed321", "#e25c5c"];
 const LEAF_FILLS = ["#a8c5f7", "#d0eea1", "#f3a4a4", "#bdd5f9", "#bce096", "#f2b8b8"];
 
 export class MdBudgetTree extends Diagram {
+  static styles = `
+    [data-focusable]:focus {
+      outline: 2px solid #4a9eff;
+      outline-offset: 2px;
+    }
+    [data-focusable]:focus:not(:focus-visible) {
+      outline: none;
+    }
+  `
   protected scene(s: Mount): void {
     const view = this.view(W, H);
+    this.tabIndex = -1;
+    this.style.outline = "none";
     const budget = makeBudget();
     void asTree(budget);
+    const selected = cell<Writable<Num> | null>(null);
 
     s(
       label(
@@ -105,11 +119,11 @@ export class MdBudgetTree extends Diagram {
       ),
     );
 
-    this.renderRow(s, Y_ROOT, BAR_X0, BAR_W, [budget.rootTotal], ["TOTAL"], ["#222"], true);
+    this.renderRow(s, Y_ROOT, BAR_X0, BAR_W, [budget.rootTotal], ["TOTAL"], ["#222"], true, selected);
 
     const catCells = budget.categories.map((c) => c.total);
     const catLabels = budget.categories.map((c) => c.label);
-    this.renderRow(s, Y_CAT, BAR_X0, BAR_W, catCells, catLabels, CAT_FILLS, false);
+    this.renderRow(s, Y_CAT, BAR_X0, BAR_W, catCells, catLabels, CAT_FILLS, false, selected);
 
     const leafCells: Writable<Num>[] = [];
     const leafLabels: string[] = [];
@@ -123,7 +137,7 @@ export class MdBudgetTree extends Diagram {
         f++;
       }
     }
-    this.renderRow(s, Y_LEAF, BAR_X0, BAR_W, leafCells, leafLabels, leafFills, false);
+    this.renderRow(s, Y_LEAF, BAR_X0, BAR_W, leafCells, leafLabels, leafFills, false, selected);
 
     s(
       label(
@@ -143,6 +157,7 @@ export class MdBudgetTree extends Diagram {
     labels: readonly string[],
     fills: readonly string[],
     isTotalRow: boolean,
+    selected: Writable<typeof cell<Writable<Num> | null>>,
   ): void {
     const total = derive(() => cells.reduce((a, c) => a + c.value, 0));
     const widthOf = (i: number) =>
@@ -159,8 +174,18 @@ export class MdBudgetTree extends Diagram {
     for (let i = 0; i < cells.length; i++) {
       const lx = leftX(i);
       const wd = widthOf(i);
+      const cellRef = cells[i]!;
       const opacity = isTotalRow ? 0.85 : 1;
-      s(rect(lx, y, wd, ROW_H, { fill: fills[i]!, opacity, stroke: "#222", thin: true }));
+      const tile = s(rect(lx, y, wd, ROW_H, { fill: fills[i]!, opacity, stroke: "#222", thin: true }));
+      tile.el.style.cursor = "pointer";
+      tile.el.setAttribute('tabindex', '0');
+      tile.el.setAttribute('data-focusable', 'bar');
+      biEffect(() => {
+        tile.el.setAttribute('aria-label', `${labels[i]}: ${Math.round(cellRef.value)}`);
+      });
+      tile.el.addEventListener("click", () => { selected.value = cellRef; });
+      tile.el.addEventListener("focus", () => { selected.value = cellRef; });
+      tile.el.addEventListener("blur", () => { if (selected.value === cellRef) selected.value = null; });
       const cyTop = y + 16;
       const cyMid = y + ROW_H - 14;
       const labelTop = Vec.derive(() => ({ x: lx.value + wd.value / 2, y: cyTop }));

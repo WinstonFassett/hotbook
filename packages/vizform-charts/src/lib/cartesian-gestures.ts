@@ -31,6 +31,10 @@ export interface CartesianGestureOpts<TData> {
    * disable editing.
    */
   canEdit?: () => boolean;
+  /** Optional: element array for focus management (deprecated, use focusDatum). */
+  elements?: SVGElement[];
+  /** Optional: callback to focus the element for a given datum (ID-based, preferred). */
+  focusDatum?: (d: TData | null) => void;
 }
 
 export function attachCartesianGestures<TData>(
@@ -38,7 +42,7 @@ export function attachCartesianGestures<TData>(
   svgEl: SVGSVGElement,
   opts: CartesianGestureOpts<TData>,
 ): () => void {
-  const { ctx, state, findAtPixel, yPixel, mutateDatum, order } = opts;
+  const { ctx, state, findAtPixel, yPixel, mutateDatum, order, elements, focusDatum } = opts;
   const canEdit = opts.canEdit ?? (() => true);
 
   const localPoint = (e: PointerEvent): { x: number; y: number } => {
@@ -132,14 +136,20 @@ export function attachCartesianGestures<TData>(
     if (rows.length === 0) return;
     const cur = state.selected.value;
     const i = cur ? rows.indexOf(cur) : -1;
-    if (ke.key === "Tab") {
-      state.selected.value = ke.shiftKey
-        ? rows[(i <= 0 ? rows.length : i) - 1] ?? null
-        : rows[(i + 1) % rows.length] ?? null;
-      ke.preventDefault(); return;
+    if (ke.key === "ArrowRight" || ke.key === "ArrowLeft") {
+      const nextIdx = ke.key === "ArrowLeft"
+        ? (i <= 0 ? rows.length : i) - 1
+        : (i + 1) % rows.length;
+      state.selected.value = rows[nextIdx] ?? null;
+      // Move focus: prefer ID-based callback, fall back to index-based array
+      if (focusDatum) {
+        focusDatum(state.selected.value);
+      } else if (elements) {
+        elements[nextIdx]?.focus();
+      }
+      ke.preventDefault();
+      return;
     }
-    if (ke.key === "ArrowRight") { state.selected.value = rows[(i + 1) % rows.length] ?? null; ke.preventDefault(); return; }
-    if (ke.key === "ArrowLeft") { state.selected.value = rows[(i <= 0 ? rows.length : i) - 1] ?? null; ke.preventDefault(); return; }
     if (!cur || !canEdit()) return;
     const step = dynamicWheelStep(ctx.yAcc(cur) as number, ke.shiftKey);
     if (ke.key === "ArrowUp") { mutateDatum(cur, +step); ke.preventDefault(); }

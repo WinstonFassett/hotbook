@@ -29,7 +29,17 @@ function makeSeries(): Point[] {
 }
 
 export class MdLineChartLC extends Diagram {
-  static styles = `text { pointer-events: none; }${FILL_STYLE}`
+  static styles = `
+    text { pointer-events: none; }
+    ${FILL_STYLE}
+    [data-focusable]:focus {
+      outline: 2px solid #4a9eff;
+      outline-offset: 2px;
+    }
+    [data-focusable]:focus:not(:focus-visible) {
+      outline: none;
+    }
+  `
   readonly dataCell = cell<readonly Point[]>(makeSeries());
   set externalData(v: { date: Date; value: number }[] | undefined) {
     if (v) this.dataCell.value = v as Point[];
@@ -40,7 +50,7 @@ export class MdLineChartLC extends Diagram {
   protected scene(s: Mount): void {
     const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
     this.view(Wc, Hc);
-    this.tabIndex = 0;
+    this.tabIndex = -1; // Container not directly focusable, items are
     this.style.outline = "none";
 
     const data = this.dataCell;
@@ -67,12 +77,31 @@ export class MdLineChartLC extends Diagram {
       data.value = [...data.value];
     };
 
+    // Create focusable invisible circles for each point
+    const pointElements = new Map<Point, SVGCircleElement>();
+    for (let i = 0; i < (data.value as Point[]).length; i++) {
+      const pt = (data.value as Point[])[i]!;
+      const pos = Vec.derive(() => ({ x: ctx.xGet.value(pt), y: ctx.yGet.value(pt) }));
+      const focusCircle = s(circle(pos, 8, { fill: "transparent", stroke: "none" }));
+      pointElements.set(pt, focusCircle.el as SVGCircleElement);
+      focusCircle.el.setAttribute('tabindex', '0');
+      focusCircle.el.setAttribute('data-focusable', 'point');
+      focusCircle.el.setAttribute('aria-label', `${pt.date.toLocaleDateString()}: ${Math.round(pt.value)}`);
+      focusCircle.el.style.cursor = "pointer";
+      focusCircle.el.addEventListener("focus", () => { selected.value = pt; });
+      focusCircle.el.addEventListener("blur", () => { if (selected.value === pt) selected.value = null; });
+      focusCircle.el.addEventListener("pointerenter", () => { hover.value = pt; });
+      focusCircle.el.addEventListener("pointerleave", () => { if (hover.value === pt) hover.value = null; });
+      focusCircle.el.addEventListener("click", () => { selected.value = selected.value === pt ? null : pt; });
+    }
+
     attachCartesianGestures(this, svgEl, {
       ctx, state: { hover, selected },
       findAtPixel: (px) => bisectFind(px, ctx.xScale.value),
       yPixel: (d) => (ctx.yScale.value as any)(d.value),
       mutateDatum: (d, delta) => mutateDatum(d, delta),
       order: () => data.value as Point[],
+      focusDatum: (d) => { if (d) pointElements.get(d)?.focus(); },
     });
 
     // Hover crosshair.
