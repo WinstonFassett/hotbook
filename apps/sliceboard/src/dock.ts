@@ -25,6 +25,7 @@ export interface DockGroup {
   id: string
   panels: DockPanel[]
   activeId: string | null
+  maximized?: boolean
 }
 export interface DockPanel { id: string; tileId: string }
 
@@ -320,4 +321,90 @@ export function migrateFromSplits(node: LegacySplitNode | null | undefined): Doc
   if (children.length === 0) return null
   if (children.length === 1) return children[0]!
   return makeSplit(node.direction ?? 'row', children, node.sizes)
+}
+
+/** Toggle maximize state on a group. When maximized, the group renders
+ *  full-bleed over the entire dockview surface. Only one group can be maximized
+ *  at a time — maximizing a new one un-maximizes any others. */
+export function toggleMaximize(node: DockNode | null, groupId: string): DockNode | null {
+  if (!node) return null
+  const target = allGroups(node).find(g => g.id === groupId)
+  if (!target) return node
+  const nowMax = !target.maximized
+  // Un-maximize all other groups, then toggle the target.
+  return mapGroups(node, g => ({ ...g, maximized: g.id === groupId ? nowMax : false }))
+}
+
+/** Find the currently maximized group, if any. */
+export function findMaximizedGroup(node: DockNode | null): DockGroup | null {
+  return allGroups(node).find(g => g.maximized) ?? null
+}
+
+/** Move an entire group to a target group's edge or merge with it (center drop).
+ *  Similar to dropOnEdge for panels, but moves all panels from the source group. */
+export function dropGroupOnEdge(node: DockNode | null, sourceGroupId: string, targetGroupId: string, edge: DockEdge): DockNode | null {
+  if (!node) return null
+  const source = allGroups(node).find(g => g.id === sourceGroupId)
+  const target = allGroups(node).find(g => g.id === targetGroupId)
+  if (!source || !target) return node
+  if (source.id === target.id) return node // no-op: can't drop on self
+
+  // Remove source group entirely
+  const detached = mapGroups(node, g => g.id === sourceGroupId ? null : g)
+  if (!detached) return makeGroup(source.panels, source.activeId)
+
+  // Re-find target (may have shifted)
+  const stillTarget = allGroups(detached).find(g => g.id === targetGroupId)
+  if (!stillTarget) {
+    // Target collapsed somehow — reattach as new split
+    return makeSplit('row', [detached, source])
+  }
+
+  // Create split on requested edge
+  const direction: DockDir = edge === 'left' || edge === 'right' ? 'row' : 'col'
+  const placeAfter = edge === 'right' || edge === 'down'
+  const split = makeSplit(direction, placeAfter ? [stillTarget, source] : [source, stillTarget])
+  const result = replaceNode(detached, stillTarget.id, split)
+  return result ?? detached
+}
+
+/** Move an entire group's panels into another group (center drop). */
+export function mergeGroups(node: DockNode | null, sourceGroupId: string, targetGroupId: string): DockNode | null {
+  if (!node) return null
+  if (sourceGroupId === targetGroupId) return node
+  const source = allGroups(node).find(g => g.id === sourceGroupId)
+  if (!source) return node
+
+  // Move all panels from source to target
+  const panels = source.panels.slice()
+  const detached = mapGroups(node, g => g.id === sourceGroupId ? null : g)
+  if (!detached) return null
+
+  return mapGroups(detached, g => {
+    if (g.id !== targetGroupId) return g
+    const merged = [...g.panels, ...panels]
+    return { ...g, panels: merged, activeId: panels[0]?.id ?? g.activeId }
+  })
+}
+
+/** Split a group horizontally (right) — VS Code Ctrl+\ behavior. Creates a new
+ *  empty group to the right of the target. */
+export function splitGroupRight(node: DockNode | null, groupId: string): DockNode | null {
+  if (!node) return null
+  const target = allGroups(node).find(g => g.id === groupId)
+  if (!target) return node
+  const newGroup = makeGroup([])
+  const split = makeSplit('row', [target, newGroup])
+  return replaceNode(node, groupId, split)
+}
+
+/** Split a group vertically (down) — VS Code Ctrl+K Ctrl+\ behavior. Creates a
+ *  new empty group below the target. */
+export function splitGroupDown(node: DockNode | null, groupId: string): DockNode | null {
+  if (!node) return null
+  const target = allGroups(node).find(g => g.id === groupId)
+  if (!target) return node
+  const newGroup = makeGroup([])
+  const split = makeSplit('col', [target, newGroup])
+  return replaceNode(node, groupId, split)
 }

@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { DockNode, DockGroup, DockSplit, DockEdge } from './dock'
+import { findMaximizedGroup, allGroups } from './dock'
 
 export interface RenderPanelArgs {
   tileId: string
@@ -19,8 +20,10 @@ export interface RenderPanelArgs {
 }
 
 export interface DragState {
-  panelId: string
-  tileId: string
+  kind: 'panel' | 'group'
+  panelId?: string
+  groupId?: string
+  tileId?: string
   /** Cursor position in viewport coords (pageX/Y). */
   x: number
   y: number
@@ -36,7 +39,9 @@ export type DropTarget =
   | { kind: 'tab'; groupId: string; index: number }
 
 export interface DropEvent {
-  panelId: string
+  kind: 'panel' | 'group'
+  panelId?: string
+  groupId?: string
   target: DropTarget
 }
 
@@ -50,6 +55,9 @@ export function DockView({
   onAddPanel,
   onUnsplit,
   onDrop,
+  onToggleMaximize,
+  onSplitRight,
+  onSplitDown,
 }: {
   node: DockNode
   renderPanel: (args: RenderPanelArgs) => ReactNode
@@ -60,6 +68,9 @@ export function DockView({
   onAddPanel: (groupId: string) => void
   onUnsplit: (splitId: string) => void
   onDrop: (ev: DropEvent) => void
+  onToggleMaximize: (groupId: string) => void
+  onSplitRight: (groupId: string) => void
+  onSplitDown: (groupId: string) => void
 }) {
   const [drag, setDrag] = useState<DragState | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
@@ -86,7 +97,14 @@ export function DockView({
       const over = hitTest(rootRef.current, ev.clientX, ev.clientY)
       const cur = dragRef.current
       cleanup()
-      if (cur && over) onDropRef.current({ panelId: cur.panelId, target: over })
+      if (cur && over) {
+        onDropRef.current({
+          kind: cur.kind,
+          panelId: cur.panelId,
+          groupId: cur.groupId,
+          target: over
+        })
+      }
       setDrag(null)
       dragRef.current = null
     }
@@ -106,14 +124,62 @@ export function DockView({
     window.addEventListener('keydown', onKey)
   }, [])
 
+  // Keyboard shortcuts: Ctrl+\ split right, Ctrl+K Ctrl+\ split down, Ctrl+W close
+  const [awaitingK, setAwaitingK] = useState(false)
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+K (first key of chord)
+      if (e.ctrlKey && e.key === 'k' && !e.shiftKey && !e.altKey && !e.metaKey) {
+        e.preventDefault()
+        setAwaitingK(true)
+        return
+      }
+      // Ctrl+K Ctrl+\ (split down)
+      if (awaitingK && e.ctrlKey && e.key === '\\' && !e.shiftKey && !e.altKey && !e.metaKey) {
+        e.preventDefault()
+        setAwaitingK(false)
+        const activeGroup = allGroups(node).find(g => g.activeId)
+        if (activeGroup) onSplitDown(activeGroup.id)
+        return
+      }
+      // Ctrl+\ (split right)
+      if (e.ctrlKey && e.key === '\\' && !e.shiftKey && !e.altKey && !e.metaKey && !awaitingK) {
+        e.preventDefault()
+        const activeGroup = allGroups(node).find(g => g.activeId)
+        if (activeGroup) onSplitRight(activeGroup.id)
+        return
+      }
+      // Ctrl+W (close active panel)
+      if (e.ctrlKey && e.key === 'w' && !e.shiftKey && !e.altKey && !e.metaKey) {
+        e.preventDefault()
+        const activeGroup = allGroups(node).find(g => g.activeId)
+        if (activeGroup && activeGroup.activeId) {
+          onClosePanel(activeGroup.id, activeGroup.activeId)
+        }
+        return
+      }
+      // Any other key cancels the chord
+      if (awaitingK) setAwaitingK(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [node, awaitingK, onSplitRight, onSplitDown, onClosePanel])
+
   const ctx = {
     renderPanel, panelLabel, onResize, onActivate, onClosePanel, onAddPanel, onUnsplit,
-    drag, beginDrag,
+    drag, beginDrag, onToggleMaximize,
   }
+
+  // If a group is maximized, render only that group full-bleed
+  const maximizedGroup = findMaximizedGroup(node)
 
   return (
     <div ref={rootRef} className="dv-root">
-      <DockNodeView node={node} ctx={ctx} />
+      {maximizedGroup ? (
+        <GroupView group={maximizedGroup} ctx={ctx} />
+      ) : (
+        <DockNodeView node={node} ctx={ctx} />
+      )}
       {drag && createPortal(<DragGhost drag={drag} />, document.body)}
     </div>
   )
@@ -129,6 +195,7 @@ interface RenderCtx {
   onUnsplit: (splitId: string) => void
   drag: DragState | null
   beginDrag: (s: Omit<DragState, 'over'>) => void
+  onToggleMaximize: (groupId: string) => void
 }
 
 function DockNodeView({ node, ctx }: { node: DockNode; ctx: RenderCtx }) {
@@ -240,14 +307,43 @@ function TabStrip({ group, ctx }: { group: DockGroup; ctx: RenderCtx }) {
     return () => el.removeEventListener('wheel', onWheel)
   }, [])
 
+  // Group drag: initiate from empty space in the tab strip
+  const onPointerDown = (e: React.PointerEvent) => {
+    // Only drag from empty space, not from tabs or buttons
+    if (e.button !== 0) return
+    const target = e.target as HTMLElement
+    if (target.closest('.dv-tab') || target.closest('button')) return
+    const startX = e.clientX
+    const startY = e.clientY
+    const label = `Group (${group.panels.length} panel${group.panels.length !== 1 ? 's' : ''})`
+    const onMove = (ev: PointerEvent) => {
+      if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 4) return
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      ctx.beginDrag({ kind: 'group', groupId: group.id, x: ev.clientX, y: ev.clientY, label })
+    }
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
+
   return (
-    <div className="dv-tabstrip">
+    <div className="dv-tabstrip" onPointerDown={onPointerDown}>
       <div ref={stripRef} className="dv-tabs" data-group-id={group.id} data-dropzone="tabs">
         {group.panels.map((p, i) => (
           <Tab key={p.id} group={group} panel={p} index={i} ctx={ctx} />
         ))}
       </div>
       <div className="dv-tabstrip-actions">
+        <button
+          className="dv-tab-maximize"
+          onClick={() => ctx.onToggleMaximize(group.id)}
+          title={group.maximized ? "Restore" : "Maximize"}
+          aria-label={group.maximized ? "Restore" : "Maximize"}
+        >{group.maximized ? '❐' : '□'}</button>
         <button
           className="dv-tab-add"
           onClick={() => ctx.onAddPanel(group.id)}
@@ -285,7 +381,7 @@ function Tab({
       if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 4) return
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
-      ctx.beginDrag({ panelId: panel.id, tileId: panel.tileId, x: ev.clientX, y: ev.clientY, label })
+      ctx.beginDrag({ kind: 'panel', panelId: panel.id, tileId: panel.tileId, x: ev.clientX, y: ev.clientY, label })
     }
     const onUp = () => {
       window.removeEventListener('pointermove', onMove)

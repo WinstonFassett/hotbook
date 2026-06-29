@@ -35,6 +35,11 @@ import {
   movePanel as moveDockPanel,
   dropOnEdge as dropDockOnEdge,
   unsplit as unsplitDockTree,
+  toggleMaximize as toggleDockMaximize,
+  dropGroupOnEdge as dropDockGroupOnEdge,
+  mergeGroups as mergeDockGroups,
+  splitGroupRight as splitDockGroupRight,
+  splitGroupDown as splitDockGroupDown,
 } from './dock'
 import { schemaFor } from './tile-config-schemas'
 import { hudStore, resetHudForDataset, useHudStore, useDrillNodeId } from './store'
@@ -760,17 +765,49 @@ export function App() {
     commit(setDockTree(ws, dash.id, next))
   }, [ws, dash])
 
+  const handleToggleMaximize = useCallback((groupId: string) => {
+    if (!dash) return
+    const next = toggleDockMaximize(dash.dockTree ?? null, groupId)
+    commit(setDockTree(ws, dash.id, next))
+  }, [ws, dash])
+
+  const handleSplitRight = useCallback((groupId: string) => {
+    if (!dash) return
+    const next = splitDockGroupRight(dash.dockTree ?? null, groupId)
+    commit(setDockTree(ws, dash.id, next))
+  }, [ws, dash])
+
+  const handleSplitDown = useCallback((groupId: string) => {
+    if (!dash) return
+    const next = splitDockGroupDown(dash.dockTree ?? null, groupId)
+    commit(setDockTree(ws, dash.id, next))
+  }, [ws, dash])
+
   const handleDropPanel = useCallback((ev: DropEvent) => {
     if (!dash) return
     const tree = dash.dockTree ?? null
     if (!tree) return
     let next = tree
-    if (ev.target.kind === 'tab') {
-      const idx = ev.target.index < 0 ? Number.MAX_SAFE_INTEGER : ev.target.index
-      next = moveDockPanel(tree, ev.panelId, ev.target.groupId, idx) ?? tree
-    } else {
-      next = dropDockOnEdge(tree, ev.panelId, ev.target.groupId, ev.target.edge) ?? tree
+
+    if (ev.kind === 'panel' && ev.panelId) {
+      // Panel drag
+      if (ev.target.kind === 'tab') {
+        const idx = ev.target.index < 0 ? Number.MAX_SAFE_INTEGER : ev.target.index
+        next = moveDockPanel(tree, ev.panelId, ev.target.groupId, idx) ?? tree
+      } else {
+        next = dropDockOnEdge(tree, ev.panelId, ev.target.groupId, ev.target.edge) ?? tree
+      }
+    } else if (ev.kind === 'group' && ev.groupId) {
+      // Group drag
+      if (ev.target.kind === 'tab') {
+        // Center drop — merge groups
+        next = mergeDockGroups(tree, ev.groupId, ev.target.groupId) ?? tree
+      } else {
+        // Edge drop — split and place
+        next = dropDockGroupOnEdge(tree, ev.groupId, ev.target.groupId, ev.target.edge) ?? tree
+      }
     }
+
     if (next !== tree) commit(setDockTree(ws, dash.id, next))
   }, [ws, dash])
 
@@ -824,6 +861,9 @@ export function App() {
                 commit(setDockTree(ws, dash.id, next))
               }}
               onRemoveTile={handleRemoveTile}
+              onToggleMaximize={handleToggleMaximize}
+              onSplitRight={handleSplitRight}
+              onSplitDown={handleSplitDown}
               onTileMeasure={handleTileMeasure}
               onTileXKey={handleTileXKey}
               onTileYKey={handleTileYKey}
@@ -915,7 +955,7 @@ function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeas
   )
 }
 
-function TileDock({ dash, ds, measures, onSplitResize, onActivatePanel, onDropPanel, onAddTileToGroup, onUnsplit, onRemoveTile, onTileMeasure, onTileXKey, onTileYKey, onTileDepth, onTileSort, onTileGroupBy, onNodeUpdate, onNodesUpdate, onNodeReorder }: {
+function TileDock({ dash, ds, measures, onSplitResize, onActivatePanel, onDropPanel, onAddTileToGroup, onUnsplit, onRemoveTile, onToggleMaximize, onSplitRight, onSplitDown, onTileMeasure, onTileXKey, onTileYKey, onTileDepth, onTileSort, onTileGroupBy, onNodeUpdate, onNodesUpdate, onNodeReorder }: {
   dash: Dashboard
   ds: Dataset
   measures: { key: string; label: string }[]
@@ -925,6 +965,9 @@ function TileDock({ dash, ds, measures, onSplitResize, onActivatePanel, onDropPa
   onAddTileToGroup: (kind: TileKind, targetGroupId?: string) => void
   onUnsplit: (splitId: string) => void
   onRemoveTile: (id: string) => void
+  onToggleMaximize: (groupId: string) => void
+  onSplitRight: (groupId: string) => void
+  onSplitDown: (groupId: string) => void
   onTileMeasure: (tileId: string, key: string) => void
   onTileXKey: (tileId: string, key: string) => void
   onTileYKey: (tileId: string, key: string) => void
@@ -985,6 +1028,9 @@ function TileDock({ dash, ds, measures, onSplitResize, onActivatePanel, onDropPa
           onAddPanel={(groupId) => setPendingAddGroup(groupId)}
           onUnsplit={onUnsplit}
           onDrop={onDropPanel}
+          onToggleMaximize={onToggleMaximize}
+          onSplitRight={onSplitRight}
+          onSplitDown={onSplitDown}
         />
       ) : (
         <div className="sb-grid-empty">No tiles — click "+ Tile" to add one</div>
