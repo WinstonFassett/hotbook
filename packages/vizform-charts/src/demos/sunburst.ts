@@ -261,6 +261,7 @@ export class MdSunburstLC extends Diagram {
       type HandleItem = { parent: BiNode; i: number; aNode: BiNode; bNode: BiNode };
       const handleWindow = derive((): readonly HandleItem[] => {
         const fd = focusDepth.value;
+        if (fd > 0) return [];
         const maxWindow = maxD !== undefined ? fd + maxD : totalDepth;
         const items: HandleItem[] = [];
         for (const n of renderedSet.value) {
@@ -362,7 +363,7 @@ export class MdSunburstLC extends Diagram {
     }));
     hub.el.style.cursor = "pointer";
     hub.el.style.transition = settleTransition("r");
-    hub.el.addEventListener("click", () => {
+    hub.el.addEventListener("dblclick", () => {
       if (!this._drillIdCell.value) return;
       const biNode = nodeById.get(this._drillIdCell.value);
       const parent = biNode ? parentOf(biNode) : null;

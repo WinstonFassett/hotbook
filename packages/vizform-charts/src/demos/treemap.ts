@@ -23,7 +23,7 @@ import { buildParentIndex, type BiNode } from "../lib/tree";
 import { portfolio, walkWithDepth } from "../lib/portfolio";
 import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
-import { GESTURE_SUPPRESSION_CSS, settleTransition } from "../lib/transitions";
+import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, settleTransition } from "../lib/transitions";
 
 const W = 720;
 const H = 360;
@@ -102,6 +102,7 @@ export class MdTreemapLC extends Diagram {
     let drillInited = false;
     let lastDrillId: string | null = null;
     let drillCancel: (() => void) | null = null;
+    let drillClassTimer: ReturnType<typeof setTimeout> | null = null;
     biEffect(() => {
       const id = this._drillIdCell.value;
       const W0 = Wc.value, H0 = Hc.value;
@@ -111,7 +112,9 @@ export class MdTreemapLC extends Diagram {
         const biNode = nodeById.get(id);
         const lnode = biNode ? lmap.get(biNode) : null;
         if (lnode) {
-          tx0 = lnode.x0; ty0 = lnode.y0; tx1 = lnode.x1; ty1 = lnode.y1;
+          // Skip PAD_TOP from the viewport origin so the header isn't zoom-amplified.
+          // The context node extends slightly above the canvas (clipped); label is pinned at y=10.
+          tx0 = lnode.x0; ty0 = lnode.y0 + PAD_TOP; tx1 = lnode.x1; ty1 = lnode.y1;
         } else {
           tx0 = 0; ty0 = 0; tx1 = W0; ty1 = H0;
         }
@@ -136,6 +139,12 @@ export class MdTreemapLC extends Diagram {
         tween(vx1, tx1, DRILL_SEC, easeOut),
         tween(vy1, ty1, DRILL_SEC, easeOut),
       );
+      if (drillClassTimer) { clearTimeout(drillClassTimer); drillClassTimer = null; }
+      this.classList.add(GESTURE_ACTIVE_CLASS);
+      drillClassTimer = setTimeout(() => {
+        drillClassTimer = null;
+        this.classList.remove(GESTURE_ACTIVE_CLASS);
+      }, DRILL_DURATION + 60);
     });
 
     const maxD = this.maxDepth;
@@ -230,20 +239,19 @@ export class MdTreemapLC extends Diagram {
       });
       tile.el.style.cursor = "pointer";
       tile.el.style.transition = settleTransition(["x", "y", "width", "height"]);
-      tile.el.addEventListener("click", () => {
+      tile.el.addEventListener("click", () => { state.focused.value = node; });
+      tile.el.addEventListener("dblclick", () => {
         const fd = focusDepth.value;
         if (fd > 0 && node.value.id === this._drillIdCell.value) {
           const parent = parentOf(node);
           const drillKey = (this as any).drillKey ?? "default";
           (this as ElementWithBridge).brSync?.emitDrill?.(drillKey, parent?.value.id ?? null);
-        } else {
-          state.focused.value = node;
         }
       });
       tile.el.addEventListener("pointerenter", () => { state.hovered.current = node; hoverCell.value = node; state.emitHover?.(node); });
       tile.el.addEventListener("pointerleave", () => { if (state.hovered.current === node) { state.hovered.current = null; hoverCell.value = null; state.emitHover?.(null); } });
 
-      if (nd > 0) {
+      if (nd > 0 && !isContextNode) {
         const text = derive(() => {
           const w0 = w.value, h0 = h.value;
           if (w0 <= 28 || h0 <= 16) return "";
@@ -260,6 +268,17 @@ export class MdTreemapLC extends Diagram {
       }
       return tile;
     }, { key: (n) => n.value.id ?? "" });
+
+    // Context header label overlay — rendered after nodeLayer so it sits on top of all child tiles.
+    const ctxLabelText = derive(() => {
+      const id = this._drillIdCell.value;
+      return id ? (nodeById.get(id)?.value.label ?? "") : "";
+    });
+    s(label(
+      Vec.derive(() => ({ x: Wc.value / 2, y: ctxLabelText.value ? 10 : -100 })),
+      ctxLabelText,
+      { size: 10, align: Anchor.Center, fill: "#e0e0e0", bold: true },
+    ));
 
     if (!this.hasAttribute('no-source')) s(label(view.bottom.up(10), derive(() => {
       const f = state.focused.value;

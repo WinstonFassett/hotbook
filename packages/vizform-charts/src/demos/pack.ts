@@ -23,7 +23,7 @@ import { buildParentIndex, type BiNode } from "../lib/tree";
 import { portfolio, walkWithDepth } from "../lib/portfolio";
 import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
-import { GESTURE_SUPPRESSION_CSS, settleTransition } from "../lib/transitions";
+import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, settleTransition } from "../lib/transitions";
 
 const W = 480;
 const H = 480;
@@ -100,6 +100,7 @@ export class MdPack extends Diagram {
     let drillInited = false;
     let lastDrillId: string | null = null;
     let drillCancel: (() => void) | null = null;
+    let drillClassTimer: ReturnType<typeof setTimeout> | null = null;
     biEffect(() => {
       const id = this._drillIdCell.value;
       const W0 = Wc.value, H0 = Hc.value;
@@ -138,6 +139,12 @@ export class MdPack extends Diagram {
         tween(vx1, tx1, DRILL_SEC, easeOut),
         tween(vy1, ty1, DRILL_SEC, easeOut),
       );
+      if (drillClassTimer) { clearTimeout(drillClassTimer); drillClassTimer = null; }
+      this.classList.add(GESTURE_ACTIVE_CLASS);
+      drillClassTimer = setTimeout(() => {
+        drillClassTimer = null;
+        this.classList.remove(GESTURE_ACTIVE_CLASS);
+      }, DRILL_DURATION + 60);
     });
 
     const maxD = this.maxDepth;
@@ -224,14 +231,13 @@ export class MdPack extends Diagram {
       });
       disc.el.style.cursor = "pointer";
       disc.el.style.transition = settleTransition(["cx", "cy", "r"]);
-      disc.el.addEventListener("click", () => {
+      disc.el.addEventListener("click", () => { state.focused.value = node; });
+      disc.el.addEventListener("dblclick", () => {
         const fd = focusDepth.value;
         if (fd > 0 && node.value.id === this._drillIdCell.value) {
           const parent = parentOf(node);
           const drillKey = (this as any).drillKey ?? "default";
           (this as ElementWithBridge).brSync?.emitDrill?.(drillKey, parent?.value.id ?? null);
-        } else {
-          state.focused.value = node;
         }
       });
       disc.el.addEventListener("pointerenter", () => { state.hovered.current = node; hoverCell.value = node; state.emitHover?.(node); });
