@@ -45,32 +45,35 @@ export function makeSplit(direction: DockDir, children: DockNode[], sizes?: numb
   return { kind: 'split', id: nid(), direction, children, sizes: s }
 }
 
-/** Seed layout from a flat tile list. Creates a 2×2 or 2×1 grid of groups
- *  where each group contains multiple tabs. 1-2 tiles: single row. 3-4 tiles:
- *  2×1 row. 5+ tiles: 2×2 grid (4 groups max for initial layout, rest go into
- *  first group as tabs). User can drag tabs between groups afterward. */
+/** Seed layout from a flat tile list. ALWAYS creates a 2×2 grid (4 groups),
+ *  distributing all tiles as tabs round-robin across the 4 groups. */
 export function defaultDockTree(tileIds: string[]): DockNode | null {
   if (tileIds.length === 0) return null
   if (tileIds.length === 1) return makeGroup([makePanel(tileIds[0]!)])
-  if (tileIds.length === 2) {
-    // 2 tiles → 2 groups side-by-side (2×1)
-    return makeSplit('row', tileIds.map(id => makeGroup([makePanel(id)])))
+
+  // Distribute tiles round-robin across 4 groups
+  const groups: DockPanel[][] = [[], [], [], []]
+  tileIds.forEach((id, i) => {
+    groups[i % 4]!.push(makePanel(id))
+  })
+
+  // Build 2×2 grid, only including groups that have panels
+  const topLeft = groups[0]!.length > 0 ? makeGroup(groups[0]!) : null
+  const topRight = groups[1]!.length > 0 ? makeGroup(groups[1]!) : null
+  const bottomLeft = groups[2]!.length > 0 ? makeGroup(groups[2]!) : null
+  const bottomRight = groups[3]!.length > 0 ? makeGroup(groups[3]!) : null
+
+  const topRow = [topLeft, topRight].filter((g): g is DockGroup => g !== null)
+  const bottomRow = [bottomLeft, bottomRight].filter((g): g is DockGroup => g !== null)
+
+  if (bottomRow.length === 0) {
+    // Only top row has content
+    return topRow.length === 1 ? topRow[0]! : makeSplit('row', topRow)
   }
-  if (tileIds.length <= 4) {
-    // 3-4 tiles → 2×1 (two groups side-by-side, distribute tiles as tabs)
-    const half = Math.ceil(tileIds.length / 2)
-    const leftPanels = tileIds.slice(0, half).map(makePanel)
-    const rightPanels = tileIds.slice(half).map(makePanel)
-    return makeSplit('row', [makeGroup(leftPanels), makeGroup(rightPanels)])
-  }
-  // 5+ tiles → 2×2 grid (4 groups, distribute first 4 tiles one per group, rest as tabs in first group)
-  const topLeft = makeGroup([makePanel(tileIds[0]!), ...tileIds.slice(4).map(makePanel)])
-  const topRight = makeGroup([makePanel(tileIds[1]!)])
-  const bottomLeft = makeGroup([makePanel(tileIds[2]!)])
-  const bottomRight = makeGroup([makePanel(tileIds[3]!)])
-  const topRow = makeSplit('row', [topLeft, topRight])
-  const bottomRow = makeSplit('row', [bottomLeft, bottomRight])
-  return makeSplit('col', [topRow, bottomRow])
+
+  const topSplit = topRow.length === 1 ? topRow[0]! : makeSplit('row', topRow)
+  const bottomSplit = bottomRow.length === 1 ? bottomRow[0]! : makeSplit('row', bottomRow)
+  return makeSplit('col', [topSplit, bottomSplit])
 }
 
 /** Walk the tree and collect every group (depth-first, left-to-right). */
