@@ -1,6 +1,10 @@
 import { defineConfig } from "vite";
 
 export default defineConfig({
+  // Netlify publishes apps/sliceboard/dist as the site root; this spike app is
+  // copied into apps/sliceboard/dist/layercharts so previews can reach it at
+  // <preview>/layercharts/. Override via env for dev/other deploys.
+  base: process.env.LAYERCHARTS_BASE ?? '/',
   server: { host: true },
   resolve: {
     // Resolve @winstonfassett/vizform-charts to its TS source (the `node` export
