@@ -132,8 +132,8 @@ export interface Workspace {
 
 // ─── Storage ──────────────────────────────────────────────────────────────────
 
-const LS_KEY = 'sb:workspace:v12'
-const LEGACY_KEYS = ['sb:workspace:v11', 'sb:workspace:v10']
+const LS_KEY = 'sb:workspace:v13'
+const LEGACY_KEYS = ['sb:workspace:v12', 'sb:workspace:v11', 'sb:workspace:v10']
 
 function genId(): string {
   return Math.random().toString(36).slice(2, 10)
@@ -611,7 +611,14 @@ function load(): Workspace | null {
 
 function migrateWorkspace(ws: Workspace): Workspace {
   const dashboards = ws.dashboards.map(d => {
-    if (d.dockTree) return d
+    // v12 → v13: Regenerate dockTree with new 2×2 grid defaultDockTree logic.
+    // Old defaultDockTree put every tile in its own group; new one creates
+    // exactly 4 groups and distributes tiles round-robin as tabs.
+    if (d.dockTree && d.tiles.length > 0) {
+      const dockTree = defaultDockTree(d.tiles.map(t => t.id))
+      return { ...d, dockTree }
+    }
+    // v11 → v12: migrate legacy splitTree to dockTree
     if (d.splitTree) {
       const dockTree = migrateFromSplits(d.splitTree)
       const { splitTree: _drop, ...rest } = d
