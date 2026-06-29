@@ -2,6 +2,7 @@ import { Anchor, Diagram, derive, label, type Mount } from "bireactive";
 import { interpolateCool, interpolateWarm, interpolateRainbow } from "d3-scale-chromatic";
 import { hierarchy } from "d3-hierarchy";
 import { sankeyScene, renderColorControls, type LinkDef } from "../lib/sankey";
+import { flattenHierarchy, type HierNode, type HierLink } from "../lib/sankey-hier";
 
 // ---------------------------------------------------------------------------
 // Take 1: Simple editable graph
@@ -284,6 +285,139 @@ const GROUPED_LINKS: LinkDef[] = [
   { source: "Ship",   target: "Launch", init: 6 },
   { source: "Ship",   target: "Retain", init: 5 },
 ];
+
+// ---------------------------------------------------------------------------
+// Take 5 (WIN-56): TRUE hierarchical sankey — expand/collapse group nodes.
+// Data is a tree of nodes + a list of LEAF↔LEAF flow links. Group nodes are
+// rendered as a single bar that AGGREGATES every flow crossing the subtree
+// boundary; clicking a group toggles collapse, the effective graph is
+// recomputed (intra-subtree flow disappears, cross-subtree flow is summed
+// onto the group bar), and the scene rebuilds in place.
+//
+// Edit operations on flow values still don't reflow — that invariant holds
+// per topology. Only collapse/expand changes topology (and only then).
+// ---------------------------------------------------------------------------
+
+const HIER_NODES: HierNode[] = [
+  // Continents (top level)
+  { id: "Americas" }, { id: "Europe" }, { id: "Asia" },
+  // Countries (children of continents) — sources
+  { id: "USA",    parent: "Americas" },
+  { id: "Brazil", parent: "Americas" },
+  { id: "Germany", parent: "Europe" },
+  { id: "France",  parent: "Europe" },
+  { id: "China",   parent: "Asia" },
+  { id: "Japan",   parent: "Asia" },
+  // Sectors (top level on the sink side)
+  { id: "Energy" }, { id: "Tech" }, { id: "Food" },
+  // Sub-sectors (children) — sinks
+  { id: "Oil",       parent: "Energy" },
+  { id: "Renewables", parent: "Energy" },
+  { id: "Hardware",  parent: "Tech" },
+  { id: "Software",  parent: "Tech" },
+  { id: "Grain",     parent: "Food" },
+  { id: "Meat",      parent: "Food" },
+];
+
+const HIER_LINKS: HierLink[] = [
+  { source: "USA",     target: "Oil",        value: 12 },
+  { source: "USA",     target: "Hardware",   value: 18 },
+  { source: "USA",     target: "Software",   value: 22 },
+  { source: "USA",     target: "Grain",      value: 8  },
+  { source: "Brazil",  target: "Oil",        value: 9  },
+  { source: "Brazil",  target: "Grain",      value: 14 },
+  { source: "Brazil",  target: "Meat",       value: 11 },
+  { source: "Germany", target: "Renewables", value: 10 },
+  { source: "Germany", target: "Hardware",   value: 13 },
+  { source: "France",  target: "Renewables", value: 7  },
+  { source: "France",  target: "Software",   value: 9  },
+  { source: "France",  target: "Meat",       value: 6  },
+  { source: "China",   target: "Hardware",   value: 25 },
+  { source: "China",   target: "Software",   value: 12 },
+  { source: "China",   target: "Renewables", value: 8  },
+  { source: "Japan",   target: "Hardware",   value: 16 },
+  { source: "Japan",   target: "Software",   value: 11 },
+];
+
+// Default: continents collapsed on the source side, sectors collapsed on the
+// sink side. Opens with a clean parent↔parent overview; click any bar to
+// drill into that branch.
+const HIER_DEFAULT_COLLAPSED = ["Americas", "Europe", "Asia", "Energy", "Tech", "Food"];
+
+export class MdSankeyHier extends Diagram {
+  static styles = `text { pointer-events: none; }`;
+  private collapsed = new Set<string>(HIER_DEFAULT_COLLAPSED);
+
+  protected scene(s: Mount): void {
+    const W = 560, H = 380;
+    const view = this.view(W + 160, H + 64);
+
+    const flat = flattenHierarchy(HIER_NODES, HIER_LINKS, this.collapsed);
+
+    // Mark visible nodes that are GROUPS (collapsed OR expandable):
+    // - collapsed group → clickable to expand
+    // - leaf that has a collapsable parent → leaves alone; instead its
+    //   ancestor group on the parent side gets click-to-collapse treatment.
+    // For the spike we mark every node whose id appears in HIER_NODES with
+    // children as a group: clicking a collapsed group EXPANDS; clicking an
+    // expanded group (its bar appears when it has at least one descendant in
+    // the visible set — uncommon for non-collapsed groups, since flows go
+    // through leaves) collapses.
+    const childrenOf = new Map<string, string[]>();
+    for (const n of HIER_NODES) {
+      if (n.parent) {
+        const list = childrenOf.get(n.parent) ?? [];
+        list.push(n.id);
+        childrenOf.set(n.parent, list);
+      }
+    }
+    const parentOf = new Map(HIER_NODES.map((n) => [n.id, n.parent ?? null] as const));
+    const hasChildren = (id: string) => (childrenOf.get(id)?.length ?? 0) > 0;
+
+    // A visible node is interactive if either:
+    //   - it's a collapsed group (click → expand), or
+    //   - it's a leaf whose parent could be collapsed (click → collapse parent)
+    const nodeIsGroup = flat.nodeIds.map((id) =>
+      flat.isCollapsedGroup[flat.nodeIds.indexOf(id)] || hasChildren(id) || parentOf.get(id) !== null
+    );
+
+    const { focused, hovered, wheelLocked, linkValues, nodeColorProp, linkColorMode } = sankeyScene(this, s, {
+      W, H,
+      nodeIds: flat.nodeIds,
+      linkDefs: flat.linkDefs,
+      stringIds: true,
+      nodePadding: 6,
+      interp: interpolateCool,
+      labelSize: 10,
+      nodeIsGroup,
+      onNodeClick: (idx) => {
+        const id = flat.nodeIds[idx]!;
+        if (this.collapsed.has(id)) {
+          this.collapsed.delete(id); // expand this group
+        } else if (hasChildren(id)) {
+          this.collapsed.add(id); // collapse this group
+        } else {
+          // leaf click → collapse its (nearest) parent so the user can
+          // "zoom out" without hunting for the group bar
+          const p = parentOf.get(id);
+          if (p) this.collapsed.add(p);
+        }
+        // Rebuild: collapse change → new topology → fresh scene. root.clear()
+        // tears down every shape and its reactive effects; scene() then
+        // re-mounts from scratch. Cheap (one tree's worth of nodes).
+        (this as any).root.clear();
+        this.scene(this.s);
+      },
+    });
+    renderColorControls(s, view, nodeColorProp, linkColorMode);
+    s(label(view.bottom.up(40), derive(() => {
+      const i = focused.value ?? wheelLocked.value ?? hovered.value;
+      if (i === null) return "click dashed bars to expand/collapse · drag bars/grips · cmd+wheel or ↑↓";
+      const lv = linkValues[i]!;
+      return `${lv.source} → ${lv.target}: ${lv.value.value.toFixed(1)} · ↑↓ / cmd+wheel`;
+    }), { size: 10, align: Anchor.Center, fill: "#9aa0a8" }));
+  }
+}
 
 export class MdSankeyGrouped extends Diagram {
   static styles = `text { pointer-events: none; }`;

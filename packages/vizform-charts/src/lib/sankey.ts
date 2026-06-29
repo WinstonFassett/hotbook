@@ -74,6 +74,13 @@ export interface SankeySceneOptions {
   linkColorMode?: ReturnType<typeof cell<LinkColorMode>>;
   // Custom step size fn — defaults to 1 (shift=5). Use e.g. v => v * 0.1 for proportional.
   stepFn?: (currentVal: number, shift: boolean) => number;
+  /** Called when a node BAR is clicked. Index is into `nodeIds`. The
+   *  hierarchical sankey uses this to toggle expand/collapse. Wins over
+   *  the default click behavior (which has none on nodes today). */
+  onNodeClick?: (nodeIdx: number) => void;
+  /** Per-node visual flag: true = render as a clickable group affordance
+   *  (dashed stroke + cursor:pointer). Index aligns to `nodeIds`. */
+  nodeIsGroup?: boolean[];
 }
 
 const LINK_MIN = 0.5; // floor so a flow never collapses to an ungrabbable sliver
@@ -137,6 +144,8 @@ export function sankeyScene(
     interp = interpolateCool, labelSize = 10,
     groups,
     groupGap = groups ? 16 : 0,
+    onNodeClick,
+    nodeIsGroup,
   } = opts;
   const stepFn = opts.stepFn ?? ((v: number, shift: boolean) => dynamicWheelStep(v, shift));
 
@@ -369,11 +378,20 @@ export function sankeyScene(
     const isSink = topology.out[n]!.length === 0;
 
     const nodeActive = cell(false);
+    const isGroup = !!(nodeIsGroup && nodeIsGroup[n]);
     const tile = s(rect(x0, y0, nw, nh, {
       fill,
-      stroke: derive(() => nodeActive.value ? "#fff" : "none"),
+      stroke: derive(() => nodeActive.value ? "#fff" : (isGroup ? "#cdd5e0" : "none")),
       strokeWidth: 1.5,
+      dashed: isGroup || undefined,
     }));
+    if (isGroup) tile.el.style.cursor = "pointer";
+    if (onNodeClick) {
+      tile.el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        onNodeClick(n);
+      });
+    }
     tile.el.addEventListener("pointerenter", (e) => {
       nodeActive.value = true;
       const v = layout.value.nodes[n]!.value;
