@@ -15,6 +15,10 @@ const SORT_ONLY: VizConfigSchema = {
   pickers: { measure: true, sort: true },
 }
 
+const SORT_ORIENT: VizConfigSchema = {
+  pickers: { measure: true, sort: true, orientation: true },
+}
+
 const HIER_FULL: VizConfigSchema = {
   pickers: { measure: true, sort: true, depth: true },
 }
@@ -29,8 +33,8 @@ export const TILE_CONFIG_SCHEMAS: Map<TileKind, VizConfigSchema> = new Map([
   ['treetable', { pickers: { measure: true } }],
 
   // ─── bireactive LC-port flat charts ───────────────────────────────────────
-  ['br-lc-bar',             SORT_ONLY],
-  ['br-lc-bands',           SORT_ONLY],
+  ['br-lc-bar',             SORT_ORIENT],
+  ['br-lc-bands',           SORT_ORIENT],
   ['br-lc-line',            SORT_ONLY],
   ['br-lc-area',            SORT_ONLY],
   ['br-lc-pie',             SORT_ONLY],
