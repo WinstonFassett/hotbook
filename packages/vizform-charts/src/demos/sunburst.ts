@@ -33,7 +33,7 @@ const DRILL_DURATION = 800; // ms — leave-timer / CSS settle window
 const DRILL_SEC = DRILL_DURATION / 1000; // s — bireactive anim clock runs in seconds
 
 export class MdSunburstLC extends Diagram {
-  static styles = `:host { overflow: hidden; }text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}:host(.vf-gesture-active) circle[r="5"] { opacity: 0; } circle[r="5"] { transition: opacity 0.3s ease; }`
+  static styles = `:host { overflow: hidden; }text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}:host(.vf-gesture-active) circle[r="5"] { opacity: 0; } circle[r="5"] { transition: opacity 0.3s ease; }[data-focusable]:focus { outline: 2px solid #4a9eff; outline-offset: 2px; } [data-focusable]:focus:not(:focus-visible) { outline: none; }`
   externalRoot?: BiNode
   maxDepth?: number
   drillKey?: string
@@ -45,7 +45,7 @@ export class MdSunburstLC extends Diagram {
   protected scene(s: Mount): void {
     const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
     const view = this.view(Wc, Hc);
-    this.tabIndex = 0;
+    this.tabIndex = -1;
     this.style.outline = "none";
 
     const root = this.externalRoot ?? portfolio();
@@ -260,7 +260,14 @@ export class MdSunburstLC extends Diagram {
       arc.el.dataset.id = node.value.id ?? "";
       arc.el.style.cursor = "pointer";
       arc.el.style.transition = settleTransition("d");
+      arc.el.setAttribute('tabindex', '0');
+      arc.el.setAttribute('data-focusable', 'arc');
+      biEffect(() => {
+        arc.el.setAttribute('aria-label', `${node.value.label}: ${node.value.total.value.toFixed(0)}`);
+      });
       arc.el.addEventListener("click", () => { state.focused.value = node; });
+      arc.el.addEventListener("focus", () => { state.focused.value = node; });
+      arc.el.addEventListener("blur", () => { if (state.focused.value === node) state.focused.value = null; });
       arc.el.addEventListener("pointerenter", () => { state.hovered.current = node; hoverCell.value = node; state.emitHover?.(node); });
       arc.el.addEventListener("pointerleave", () => { if (state.hovered.current === node) { state.hovered.current = null; hoverCell.value = null; state.emitHover?.(null); } });
 

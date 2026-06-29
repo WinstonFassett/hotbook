@@ -2,6 +2,7 @@ import {
   Anchor,
   Diagram,
   derive,
+  effect as biEffect,
   label,
   type Mount,
   cell,
@@ -24,7 +25,17 @@ const PAD_LEFT = 60;
 const PAD_RIGHT = 60;
 
 export class MdTreeChart extends Diagram {
-  static styles = `text { pointer-events: none; }${FILL_STYLE}`
+  static styles = `
+    text { pointer-events: none; }
+    ${FILL_STYLE}
+    [data-focusable]:focus {
+      outline: 2px solid #4a9eff;
+      outline-offset: 2px;
+    }
+    [data-focusable]:focus:not(:focus-visible) {
+      outline: none;
+    }
+  `
   externalRoot?: BiNode;
   protected scene(s: Mount): void {
     const root = this.externalRoot ?? portfolio();
@@ -37,7 +48,7 @@ export class MdTreeChart extends Diagram {
     const cH = Math.max(H, maxDepth * 80 + PAD_TOP + PAD_BOTTOM);
 
     const view = this.view(cW, cH);
-    this.tabIndex = 0;
+    this.tabIndex = -1;
     this.style.outline = "none";
 
     const parentIdx = buildParentIndex(root);
@@ -83,6 +94,7 @@ export class MdTreeChart extends Diagram {
     }
 
     // Draw nodes (circles + labels)
+    const nodeElements = new Map<BiNode, SVGCircleElement>();
     for (const { node, depth, isLeaf } of walkWithDepth(root)) {
       const cx = Vec.derive(() => {
         const nd = layout.value.get(node);
@@ -105,10 +117,18 @@ export class MdTreeChart extends Diagram {
           strokeWidth,
         }),
       );
+      nodeElements.set(node, circ.el);
       circ.el.style.cursor = "pointer";
+      circ.el.setAttribute('tabindex', '0');
+      circ.el.setAttribute('data-focusable', 'node');
+      biEffect(() => {
+        circ.el.setAttribute('aria-label', `${node.value.label}: ${node.value.total.value.toFixed(0)}`);
+      });
       circ.el.addEventListener("click", () => {
         state.focused.value = node;
       });
+      circ.el.addEventListener("focus", () => { state.focused.value = node; });
+      circ.el.addEventListener("blur", () => { if (state.focused.value === node) state.focused.value = null; });
       circ.el.addEventListener("pointerenter", () => { state.hovered.current = node; hoverCell.value = node; state.emitHover?.(node); });
       circ.el.addEventListener("pointerleave", () => { if (state.hovered.current === node) { state.hovered.current = null; hoverCell.value = null; state.emitHover?.(null); } });
 

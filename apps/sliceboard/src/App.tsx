@@ -101,15 +101,14 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
 
   const depth = tile.depth || undefined // 0/undefined = all levels (chart shows full tree)
   const sortBy = tile.sortBy ?? 'index'
-  const schema = schemaFor(tile.kind)
   const drillKey = tile.id
   // drill-v2 (internal zoom): br-lc hier charts receive the FULL tree and zoom
   // internally via their own drillNodeId (wired in BrLcCharts.tsx). Pruning to a
   // subtree here would change hierShapeKey and remount the element on drill —
   // resetting the viewport and snapping instead of tweening. Legacy D3 hier
   // charts are retired, so nothing else depends on the old prune path.
-  const sourceRows = ds.rows
-  const rawNodes = colorByGroup(tile.groupBy ? applyGroupBy(sourceRows, tile.groupBy) : sourceRows)
+  const rawNodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.rows, tile.groupBy) : ds.rows)
+
   const nodes = sortBy === 'value'
     ? [...rawNodes]
         .sort((a, b) => (b.measures[mk] ?? 0) - (a.measures[mk] ?? 0))
@@ -138,7 +137,7 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
   // All BR-LC flat charts get the same value-ordered nodes (natural order when
   // sortBy='index'). The chart draws the order it's handed; it owns no sort.
   if (tile.kind === 'br-lc-bar')            return <BrLcBar nodes={sortedNodes} measureKey={mk} maxItems={tile.maxItems} orientation={tile.orientation} colorMode={tile.colorMode} labelMode={tile.labelMode} valueMode={tile.valueMode} minBandSize={tile.minBandSize} onUpdate={onNodeUpdate} />
-  if (tile.kind === 'br-lc-bands')          return <BrLcBar nodes={sortedNodes} measureKey={mk} maxItems={tile.maxItems} orientation="horizontal" colorMode="palette" labelMode="inside" valueMode="inside" onUpdate={onNodeUpdate} />
+  if (tile.kind === 'br-lc-bands')          return <BrLcBar nodes={sortedNodes} measureKey={mk} maxItems={tile.maxItems} orientation={tile.orientation ?? 'horizontal'} colorMode="palette" labelMode="inside" valueMode="inside" onUpdate={onNodeUpdate} />
   if (tile.kind === 'br-lc-line')           return <BrLcLine nodes={sortedNodes} measureKey={mk} onUpdate={onNodeUpdate} />
   if (tile.kind === 'br-lc-area')           return <BrLcArea nodes={sortedNodes} measureKey={mk} onUpdate={onNodeUpdate} />
   if (tile.kind === 'br-lc-scatter')        return <BrLcScatter nodes={sortedNodes} xKey={tile.xKey ?? '_index'} yKey={tile.yKey ?? mk} onUpdate={onNodeUpdate} />
@@ -151,7 +150,7 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
   // ── BR-LC hierarchical charts ────────────────────────────────────────────
   if (tile.kind === 'br-lc-pack')           return <BrLcPack nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} drillKey={drillKey} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
   if (tile.kind === 'br-lc-treemap')        return <BrLcTreemap nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} drillKey={drillKey} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
-  if (tile.kind === 'br-lc-icicle')         return <BrLcIcicle nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} drillKey={drillKey} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
+  if (tile.kind === 'br-lc-icicle')         return <BrLcIcicle nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} orientation={tile.orientation} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
   if (tile.kind === 'br-lc-sunburst')       return <BrLcSunburst nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} drillKey={drillKey} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
   if (tile.kind === 'br-lc-sankey')         return <BrLcSankey edges={ds.edges ?? []} />
   if (tile.kind === 'br-lc-sankey-flow')    return <BrLcSankeyFlow />
@@ -208,7 +207,7 @@ const GROUPBY_KINDS = new Set<TileKind>(['br-lc-bar', 'br-lc-line', 'br-lc-area'
 const SCROLL_KINDS = new Set<TileKind>(['bands', 'br-lc-sankey'])
 
 function TileCard({
-  tile, ds, measureKey, onRemove, onMeasureChange, onXKeyChange, onYKeyChange, onDepthChange, onSortChange, onGroupByChange, onNodeUpdate, onNodesUpdate, onNodeReorder, availableMeasures,
+  tile, ds, measureKey, onRemove, onMeasureChange, onXKeyChange, onYKeyChange, onDepthChange, onSortChange, onOrientationChange, onGroupByChange, onNodeUpdate, onNodesUpdate, onNodeReorder, availableMeasures,
 }: {
   tile: Tile
   ds: Dataset
@@ -219,6 +218,7 @@ function TileCard({
   onYKeyChange: (key: string) => void
   onDepthChange: (depth: number) => void
   onSortChange: (sortBy: 'index' | 'value') => void
+  onOrientationChange: (orientation: 'vertical' | 'horizontal') => void
   onGroupByChange: (key: string | undefined) => void
   onNodeUpdate: (rowId: string, measures: PNode['measures']) => void
   onNodesUpdate: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
@@ -230,6 +230,9 @@ function TileCard({
   const showGroupBy = pickers.groupBy && ds.dimDefs.length > 0
   const depth = tile.depth ?? 0 // 0 = "All" (show full tree)
   const sortBy = tile.sortBy ?? 'index'
+  // Orientation default is kind-specific: bar defaults to vertical, icicle and
+  // bands default to horizontal.
+  const orientation = tile.orientation ?? (tile.kind === 'br-lc-bar' ? 'vertical' : 'horizontal')
   return (
     <div className="tile-card">
       <div className="tile-header">
@@ -257,6 +260,17 @@ function TileCard({
             >
               <option value="index">Order</option>
               <option value="value">Value</option>
+            </select>
+          )}
+          {pickers.orientation && (
+            <select
+              className="tile-measure-select"
+              value={orientation}
+              onChange={e => onOrientationChange(e.target.value as 'vertical' | 'horizontal')}
+              title="Orientation"
+            >
+              <option value="horizontal">Horizontal</option>
+              <option value="vertical">Vertical</option>
             </select>
           )}
           {pickers.xKey && pickers.yKey ? (
@@ -583,19 +597,22 @@ export function App() {
   const measures = ds ? ds.measureDefs : []
 
   // Drill is two-sourced: hudStore for live cross-tile reactivity, Dashboard
-  // for persistence. Migrate legacy drillNodeId to drills['default'] on load.
-  const liveDrills = useHudStore().drills
-  const persistedDrills = dash?.drills ?? (dash?.drillNodeId != null ? { default: dash.drillNodeId } : {})
+  // for persistence. Sync the two by always treating the dashboard as the
+  // source of truth on entry/switch, and the store as the leading edge of
+  // user intent on exit. Mirror store → dash via an effect; hydrate dash →
+  // store when the active dashboard's persisted value changes.
+  const liveDrills = hudStore.getSnapshot().drills
+  const persistedDrills = dash?.drills ?? (dash?.drillNodeId ? { default: dash.drillNodeId } : {})
   useEffect(() => {
-    const current = hudStore.getSnapshot().drills
-    if (JSON.stringify(current) !== JSON.stringify(persistedDrills)) {
+    const currentDrills = hudStore.getSnapshot().drills
+    if (JSON.stringify(currentDrills) !== JSON.stringify(persistedDrills)) {
       hudStore.hydrateDrills(persistedDrills)
     }
   }, [dash?.id, persistedDrills])
   useEffect(() => {
     if (!dash) return
     if (JSON.stringify(dash.drills ?? {}) === JSON.stringify(liveDrills)) return
-    commit(updateDashboard(ws, { ...dash, drills: liveDrills, drillNodeId: undefined }))
+    commit(updateDashboard(ws, { ...dash, drills: liveDrills }))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveDrills])
 
@@ -713,6 +730,11 @@ export function App() {
     commit(updateDashboard(ws, { ...dash, tiles: dash.tiles.map(t => t.id === tileId ? { ...t, groupBy } : t) }))
   }, [ws, dash])
 
+  const handleTileOrientation = useCallback((tileId: string, orientation: 'vertical' | 'horizontal') => {
+    if (!dash) return
+    commit(updateDashboard(ws, { ...dash, tiles: dash.tiles.map(t => t.id === tileId ? { ...t, orientation } : t) }))
+  }, [ws, dash])
+
   return (
     <div className="sb-root">
       <div className="sb-topbar">
@@ -749,6 +771,7 @@ export function App() {
             onTileYKey={handleTileYKey}
             onTileDepth={handleTileDepth}
             onTileSort={handleTileSort}
+            onTileOrientation={handleTileOrientation}
             onTileGroupBy={handleTileGroupBy}
             onNodeUpdate={handleNodeUpdate}
             onNodesUpdate={handleNodesUpdate}
@@ -760,7 +783,7 @@ export function App() {
   )
 }
 
-function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeasure, onTileXKey, onTileYKey, onTileDepth, onTileSort, onTileGroupBy, onNodeUpdate, onNodesUpdate, onNodeReorder }: {
+function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeasure, onTileXKey, onTileYKey, onTileDepth, onTileSort, onTileOrientation, onTileGroupBy, onNodeUpdate, onNodesUpdate, onNodeReorder }: {
   dash: Dashboard
   ds: Dataset
   measures: { key: string; label: string }[]
@@ -771,6 +794,7 @@ function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeas
   onTileYKey: (tileId: string, key: string) => void
   onTileDepth: (tileId: string, depth: number) => void
   onTileSort: (tileId: string, sortBy: 'index' | 'value') => void
+  onTileOrientation: (tileId: string, orientation: 'vertical' | 'horizontal') => void
   onTileGroupBy: (tileId: string, key: string | undefined) => void
   onNodeUpdate: (rowId: string, measures: PNode['measures']) => void
   onNodesUpdate: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
@@ -801,6 +825,7 @@ function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeas
                 onYKeyChange={key => onTileYKey(tile.id, key)}
                 onDepthChange={d => onTileDepth(tile.id, d)}
                 onSortChange={s => onTileSort(tile.id, s)}
+                onOrientationChange={o => onTileOrientation(tile.id, o)}
                 onGroupByChange={k => onTileGroupBy(tile.id, k)}
                 onNodeUpdate={onNodeUpdate}
                 onNodesUpdate={onNodesUpdate}

@@ -34,7 +34,18 @@ const DRILL_DURATION = 800; // ms — leave-timer / CSS settle window
 const DRILL_SEC = DRILL_DURATION / 1000; // s — bireactive anim clock runs in seconds
 
 export class MdTreemapLC extends Diagram {
-  static styles = `text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}`
+  static styles = `
+    text { pointer-events: none; }
+    ${FILL_STYLE}
+    ${GESTURE_SUPPRESSION_CSS}
+    [data-focusable]:focus {
+      outline: 2px solid #4a9eff;
+      outline-offset: 2px;
+    }
+    [data-focusable]:focus:not(:focus-visible) {
+      outline: none;
+    }
+  `
   externalRoot?: BiNode
   maxDepth?: number
   drillKey?: string
@@ -46,7 +57,7 @@ export class MdTreemapLC extends Diagram {
   protected scene(s: Mount): void {
     const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
     const view = this.view(Wc, Hc);
-    this.tabIndex = 0;
+    this.tabIndex = -1;
     this.style.outline = "none";
 
     const root = this.externalRoot ?? portfolio();
@@ -259,11 +270,18 @@ export class MdTreemapLC extends Diagram {
       });
       tile.el.dataset.id = node.value.id ?? "";
       tile.el.style.cursor = "pointer";
+      tile.el.setAttribute('tabindex', '0');
+      tile.el.setAttribute('data-focusable', 'tile');
+      biEffect(() => {
+        tile.el.setAttribute('aria-label', `${node.value.label}: ${node.value.total.value.toFixed(0)}`);
+      });
       // Geometry (x/y/w/h) is driven by the per-tile drill tween on this.anim —
       // NO CSS transition on those attrs (it would double-animate / lag the tween).
       // Prune the geometry registry when this tile is torn down (left the window).
       tile.track(() => { if (tileGeo.get(node)?.cx === cx) tileGeo.delete(node); });
       tile.el.addEventListener("click", () => { state.focused.value = node; });
+      tile.el.addEventListener("focus", () => { state.focused.value = node; });
+      tile.el.addEventListener("blur", () => { if (state.focused.value === node) state.focused.value = null; });
       tile.el.addEventListener("dblclick", (e: MouseEvent) => {
         const fd = focusDepth.value;
         if (fd > 0 && node.value.id === this._drillIdCell.value) {

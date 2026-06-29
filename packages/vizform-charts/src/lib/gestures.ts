@@ -79,17 +79,6 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
       if (state.focused.value != null) { state.focused.value = null; e.preventDefault(); }
       return;
     }
-    if (e.key === "Tab") {
-      const order = flatOrder(root);
-      if (order.length === 0) return;
-      const cur = state.focused.value;
-      const i = cur ? order.indexOf(cur) : -1;
-      state.focused.value = e.shiftKey
-        ? order[(i <= 0 ? order.length : i) - 1]!
-        : order[(i + 1) % order.length]!;
-      e.preventDefault();
-      return;
-    }
     const f = state.focused.value;
     if (!f || f === root) return;
     const step = e.shiftKey ? 5 : 1;
