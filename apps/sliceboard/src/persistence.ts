@@ -3,7 +3,8 @@ import type { PEdge, ScalingMode } from '@winstonfassett/vizform-core'
 import { colorFor } from '@winstonfassett/vizform-core'
 import type { LayoutItem } from 'react-grid-layout'
 import type { SplitNode } from './splits'
-import { reconcile as reconcileSplitTree, defaultTree as defaultSplitTree } from './splits'
+import { reconcile as reconcileSplitTree, defaultTree as defaultSplitTree, splitLeaf as splitLeafTree } from './splits'
+import type { SplitDir } from './splits'
 
 export type { PNode, PEdge }
 
@@ -805,6 +806,30 @@ export function setLayoutMode(ws: Workspace, dashId: string, mode: 'grid' | 'spl
   let splitTree = dash.splitTree ?? null
   if (mode === 'splits' && !splitTree) splitTree = defaultSplitTree(dash.tiles.map(t => t.id))
   return updateDashboard(ws, { ...dash, layoutMode: mode, splitTree })
+}
+
+/** Add a new tile and place it as a sibling of the given existing leaf, in the
+ *  requested direction/position. Bypasses the append-at-end reconcile path. */
+export function addTileAtLeaf(
+  ws: Workspace,
+  dashId: string,
+  leafId: string,
+  direction: SplitDir,
+  position: 'before' | 'after',
+  kind: TileKind,
+): Workspace {
+  const dash = ws.dashboards.find(d => d.id === dashId)
+  if (!dash) return ws
+  const tile: Tile = { id: genId(), kind }
+  const layout: LayoutItem = { i: tile.id, x: 0, y: Infinity, w: 6, h: 8 }
+  const placed = splitLeafTree(dash.splitTree ?? null, leafId, direction, tile.id, position)
+    ?? defaultSplitTree([...dash.tiles.map(t => t.id), tile.id])
+  return updateDashboard(ws, {
+    ...dash,
+    tiles: [...dash.tiles, tile],
+    layout: [...dash.layout, layout],
+    splitTree: placed,
+  })
 }
 
 export function setSplitTree(ws: Workspace, dashId: string, splitTree: SplitNode | null): Workspace {

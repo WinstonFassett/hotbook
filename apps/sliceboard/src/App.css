@@ -166,6 +166,28 @@
 .split-gutter:hover { background: #2a2a2a; }
 .split-gutter:active { background: #3a3a3a; }
 
+/* Per-pane split control inside the tile header */
+.tile-split-menu {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.tile-split-btn {
+  background: none;
+  border: 1px solid #2a2a2a;
+  color: #555;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+.tile-split-btn:hover { color: #aaa; border-color: #444; }
+.tile-split-dropdown {
+  right: 0;
+  left: auto;
+}
+
 /* Topbar extras */
 .sb-topbar-sep {
   color: #2a2a2a;

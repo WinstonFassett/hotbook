@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
+import type { ReactNode } from 'react'
 import { GridLayout, useContainerWidth } from 'react-grid-layout'
 import type { LayoutItem } from 'react-grid-layout'
 import { Viz, HTreetable } from '@winstonfassett/vizform-react-d3'
@@ -23,7 +24,7 @@ import {
   activeDataset, activeDashboard, dashboardsForDataset,
   updateRow, updateRows, reorderLeaves, applyGroupBy,
   drillSubtree, drillPath,
-  setLayoutMode, setSplitTree,
+  setLayoutMode, setSplitTree, addTileAtLeaf,
 } from './persistence'
 import type { Workspace, Dataset, Dashboard, Tile, TileKind, PNode } from './persistence'
 import { SplitView } from './SplitView'
@@ -210,7 +211,7 @@ const GROUPBY_KINDS = new Set<TileKind>(['br-lc-bar', 'br-lc-line', 'br-lc-area'
 const SCROLL_KINDS = new Set<TileKind>(['bands', 'br-lc-sankey'])
 
 function TileCard({
-  tile, ds, measureKey, onRemove, onMeasureChange, onXKeyChange, onYKeyChange, onDepthChange, onSortChange, onGroupByChange, onNodeUpdate, onNodesUpdate, onNodeReorder, availableMeasures,
+  tile, ds, measureKey, onRemove, onMeasureChange, onXKeyChange, onYKeyChange, onDepthChange, onSortChange, onGroupByChange, onNodeUpdate, onNodesUpdate, onNodeReorder, availableMeasures, splitActions,
 }: {
   tile: Tile
   ds: Dataset
@@ -226,6 +227,7 @@ function TileCard({
   onNodesUpdate: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
   onNodeReorder: (orderedIds: string[]) => void
   availableMeasures: { key: string; label: string }[]
+  splitActions?: ReactNode
 }) {
   const schema = schemaFor(tile.kind)
   const pickers = schema.pickers
@@ -310,6 +312,7 @@ function TileCard({
               ))}
             </select>
           )}
+          {splitActions}
           <button className="tile-close-btn" onClick={onRemove}>×</button>
         </div>
       </div>
@@ -744,6 +747,11 @@ export function App() {
     commit(setSplitTree(ws, dash.id, nextTree))
   }, [ws, dash])
 
+  const handleSplitAtLeaf = useCallback((leafId: string, direction: 'row' | 'col', kind: TileKind) => {
+    if (!dash) return
+    commit(addTileAtLeaf(ws, dash.id, leafId, direction, 'after', kind))
+  }, [ws, dash])
+
   return (
     <div className="sb-root">
       <div className="sb-topbar">
@@ -786,6 +794,7 @@ export function App() {
               ds={ds}
               measures={measures}
               onSplitResize={handleSplitResize}
+              onSplitAtLeaf={handleSplitAtLeaf}
               onRemoveTile={handleRemoveTile}
               onTileMeasure={handleTileMeasure}
               onTileXKey={handleTileXKey}
@@ -878,11 +887,12 @@ function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeas
   )
 }
 
-function TileSplits({ dash, ds, measures, onSplitResize, onRemoveTile, onTileMeasure, onTileXKey, onTileYKey, onTileDepth, onTileSort, onTileGroupBy, onNodeUpdate, onNodesUpdate, onNodeReorder }: {
+function TileSplits({ dash, ds, measures, onSplitResize, onSplitAtLeaf, onRemoveTile, onTileMeasure, onTileXKey, onTileYKey, onTileDepth, onTileSort, onTileGroupBy, onNodeUpdate, onNodesUpdate, onNodeReorder }: {
   dash: Dashboard
   ds: Dataset
   measures: { key: string; label: string }[]
   onSplitResize: (splitId: string, sizes: number[]) => void
+  onSplitAtLeaf: (leafId: string, direction: 'row' | 'col', kind: TileKind) => void
   onRemoveTile: (id: string) => void
   onTileMeasure: (tileId: string, key: string) => void
   onTileXKey: (tileId: string, key: string) => void
@@ -895,7 +905,7 @@ function TileSplits({ dash, ds, measures, onSplitResize, onRemoveTile, onTileMea
   onNodeReorder: (orderedIds: string[]) => void
 }) {
   const tilesById = new Map(dash.tiles.map(t => [t.id, t]))
-  const renderLeaf = (tileId: string) => {
+  const renderLeaf = (tileId: string, leafId: string) => {
     const tile = tilesById.get(tileId)
     if (!tile) return <div className="sb-grid-empty">Missing tile</div>
     return (
@@ -914,6 +924,9 @@ function TileSplits({ dash, ds, measures, onSplitResize, onRemoveTile, onTileMea
         onNodeUpdate={onNodeUpdate}
         onNodesUpdate={onNodesUpdate}
         onNodeReorder={onNodeReorder}
+        splitActions={
+          <SplitPaneMenu onSplit={(direction, kind) => onSplitAtLeaf(leafId, direction, kind)} />
+        }
       />
     )
   }
@@ -923,6 +936,52 @@ function TileSplits({ dash, ds, measures, onSplitResize, onRemoveTile, onTileMea
         <SplitView node={dash.splitTree} renderLeaf={renderLeaf} onResize={onSplitResize} />
       ) : (
         <div className="sb-grid-empty">No tiles — click "+ Tile" to add one</div>
+      )}
+    </div>
+  )
+}
+
+// Per-pane split control. Two-stage: pick direction, then pick kind. We keep
+// the menu in a single dropdown so the click target stays compact in the tile
+// header. Direction icons follow VS Code's mental model — "split right" / "split
+// down" both create a new pane positioned after the current one.
+function SplitPaneMenu({ onSplit }: { onSplit: (direction: 'row' | 'col', kind: TileKind) => void }) {
+  const [open, setOpen] = useState<null | 'row' | 'col'>(null)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const h = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(null)
+    }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [open])
+  return (
+    <div ref={ref} className="sb-menu-wrap tile-split-menu">
+      <button
+        className="tile-split-btn"
+        onClick={() => setOpen(o => (o === 'row' ? null : 'row'))}
+        title="Split right"
+        aria-label="Split right"
+      >⇥</button>
+      <button
+        className="tile-split-btn"
+        onClick={() => setOpen(o => (o === 'col' ? null : 'col'))}
+        title="Split down"
+        aria-label="Split down"
+      >⤓</button>
+      {open && (
+        <div className="sb-menu-dropdown tile-split-dropdown">
+          {TILE_KINDS.map(k => (
+            <button
+              key={k}
+              className="sb-menu-board-btn"
+              onClick={() => { onSplit(open, k); setOpen(null) }}
+            >
+              {TILE_LABELS[k]}
+            </button>
+          ))}
+        </div>
       )}
     </div>
   )

@@ -18,11 +18,11 @@ export function SplitView({
   onResize,
 }: {
   node: SplitNode
-  renderLeaf: (tileId: string) => ReactNode
+  renderLeaf: (tileId: string, leafId: string) => ReactNode
   onResize: (splitId: string, sizes: number[]) => void
 }) {
   if (node.kind === 'leaf') {
-    return <div className="split-leaf">{renderLeaf(node.tileId)}</div>
+    return <div className="split-leaf">{renderLeaf(node.tileId, node.id)}</div>
   }
   return <SplitBranchView branch={node} renderLeaf={renderLeaf} onResize={onResize} />
 }
@@ -31,7 +31,7 @@ function SplitBranchView({
   branch, renderLeaf, onResize,
 }: {
   branch: SplitBranch
-  renderLeaf: (tileId: string) => ReactNode
+  renderLeaf: (tileId: string, leafId: string) => ReactNode
   onResize: (splitId: string, sizes: number[]) => void
 }) {
   const ref = useRef<HTMLDivElement>(null)

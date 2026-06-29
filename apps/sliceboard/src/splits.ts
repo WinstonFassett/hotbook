@@ -31,11 +31,19 @@ export function makeSplit(direction: SplitDir, children: SplitNode[], sizes?: nu
   return { kind: 'split', id: nid(), direction, children, sizes: s }
 }
 
-/** Build a default tree from a flat tile list: a single horizontal row of leaves. */
+/** Build a default tree from a flat tile list. With more than one tile we
+ *  pack them into a 2-column grid (row of two `col` stacks) so the seed
+ *  doesn't squash a long list into one all-horizontal row — VS Code's
+ *  panes are explicit, the user grows the tree from the per-pane split
+ *  actions; this is just a reasonable starting shape. */
 export function defaultTree(tileIds: string[]): SplitNode | null {
   if (tileIds.length === 0) return null
   if (tileIds.length === 1) return makeLeaf(tileIds[0]!)
-  return makeSplit('row', tileIds.map(makeLeaf))
+  if (tileIds.length === 2) return makeSplit('row', tileIds.map(makeLeaf))
+  const half = Math.ceil(tileIds.length / 2)
+  const left = makeSplit('col', tileIds.slice(0, half).map(makeLeaf))
+  const right = makeSplit('col', tileIds.slice(half).map(makeLeaf))
+  return makeSplit('row', [left, right])
 }
 
 /** Collect tileIds present in the tree, in left-to-right order. */
