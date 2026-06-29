@@ -262,9 +262,16 @@ export class MdGanttChartLC extends Diagram {
         const t = dragController.target as GanttTask | null;
         if (!t) return;
         const dms = xToMs(localPoint(pe).x) - snap.originMs;
-        if (snap.kind === 'move')      setRange(t, snap.start + dms, snap.end + dms);
-        else if (snap.kind === 'start') setRange(t, snap.start + dms, snap.end);
-        else                            setRange(t, snap.start,        snap.end + dms);
+        if (snap.kind === 'move') {
+          // For move, preserve the original duration exactly (don't let snapDay change it)
+          const dur = snap.end - snap.start;
+          const newStart = snapDay(snap.start + dms);
+          setRange(t, newStart, newStart + dur, true); // skip propagation during drag
+        } else if (snap.kind === 'start') {
+          setRange(t, snap.start + dms, snap.end, true);
+        } else {
+          setRange(t, snap.start, snap.end + dms, true);
+        }
       },
       onEnd: (_canceled: boolean) => {
         if (dragPointerId >= 0 && (this as any).hasPointerCapture?.(dragPointerId)) {
@@ -272,6 +279,11 @@ export class MdGanttChartLC extends Diagram {
         }
         dragPointerId = -1;
         setGestureActive(false);
+        // Apply dep constraints on drag end (not during drag)
+        if (this.enforceDeps && !_canceled) {
+          propagateDeps();
+          data.value = [...data.value];
+        }
         commit();
       },
     });
@@ -335,7 +347,15 @@ export class MdGanttChartLC extends Diagram {
         return { start: t.start.getTime(), end: t.end.getTime(), originMs: 0, kind: 'end' as DragKind };
       },
       restore: (t: GanttTask, snap: DragSnap) => { setRange(t, snap.start, snap.end, true); },
-      onEnd: () => { setGestureActive(false); commit(); },
+      onEnd: () => {
+        setGestureActive(false);
+        // Apply dep constraints on wheel end (not during resize)
+        if (this.enforceDeps) {
+          propagateDeps();
+          data.value = [...data.value];
+        }
+        commit();
+      },
     };
     this.addEventListener("wheel", (e) => {
       const we = e as WheelEvent;
@@ -346,7 +366,7 @@ export class MdGanttChartLC extends Diagram {
       const curDays = Math.max(1, Math.round((t.end.getTime() - t.start.getTime()) / DAY_MS));
       const step = dynamicWheelStep(curDays, we.shiftKey);
       const delta = (we.deltaY < 0 ? +step : -step) * DAY_MS;
-      setRange(t, t.start.getTime(), t.end.getTime() + delta);
+      setRange(t, t.start.getTime(), t.end.getTime() + delta, true);
     }, { passive: false });
 
     // ─── Keyboard ────────────────────────────────────────────────────────
