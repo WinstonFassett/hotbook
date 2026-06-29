@@ -100,8 +100,10 @@ export interface Dashboard {
   layout: LayoutItem[]
   tiles: Tile[]
   measureKey: string
-  /** Persisted drill scope (cross-tile). null/undefined = full tree from real
-   *  root; non-null = every hierarchical tile re-roots at this PNode id. */
+  /** Persisted drill scope map: drillKey → drillNodeId. Tiles with same drillKey
+   *  share drill context. Each chart drills internally via scale remap. */
+  drills?: Record<string, string | null>
+  /** Legacy single drill scope - migrated to drills['default'] on load. */
   drillNodeId?: string | null
 }
 
@@ -519,12 +521,14 @@ function buildSeedWorkspace(): Workspace {
   const team  = buildTeamDataset()
   const life  = buildLifeDataset()
 
-  // Canon viz kinds for seed dashboard (retired gen-0/Svelte kinds excluded)
+  // Canon viz kinds for seed dashboard (retired gen-0/Svelte kinds excluded).
+  // Hierarchical charts first (top row) for drill dogfooding.
   const ALL_KINDS: TileKind[] = [
+    'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst',
     'treetable',
     'br-lc-bar', 'br-lc-bands', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie',
     'br-lc-radar', 'br-lc-concentric-arc',
-    'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-sankey-flow', 'br-lc-tree',
+    'br-lc-sankey', 'br-lc-sankey-flow', 'br-lc-tree',
   ]
 
   const GROUPBY_KINDS = new Set<TileKind>([
@@ -654,33 +658,6 @@ export function drillPath(rows: PNode[], drillNodeId: string | null): PNode[] {
     cur = cur.parentId ? byId.get(cur.parentId) : undefined
   }
   return path
-}
-
-/**
- * Filter `rows` to the subtree rooted at `drillNodeId` (the drilled node plus
- * all descendants). The drilled node's `parentId` is rewritten to `null` so
- * downstream buildBiTree treats it as the real root. null/missing → identity.
- */
-export function drillSubtree(rows: PNode[], drillNodeId: string | null): PNode[] {
-  if (!drillNodeId) return rows
-  const byId = new Map(rows.map(n => [n.id, n]))
-  const root = byId.get(drillNodeId)
-  if (!root) return rows // stale drill id (e.g. from another dataset) — fall back to full tree
-  // BFS down through children
-  const keep = new Set<string>([root.id])
-  const queue = [root.id]
-  while (queue.length) {
-    const pid = queue.shift()!
-    for (const r of rows) {
-      if (r.parentId === pid && !keep.has(r.id)) {
-        keep.add(r.id)
-        queue.push(r.id)
-      }
-    }
-  }
-  return rows
-    .filter(r => keep.has(r.id))
-    .map(r => r.id === root.id ? { ...r, parentId: null } : r)
 }
 
 // ─── Mutations ────────────────────────────────────────────────────────────────

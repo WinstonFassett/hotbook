@@ -22,6 +22,8 @@ export interface BrSyncBridge {
   onHover(cb: (id: string | null) => void): () => void;
   /** Subscribe to the chart's own select/focus changes. Returns an unsubscribe. */
   onSelect(cb: (id: string | null) => void): () => void;
+  /** Subscribe to drill events (dblclick on node with children). Returns an unsubscribe. */
+  onDrill?(cb: (drillKey: string, id: string | null) => void): () => void;
 }
 
 export interface ElementWithBridge extends HTMLElement {
@@ -37,15 +39,19 @@ export function makeBridge(opts: {
 }): BrSyncBridge & {
   emitHover: (id: string | null) => void;
   emitSelect: (id: string | null) => void;
+  emitDrill: (drillKey: string, id: string | null) => void;
 } {
   const hoverCbs = new Set<(id: string | null) => void>();
   const selectCbs = new Set<(id: string | null) => void>();
+  const drillCbs = new Set<(drillKey: string, id: string | null) => void>();
   return {
     setExternalHover: opts.setHover,
     setExternalSelect: opts.setSelect,
     onHover: (cb) => { hoverCbs.add(cb); return () => hoverCbs.delete(cb); },
     onSelect: (cb) => { selectCbs.add(cb); return () => selectCbs.delete(cb); },
+    onDrill: (cb) => { drillCbs.add(cb); return () => drillCbs.delete(cb); },
     emitHover: (id) => hoverCbs.forEach((cb) => cb(id)),
     emitSelect: (id) => selectCbs.forEach((cb) => cb(id)),
+    emitDrill: (drillKey, id) => drillCbs.forEach((cb) => cb(drillKey, id)),
   };
 }

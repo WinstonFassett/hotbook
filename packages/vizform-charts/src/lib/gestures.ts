@@ -9,6 +9,7 @@ import { walkTree, effect as biEffect, batch } from "bireactive";
 import type { BiNode } from "./tree";
 import type { Writable, Cell } from "bireactive";
 import { makeBridge, type ElementWithBridge } from "./hud-bridge";
+import { GESTURE_ACTIVE_CLASS } from "./transitions";
 
 export interface SelectionState {
   focused: Writable<Cell<BiNode | null>>;
@@ -40,8 +41,10 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
   // applyDelta redistributes a node's change across its siblings, so a revert
   // must restore the target AND every sibling — snapshot all their totals.
   // Per-gesture value-mapping handed to the SHARED wheel controller.
+  const setGestureActive = (on: boolean) => (host as HTMLElement).classList?.toggle(GESTURE_ACTIVE_CLASS, on);
   const wheelConfig = {
     snapshot: (node: BiNode) => {
+      setGestureActive(true);
       const parent = parentOf(node);
       const group = parent ? (parent.children as BiNode[]) : [node];
       return group.map((n) => ({ node: n, value: n.value.total.value }));
@@ -49,7 +52,7 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
     restore: (_node: BiNode, snap: Array<{ node: BiNode; value: number }>) => {
       batch(() => { for (const s of snap) s.node.value.total.value = s.value; });
     },
-    onEnd: () => { state.wheelLocked.current = null; },
+    onEnd: () => { setGestureActive(false); state.wheelLocked.current = null; },
   };
 
   const onWheel = (e: WheelEvent) => {
@@ -117,6 +120,15 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
   });
   (host as ElementWithBridge).brSync = bridge;
 
+  const onDblClick = () => {
+    const node = state.hovered.current ?? state.focused.value;
+    if (!node || node === root) return;
+    if ((node.children as BiNode[]).length === 0) return;
+    const drillKey = (host as any).drillKey ?? 'default';
+    bridge.emitDrill(drillKey, node.value.id);
+  };
+  host.addEventListener("dblclick", onDblClick);
+
   // Demos call this from their pointer handlers; emit out unless it's an echo.
   state.emitHover = (node) => {
     if (applyingExternal) return;
@@ -133,6 +145,7 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
   return () => {
     host.removeEventListener("wheel", onWheel as EventListener);
     host.removeEventListener("keydown", onKeydown as EventListener);
+    host.removeEventListener("dblclick", onDblClick);
     focusDispose();
     state.emitHover = undefined;
     (host as ElementWithBridge).brSync = undefined;

@@ -13,6 +13,7 @@ import type { Num, Writable } from 'bireactive'
 import type { PNode, PEdge } from '../../persistence'
 import { makeFlatSource, makeHierSource, hierShapeKey, hierValueKey } from './bindTile'
 import { BrLcTile } from './BrLcTile'
+import { useDrillNodeId } from '../../store'
 
 import {
   MdBarChartLC,
@@ -306,46 +307,44 @@ interface HierProps {
   measureKey: string
   depth?: number
   sortBy?: 'index' | 'value'
+  drillKey?: string
+  drillNodeId?: string | null
+  showBreadcrumb?: boolean
   onUpdate?: (nodeId: string, measures: PNode['measures']) => void
   onUpdateMany?: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
 }
 
-// Icicle adds an orientation toggle (horizontal partition vs vertical icicle).
-interface IcicleProps extends HierProps {
-  orientation?: 'vertical' | 'horizontal'
-}
-
-function makeHier(tag: string, { nodes, measureKey, depth, sortBy, onUpdate, onUpdateMany }: HierProps) {
+function makeHier(tag: string, { nodes, measureKey, depth, sortBy, drillKey = 'default', drillNodeId, showBreadcrumb = true, onUpdate, onUpdateMany }: HierProps) {
   const shapeKey = hierShapeKey(tag, nodes, measureKey, depth, sortBy)
   const valueKey = hierValueKey(nodes, measureKey)
   return makeHierSource({
-    tag, nodes, measureKey, depth, sortBy, shapeKey, valueKey, onUpdate, onUpdateMany,
+    tag, nodes, measureKey, depth, sortBy, shapeKey, valueKey, drillKey, drillNodeId, showBreadcrumb, onUpdate, onUpdateMany,
   })
 }
 
 export function BrLcPack(props: HierProps) {
-  return <BrLcTile source={makeHier('v-br-pack', props)} />
+  const drillNodeId = useDrillNodeId(props.drillKey ?? 'default')
+  return <BrLcTile source={makeHier('v-br-pack', { ...props, drillNodeId })} />
 }
 
 export function BrLcTreemap(props: HierProps) {
-  return <BrLcTile source={makeHier('v-br-treemap', props)} />
+  const drillNodeId = useDrillNodeId(props.drillKey ?? 'default')
+  return <BrLcTile source={makeHier('v-br-treemap', { ...props, drillNodeId })} />
 }
 
-export function BrLcIcicle({ orientation = 'horizontal', ...rest }: IcicleProps) {
-  const shapeKey = hierShapeKey('v-br-icicle', rest.nodes, rest.measureKey, rest.depth, rest.sortBy, orientation)
-  const valueKey = hierValueKey(rest.nodes, rest.measureKey)
-  return <BrLcTile source={makeHierSource({
-    tag: 'v-br-icicle', nodes: rest.nodes, measureKey: rest.measureKey, depth: rest.depth, sortBy: rest.sortBy,
-    orientation, shapeKey, valueKey, onUpdate: rest.onUpdate, onUpdateMany: rest.onUpdateMany,
-  })} />
+export function BrLcIcicle(props: HierProps) {
+  const drillNodeId = useDrillNodeId(props.drillKey ?? 'default')
+  return <BrLcTile source={makeHier('v-br-icicle', { ...props, drillNodeId })} />
 }
 
 export function BrLcSunburst(props: HierProps) {
-  return <BrLcTile source={makeHier('v-br-sunburst', props)} />
+  const drillNodeId = useDrillNodeId(props.drillKey ?? 'default')
+  return <BrLcTile source={makeHier('v-br-sunburst', { ...props, drillNodeId })} />
 }
 
 export function BrLcTree(props: HierProps) {
-  return <BrLcTile source={makeHier('v-br-tree', props)} />
+  const drillNodeId = useDrillNodeId(props.drillKey ?? 'default')
+  return <BrLcTile source={makeHier('v-br-tree', { ...props, drillNodeId })} />
 }
 
 // ─── Sankey (flat edge-list) ────────────────────────────────────────────────────
