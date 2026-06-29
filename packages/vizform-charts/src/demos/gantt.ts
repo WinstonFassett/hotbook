@@ -1,7 +1,8 @@
-// GanttChart — bireactive Gantt with time axis + draggable task bars.
+// GanttChart — bireactive Gantt with time axis, draggable task bars,
+// and finish-to-start dependency connectors.
 //
 // Schema (per task):
-//   { id, label, start: Date, end: Date, color? }
+//   { id, label, start: Date, end: Date, color?, deps?: string[] }
 //
 // Interactions:
 //   - hover/select a task (click)
@@ -12,12 +13,18 @@
 //   - ←/→ on selected task   → nudge by 1 day (shift = 7 days)
 //   - Escape clears selection
 //
+// Connectors: every `deps[]` entry draws an orthogonal finish-to-start
+// arrow from the predecessor's end-edge into the dependent's start-edge.
+// Edges follow the same reactive `xScale` / `yBand` cells the bars do,
+// so dragging either endpoint reflows the route instantly.
+//
 // Bireactive: all reactive state lives in cells; the scene re-derives from
 // `dataCell`, so external edits or in-chart drags reflow without React.
 
 import {
   Anchor, cell, circle, derive, Diagram, effect as biEffect,
-  label, line, type Mount, rect, Vec,
+  ensureArrowMarker,
+  label, line, type Mount, pathD, rect, Vec,
 } from "bireactive";
 import { scaleBand, scaleTime } from "d3-scale";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
@@ -40,6 +47,9 @@ export interface GanttTask {
   start: Date;
   end: Date;
   color?: string;
+  /** IDs of tasks this one depends on (finish-to-start). Renders an
+   *  orthogonal arrow from each predecessor's end into this task's start. */
+  deps?: string[];
 }
 
 function lightenHex(hex: string, t: number): string {
@@ -54,10 +64,10 @@ function makeSample(): GanttTask[] {
   const start = new Date(2026, 0, 1).getTime();
   return [
     { id: 't1', label: 'Discovery',   start: new Date(start + 0  * DAY_MS), end: new Date(start + 7  * DAY_MS) },
-    { id: 't2', label: 'Design',      start: new Date(start + 5  * DAY_MS), end: new Date(start + 14 * DAY_MS) },
-    { id: 't3', label: 'Build core',  start: new Date(start + 12 * DAY_MS), end: new Date(start + 28 * DAY_MS) },
-    { id: 't4', label: 'QA',          start: new Date(start + 25 * DAY_MS), end: new Date(start + 34 * DAY_MS) },
-    { id: 't5', label: 'Launch',      start: new Date(start + 33 * DAY_MS), end: new Date(start + 36 * DAY_MS) },
+    { id: 't2', label: 'Design',      start: new Date(start + 5  * DAY_MS), end: new Date(start + 14 * DAY_MS), deps: ['t1'] },
+    { id: 't3', label: 'Build core',  start: new Date(start + 12 * DAY_MS), end: new Date(start + 28 * DAY_MS), deps: ['t2'] },
+    { id: 't4', label: 'QA',          start: new Date(start + 25 * DAY_MS), end: new Date(start + 34 * DAY_MS), deps: ['t3'] },
+    { id: 't5', label: 'Launch',      start: new Date(start + 33 * DAY_MS), end: new Date(start + 36 * DAY_MS), deps: ['t3', 't4'] },
   ];
 }
 
@@ -426,6 +436,90 @@ export class MdGanttChartLC extends Diagram {
       ));
       endHandle.el.style.cursor = "ew-resize";
       endHandle.el.style.transition = hoverTransition("opacity");
+    }
+
+    // ─── Dependency connectors ────────────────────────────────────────────
+    // Finish-to-start orthogonal arrows: predecessor end-edge → small stub →
+    // vertical channel → small stub → dependent start-edge. Routed via the
+    // task gap, so the path slots between rows instead of overlapping bars.
+    ensureArrowMarker((this as any).svg as SVGSVGElement);
+    const STUB = 8;       // horizontal stub before the bar edge
+    const ARROW_GAP = 6;  // space before successor bar so arrowhead doesn't overlap
+
+    // Build a (id → live index) lookup that re-derives when data changes.
+    const indexById = derive(() => {
+      const m = new Map<string, number>();
+      const rows = data.value as GanttTask[];
+      for (let i = 0; i < rows.length; i++) m.set(rows[i]!.id, i);
+      return m;
+    });
+
+    // One pathD per dependency edge; iterate over the initial dep set —
+    // pathD's `d` string is reactive, so positions follow drag/resize.
+    type DepEdge = { from: string; to: string };
+    const initialEdges: DepEdge[] = [];
+    for (const t of rows0) for (const dep of t.deps ?? []) initialEdges.push({ from: dep, to: t.id });
+
+    for (const edge of initialEdges) {
+      // Live lookup so a re-sorted data array (same ids, new order) still
+      // resolves to the current task object.
+      const fromTask = (): GanttTask | null => {
+        const idx = indexById.value.get(edge.from);
+        return idx == null ? null : ((data.value as GanttTask[])[idx] ?? null);
+      };
+      const toTask = (): GanttTask | null => {
+        const idx = indexById.value.get(edge.to);
+        return idx == null ? null : ((data.value as GanttTask[])[idx] ?? null);
+      };
+
+      const dStr = derive(() => {
+        const f = fromTask();
+        const t = toTask();
+        if (!f || !t) return "";
+        const fIdx = indexById.value.get(f.id)!;
+        const tIdx = indexById.value.get(t.id)!;
+        const xS = xScale.value as any;
+        const ys = yBand.value;
+        const bh = ys.bandwidth();
+        const x0 = xS(f.end) as number;
+        const x1 = xS(t.start) as number;
+        const y0 = (ys(String(fIdx)) ?? 0) + bh / 2;
+        const y1 = (ys(String(tIdx)) ?? 0) + bh / 2;
+        // Step path: out from f end, vertical to t row, in to t start.
+        // If t.start is to the left of f.end, route around: go right STUB,
+        // down/up half a row, back left, vertical, then in to t.start.
+        const tipX = x1 - ARROW_GAP;
+        if (tipX > x0 + STUB) {
+          const midX = x0 + STUB;
+          return `M ${x0} ${y0} L ${midX} ${y0} L ${midX} ${y1} L ${tipX} ${y1}`;
+        }
+        // Back-route (predecessor finishes AFTER successor starts — overlap).
+        const stepDown = (y1 > y0 ? +1 : -1) * (ys.step() - bh) / 2;
+        const lift = y0 + stepDown;
+        const outX = x0 + STUB;
+        const backX = Math.min(tipX - STUB, x1 - STUB);
+        return `M ${x0} ${y0} L ${outX} ${y0} L ${outX} ${lift} L ${backX} ${lift} L ${backX} ${y1} L ${tipX} ${y1}`;
+      });
+
+      const involved = derive(() => {
+        const sel = selected.value;
+        const hov = hover.value;
+        const f = fromTask(); const t = toTask();
+        if (!sel && !hov) return false;
+        return sel === f || sel === t || hov === f || hov === t;
+      });
+      const opacity = derive(() => involved.value ? 1 : 0.45);
+      const stroke = derive(() => involved.value ? "#fff" : "#7a8390");
+
+      const p = pathD(dStr, {
+        stroke, strokeWidth: derive(() => involved.value ? 1.6 : 1.1),
+        fill: "none", cap: "round", join: "round", opacity,
+      });
+      const shape = s(p);
+      // Arrowhead via the bireactive shared marker.
+      shape.el.setAttribute("marker-end", "url(#bireactive-arrow)");
+      shape.el.style.pointerEvents = "none";
+      shape.el.style.transition = "stroke 0.12s ease, stroke-width 0.12s ease, opacity 0.12s ease";
     }
 
     // ─── Caption / readout ────────────────────────────────────────────────

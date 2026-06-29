@@ -365,6 +365,8 @@ interface GanttProps {
   endKey?: string
   /** Day-offset epoch (default 2026-01-01). */
   epoch?: Date
+  /** Finish-to-start dependency edges (successorId ← predecessorId). */
+  deps?: Array<{ from: string; to: string }>
 }
 
 export function BrLcGantt({
@@ -372,16 +374,24 @@ export function BrLcGantt({
   startKey = 'start',
   endKey = 'end',
   epoch = new Date(2026, 0, 1),
+  deps = [],
 }: GanttProps) {
   const epochMs = epoch.getTime()
+  const depsByTo = new Map<string, string[]>()
+  for (const e of deps) {
+    const arr = depsByTo.get(e.to) ?? []
+    arr.push(e.from)
+    depsByTo.set(e.to, arr)
+  }
   const tasks: GanttTask[] = nodes.map(n => ({
     id: n.id,
     label: n.name,
     start: new Date(epochMs + (n.measures[startKey] ?? 0) * 86400000),
     end:   new Date(epochMs + (n.measures[endKey]   ?? 1) * 86400000),
     color: n.color,
+    deps: depsByTo.get(n.id),
   }))
-  const key = JSON.stringify(tasks.map(t => [t.id, t.label, +t.start, +t.end, t.color]))
+  const key = JSON.stringify(tasks.map(t => [t.id, t.label, +t.start, +t.end, t.color, t.deps ?? []]))
   const ref = useBrElement<MdGanttChartLC>(
     'v-br-gantt',
     (el) => { el.externalData = tasks },

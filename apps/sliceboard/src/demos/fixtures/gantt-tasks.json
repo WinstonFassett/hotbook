@@ -1,11 +1,18 @@
 {
   "name": "gantt-tasks",
-  "description": "5 sequential tasks, 'start' and 'end' measures as day-offsets from 2026-01-01. Drives the bireactive Gantt chart (time axis + draggable task bars).",
+  "description": "5 tasks with finish-to-start dependencies. 'start' and 'end' measures are day-offsets from 2026-01-01. 'deps' is an edge list (successor ← predecessor) consumed by BrLcGantt's deps prop.",
   "rows": [
     { "id": "g1", "parentId": null, "index": 1, "name": "Discovery",  "measures": { "start": 0,  "end": 7  }, "dims": {}, "color": "#e08888" },
     { "id": "g2", "parentId": null, "index": 2, "name": "Design",     "measures": { "start": 5,  "end": 14 }, "dims": {}, "color": "#d4a86c" },
     { "id": "g3", "parentId": null, "index": 3, "name": "Build core", "measures": { "start": 12, "end": 28 }, "dims": {}, "color": "#7ec87e" },
     { "id": "g4", "parentId": null, "index": 4, "name": "QA",         "measures": { "start": 25, "end": 34 }, "dims": {}, "color": "#7aaae8" },
     { "id": "g5", "parentId": null, "index": 5, "name": "Launch",     "measures": { "start": 33, "end": 36 }, "dims": {}, "color": "#b090e0" }
+  ],
+  "deps": [
+    { "from": "g1", "to": "g2" },
+    { "from": "g2", "to": "g3" },
+    { "from": "g3", "to": "g4" },
+    { "from": "g3", "to": "g5" },
+    { "from": "g4", "to": "g5" }
   ]
 }

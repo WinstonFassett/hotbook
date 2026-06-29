@@ -20,10 +20,11 @@ import ganttTasks from './fixtures/gantt-tasks.json'
 
 interface FlatFixture { name: string; description: string; rows: PNode[] }
 interface EdgeFixture { name: string; description: string; edges: PEdge[] }
+interface GanttFixture { name: string; description: string; rows: PNode[]; deps: Array<{ from: string; to: string }> }
 const FRUIT: FlatFixture = fruitFlat as FlatFixture
 const TEAM:  FlatFixture = teamHier  as FlatFixture
 const SUPPLY: EdgeFixture = supplyEdges as EdgeFixture
-const GANTT: FlatFixture = ganttTasks as FlatFixture
+const GANTT: GanttFixture = ganttTasks as GanttFixture
 
 type OnNodeUpdate = (nodeId: string, measures: PNode['measures']) => void
 type OnNodesUpdate = (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
@@ -116,7 +117,7 @@ const DEMOS: DemoDef[] = [
   {
     slug: 'br-lc-gantt', label: 'Gantt', fixtureName: 'gantt-tasks', fixture: GANTT,
     initRows: GANTT.rows,
-    render: (rows) => <BrLcGantt nodes={rows} startKey="start" endKey="end" />,
+    render: (rows) => <BrLcGantt nodes={rows} startKey="start" endKey="end" deps={GANTT.deps} />,
   },
 ]
 
