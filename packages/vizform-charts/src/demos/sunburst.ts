@@ -33,7 +33,7 @@ const DRILL_DURATION = 800; // ms — leave-timer / CSS settle window
 const DRILL_SEC = DRILL_DURATION / 1000; // s — bireactive anim clock runs in seconds
 
 export class MdSunburstLC extends Diagram {
-  static styles = `text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}`
+  static styles = `text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}:host(.vf-gesture-active) circle[r="5"] { opacity: 0; } circle[r="5"] { transition: opacity 0.3s ease; }`
   externalRoot?: BiNode
   maxDepth?: number
   drillKey?: string
@@ -187,14 +187,18 @@ export class MdSunburstLC extends Diagram {
 
       const drillChanged = id !== lastDrillId;
       lastDrillId = id;
-      // Cancel any in-flight drill tween before snapping or re-tweening.
-      drillCancel?.();
-      drillCancel = null;
-      if (!drillInited || !drillChanged) {
+      if (!drillInited) {
         va0.value = ta0; va1.value = ta1; vr0.value = tr0; vr1.value = tr1;
         drillInited = true;
         return;
       }
+      if (!drillChanged) {
+        // Resize-only (e.g. breadcrumb appeared): don't interrupt in-flight tween.
+        return;
+      }
+      // Cancel any in-flight drill tween before starting a new one.
+      drillCancel?.();
+      drillCancel = null;
       // Suppress CSS transitions on arc `d` attribute during drill (the bireactive
       // tween sets `d` every frame; CSS interpolation between consecutive frames
       // causes large-arc-flag flips → sliver/spoke artifacts).
@@ -261,7 +265,6 @@ export class MdSunburstLC extends Diagram {
       type HandleItem = { parent: BiNode; i: number; aNode: BiNode; bNode: BiNode };
       const handleWindow = derive((): readonly HandleItem[] => {
         const fd = focusDepth.value;
-        if (fd > 0) return [];
         const maxWindow = maxD !== undefined ? fd + maxD : totalDepth;
         const items: HandleItem[] = [];
         for (const n of renderedSet.value) {
@@ -363,13 +366,17 @@ export class MdSunburstLC extends Diagram {
     }));
     hub.el.style.cursor = "pointer";
     hub.el.style.transition = settleTransition("r");
-    hub.el.addEventListener("dblclick", () => {
+    hub.el.addEventListener("dblclick", (e: MouseEvent) => {
+      e.stopPropagation();
       if (!this._drillIdCell.value) return;
       const biNode = nodeById.get(this._drillIdCell.value);
       const parent = biNode ? parentOf(biNode) : null;
+      const targetId = (parent && (nodeDepth.get(parent) ?? 0) > 0)
+        ? (parent.value.id ?? null)
+        : null;
       const drillKey = (this as any).drillKey ?? "default";
       const br = (this as ElementWithBridge).brSync;
-      br?.emitDrill?.(drillKey, parent?.value.id ?? null);
+      br?.emitDrill?.(drillKey, targetId);
     });
 
     if (!this.hasAttribute('no-source')) s(label(view.bottom.up(10), derive(() => {

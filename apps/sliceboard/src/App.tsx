@@ -312,7 +312,7 @@ function TileCard({
         </div>
       </div>
       <div
-        className={`tile-body${schema.scrollBody ? ' tile-body--scroll' : ''}`}
+        className={`tile-body${schema.scrollBody ? ' tile-body--scroll' : ''}${schema.drillKey ? ' tile-body--drill' : ''}`}
       >
         {schema.drillKey && <DrillBreadcrumb ds={ds} drillKey={tile.id} />}
         <TileContent tile={tile} ds={ds} measureKey={measureKey} onNodeUpdate={onNodeUpdate} onNodesUpdate={onNodesUpdate} onNodeReorder={onNodeReorder} />

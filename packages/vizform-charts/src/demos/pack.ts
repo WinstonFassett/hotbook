@@ -123,14 +123,18 @@ export class MdPack extends Diagram {
       // Animate only when drill id changes; snap for initial load and resize.
       const drillChanged = id !== lastDrillId;
       lastDrillId = id;
-      // Cancel any in-flight drill tween before snapping or re-tweening.
-      drillCancel?.();
-      drillCancel = null;
-      if (!drillInited || !drillChanged) {
+      if (!drillInited) {
         vx0.value = tx0; vy0.value = ty0; vx1.value = tx1; vy1.value = ty1;
         drillInited = true;
         return;
       }
+      if (!drillChanged) {
+        // Resize-only (e.g. breadcrumb appeared): don't interrupt in-flight tween.
+        return;
+      }
+      // Cancel any in-flight drill tween before starting a new one.
+      drillCancel?.();
+      drillCancel = null;
       // Drive the viewport tween on this Diagram's anim clock — `tween()` alone
       // only builds a generator; it must be started to advance per frame.
       drillCancel = this.anim.start(
@@ -229,15 +233,20 @@ export class MdPack extends Diagram {
         stroke,
         strokeWidth,
       });
+      disc.el.dataset.id = node.value.id ?? "";
       disc.el.style.cursor = "pointer";
       disc.el.style.transition = settleTransition(["cx", "cy", "r"]);
       disc.el.addEventListener("click", () => { state.focused.value = node; });
-      disc.el.addEventListener("dblclick", () => {
+      disc.el.addEventListener("dblclick", (e: MouseEvent) => {
         const fd = focusDepth.value;
         if (fd > 0 && node.value.id === this._drillIdCell.value) {
+          e.stopPropagation();
           const parent = parentOf(node);
+          const targetId = (parent && (nodeDepth.get(parent) ?? 0) > 0)
+            ? (parent.value.id ?? null)
+            : null;
           const drillKey = (this as any).drillKey ?? "default";
-          (this as ElementWithBridge).brSync?.emitDrill?.(drillKey, parent?.value.id ?? null);
+          (this as ElementWithBridge).brSync?.emitDrill?.(drillKey, targetId);
         }
       });
       disc.el.addEventListener("pointerenter", () => { state.hovered.current = node; hoverCell.value = node; state.emitHover?.(node); });
