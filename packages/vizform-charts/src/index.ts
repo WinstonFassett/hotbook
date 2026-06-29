@@ -1,4 +1,5 @@
 export { MdBarChartLC } from './demos/bar-chart'
+export { MdGroupedBarChartLC, type GroupedBar, type GroupedBarSeriesPoint } from './demos/grouped-bar-chart'
 export { MdLineChartLC } from './demos/line-chart'
 export { MdAreaChartLC } from './demos/area-chart'
 export { MdScatterChartLC } from './demos/scatter-chart'

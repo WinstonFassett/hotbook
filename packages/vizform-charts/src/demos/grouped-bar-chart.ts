@@ -1,0 +1,285 @@
+// GroupedBarChart — grouped (side-by-side) and stacked bar modes.
+//
+// Spike for WIN-50, deferred from WIN-39. Static render only; no gestures.
+// Builds on bar-chart.ts (flat Bar[]) but takes a multi-series shape:
+//
+//   interface GroupedBar { id?; label; series: { name; value }[] }
+//
+// Each top-level row is a category; each series entry is one segment.
+// Mode 'grouped' lays segments side-by-side within the category band using
+// d3-scale's inner scaleBand; 'stacked' draws cumulative rectangles.
+// Both modes work in vertical and horizontal orientations, matching the
+// orientation conventions in MdBarChartLC.
+
+import { Anchor, cell, derive, Diagram, label, line, type Mount, rect, Vec } from "bireactive";
+import { scaleBand, scaleLinear } from "d3-scale";
+import { useHostSize, FILL_STYLE, type HostSize } from "../lib/host-size";
+
+const W = 720;
+const H = 360;
+const PALETTE = ['#7aaae8', '#e08888', '#7ec87e', '#d4a86c', '#b090e0', '#60c4c0', '#ccc060', '#8899b4'];
+
+export interface GroupedBarSeriesPoint { name: string; value: number }
+export interface GroupedBar { id?: string; label: string; series: GroupedBarSeriesPoint[] }
+
+function makeData(): GroupedBar[] {
+  const labels = ["Q1", "Q2", "Q3", "Q4"];
+  const seriesNames = ["North", "South", "East", "West"];
+  return labels.map(l => ({
+    id: l,
+    label: l,
+    series: seriesNames.map(n => ({ name: n, value: Math.round(10 + Math.random() * 60) })),
+  }));
+}
+
+function uniqueSeriesNames(rows: readonly GroupedBar[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const r of rows) for (const s of r.series) if (!seen.has(s.name)) { seen.add(s.name); out.push(s.name); }
+  return out;
+}
+
+function rowTotal(r: GroupedBar): number {
+  let t = 0; for (const s of r.series) t += s.value; return t;
+}
+
+export class MdGroupedBarChartLC extends Diagram {
+  static styles = `text { pointer-events: none; }${FILL_STYLE}`;
+
+  readonly dataCell = cell<readonly GroupedBar[]>(makeData());
+
+  mode: 'grouped' | 'stacked' = 'grouped';
+  orientation: 'vertical' | 'horizontal' = 'vertical';
+
+  set externalData(v: GroupedBar[] | undefined) { if (v) this.dataCell.value = v; }
+  get externalData(): GroupedBar[] | undefined { return this.dataCell.value as GroupedBar[]; }
+
+  protected scene(s: Mount): void {
+    const size = useHostSize(this, { width: W, height: H });
+    if (this.orientation === 'horizontal') {
+      this.#horizontal(s, size);
+    } else {
+      this.#vertical(s, size);
+    }
+  }
+
+  #vertical(s: Mount, { w: Wc, h: Hc }: HostSize) {
+    const PAD = { top: 28, right: 16, bottom: 36, left: 48 };
+    const plotX = PAD.left, plotY = PAD.top;
+    const rows = this.dataCell.value;
+    const names = uniqueSeriesNames(rows);
+    const stacked = this.mode === 'stacked';
+
+    this.view(Wc, Hc);
+
+    const plotW = derive(() => Wc.value - PAD.left - PAD.right);
+    const plotH = derive(() => Hc.value - PAD.top - PAD.bottom);
+
+    const xBand = derive(() =>
+      scaleBand<string>()
+        .domain(rows.map((_, i) => String(i)))
+        .range([plotX, plotX + plotW.value])
+        .padding(0.2)
+    );
+    const xInner = derive(() =>
+      scaleBand<string>()
+        .domain(names)
+        .range([0, xBand.value.bandwidth()])
+        .padding(0.05)
+    );
+
+    const yMax = stacked
+      ? Math.max(1, ...rows.map(rowTotal))
+      : Math.max(1, ...rows.flatMap(r => r.series.map(p => p.value)));
+    const yScale = derive(() =>
+      scaleLinear().domain([0, yMax]).range([plotY + plotH.value, plotY]).nice()
+    );
+
+    // Y axis baseline.
+    const ay1 = derive(() => plotY + plotH.value);
+    s(line(
+      Vec.derive(() => ({ x: plotX, y: ay1.value })),
+      Vec.derive(() => ({ x: plotX + plotW.value, y: ay1.value })),
+      { thin: true, opacity: 0.5, stroke: "#888" },
+    ));
+
+    // Y axis ticks (4 evenly-spaced).
+    const TICKS = 4;
+    for (let t = 0; t <= TICKS; t++) {
+      const v = (yMax * t) / TICKS;
+      const ty = derive(() => yScale.value(v));
+      s(line(
+        Vec.derive(() => ({ x: plotX - 4, y: ty.value })),
+        Vec.derive(() => ({ x: plotX, y: ty.value })),
+        { thin: true, opacity: 0.4, stroke: "#888" },
+      ));
+      s(label(Vec.derive(() => ({ x: plotX - 8, y: ty.value + 3 })),
+        `${Math.round(v)}`, { size: 10, align: Anchor.Right, fill: "#888", opacity: 0.8 }));
+    }
+
+    // Category labels.
+    for (let i = 0; i < rows.length; i++) {
+      const key = String(i);
+      const tx = derive(() => (xBand.value(key) ?? 0) + xBand.value.bandwidth() / 2);
+      s(label(Vec.derive(() => ({ x: tx.value, y: ay1.value + 16 })), rows[i]!.label,
+        { size: 10, align: Anchor.Center, fill: "#888", opacity: 0.85 }));
+    }
+
+    // Bars.
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i]!;
+      const bandX = derive(() => xBand.value(String(i)) ?? 0);
+
+      if (stacked) {
+        let acc = 0;
+        for (let k = 0; k < row.series.length; k++) {
+          const seg = row.series[k]!;
+          const segStart = acc;
+          const segEnd = acc + seg.value;
+          acc = segEnd;
+          const y0 = derive(() => yScale.value(segEnd));
+          const y1 = derive(() => yScale.value(segStart));
+          const h = derive(() => Math.max(0, y1.value - y0.value));
+          const seriesIdx = names.indexOf(seg.name);
+          const fill = PALETTE[seriesIdx % PALETTE.length]!;
+          s(rect(bandX, y0, derive(() => xBand.value.bandwidth()), h, { fill, corner: 1 }));
+        }
+      } else {
+        for (let k = 0; k < row.series.length; k++) {
+          const seg = row.series[k]!;
+          const segKey = seg.name;
+          const segX = derive(() => bandX.value + (xInner.value(segKey) ?? 0));
+          const segW = derive(() => xInner.value.bandwidth());
+          const segY = derive(() => yScale.value(seg.value));
+          const segH = derive(() => Math.max(0, (plotY + plotH.value) - segY.value));
+          const seriesIdx = names.indexOf(seg.name);
+          const fill = PALETTE[seriesIdx % PALETTE.length]!;
+          s(rect(segX, segY, segW, segH, { fill, corner: 1 }));
+        }
+      }
+    }
+
+    this.#legend(s, names, Wc, plotY);
+    this.#title(s, Wc);
+  }
+
+  #horizontal(s: Mount, { w: Wc, h: Hc }: HostSize) {
+    const PAD = { top: 28, right: 24, bottom: 28, left: 72 };
+    const plotX = PAD.left, plotY = PAD.top;
+    const rows = this.dataCell.value;
+    const names = uniqueSeriesNames(rows);
+    const stacked = this.mode === 'stacked';
+
+    this.view(Wc, Hc);
+
+    const plotW = derive(() => Wc.value - PAD.left - PAD.right);
+    const plotH = derive(() => Hc.value - PAD.top - PAD.bottom);
+
+    const yBand = derive(() =>
+      scaleBand<string>()
+        .domain(rows.map((_, i) => String(i)))
+        .range([plotY, plotY + plotH.value])
+        .padding(0.2)
+    );
+    const yInner = derive(() =>
+      scaleBand<string>()
+        .domain(names)
+        .range([0, yBand.value.bandwidth()])
+        .padding(0.05)
+    );
+
+    const xMax = stacked
+      ? Math.max(1, ...rows.map(rowTotal))
+      : Math.max(1, ...rows.flatMap(r => r.series.map(p => p.value)));
+    const xScale = derive(() =>
+      scaleLinear().domain([0, xMax]).range([plotX, plotX + plotW.value]).nice()
+    );
+
+    // X axis baseline (top of plot doubles as numeric axis line).
+    s(line(
+      Vec.derive(() => ({ x: plotX, y: plotY })),
+      Vec.derive(() => ({ x: plotX + plotW.value, y: plotY })),
+      { thin: true, opacity: 0.5, stroke: "#888" },
+    ));
+    const TICKS = 4;
+    for (let t = 0; t <= TICKS; t++) {
+      const v = (xMax * t) / TICKS;
+      const tx = derive(() => xScale.value(v));
+      s(line(
+        Vec.derive(() => ({ x: tx.value, y: plotY - 4 })),
+        Vec.derive(() => ({ x: tx.value, y: plotY })),
+        { thin: true, opacity: 0.4, stroke: "#888" },
+      ));
+      s(label(Vec.derive(() => ({ x: tx.value, y: plotY - 8 })),
+        `${Math.round(v)}`, { size: 10, align: Anchor.Center, fill: "#888", opacity: 0.8 }));
+    }
+
+    // Category labels on left.
+    for (let i = 0; i < rows.length; i++) {
+      const key = String(i);
+      const cy = derive(() => (yBand.value(key) ?? 0) + yBand.value.bandwidth() / 2);
+      s(label(Vec.derive(() => ({ x: plotX - 6, y: cy.value + 3 })), rows[i]!.label,
+        { size: 11, align: Anchor.Right, fill: "#888", opacity: 0.85 }));
+    }
+
+    // Bars.
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i]!;
+      const bandY = derive(() => yBand.value(String(i)) ?? 0);
+
+      if (stacked) {
+        let acc = 0;
+        for (let k = 0; k < row.series.length; k++) {
+          const seg = row.series[k]!;
+          const segStart = acc;
+          const segEnd = acc + seg.value;
+          acc = segEnd;
+          const x0 = derive(() => xScale.value(segStart));
+          const x1 = derive(() => xScale.value(segEnd));
+          const w = derive(() => Math.max(0, x1.value - x0.value));
+          const seriesIdx = names.indexOf(seg.name);
+          const fill = PALETTE[seriesIdx % PALETTE.length]!;
+          s(rect(x0, bandY, w, derive(() => yBand.value.bandwidth()), { fill, corner: 1 }));
+        }
+      } else {
+        for (let k = 0; k < row.series.length; k++) {
+          const seg = row.series[k]!;
+          const segKey = seg.name;
+          const segY = derive(() => bandY.value + (yInner.value(segKey) ?? 0));
+          const segH = derive(() => yInner.value.bandwidth());
+          const segW = derive(() => Math.max(0, xScale.value(seg.value) - plotX));
+          const seriesIdx = names.indexOf(seg.name);
+          const fill = PALETTE[seriesIdx % PALETTE.length]!;
+          s(rect(plotX, segY, segW, segH, { fill, corner: 1 }));
+        }
+      }
+    }
+
+    this.#legend(s, names, Wc, 6);
+    this.#title(s, Wc);
+  }
+
+  #legend(s: Mount, names: string[], Wc: ReturnType<typeof cell<number>>, top: number) {
+    const SWATCH = 10;
+    const GAP = 6;
+    const ITEM_GAP = 14;
+    const widths = names.map(n => n.length * 6 + SWATCH + GAP);
+    const total = widths.reduce((a, b) => a + b + ITEM_GAP, 0) - ITEM_GAP;
+    let cursor = 0;
+    for (let i = 0; i < names.length; i++) {
+      const xOffset = cursor;
+      const fill = PALETTE[i % PALETTE.length]!;
+      const sx = derive(() => (Wc.value - total) / 2 + xOffset);
+      s(rect(sx, derive(() => top - 1), cell(SWATCH), cell(SWATCH), { fill, corner: 1 }));
+      s(label(Vec.derive(() => ({ x: sx.value + SWATCH + GAP, y: top + 8 })), names[i]!,
+        { size: 10, align: Anchor.Left, fill: "#bbb" }));
+      cursor += widths[i]! + ITEM_GAP;
+    }
+  }
+
+  #title(s: Mount, Wc: ReturnType<typeof cell<number>>) {
+    const t = `${this.mode === 'stacked' ? 'Stacked' : 'Grouped'} bars — ${this.orientation}`;
+    s(label(Vec.derive(() => ({ x: Wc.value / 2, y: 14 })), t,
+      { size: 11, align: Anchor.Center, opacity: 0.6 }));
+  }
+}

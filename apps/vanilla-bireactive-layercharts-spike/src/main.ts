@@ -7,6 +7,7 @@ import {
   MdLineChartLC,
   MdAreaChartLC,
   MdBarChartLC,
+  MdGroupedBarChartLC,
   MdScatterChartLC,
   MdPieChartLC,
   MdRadarChartLC,
@@ -25,11 +26,28 @@ class MdBandsChartLC extends MdBarChartLC {
   constructor() { super(); this.orientation = 'horizontal'; this.colorMode = 'palette'; this.labelMode = 'inside'; this.valueMode = 'inside'; }
 }
 
+class MdGroupedBarChartVerticalLC extends MdGroupedBarChartLC {
+  constructor() { super(); this.mode = 'grouped'; this.orientation = 'vertical'; }
+}
+class MdStackedBarChartVerticalLC extends MdGroupedBarChartLC {
+  constructor() { super(); this.mode = 'stacked'; this.orientation = 'vertical'; }
+}
+class MdGroupedBarChartHorizontalLC extends MdGroupedBarChartLC {
+  constructor() { super(); this.mode = 'grouped'; this.orientation = 'horizontal'; }
+}
+class MdStackedBarChartHorizontalLC extends MdGroupedBarChartLC {
+  constructor() { super(); this.mode = 'stacked'; this.orientation = 'horizontal'; }
+}
+
 const experiments: Array<{ id: string; title: string; tag: string; ctor: typeof Diagram }> = [
   { id: "line-chart", title: "LineChart", tag: "v-line-chart", ctor: MdLineChartLC },
   { id: "area-chart", title: "AreaChart", tag: "v-area-chart", ctor: MdAreaChartLC },
   { id: "bar-chart", title: "BarChart (vertical)", tag: "v-bar-chart", ctor: MdBarChartLC },
   { id: "bands-chart", title: "Bands (horizontal, palette, inside labels)", tag: "v-bands-chart", ctor: MdBandsChartLC },
+  { id: "grouped-bar-vertical", title: "GroupedBar (vertical) — WIN-50 spike", tag: "v-grouped-bar-v", ctor: MdGroupedBarChartVerticalLC },
+  { id: "stacked-bar-vertical", title: "StackedBar (vertical) — WIN-50 spike", tag: "v-stacked-bar-v", ctor: MdStackedBarChartVerticalLC },
+  { id: "grouped-bar-horizontal", title: "GroupedBar (horizontal) — WIN-50 spike", tag: "v-grouped-bar-h", ctor: MdGroupedBarChartHorizontalLC },
+  { id: "stacked-bar-horizontal", title: "StackedBar (horizontal) — WIN-50 spike", tag: "v-stacked-bar-h", ctor: MdStackedBarChartHorizontalLC },
   { id: "scatter-chart", title: "ScatterChart", tag: "v-scatter-chart", ctor: MdScatterChartLC },
   { id: "pie-chart", title: "PieChart", tag: "v-pie-chart", ctor: MdPieChartLC },
   { id: "radar-chart", title: "RadarChart (Radial Line)", tag: "v-radar-chart", ctor: MdRadarChartLC },
