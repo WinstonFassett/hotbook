@@ -336,42 +336,114 @@ export class MdGroupedBarChartLC extends Diagram {
         { size: 11, align: Anchor.Right, fill: "#888", opacity: 0.85 }));
     }
 
-    // Bars.
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i]!;
-      const bandY = derive(() => yBand.value(String(i)) ?? 0);
+    // Set up gesture state BEFORE rendering bars.
+    const { hover, selected } = this.#gesturesHorizontal(s, rows, names, yBand, xScale, plotX, plotY, plotW, plotH, Wc);
+
+    // Bars with hover/select feedback and drag handles.
+    const NUM_ROWS = rows.length;
+    for (let rowIdx = 0; rowIdx < NUM_ROWS; rowIdx++) {
+      const rowId = rows[rowIdx]!.id ?? rows[rowIdx]!.label;
+      const bandY = derive(() => yBand.value(String(rowIdx)) ?? 0);
 
       if (stacked) {
-        let acc = 0;
-        for (let k = 0; k < row.series.length; k++) {
-          const seg = row.series[k]!;
-          const segStart = acc;
-          const segEnd = acc + seg.value;
-          acc = segEnd;
-          const x0 = derive(() => xScale.value(segStart));
-          const x1 = derive(() => xScale.value(segEnd));
+        const NUM_SERIES = rows[rowIdx]!.series.length;
+        for (let seriesIdx = 0; seriesIdx < NUM_SERIES; seriesIdx++) {
+          const seriesName = rows[rowIdx]!.series[seriesIdx]!.name;
+          const seriesListIdx = names.indexOf(seriesName);
+          const baseFill = PALETTE[seriesListIdx % PALETTE.length]!;
+          const hoverFill = this.#lighten(baseFill, 0.25);
+
+          const segRef: SegmentRef = { rowId, seriesName };
+          const getRow = () => (this.dataCell.value as GroupedBar[])[rowIdx];
+          const getSeg = () => getRow()?.series[seriesIdx];
+
+          const segStart = derive(() => {
+            const r = getRow();
+            if (!r) return 0;
+            let acc = 0;
+            for (let i = 0; i < seriesIdx; i++) acc += r.series[i]?.value ?? 0;
+            return acc;
+          });
+          const segEnd = derive(() => segStart.value + (getSeg()?.value ?? 0));
+
+          const x0 = derive(() => xScale.value(segStart.value));
+          const x1 = derive(() => xScale.value(segEnd.value));
           const w = derive(() => Math.max(0, x1.value - x0.value));
-          const seriesIdx = names.indexOf(seg.name);
-          const fill = PALETTE[seriesIdx % PALETTE.length]!;
-          s(rect(x0, bandY, w, derive(() => yBand.value.bandwidth()), { fill, corner: 1 }));
+          const fill = derive(() => {
+            const sel = selected.value;
+            const hov = hover.value;
+            if (sel && segmentEq(sel, segRef)) return "#fff";
+            if (hov && segmentEq(hov, segRef)) return hoverFill;
+            return baseFill;
+          });
+
+          const segRect = s(rect(x0, bandY, w, derive(() => yBand.value.bandwidth()), { fill, corner: 1 }));
+          segRect.el.style.cursor = "pointer";
+          segRect.el.style.transition = settleTransition(["x", "width", "fill"]);
+
+          const handleY = derive(() => bandY.value + yBand.value.bandwidth() / 2);
+          const handleOpacity = derive(() => {
+            const sel = selected.value;
+            const hov = hover.value;
+            return (sel && segmentEq(sel, segRef)) || (hov && segmentEq(hov, segRef)) ? 1 : 0;
+          });
+          const handleRadius = derive(() => selected.value && segmentEq(selected.value, segRef) ? 6 : 5);
+          const handleFill = derive(() => selected.value && segmentEq(selected.value, segRef) ? "#fff" : hoverFill);
+          const handle = s(circle(Vec.derive(() => ({ x: x1.value, y: handleY.value })), handleRadius, {
+            fill: handleFill,
+            stroke: "#0b0d12", strokeWidth: 1.5, opacity: handleOpacity,
+          }));
+          handle.el.style.cursor = "ew-resize";
+          handle.el.style.transition = hoverTransition("opacity");
         }
       } else {
-        for (let k = 0; k < row.series.length; k++) {
-          const seg = row.series[k]!;
-          const segKey = seg.name;
-          const segY = derive(() => bandY.value + (yInner.value(segKey) ?? 0));
+        const NUM_SERIES = rows[rowIdx]!.series.length;
+        for (let seriesIdx = 0; seriesIdx < NUM_SERIES; seriesIdx++) {
+          const seriesName = rows[rowIdx]!.series[seriesIdx]!.name;
+          const seriesListIdx = names.indexOf(seriesName);
+          const baseFill = PALETTE[seriesListIdx % PALETTE.length]!;
+          const hoverFill = this.#lighten(baseFill, 0.25);
+
+          const segRef: SegmentRef = { rowId, seriesName };
+          const getRow = () => (this.dataCell.value as GroupedBar[])[rowIdx];
+          const getSeg = () => getRow()?.series[seriesIdx];
+
+          const segY = derive(() => bandY.value + (yInner.value(seriesName) ?? 0));
           const segH = derive(() => yInner.value.bandwidth());
-          const segW = derive(() => Math.max(0, xScale.value(seg.value) - plotX));
-          const seriesIdx = names.indexOf(seg.name);
-          const fill = PALETTE[seriesIdx % PALETTE.length]!;
-          s(rect(plotX, segY, segW, segH, { fill, corner: 1 }));
+          const segW = derive(() => Math.max(0, xScale.value(getSeg()?.value ?? 0) - plotX));
+          const fill = derive(() => {
+            const sel = selected.value;
+            const hov = hover.value;
+            if (sel && segmentEq(sel, segRef)) return "#fff";
+            if (hov && segmentEq(hov, segRef)) return hoverFill;
+            return baseFill;
+          });
+
+          const segRect = s(rect(plotX, segY, segW, segH, { fill, corner: 1 }));
+          segRect.el.style.cursor = "pointer";
+          segRect.el.style.transition = settleTransition(["width", "fill"]);
+
+          const handleX = derive(() => plotX + segW.value);
+          const handleY = derive(() => segY.value + segH.value / 2);
+          const handleOpacity = derive(() => {
+            const sel = selected.value;
+            const hov = hover.value;
+            return (sel && segmentEq(sel, segRef)) || (hov && segmentEq(hov, segRef)) ? 1 : 0;
+          });
+          const handleRadius = derive(() => selected.value && segmentEq(selected.value, segRef) ? 6 : 5);
+          const handleFill = derive(() => selected.value && segmentEq(selected.value, segRef) ? "#fff" : hoverFill);
+          const handle = s(circle(Vec.derive(() => ({ x: handleX.value, y: handleY.value })), handleRadius, {
+            fill: handleFill,
+            stroke: "#0b0d12", strokeWidth: 1.5, opacity: handleOpacity,
+          }));
+          handle.el.style.cursor = "ew-resize";
+          handle.el.style.transition = hoverTransition("opacity");
         }
       }
     }
 
     this.#legend(s, names, Wc, 6);
     this.#title(s, Wc);
-    // TODO: Add horizontal gestures (same pattern as vertical, different hit test)
   }
 
   #legend(s: Mount, names: string[], Wc: ReturnType<typeof cell<number>>, top: number) {
@@ -608,6 +680,214 @@ export class MdGroupedBarChartLC extends Diagram {
       if (!seg) return;
       dragPointerId = pe.pointerId;
       dragStartY = y;
+      selected.value = seg;
+      (this as any).setPointerCapture(pe.pointerId);
+      dragController.begin(seg, dragConfig);
+      pe.preventDefault();
+    });
+
+    this.addEventListener("pointermove", e => {
+      if (dragController.active || wheelController.active) return;
+      const { x, y } = localPoint(e as PointerEvent);
+      hover.value = findSegmentAt(x, y);
+    });
+
+    return { hover, selected };
+  }
+
+  #gesturesHorizontal(
+    s: Mount,
+    rows: readonly GroupedBar[],
+    names: string[],
+    yBand: ReturnType<typeof derive<any>>,
+    xScale: ReturnType<typeof derive<any>>,
+    plotX: number,
+    plotY: number,
+    plotW: ReturnType<typeof derive<number>>,
+    plotH: ReturnType<typeof derive<number>>,
+    Wc: ReturnType<typeof cell<number>>,
+  ) {
+    const hover = cell<SegmentRef | null>(null);
+    const selected = cell<SegmentRef | null>(null);
+    const svgEl = (this as any).svg as SVGSVGElement;
+    const stacked = this.mode === 'stacked';
+
+    const localPoint = (e: PointerEvent) => {
+      const r = svgEl.getBoundingClientRect();
+      const vb = svgEl.viewBox?.baseVal;
+      const sx = vb && vb.width ? vb.width / r.width : 1;
+      const sy = vb && vb.height ? vb.height / r.height : 1;
+      return { x: (e.clientX - r.left) * sx, y: (e.clientY - r.top) * sy };
+    };
+
+    const findSegmentAt = (px: number, py: number): SegmentRef | null => {
+      const data = this.dataCell.value as GroupedBar[];
+      const ys = yBand.value;
+      const xs = xScale.value;
+      const step = ys.step();
+
+      for (let i = 0; i < data.length; i++) {
+        const row = data[i]!;
+        const by = ys(String(i)) ?? -1;
+        if (py < by || py >= by + step) continue;
+
+        if (stacked) {
+          let acc = 0;
+          for (const seg of row.series) {
+            const segStart = acc;
+            const segEnd = acc + seg.value;
+            acc = segEnd;
+            const x0 = xs(segStart);
+            const x1 = xs(segEnd);
+            if (px >= x0 && px <= x1) {
+              return { rowId: row.id ?? row.label, seriesName: seg.name };
+            }
+          }
+        } else {
+          const innerBand = scaleBand<string>()
+            .domain(names)
+            .range([0, ys.bandwidth()])
+            .padding(0.05);
+          for (const seg of row.series) {
+            const segY = by + (innerBand(seg.name) ?? 0);
+            const segH = innerBand.bandwidth();
+            if (py < segY || py >= segY + segH) continue;
+            const segW = xs(seg.value) - plotX;
+            if (px >= plotX && px <= plotX + segW) {
+              return { rowId: row.id ?? row.label, seriesName: seg.name };
+            }
+          }
+        }
+      }
+      return null;
+    };
+
+    const mutateSegment = (ref: SegmentRef, delta: number) => {
+      const data = [...this.dataCell.value] as GroupedBar[];
+      const row = data.find(r => (r.id ?? r.label) === ref.rowId);
+      if (!row) return;
+      const seg = row.series.find(s => s.name === ref.seriesName);
+      if (!seg) return;
+      seg.value = Math.max(0, seg.value + delta);
+      this.dataCell.value = data;
+    };
+
+    const setGestureActive = (on: boolean) => this.classList.toggle(GESTURE_ACTIVE_CLASS, on);
+
+    const wheelConfig = {
+      snapshot: (ref: SegmentRef) => {
+        setGestureActive(true);
+        const row = (this.dataCell.value as GroupedBar[]).find(r => (r.id ?? r.label) === ref.rowId);
+        const seg = row?.series.find(s => s.name === ref.seriesName);
+        return seg?.value ?? 0;
+      },
+      restore: (ref: SegmentRef, v: number) => {
+        const row = (this.dataCell.value as GroupedBar[]).find(r => (r.id ?? r.label) === ref.rowId);
+        const seg = row?.series.find(s => s.name === ref.seriesName);
+        if (seg) mutateSegment(ref, v - seg.value);
+      },
+      onEnd: () => {
+        setGestureActive(false);
+        hover.value = null;
+        this.dispatchEvent(new CustomEvent("gesturecommit"));
+      },
+    };
+
+    let dragPointerId = -1;
+    let dragStartX = 0;
+    const dragConfig = {
+      snapshot: (ref: SegmentRef) => {
+        setGestureActive(true);
+        const row = (this.dataCell.value as GroupedBar[]).find(r => (r.id ?? r.label) === ref.rowId);
+        const seg = row?.series.find(s => s.name === ref.seriesName);
+        return { origValue: seg?.value ?? 0, startX: dragStartX };
+      },
+      restore: (ref: SegmentRef, snap: { origValue: number }) => {
+        mutateSegment(ref, snap.origValue - (wheelConfig.snapshot(ref) as number));
+      },
+      onMove: (pe: PointerEvent) => {
+        const t = dragController.target as SegmentRef | null;
+        if (!t) return;
+        const { x } = localPoint(pe);
+        const row = (this.dataCell.value as GroupedBar[]).find(r => (r.id ?? r.label) === t.rowId);
+        if (!row) return;
+        const segIdx = row.series.findIndex(s => s.name === t.seriesName);
+        if (segIdx < 0) return;
+        const seg = row.series[segIdx]!;
+
+        if (stacked) {
+          let accBefore = 0;
+          for (let i = 0; i < segIdx; i++) {
+            accBefore += row.series[i]!.value;
+          }
+          const stackWidth = xScale.value.invert(x);
+          const newValue = Math.max(0, stackWidth - accBefore);
+          mutateSegment(t, newValue - seg.value);
+        } else {
+          mutateSegment(t, xScale.value.invert(x) - seg.value);
+        }
+      },
+      onEnd: () => {
+        if (dragPointerId >= 0 && (this as any).hasPointerCapture?.(dragPointerId)) {
+          (this as any).releasePointerCapture(dragPointerId);
+        }
+        dragPointerId = -1;
+        setGestureActive(false);
+        this.dispatchEvent(new CustomEvent("gesturecommit"));
+      },
+    };
+
+    this.addEventListener("pointerleave", () => {
+      if (!wheelController.active) hover.value = null;
+    });
+
+    this.addEventListener("click", e => {
+      const { x, y } = localPoint(e as PointerEvent);
+      const seg = findSegmentAt(x, y);
+      selected.value = segmentEq(selected.value, seg) ? null : seg;
+    });
+
+    this.addEventListener("wheel", e => {
+      const we = e as WheelEvent;
+      if (!we.ctrlKey) return;
+      we.preventDefault();
+      we.stopPropagation();
+      const t = wheelController.begin(hover.value ?? selected.value, wheelConfig);
+      if (!t) return;
+      const currentValue = wheelConfig.snapshot(t) as number;
+      const step = dynamicWheelStep(currentValue, we.shiftKey);
+      mutateSegment(t, we.deltaY < 0 ? +step : -step);
+    }, { passive: false });
+
+    this.addEventListener("keydown", e => {
+      const ke = e as KeyboardEvent;
+      if (ke.key === "Escape") {
+        if (selected.value != null) {
+          selected.value = null;
+          ke.preventDefault();
+        }
+        return;
+      }
+      if (!selected.value) return;
+      const currentValue = wheelConfig.snapshot(selected.value) as number;
+      const step = dynamicWheelStep(currentValue, ke.shiftKey);
+      if (ke.key === "ArrowUp" || ke.key === "ArrowRight") {
+        mutateSegment(selected.value, +step);
+        ke.preventDefault();
+      } else if (ke.key === "ArrowDown" || ke.key === "ArrowLeft") {
+        mutateSegment(selected.value, -step);
+        ke.preventDefault();
+      }
+    });
+
+    this.addEventListener("pointerdown", e => {
+      if (dragController.active) return;
+      const pe = e as PointerEvent;
+      const { x, y } = localPoint(pe);
+      const seg = findSegmentAt(x, y);
+      if (!seg) return;
+      dragPointerId = pe.pointerId;
+      dragStartX = x;
       selected.value = seg;
       (this as any).setPointerCapture(pe.pointerId);
       dragController.begin(seg, dragConfig);
