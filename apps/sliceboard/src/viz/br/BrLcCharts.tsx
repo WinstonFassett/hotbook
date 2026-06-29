@@ -30,6 +30,7 @@ import {
   MdSunburstLC,
   MdSankeySimple,
   MdSankeyFlow,
+  MdSankeyGrouped,
   MdTreeChart,
 } from '@winstonfassett/vizform-charts'
 
@@ -50,6 +51,7 @@ const TAGS = [
   ['v-br-sunburst',       MdSunburstLC],
   ['v-br-sankey',         MdSankeySimple],
   ['v-br-sankey-flow',    MdSankeyFlow],
+  ['v-br-sankey-grouped', MdSankeyGrouped],
   ['v-br-tree',           MdTreeChart],
 ] as const
 
@@ -356,5 +358,11 @@ export function BrLcSankey({ edges }: SankeyProps) {
 // ─── Sankey (conservation flow) ─────────────────────────────────────────────────
 export function BrLcSankeyFlow() {
   const ref = useBrElement<MdSankeyFlow>('v-br-sankey-flow', () => {}, [])
+  return <div ref={ref} style={{ width: '100%', height: '100%' }} />
+}
+
+// ─── Sankey (grouped nodes, WIN-56 spike) ───────────────────────────────────────
+export function BrLcSankeyGrouped() {
+  const ref = useBrElement<MdSankeyGrouped>('v-br-sankey-grouped', () => {}, [])
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }

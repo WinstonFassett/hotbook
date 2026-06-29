@@ -8,7 +8,7 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { HTreetable } from '@winstonfassett/vizform-react-d3'
 import {
   BrLcBar, BrLcLine, BrLcArea, BrLcScatter, BrLcPie, BrLcRadar, BrLcConcentricArc,
-  BrLcPack, BrLcTreemap, BrLcIcicle, BrLcSunburst, BrLcSankey, BrLcSankeyFlow, BrLcTree,
+  BrLcPack, BrLcTreemap, BrLcIcicle, BrLcSunburst, BrLcSankey, BrLcSankeyFlow, BrLcSankeyGrouped, BrLcTree,
 } from '../viz/br/BrLcCharts'
 import type { PNode, PEdge } from '../persistence'
 import { DemoFrame } from './DemoFrame'
@@ -109,6 +109,10 @@ const DEMOS: DemoDef[] = [
   {
     slug: 'br-lc-sankey-flow', label: 'Sankey Flow', fixtureName: '(built-in)', fixture: { note: 'conservation-flow demo uses element internal data' },
     render: () => <BrLcSankeyFlow />,
+  },
+  {
+    slug: 'br-lc-sankey-grouped', label: 'Sankey (grouped)', fixtureName: '(built-in)', fixture: { note: 'WIN-56 spike — grouped nodes, hierarchical containers' },
+    render: () => <BrLcSankeyGrouped />,
   },
 ]
 
