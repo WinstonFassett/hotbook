@@ -174,7 +174,8 @@ export class MdGanttChartLC extends Diagram {
     // Forward-propagate dep constraints in topological order. Each task with
     // deps snaps to start = max(pred.end). Pure forward — predecessors aren't
     // dragged back when a successor moves earlier (the dragged task is anchor).
-    const propagateDeps = () => {
+    // `exclude` skips a task (typically the one being actively dragged).
+    const propagateDeps = (exclude?: GanttTask) => {
       if (!this.enforceDeps) return;
       const rows = data.value as GanttTask[];
       const byId = new Map(rows.map(t => [t.id, t]));
@@ -194,8 +195,9 @@ export class MdGanttChartLC extends Diagram {
       }
       while (queue.length) {
         const t = queue.shift()!;
+        // Skip the excluded task (being actively dragged) — it's the anchor.
         const preds = (t.deps ?? []).map(id => byId.get(id)).filter((p): p is GanttTask => !!p);
-        if (preds.length) {
+        if (preds.length && t !== exclude) {
           const latest = Math.max(...preds.map(p => p.end.getTime()));
           if (t.start.getTime() !== latest) {
             const dur = t.end.getTime() - t.start.getTime();
@@ -210,7 +212,7 @@ export class MdGanttChartLC extends Diagram {
         }
       }
     };
-    const setRange = (t: GanttTask, startMs: number, endMs: number) => {
+    const setRange = (t: GanttTask, startMs: number, endMs: number, skipPropagation = false) => {
       // Enforce min duration 1 day, keep start ≤ end.
       const min = DAY_MS;
       let s0 = snapDay(startMs);
@@ -218,7 +220,7 @@ export class MdGanttChartLC extends Diagram {
       if (s1 - s0 < min) s1 = s0 + min;
       t.start = new Date(s0);
       t.end = new Date(s1);
-      propagateDeps();
+      if (!skipPropagation) propagateDeps(t);
       data.value = [...data.value];
     };
     const nudge = (t: GanttTask, days: number) => {
@@ -229,6 +231,12 @@ export class MdGanttChartLC extends Diagram {
       const delta = days * DAY_MS;
       setRange(t, t.start.getTime(), t.end.getTime() + delta);
     };
+
+    // Initialize: enforce deps on the initial data if enforceDeps is true.
+    if (this.enforceDeps) {
+      propagateDeps();
+      data.value = [...data.value];
+    }
 
     // ─── Pointer drag (body / start / end) ─────────────────────────────────
     //
@@ -248,7 +256,7 @@ export class MdGanttChartLC extends Diagram {
         return { start: t.start.getTime(), end: t.end.getTime(), originMs, kind };
       },
       restore: (t: GanttTask, snap: DragSnap) => {
-        setRange(t, snap.start, snap.end);
+        setRange(t, snap.start, snap.end, true);
       },
       onMove: (pe: PointerEvent, snap: DragSnap) => {
         const t = dragController.target as GanttTask | null;
@@ -326,7 +334,7 @@ export class MdGanttChartLC extends Diagram {
         setGestureActive(true);
         return { start: t.start.getTime(), end: t.end.getTime(), originMs: 0, kind: 'end' as DragKind };
       },
-      restore: (t: GanttTask, snap: DragSnap) => { setRange(t, snap.start, snap.end); },
+      restore: (t: GanttTask, snap: DragSnap) => { setRange(t, snap.start, snap.end, true); },
       onEnd: () => { setGestureActive(false); commit(); },
     };
     this.addEventListener("wheel", (e) => {
