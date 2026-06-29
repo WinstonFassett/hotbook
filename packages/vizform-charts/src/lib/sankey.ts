@@ -74,13 +74,16 @@ export interface SankeySceneOptions {
   linkColorMode?: ReturnType<typeof cell<LinkColorMode>>;
   // Custom step size fn — defaults to 1 (shift=5). Use e.g. v => v * 0.1 for proportional.
   stepFn?: (currentVal: number, shift: boolean) => number;
-  /** Called when a node BAR is clicked. Index is into `nodeIds`. The
+  /** Called when a node BAR is double-clicked. Index is into `nodeIds`. The
    *  hierarchical sankey uses this to toggle expand/collapse. Wins over
    *  the default click behavior (which has none on nodes today). */
   onNodeClick?: (nodeIdx: number) => void;
   /** Per-node visual flag: true = render as a clickable group affordance
    *  (dashed stroke + cursor:pointer). Index aligns to `nodeIds`. */
   nodeIsGroup?: boolean[];
+  /** Per-node collapsed state: true = this node is a collapsed group (shows +),
+   *  false = expanded or not a group (shows - if it's a group). Index aligns to `nodeIds`. */
+  nodeIsCollapsed?: boolean[];
 }
 
 const LINK_MIN = 0.5; // floor so a flow never collapses to an ungrabbable sliver
@@ -146,6 +149,7 @@ export function sankeyScene(
     groupGap = groups ? 16 : 0,
     onNodeClick,
     nodeIsGroup,
+    nodeIsCollapsed,
   } = opts;
   const stepFn = opts.stepFn ?? ((v: number, shift: boolean) => dynamicWheelStep(v, shift));
 
@@ -381,13 +385,16 @@ export function sankeyScene(
     const isGroup = !!(nodeIsGroup && nodeIsGroup[n]);
     const tile = s(rect(x0, y0, nw, nh, {
       fill,
-      stroke: derive(() => nodeActive.value ? "#fff" : (isGroup ? "#cdd5e0" : "none")),
-      strokeWidth: 1.5,
+      stroke: derive(() => nodeActive.value ? "#fff" : (isGroup ? "#a0b4d0" : "none")),
+      strokeWidth: 2,
       dashed: isGroup || undefined,
     }));
-    if (isGroup) tile.el.style.cursor = "pointer";
+    if (isGroup) {
+      tile.el.style.cursor = "pointer";
+      tile.el.style.pointerEvents = "auto"; // Ensure fill is clickable, not just stroke
+    }
     if (onNodeClick) {
-      tile.el.addEventListener("click", (e) => {
+      tile.el.addEventListener("dblclick", (e) => {
         e.stopPropagation();
         onNodeClick(n);
       });
@@ -395,7 +402,8 @@ export function sankeyScene(
     tile.el.addEventListener("pointerenter", (e) => {
       nodeActive.value = true;
       const v = layout.value.nodes[n]!.value;
-      tooltipText.value = `${name}: ${v.toFixed(1)}`;
+      const hint = isGroup ? " · double-click to expand/collapse" : "";
+      tooltipText.value = `${name}: ${v.toFixed(1)}${hint}`;
       tooltipAt.value = toSVG(e as PointerEvent); tooltipVis.value = true;
     });
     tile.el.addEventListener("pointermove", (e) => { tooltipAt.value = toSVG(e as PointerEvent); });
@@ -469,6 +477,21 @@ export function sankeyScene(
       align: isSink ? Anchor.Right : Anchor.Left,
       fill: "#cdd5e0",
     }));
+
+    // Add expand/collapse indicator for group nodes
+    if (isGroup) {
+      const isCollapsed = !!(nodeIsCollapsed && nodeIsCollapsed[n]);
+      const iconX = derive(() => x0.value + nw.value / 2);
+      const iconY = derive(() => y0.value + nh.value / 2);
+      const icon = isCollapsed ? "⊕" : "⊖";  // Using circled plus/minus for better visibility
+      const iconLbl = s(label(Vec.derive(() => ({ x: iconX.value, y: iconY.value })), icon, {
+        size: Math.max(16, labelSize + 6),
+        align: Anchor.Center,
+        fill: "#fff",
+      }));
+      iconLbl.el.style.fontWeight = "bold";
+      iconLbl.el.style.pointerEvents = "none";  // Let clicks pass through to the rect
+    }
   }
 
   // ── Single grip per ribbon ─────────────────────────────────────────────────

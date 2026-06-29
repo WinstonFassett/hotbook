@@ -390,6 +390,7 @@ export class MdSankeyHier extends Diagram {
       interp: interpolateCool,
       labelSize: 10,
       nodeIsGroup,
+      nodeIsCollapsed: flat.isCollapsedGroup,
       onNodeClick: (idx) => {
         const id = flat.nodeIds[idx]!;
         if (this.collapsed.has(id)) {
@@ -412,7 +413,7 @@ export class MdSankeyHier extends Diagram {
     renderColorControls(s, view, nodeColorProp, linkColorMode);
     s(label(view.bottom.up(40), derive(() => {
       const i = focused.value ?? wheelLocked.value ?? hovered.value;
-      if (i === null) return "click dashed bars to expand/collapse · drag bars/grips · cmd+wheel or ↑↓";
+      if (i === null) return "double-click nodes to expand/collapse · drag bars/grips · cmd+wheel or ↑↓";
       const lv = linkValues[i]!;
       return `${lv.source} → ${lv.target}: ${lv.value.value.toFixed(1)} · ↑↓ / cmd+wheel`;
     }), { size: 10, align: Anchor.Center, fill: "#9aa0a8" }));
