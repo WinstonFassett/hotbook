@@ -119,6 +119,11 @@ const DEMOS: DemoDef[] = [
     initRows: GANTT.rows,
     render: (rows) => <BrLcGantt nodes={rows} startKey="start" endKey="end" deps={GANTT.deps} />,
   },
+  {
+    slug: 'br-lc-gantt-enforced', label: 'Gantt (enforce deps)', fixtureName: 'gantt-tasks', fixture: GANTT,
+    initRows: GANTT.rows,
+    render: (rows) => <BrLcGantt nodes={rows} startKey="start" endKey="end" deps={GANTT.deps} enforceDeps />,
+  },
 ]
 
 function useHashRoute(): string {

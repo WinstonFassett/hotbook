@@ -86,6 +86,11 @@ export class MdGanttChartLC extends Diagram {
   /** Pad domain by this many days on each side of the data extent. */
   domainPadDays = 2;
 
+  /** When true, mutating a task pushes/pulls dependents so each successor's
+   *  start meets the latest predecessor's end (zero slack). Propagation is
+   *  forward-only in topological order; cycles are skipped silently. */
+  enforceDeps = false;
+
   set externalData(v: GanttTask[] | undefined) {
     if (v) this.dataCell.value = v;
   }
@@ -166,6 +171,45 @@ export class MdGanttChartLC extends Diagram {
 
     // Mutate one task; keep ms granularity but snap to whole days.
     const snapDay = (ms: number) => Math.round(ms / DAY_MS) * DAY_MS;
+    // Forward-propagate dep constraints in topological order. Each task with
+    // deps snaps to start = max(pred.end). Pure forward — predecessors aren't
+    // dragged back when a successor moves earlier (the dragged task is anchor).
+    const propagateDeps = () => {
+      if (!this.enforceDeps) return;
+      const rows = data.value as GanttTask[];
+      const byId = new Map(rows.map(t => [t.id, t]));
+      const indeg = new Map<string, number>();
+      for (const t of rows) indeg.set(t.id, 0);
+      for (const t of rows) for (const dep of t.deps ?? []) if (byId.has(dep)) indeg.set(t.id, (indeg.get(t.id) ?? 0) + 1);
+      // Kahn's algorithm: process tasks once their preds are resolved so each
+      // dep read sees its final value before its dependent gets snapped.
+      const queue: GanttTask[] = [];
+      for (const t of rows) if ((indeg.get(t.id) ?? 0) === 0) queue.push(t);
+      const successors = new Map<string, GanttTask[]>();
+      for (const t of rows) for (const dep of t.deps ?? []) {
+        if (!byId.has(dep)) continue;
+        const arr = successors.get(dep) ?? [];
+        arr.push(t);
+        successors.set(dep, arr);
+      }
+      while (queue.length) {
+        const t = queue.shift()!;
+        const preds = (t.deps ?? []).map(id => byId.get(id)).filter((p): p is GanttTask => !!p);
+        if (preds.length) {
+          const latest = Math.max(...preds.map(p => p.end.getTime()));
+          if (t.start.getTime() !== latest) {
+            const dur = t.end.getTime() - t.start.getTime();
+            t.start = new Date(latest);
+            t.end = new Date(latest + dur);
+          }
+        }
+        for (const s of successors.get(t.id) ?? []) {
+          const remaining = (indeg.get(s.id) ?? 1) - 1;
+          indeg.set(s.id, remaining);
+          if (remaining === 0) queue.push(s);
+        }
+      }
+    };
     const setRange = (t: GanttTask, startMs: number, endMs: number) => {
       // Enforce min duration 1 day, keep start ≤ end.
       const min = DAY_MS;
@@ -174,11 +218,16 @@ export class MdGanttChartLC extends Diagram {
       if (s1 - s0 < min) s1 = s0 + min;
       t.start = new Date(s0);
       t.end = new Date(s1);
+      propagateDeps();
       data.value = [...data.value];
     };
     const nudge = (t: GanttTask, days: number) => {
       const delta = days * DAY_MS;
       setRange(t, t.start.getTime() + delta, t.end.getTime() + delta);
+    };
+    const resize = (t: GanttTask, days: number) => {
+      const delta = days * DAY_MS;
+      setRange(t, t.start.getTime(), t.end.getTime() + delta);
     };
 
     // ─── Pointer drag (body / start / end) ─────────────────────────────────
@@ -220,12 +269,22 @@ export class MdGanttChartLC extends Diagram {
     });
 
     this.addEventListener("pointerleave", () => {
-      if (!dragController.active) hover.value = null;
+      if (!dragController.active && !wheelController.active) hover.value = null;
+    });
+
+    // Hover tracking while idle. Without this, ctrl+wheel has no target.
+    this.addEventListener("pointermove", (e) => {
+      if (dragController.active || wheelController.active) return;
+      hover.value = findAtPixelY(localPoint(e as PointerEvent).y);
     });
 
     this.addEventListener("pointerdown", (e) => {
       if (dragController.active) return;
       const pe = e as PointerEvent;
+      // Pull keyboard focus to the host so arrow keys / inc-dec work after
+      // a click — without this, focus stays on whatever was clicked last
+      // (often <body>) and chart keydowns never fire.
+      (this as any).focus?.();
       const { x, y } = localPoint(pe);
       const t = findAtPixelY(y);
       if (!t) return;
@@ -250,6 +309,7 @@ export class MdGanttChartLC extends Diagram {
       // A click here only fires when no drag is live (dragController consumes
       // the gesture otherwise). Treat clicks outside any bar as deselect.
       if (dragController.active) return;
+      (this as any).focus?.();
       const { x, y } = localPoint(e as PointerEvent);
       const t = findAtPixelY(y);
       if (!t) { selected.value = null; return; }
@@ -294,8 +354,10 @@ export class MdGanttChartLC extends Diagram {
         if (cur) { selected.value = null; ke.preventDefault(); }
         return;
       }
-      if (ke.key === "Tab" || ke.key === "ArrowUp" || ke.key === "ArrowDown") {
-        const dir = (ke.key === "ArrowUp" || (ke.key === "Tab" && ke.shiftKey)) ? -1 : +1;
+      // Tab — navigate between tasks; ←/→ also navigate when no task is
+      // selected, otherwise edit (see below).
+      if (ke.key === "Tab") {
+        const dir = ke.shiftKey ? -1 : +1;
         const n = rows.length;
         if (n === 0) return;
         const next = rows[((i < 0 ? 0 : i + dir) + n) % n] ?? null;
@@ -303,8 +365,12 @@ export class MdGanttChartLC extends Diagram {
       }
       if (!cur) return;
       const step = ke.shiftKey ? 7 : 1;
+      // ←/→ shift the whole task (preserves duration).
+      // ↑/↓ inc/dec duration (extend or shrink the end).
       if (ke.key === "ArrowRight") { nudge(cur, +step); ke.preventDefault(); }
-      else if (ke.key === "ArrowLeft") { nudge(cur, -step); ke.preventDefault(); }
+      else if (ke.key === "ArrowLeft")  { nudge(cur, -step); ke.preventDefault(); }
+      else if (ke.key === "ArrowUp")    { resize(cur, +step); ke.preventDefault(); }
+      else if (ke.key === "ArrowDown")  { resize(cur, -step); ke.preventDefault(); }
     });
 
     // ─── Time axis (bottom) ────────────────────────────────────────────────
@@ -552,7 +618,7 @@ export class MdGanttChartLC extends Diagram {
       Vec.derive(() => ({ x: Wc.value / 2, y: 12 })),
       derive(() => {
         const p = selected.value ?? hover.value;
-        if (!p) return "Gantt — click · Tab navigate · ←/→ nudge · drag body/handles · ctrl+wheel resize · Esc revert";
+        if (!p) return "Gantt — click select · Tab navigate · ←/→ shift · ↑/↓ resize · drag body/handles · ctrl+wheel resize · Esc revert";
         const fmt = (d: Date) => d.toLocaleDateString();
         const days = Math.round((p.end.getTime() - p.start.getTime()) / DAY_MS);
         return `${p.label}  ${fmt(p.start)} → ${fmt(p.end)}  (${days}d)`;
