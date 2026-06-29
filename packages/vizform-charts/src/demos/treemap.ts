@@ -23,7 +23,7 @@ import { buildParentIndex, type BiNode } from "../lib/tree";
 import { portfolio, walkWithDepth } from "../lib/portfolio";
 import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
-import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, settleTransition } from "../lib/transitions";
+import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS } from "../lib/transitions";
 
 const W = 720;
 const H = 360;
@@ -93,56 +93,88 @@ export class MdTreemapLC extends Diagram {
       return n ? (nodeDepth.get(n) ?? 0) : 0;
     });
 
-    // Viewport cells: region of layout-space mapped to canvas. Default: full canvas.
-    const vx0 = num(0);
-    const vy0 = num(0);
-    const vx1 = num(W);
-    const vy1 = num(H);
+    // ── Per-tile geometry model ────────────────────────────────────────
+    // Treemap can't use the affine "viewport box" zoom that icicle/sunburst use:
+    // a fixed-pixel group header cannot be expressed inside a single affine
+    // scale (deep drill multiplies every nested header by the zoom factor → the
+    // headers balloon, "layout doesn't match" + Esc-out strands the box).
+    //
+    // Instead each tile owns its own screen-space {x,y,w,h} `num` cells and we
+    // TWEEN THOSE per-tile on drill (same `this.anim.start(tween(...))` primitive
+    // icicle uses, applied to real tile rects). Group headers are fixed-pixel
+    // labels pinned at the tile top, so they never scale with zoom. Per-tile
+    // tweens are interrupt-safe by construction: re-drill cancels and re-targets
+    // from each tile's CURRENT value, so Esc-out can never strand.
 
+    // Focus = the drilled node (or root). Its layout-space box maps onto the canvas.
+    const focusBoxOf = (id: string | null, lmap: Map<BiNode, HierarchyRectangularNode<BiNode>>) => {
+      const W0 = Wc.value, H0 = Hc.value;
+      if (id) {
+        const biNode = nodeById.get(id);
+        const lnode = biNode ? lmap.get(biNode) : null;
+        if (lnode) return { fx0: lnode.x0, fy0: lnode.y0, fx1: lnode.x1, fy1: lnode.y1 };
+      }
+      return { fx0: 0, fy0: 0, fx1: W0, fy1: H0 };
+    };
+
+    // Target screen rect for `node` when focused on `id`. Pure affine off the
+    // focus box — no PAD_TOP hack; group headers are fixed-pixel labels (below).
+    const targetRect = (node: BiNode, id: string | null) => {
+      const lmap = untracked(() => layout.value);
+      const { fx0, fy0, fx1, fy1 } = focusBoxOf(id, lmap);
+      const sx = Wc.value / Math.max(1e-9, fx1 - fx0);
+      const sy = Hc.value / Math.max(1e-9, fy1 - fy0);
+      const ln = lmap.get(node);
+      if (!ln) return { x: 0, y: 0, w: 0, h: 0 };
+      return {
+        x: (ln.x0 - fx0) * sx,
+        y: (ln.y0 - fy0) * sy,
+        w: Math.max(0, (ln.x1 - ln.x0) * sx),
+        h: Math.max(0, (ln.y1 - ln.y0) * sy),
+      };
+    };
+
+    // Live registry of each rendered tile's geometry cells, so the drill effect
+    // can tween them. Populated in the forEach body, pruned on tile teardown.
+    type TileGeo = { cx: ReturnType<typeof num>; cy: ReturnType<typeof num>; cw: ReturnType<typeof num>; ch: ReturnType<typeof num> };
+    const tileGeo = new Map<BiNode, TileGeo>();
+
+    const maxD = this.maxDepth;
+
+    // Drill effect: tween every live tile's geometry cells toward the new focus.
     let drillInited = false;
     let lastDrillId: string | null = null;
     let drillCancel: (() => void) | null = null;
     let drillClassTimer: ReturnType<typeof setTimeout> | null = null;
-    biEffect(() => {
-      const id = this._drillIdCell.value;
-      const W0 = Wc.value, H0 = Hc.value;
-      let tx0: number, ty0: number, tx1: number, ty1: number;
-      if (id) {
-        const lmap = untracked(() => layout.value);
-        const biNode = nodeById.get(id);
-        const lnode = biNode ? lmap.get(biNode) : null;
-        if (lnode) {
-          // Skip PAD_TOP from the viewport origin so the header isn't zoom-amplified.
-          // The context node extends slightly above the canvas (clipped); label is pinned at y=10.
-          tx0 = lnode.x0; ty0 = lnode.y0 + PAD_TOP; tx1 = lnode.x1; ty1 = lnode.y1;
-        } else {
-          tx0 = 0; ty0 = 0; tx1 = W0; ty1 = H0;
-        }
-      } else {
-        tx0 = 0; ty0 = 0; tx1 = W0; ty1 = H0;
-      }
-      const drillChanged = id !== lastDrillId;
-      lastDrillId = id;
-      if (!drillInited) {
-        vx0.value = tx0; vy0.value = ty0; vx1.value = tx1; vy1.value = ty1;
-        drillInited = true;
-        return;
-      }
-      if (!drillChanged) {
-        // Resize-only (e.g. breadcrumb appeared): don't interrupt in-flight tween.
-        return;
-      }
-      // Cancel any in-flight drill tween before starting a new one.
+    const retargetTiles = (id: string | null, animate: boolean) => {
       drillCancel?.();
       drillCancel = null;
-      // Drive the viewport tween on this Diagram's anim clock — `tween()` alone
-      // only builds a generator; it must be started to advance per frame.
-      drillCancel = this.anim.start(
-        tween(vx0, tx0, DRILL_SEC, easeOut),
-        tween(vy0, ty0, DRILL_SEC, easeOut),
-        tween(vx1, tx1, DRILL_SEC, easeOut),
-        tween(vy1, ty1, DRILL_SEC, easeOut),
-      );
+      const gens: ReturnType<typeof tween>[] = [];
+      for (const [node, g] of tileGeo) {
+        const t = targetRect(node, id);
+        if (animate) {
+          gens.push(
+            tween(g.cx, t.x, DRILL_SEC, easeOut),
+            tween(g.cy, t.y, DRILL_SEC, easeOut),
+            tween(g.cw, t.w, DRILL_SEC, easeOut),
+            tween(g.ch, t.h, DRILL_SEC, easeOut),
+          );
+        } else {
+          g.cx.value = t.x; g.cy.value = t.y; g.cw.value = t.w; g.ch.value = t.h;
+        }
+      }
+      if (animate && gens.length) drillCancel = this.anim.start(...gens);
+    };
+    biEffect(() => {
+      const id = this._drillIdCell.value;
+      // Track size so a resize re-snaps geometry (handled by the per-tile derive
+      // fallback below; here we only react to drill-id changes).
+      void Wc.value; void Hc.value;
+      const drillChanged = id !== lastDrillId;
+      lastDrillId = id;
+      if (!drillInited) { drillInited = true; retargetTiles(id, false); return; }
+      if (!drillChanged) { retargetTiles(id, false); return; } // resize-only: snap
+      retargetTiles(id, true); // drill: animate
       if (drillClassTimer) { clearTimeout(drillClassTimer); drillClassTimer = null; }
       this.classList.add(GESTURE_ACTIVE_CLASS);
       drillClassTimer = setTimeout(() => {
@@ -150,8 +182,6 @@ export class MdTreemapLC extends Diagram {
         this.classList.remove(GESTURE_ACTIVE_CLASS);
       }, DRILL_DURATION + 60);
     });
-
-    const maxD = this.maxDepth;
 
     // Window: when drilled (fd > 0) include focus node as context header + descendants.
     // Walk focus subtree only so off-screen sibling rects don't leak into the canvas.
@@ -203,28 +233,14 @@ export class MdTreemapLC extends Diagram {
       const nd = nodeDepth.get(node) ?? 0;
       const isLeaf = (node.children as BiNode[]).length === 0;
 
-      const x = derive(() => {
-        const raw = layout.value.get(node)?.x0 ?? 0;
-        const spanW = vx1.value - vx0.value;
-        return spanW === 0 ? 0 : (raw - vx0.value) / spanW * Wc.value;
-      });
-      const y = derive(() => {
-        const raw = layout.value.get(node)?.y0 ?? 0;
-        const spanH = vy1.value - vy0.value;
-        return spanH === 0 ? 0 : (raw - vy0.value) / spanH * Hc.value;
-      });
-      const w = derive(() => {
-        const ln = layout.value.get(node);
-        const rawW = Math.max(0, (ln?.x1 ?? 0) - (ln?.x0 ?? 0));
-        const spanW = vx1.value - vx0.value;
-        return spanW === 0 ? 0 : rawW / spanW * Wc.value;
-      });
-      const h = derive(() => {
-        const ln = layout.value.get(node);
-        const rawH = Math.max(0, (ln?.y1 ?? 0) - (ln?.y0 ?? 0));
-        const spanH = vy1.value - vy0.value;
-        return spanH === 0 ? 0 : rawH / spanH * Hc.value;
-      });
+      // Per-tile screen geometry. Seed at the current focus target so a tile
+      // entering on drill-in appears at its correct destination, then the drill
+      // tween (already in flight or fired right after) animates the rest.
+      const seed = targetRect(node, untracked(() => this._drillIdCell.value));
+      const cx = num(seed.x), cy = num(seed.y), cw = num(seed.w), ch = num(seed.h);
+      tileGeo.set(node, { cx, cy, cw, ch });
+      const x = cx, y = cy, w = cw, h = ch;
+
       const stroke = derive(() =>
         state.focused.value === node ? "#fff"
         : hoverCell.value === node ? "#c8cdd6"
@@ -243,7 +259,10 @@ export class MdTreemapLC extends Diagram {
       });
       tile.el.dataset.id = node.value.id ?? "";
       tile.el.style.cursor = "pointer";
-      tile.el.style.transition = settleTransition(["x", "y", "width", "height"]);
+      // Geometry (x/y/w/h) is driven by the per-tile drill tween on this.anim —
+      // NO CSS transition on those attrs (it would double-animate / lag the tween).
+      // Prune the geometry registry when this tile is torn down (left the window).
+      tile.track(() => { if (tileGeo.get(node)?.cx === cx) tileGeo.delete(node); });
       tile.el.addEventListener("click", () => { state.focused.value = node; });
       tile.el.addEventListener("dblclick", (e: MouseEvent) => {
         const fd = focusDepth.value;
