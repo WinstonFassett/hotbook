@@ -1,6 +1,5 @@
 // GroupedBarChart — grouped (side-by-side) and stacked bar modes.
 //
-// Spike for WIN-50, deferred from WIN-39. Static render only; no gestures.
 // Builds on bar-chart.ts (flat Bar[]) but takes a multi-series shape:
 //
 //   interface GroupedBar { id?; label; series: { name; value }[] }
@@ -10,10 +9,20 @@
 // d3-scale's inner scaleBand; 'stacked' draws cumulative rectangles.
 // Both modes work in vertical and horizontal orientations, matching the
 // orientation conventions in MdBarChartLC.
+//
+// Gestures: hover/select per segment, drag/wheel to edit individual segment
+// values. Follows the same cartesian interaction model as MdBarChartLC.
 
-import { Anchor, cell, derive, Diagram, label, line, type Mount, rect, Vec } from "bireactive";
+import { Anchor, cell, circle, derive, Diagram, label, line, type Mount, rect, Vec } from "bireactive";
 import { scaleBand, scaleLinear } from "d3-scale";
 import { useHostSize, FILL_STYLE, type HostSize } from "../lib/host-size";
+import { wheelController, dragController, dynamicWheelStep } from "../lib/interaction";
+import {
+  GESTURE_ACTIVE_CLASS,
+  GESTURE_SUPPRESSION_CSS,
+  hoverTransition,
+  settleTransition,
+} from "../lib/transitions";
 
 const W = 720;
 const H = 360;
@@ -43,8 +52,19 @@ function rowTotal(r: GroupedBar): number {
   let t = 0; for (const s of r.series) t += s.value; return t;
 }
 
+// Segment identity for hover/select/edit gestures.
+interface SegmentRef {
+  rowId: string;
+  seriesName: string;
+}
+
+function segmentEq(a: SegmentRef | null, b: SegmentRef | null): boolean {
+  if (!a || !b) return a === b;
+  return a.rowId === b.rowId && a.seriesName === b.seriesName;
+}
+
 export class MdGroupedBarChartLC extends Diagram {
-  static styles = `text { pointer-events: none; }${FILL_STYLE}`;
+  static styles = `text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}`;
 
   readonly dataCell = cell<readonly GroupedBar[]>(makeData());
 
@@ -56,6 +76,8 @@ export class MdGroupedBarChartLC extends Diagram {
 
   protected scene(s: Mount): void {
     const size = useHostSize(this, { width: W, height: H });
+    this.tabIndex = 0;
+    this.style.outline = "none";
     if (this.orientation === 'horizontal') {
       this.#horizontal(s, size);
     } else {
@@ -161,6 +183,7 @@ export class MdGroupedBarChartLC extends Diagram {
 
     this.#legend(s, names, Wc, plotY);
     this.#title(s, Wc);
+    this.#gestures(s, rows, names, xBand, yScale, plotX, plotY, plotW, plotH, Wc);
   }
 
   #horizontal(s: Mount, { w: Wc, h: Hc }: HostSize) {
@@ -257,6 +280,7 @@ export class MdGroupedBarChartLC extends Diagram {
 
     this.#legend(s, names, Wc, 6);
     this.#title(s, Wc);
+    // TODO: Add horizontal gestures (same pattern as vertical, different hit test)
   }
 
   #legend(s: Mount, names: string[], Wc: ReturnType<typeof cell<number>>, top: number) {
@@ -281,5 +305,204 @@ export class MdGroupedBarChartLC extends Diagram {
     const t = `${this.mode === 'stacked' ? 'Stacked' : 'Grouped'} bars — ${this.orientation}`;
     s(label(Vec.derive(() => ({ x: Wc.value / 2, y: 14 })), t,
       { size: 11, align: Anchor.Center, opacity: 0.6 }));
+  }
+
+  #gestures(
+    s: Mount,
+    rows: readonly GroupedBar[],
+    names: string[],
+    xBand: ReturnType<typeof derive<any>>,
+    yScale: ReturnType<typeof derive<any>>,
+    plotX: number,
+    plotY: number,
+    plotW: ReturnType<typeof derive<number>>,
+    plotH: ReturnType<typeof derive<number>>,
+    Wc: ReturnType<typeof cell<number>>,
+  ) {
+    const hover = cell<SegmentRef | null>(null);
+    const selected = cell<SegmentRef | null>(null);
+    const svgEl = (this as any).svg as SVGSVGElement;
+    const stacked = this.mode === 'stacked';
+
+    const localPoint = (e: PointerEvent) => {
+      const r = svgEl.getBoundingClientRect();
+      const vb = svgEl.viewBox?.baseVal;
+      const sx = vb && vb.width ? vb.width / r.width : 1;
+      const sy = vb && vb.height ? vb.height / r.height : 1;
+      return { x: (e.clientX - r.left) * sx, y: (e.clientY - r.top) * sy };
+    };
+
+    // Hit test: find which segment contains (px, py).
+    const findSegmentAt = (px: number, py: number): SegmentRef | null => {
+      const data = this.dataCell.value as GroupedBar[];
+      const xs = xBand.value;
+      const ys = yScale.value;
+      const step = xs.step();
+
+      for (let i = 0; i < data.length; i++) {
+        const row = data[i]!;
+        const bx = xs(String(i)) ?? -1;
+        if (px < bx || px >= bx + step) continue;
+
+        if (stacked) {
+          let acc = 0;
+          for (const seg of row.series) {
+            const segStart = acc;
+            const segEnd = acc + seg.value;
+            acc = segEnd;
+            const y0 = ys(segEnd);
+            const y1 = ys(segStart);
+            if (py >= y0 && py <= y1) {
+              return { rowId: row.id ?? row.label, seriesName: seg.name };
+            }
+          }
+        } else {
+          // grouped: check each bar within the band
+          const innerBand = scaleBand<string>()
+            .domain(names)
+            .range([0, xs.bandwidth()])
+            .padding(0.05);
+          for (const seg of row.series) {
+            const segX = bx + (innerBand(seg.name) ?? 0);
+            const segW = innerBand.bandwidth();
+            if (px < segX || px >= segX + segW) continue;
+            const segY = ys(seg.value);
+            const segH = (plotY + plotH.value) - segY;
+            if (py >= segY && py <= segY + segH) {
+              return { rowId: row.id ?? row.label, seriesName: seg.name };
+            }
+          }
+        }
+      }
+      return null;
+    };
+
+    // Mutate a segment value.
+    const mutateSegment = (ref: SegmentRef, delta: number) => {
+      const data = [...this.dataCell.value] as GroupedBar[];
+      const row = data.find(r => (r.id ?? r.label) === ref.rowId);
+      if (!row) return;
+      const seg = row.series.find(s => s.name === ref.seriesName);
+      if (!seg) return;
+      seg.value = Math.max(0, seg.value + delta);
+      this.dataCell.value = data;
+    };
+
+    const setGestureActive = (on: boolean) => this.classList.toggle(GESTURE_ACTIVE_CLASS, on);
+
+    const wheelConfig = {
+      snapshot: (ref: SegmentRef) => {
+        setGestureActive(true);
+        const row = (this.dataCell.value as GroupedBar[]).find(r => (r.id ?? r.label) === ref.rowId);
+        const seg = row?.series.find(s => s.name === ref.seriesName);
+        return seg?.value ?? 0;
+      },
+      restore: (ref: SegmentRef, v: number) => {
+        const row = (this.dataCell.value as GroupedBar[]).find(r => (r.id ?? r.label) === ref.rowId);
+        const seg = row?.series.find(s => s.name === ref.seriesName);
+        if (seg) mutateSegment(ref, v - seg.value);
+      },
+      onEnd: () => {
+        setGestureActive(false);
+        hover.value = null;
+        this.dispatchEvent(new CustomEvent("gesturecommit"));
+      },
+    };
+
+    let dragPointerId = -1;
+    let dragStartY = 0;
+    const dragConfig = {
+      snapshot: (ref: SegmentRef) => {
+        setGestureActive(true);
+        const row = (this.dataCell.value as GroupedBar[]).find(r => (r.id ?? r.label) === ref.rowId);
+        const seg = row?.series.find(s => s.name === ref.seriesName);
+        return { origValue: seg?.value ?? 0, startY: dragStartY };
+      },
+      restore: (ref: SegmentRef, snap: { origValue: number }) => {
+        mutateSegment(ref, snap.origValue - (wheelConfig.snapshot(ref) as number));
+      },
+      onMove: (pe: PointerEvent) => {
+        const t = dragController.target as SegmentRef | null;
+        if (!t) return;
+        const { y } = localPoint(pe);
+        const valueDelta = yScale.value.invert(y) - yScale.value.invert(dragStartY);
+        const currentValue = wheelConfig.snapshot(t) as number;
+        mutateSegment(t, currentValue + valueDelta - currentValue);
+      },
+      onEnd: () => {
+        if (dragPointerId >= 0 && (this as any).hasPointerCapture?.(dragPointerId)) {
+          (this as any).releasePointerCapture(dragPointerId);
+        }
+        dragPointerId = -1;
+        setGestureActive(false);
+        this.dispatchEvent(new CustomEvent("gesturecommit"));
+      },
+    };
+
+    this.addEventListener("pointerleave", () => {
+      if (!wheelController.active) hover.value = null;
+    });
+
+    this.addEventListener("click", e => {
+      const { x, y } = localPoint(e as PointerEvent);
+      const seg = findSegmentAt(x, y);
+      selected.value = segmentEq(selected.value, seg) ? null : seg;
+    });
+
+    this.addEventListener("wheel", e => {
+      const we = e as WheelEvent;
+      if (!we.ctrlKey) return;
+      we.preventDefault();
+      we.stopPropagation();
+      const t = wheelController.begin(hover.value ?? selected.value, wheelConfig);
+      if (!t) return;
+      const currentValue = wheelConfig.snapshot(t) as number;
+      const step = dynamicWheelStep(currentValue, we.shiftKey);
+      mutateSegment(t, we.deltaY < 0 ? +step : -step);
+    }, { passive: false });
+
+    this.addEventListener("keydown", e => {
+      const ke = e as KeyboardEvent;
+      if (ke.key === "Escape") {
+        if (selected.value != null) {
+          selected.value = null;
+          ke.preventDefault();
+        }
+        return;
+      }
+      // TODO: Tab navigation across segments (flatten all segments into order)
+      if (!selected.value) return;
+      const currentValue = wheelConfig.snapshot(selected.value) as number;
+      const step = dynamicWheelStep(currentValue, ke.shiftKey);
+      if (ke.key === "ArrowUp") {
+        mutateSegment(selected.value, +step);
+        ke.preventDefault();
+      } else if (ke.key === "ArrowDown") {
+        mutateSegment(selected.value, -step);
+        ke.preventDefault();
+      }
+    });
+
+    this.addEventListener("pointerdown", e => {
+      if (dragController.active) return;
+      const pe = e as PointerEvent;
+      const { x, y } = localPoint(pe);
+      const seg = findSegmentAt(x, y);
+      if (!seg) return;
+      dragPointerId = pe.pointerId;
+      dragStartY = y;
+      selected.value = seg;
+      (this as any).setPointerCapture(pe.pointerId);
+      dragController.begin(seg, dragConfig);
+      pe.preventDefault();
+    });
+
+    this.addEventListener("pointermove", e => {
+      if (dragController.active || wheelController.active) return;
+      const { x, y } = localPoint(e as PointerEvent);
+      hover.value = findSegmentAt(x, y);
+    });
+
+    // TODO: Add visual hover/select feedback (highlight rect, drag handles)
   }
 }

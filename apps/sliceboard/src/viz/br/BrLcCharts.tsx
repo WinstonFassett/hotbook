@@ -31,6 +31,7 @@ import {
   MdSankeySimple,
   MdSankeyFlow,
   MdTreeChart,
+  MdGroupedBarChartLC,
 } from '@winstonfassett/vizform-charts'
 
 // Register custom elements once
@@ -51,6 +52,7 @@ const TAGS = [
   ['v-br-sankey',         MdSankeySimple],
   ['v-br-sankey-flow',    MdSankeyFlow],
   ['v-br-tree',           MdTreeChart],
+  ['v-br-grouped-bar',    MdGroupedBarChartLC],
 ] as const
 
 for (const [tag, cls] of TAGS) {
@@ -297,6 +299,90 @@ export function BrLcArea({ nodes, measureKey, onUpdate }: FlatProps) {
     nodes, onUpdate,
   })
   return <BrLcTile source={source} />
+}
+
+// ─── Grouped/Stacked Bar ──────────────────────────────────────────────────────
+//
+// Data model challenge: sliceboard's data is flat PNode[] with measures, but
+// grouped/stacked bars need GroupedBar[] with series: { name; value }[].
+//
+// Current approach: use a groupBy dimension to split nodes into categories, then
+// each category becomes a GroupedBar row, and each unique value of the dimension
+// becomes a series entry. This is a PROOF-OF-CONCEPT — the full design requires
+// pickers for dimension/measure selection (per Winston's comment WIN-50).
+//
+// Example:
+//   nodes = [
+//     { name: "Q1-North", measures: { revenue: 100 }, dims: { quarter: "Q1", region: "North" } },
+//     { name: "Q1-South", measures: { revenue: 80 }, dims: { quarter: "Q1", region: "South" } },
+//     { name: "Q2-North", measures: { revenue: 120 }, dims: { quarter: "Q2", region: "North" } },
+//   ]
+//   groupBy = "quarter", seriesBy = "region", measureKey = "revenue"
+//   →
+//   [
+//     { label: "Q1", series: [{ name: "North", value: 100 }, { name: "South", value: 80 }] },
+//     { label: "Q2", series: [{ name: "North", value: 120 }] },
+//   ]
+
+interface GroupedBarProps extends FlatProps {
+  mode: 'grouped' | 'stacked'
+  orientation?: 'vertical' | 'horizontal'
+  groupBy?: string  // dimension key to group by (category axis)
+  seriesBy?: string  // dimension key for series breakdown
+}
+
+export function BrLcGroupedBar({
+  nodes, measureKey, groupBy, seriesBy, mode, orientation = 'vertical', onUpdate
+}: GroupedBarProps) {
+  // TEMPORARY: if no groupBy/seriesBy, fall back to single-series bars (just show
+  // the flat bar chart behavior as placeholder). Full impl needs pickers.
+  if (!groupBy || !seriesBy) {
+    console.warn('BrLcGroupedBar requires groupBy and seriesBy dimensions — falling back to placeholder')
+    // For now, just render a message. Proper fallback would be a settings panel.
+    return <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.4, fontSize: 12 }}>
+      Grouped/stacked bars require groupBy and seriesBy dimensions — configure in tile settings
+    </div>
+  }
+
+  const leaves = leavesOfNodes(nodes)
+
+  // Build GroupedBar[] from flat nodes.
+  // Group by the groupBy dimension, then within each group, create series entries
+  // keyed by seriesBy dimension.
+  const categoryMap = new Map<string, Map<string, number>>()
+  for (const node of leaves) {
+    const categoryValue = (node as any).dims?.[groupBy] ?? node.name
+    const seriesValue = (node as any).dims?.[seriesBy] ?? 'default'
+    const measure = node.measures[measureKey] ?? 0
+
+    if (!categoryMap.has(categoryValue)) {
+      categoryMap.set(categoryValue, new Map())
+    }
+    const seriesMap = categoryMap.get(categoryValue)!
+    seriesMap.set(seriesValue, (seriesMap.get(seriesValue) ?? 0) + measure)
+  }
+
+  const groupedData: Array<{ id: string; label: string; series: Array<{ name: string; value: number }> }> = []
+  for (const [cat, seriesMap] of categoryMap.entries()) {
+    const series = Array.from(seriesMap.entries()).map(([name, value]) => ({ name, value }))
+    groupedData.push({ id: cat, label: cat, series })
+  }
+
+  // For now, use the simple useBrElement pattern (read-only, no gestures wired to
+  // sliceboard's onUpdate). Full integration requires a TileSource that maps segment
+  // edits back to the original PNode measures — non-trivial because one segment may
+  // represent multiple nodes (if seriesBy splits them).
+  const ref = useBrElement<MdGroupedBarChartLC>(
+    'v-br-grouped-bar',
+    (el) => {
+      el.externalData = groupedData
+      el.mode = mode
+      el.orientation = orientation
+    },
+    [JSON.stringify(groupedData), mode, orientation],
+  )
+
+  return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }
 
 // ─── Hierarchical charts (BiNode) ─────────────────────────────────────────────

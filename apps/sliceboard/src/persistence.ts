@@ -60,6 +60,8 @@ export type TileKind =
   | 'br-lc-concentric-arc'
   | 'br-lc-gauge'
   | 'br-lc-gauge-segmented'
+  | 'br-lc-grouped-bar'
+  | 'br-lc-stacked-bar'
   | 'br-lc-pack'
   | 'br-lc-treemap'
   | 'br-lc-icicle'
@@ -77,6 +79,7 @@ export interface Tile {
   xKey?: string
   yKey?: string
   groupBy?: string
+  seriesBy?: string  // for grouped/stacked bars: dimension to split into series
   depth?: number
   sortBy?: 'index' | 'value'
   orientation?: 'vertical' | 'horizontal'
