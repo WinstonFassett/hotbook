@@ -151,25 +151,39 @@ export class MdGroupedBarChartLC extends Diagram {
     const { hover, selected } = this.#gesturesVertical(s, rows, names, xBand, yScale, plotX, plotY, plotW, plotH, Wc);
 
     // Bars with hover/select feedback and drag handles.
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i]!;
-      const rowId = row.id ?? row.label;
-      const bandX = derive(() => xBand.value(String(i)) ?? 0);
+    // CRITICAL: Read segments LIVE from dataCell to survive value changes.
+    const NUM_ROWS = rows.length;
+    for (let rowIdx = 0; rowIdx < NUM_ROWS; rowIdx++) {
+      const rowId = rows[rowIdx]!.id ?? rows[rowIdx]!.label;
+      const bandX = derive(() => xBand.value(String(rowIdx)) ?? 0);
 
       if (stacked) {
-        let acc = 0;
-        for (let k = 0; k < row.series.length; k++) {
-          const seg = row.series[k]!;
-          const segRef: SegmentRef = { rowId, seriesName: seg.name };
-          const segStart = acc;
-          const segEnd = acc + seg.value;
-          acc = segEnd;
-          const y0 = derive(() => yScale.value(segEnd));
-          const y1 = derive(() => yScale.value(segStart));
-          const h = derive(() => Math.max(0, y1.value - y0.value));
-          const seriesIdx = names.indexOf(seg.name);
-          const baseFill = PALETTE[seriesIdx % PALETTE.length]!;
+        // Stacked: render each series as a layer in the stack.
+        const NUM_SERIES = rows[rowIdx]!.series.length;
+        for (let seriesIdx = 0; seriesIdx < NUM_SERIES; seriesIdx++) {
+          const seriesName = rows[rowIdx]!.series[seriesIdx]!.name;
+          const seriesListIdx = names.indexOf(seriesName);
+          const baseFill = PALETTE[seriesListIdx % PALETTE.length]!;
           const hoverFill = this.#lighten(baseFill, 0.25);
+
+          // Read segment value LIVE.
+          const segRef: SegmentRef = { rowId, seriesName };
+          const getRow = () => (this.dataCell.value as GroupedBar[])[rowIdx];
+          const getSeg = () => getRow()?.series[seriesIdx];
+
+          // Compute stack position (accumulate all segments below this one).
+          const segStart = derive(() => {
+            const r = getRow();
+            if (!r) return 0;
+            let acc = 0;
+            for (let i = 0; i < seriesIdx; i++) acc += r.series[i]?.value ?? 0;
+            return acc;
+          });
+          const segEnd = derive(() => segStart.value + (getSeg()?.value ?? 0));
+
+          const y0 = derive(() => yScale.value(segEnd.value));
+          const y1 = derive(() => yScale.value(segStart.value));
+          const h = derive(() => Math.max(0, y1.value - y0.value));
           const fill = derive(() => {
             const sel = selected.value;
             const hov = hover.value;
@@ -177,27 +191,21 @@ export class MdGroupedBarChartLC extends Diagram {
             if (hov && segmentEq(hov, segRef)) return hoverFill;
             return baseFill;
           });
+
           const segRect = s(rect(bandX, y0, derive(() => xBand.value.bandwidth()), h, { fill, corner: 1 }));
           segRect.el.style.cursor = "pointer";
           segRect.el.style.transition = settleTransition(["y", "height", "fill"]);
 
           // Drag handle at segment top.
           const handleX = derive(() => bandX.value + xBand.value.bandwidth() / 2);
-          const handleY = y0;
           const handleOpacity = derive(() => {
             const sel = selected.value;
             const hov = hover.value;
             return (sel && segmentEq(sel, segRef)) || (hov && segmentEq(hov, segRef)) ? 1 : 0;
           });
-          const handleRadius = derive(() => {
-            const sel = selected.value;
-            return sel && segmentEq(sel, segRef) ? 6 : 5;
-          });
-          const handleFill = derive(() => {
-            const sel = selected.value;
-            return sel && segmentEq(sel, segRef) ? "#fff" : hoverFill;
-          });
-          const handle = s(circle(Vec.derive(() => ({ x: handleX.value, y: handleY.value })), handleRadius, {
+          const handleRadius = derive(() => selected.value && segmentEq(selected.value, segRef) ? 6 : 5);
+          const handleFill = derive(() => selected.value && segmentEq(selected.value, segRef) ? "#fff" : hoverFill);
+          const handle = s(circle(Vec.derive(() => ({ x: handleX.value, y: y0.value })), handleRadius, {
             fill: handleFill,
             stroke: "#0b0d12", strokeWidth: 1.5, opacity: handleOpacity,
           }));
@@ -205,17 +213,23 @@ export class MdGroupedBarChartLC extends Diagram {
           handle.el.style.transition = hoverTransition("opacity");
         }
       } else {
-        for (let k = 0; k < row.series.length; k++) {
-          const seg = row.series[k]!;
-          const segRef: SegmentRef = { rowId, seriesName: seg.name };
-          const segKey = seg.name;
-          const segX = derive(() => bandX.value + (xInner.value(segKey) ?? 0));
-          const segW = derive(() => xInner.value.bandwidth());
-          const segY = derive(() => yScale.value(seg.value));
-          const segH = derive(() => Math.max(0, (plotY + plotH.value) - segY.value));
-          const seriesIdx = names.indexOf(seg.name);
-          const baseFill = PALETTE[seriesIdx % PALETTE.length]!;
+        // Grouped: render each series as a separate bar.
+        const NUM_SERIES = rows[rowIdx]!.series.length;
+        for (let seriesIdx = 0; seriesIdx < NUM_SERIES; seriesIdx++) {
+          const seriesName = rows[rowIdx]!.series[seriesIdx]!.name;
+          const seriesListIdx = names.indexOf(seriesName);
+          const baseFill = PALETTE[seriesListIdx % PALETTE.length]!;
           const hoverFill = this.#lighten(baseFill, 0.25);
+
+          // Read segment value LIVE.
+          const segRef: SegmentRef = { rowId, seriesName };
+          const getRow = () => (this.dataCell.value as GroupedBar[])[rowIdx];
+          const getSeg = () => getRow()?.series[seriesIdx];
+
+          const segX = derive(() => bandX.value + (xInner.value(seriesName) ?? 0));
+          const segW = derive(() => xInner.value.bandwidth());
+          const segY = derive(() => yScale.value(getSeg()?.value ?? 0));
+          const segH = derive(() => Math.max(0, (plotY + plotH.value) - segY.value));
           const fill = derive(() => {
             const sel = selected.value;
             const hov = hover.value;
@@ -223,27 +237,21 @@ export class MdGroupedBarChartLC extends Diagram {
             if (hov && segmentEq(hov, segRef)) return hoverFill;
             return baseFill;
           });
+
           const segRect = s(rect(segX, segY, segW, segH, { fill, corner: 1 }));
           segRect.el.style.cursor = "pointer";
           segRect.el.style.transition = settleTransition(["y", "height", "fill"]);
 
           // Drag handle at segment top.
           const handleX = derive(() => segX.value + segW.value / 2);
-          const handleY = segY;
           const handleOpacity = derive(() => {
             const sel = selected.value;
             const hov = hover.value;
             return (sel && segmentEq(sel, segRef)) || (hov && segmentEq(hov, segRef)) ? 1 : 0;
           });
-          const handleRadius = derive(() => {
-            const sel = selected.value;
-            return sel && segmentEq(sel, segRef) ? 6 : 5;
-          });
-          const handleFill = derive(() => {
-            const sel = selected.value;
-            return sel && segmentEq(sel, segRef) ? "#fff" : hoverFill;
-          });
-          const handle = s(circle(Vec.derive(() => ({ x: handleX.value, y: handleY.value })), handleRadius, {
+          const handleRadius = derive(() => selected.value && segmentEq(selected.value, segRef) ? 6 : 5);
+          const handleFill = derive(() => selected.value && segmentEq(selected.value, segRef) ? "#fff" : hoverFill);
+          const handle = s(circle(Vec.derive(() => ({ x: handleX.value, y: segY.value })), handleRadius, {
             fill: handleFill,
             stroke: "#0b0d12", strokeWidth: 1.5, opacity: handleOpacity,
           }));
