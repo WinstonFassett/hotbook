@@ -192,8 +192,8 @@ export class MdSunburstLC extends Diagram {
           // listener and reverts on Esc.
           dragCancelable(dot, knob, [a, b], {
             host: this,
-            onStart: () => { active.value = true; },
-            onEnd: () => { active.value = false; },
+            onStart: () => { active.value = true; dot.el.style.cursor = "grabbing"; },
+            onEnd: () => { active.value = false; dot.el.style.cursor = "grab"; },
           });
           dot.el.style.cursor = "grab";
           dot.el.addEventListener("pointerenter", () => { active.value = true; });
