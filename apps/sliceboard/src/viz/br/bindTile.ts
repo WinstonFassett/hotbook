@@ -333,6 +333,7 @@ export function makeFlatSource<D>(spec: FlatSpec<D>): TileSource {
 interface ElWithRoot extends HTMLElement {
   externalRoot?: BiNode
   maxDepth?: number
+  orientation?: 'vertical' | 'horizontal'
 }
 
 export interface HierSpec {
@@ -341,6 +342,7 @@ export interface HierSpec {
   measureKey: string
   depth?: number
   sortBy?: 'index' | 'value'
+  orientation?: 'vertical' | 'horizontal'
   shapeKey: string
   valueKey: string
   onUpdate?: (nodeId: string, measures: PNode['measures']) => void
@@ -367,6 +369,7 @@ export function makeHierSource(spec: HierSpec): TileSource {
       const typedEl = el as ElWithRoot
       typedEl.externalRoot = root
       if (spec.depth !== undefined) typedEl.maxDepth = spec.depth
+      if (spec.orientation !== undefined) typedEl.orientation = spec.orientation
     },
 
     initialLast(_el: HTMLElement): Map<string, number> {
@@ -434,6 +437,6 @@ export function hierValueKey(nodes: PNode[], measureKey: string): string {
   return nodes.map(n => `${n.id}:${vkey(n.measures[measureKey] ?? 0)}`).sort().join(',')
 }
 
-export function hierShapeKey(tag: string, nodes: PNode[], measureKey: string, depth?: number, sortBy?: string): string {
-  return `${tag}|${measureKey}|${depth ?? 'all'}|${sortBy ?? 'index'}|${nodes.map(n => `${n.id}:${n.parentId ?? ''}`).sort().join(',')}`
+export function hierShapeKey(tag: string, nodes: PNode[], measureKey: string, depth?: number, sortBy?: string, orientation?: string): string {
+  return `${tag}|${measureKey}|${depth ?? 'all'}|${sortBy ?? 'index'}|${orientation ?? 'horizontal'}|${nodes.map(n => `${n.id}:${n.parentId ?? ''}`).sort().join(',')}`
 }

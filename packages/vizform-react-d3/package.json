@@ -37,6 +37,7 @@
     "react": ">=17"
   },
   "dependencies": {
+    "@winstonfassett/vizform-charts": "*",
     "@winstonfassett/vizform-vanilla-d3": "*"
   },
   "devDependencies": {

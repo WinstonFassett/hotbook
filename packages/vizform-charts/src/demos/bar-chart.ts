@@ -40,7 +40,18 @@ function makeData(): Bar[] {
 }
 
 export class MdBarChartLC extends Diagram {
-  static styles = `text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}`
+  static styles = `
+    text { pointer-events: none; }
+    ${FILL_STYLE}
+    ${GESTURE_SUPPRESSION_CSS}
+    [data-focusable]:focus {
+      outline: 2px solid #4a9eff;
+      outline-offset: 2px;
+    }
+    [data-focusable]:focus:not(:focus-visible) {
+      outline: none;
+    }
+  `
 
   readonly dataCell = cell<readonly Bar[]>(makeData());
 
@@ -63,7 +74,7 @@ export class MdBarChartLC extends Diagram {
 
   protected scene(s: Mount): void {
     const size = useHostSize(this, { width: W, height: H });
-    this.tabIndex = 0;
+    this.tabIndex = -1; // Container not directly focusable, items are
     this.style.outline = "none";
     const data = this.dataCell;
     if (this.orientation === 'horizontal') {
@@ -218,14 +229,12 @@ export class MdBarChartLC extends Diagram {
       const rows = data.value as Bar[];
       const cur = selected.value;
       const i = cur ? rows.indexOf(cur) : -1;
-      if (ke.key === "Tab") {
-        if (!ke.shiftKey && i >= rows.length - 1) { selected.value = null; return; }
-        if (ke.shiftKey && i <= 0) { selected.value = null; return; }
-        selected.value = ke.shiftKey ? rows[(i <= 0 ? rows.length : i) - 1] ?? null : rows[(i + 1) % rows.length] ?? null;
-        ke.preventDefault(); return;
-      }
       if (ke.key === "ArrowRight" || ke.key === "ArrowLeft") {
-        selected.value = ke.key === "ArrowLeft" ? rows[(i <= 0 ? rows.length : i) - 1] ?? null : rows[(i + 1) % rows.length] ?? null;
+        const nextIdx = ke.key === "ArrowLeft"
+          ? (i <= 0 ? rows.length : i) - 1
+          : (i + 1) % rows.length;
+        selected.value = rows[nextIdx] ?? null;
+        focusDatum(selected.value);
         ke.preventDefault(); return;
       }
       if (!cur) return;
@@ -268,6 +277,13 @@ export class MdBarChartLC extends Diagram {
 
     // Bars — MAX_ROWS slots; each reads data.value[idx] live so sort reorders visually.
     const MAX_ROWS = rows0.length;
+    const tileElements: SVGRectElement[] = []; // Track elements by index
+    // ID-based focus helper (matches selection/gesture pattern)
+    const focusDatum = (d: Bar | null) => {
+      if (!d?.id) return;
+      const idx = (data.value as Bar[]).findIndex(item => item.id === d.id);
+      if (idx >= 0) tileElements[idx]?.focus();
+    };
     for (let idx = 0; idx < MAX_ROWS; idx++) {
       const di = (): Bar | null => (data.value as Bar[])[idx] ?? null;
       const key = String(idx);
@@ -281,15 +297,25 @@ export class MdBarChartLC extends Diagram {
       const fill = derive(() => { const d = di(); return selected.value === d ? "#fff" : hover.value === d ? hoverColor : base; });
 
       const tile = s(rect(barX, barY, barW, barH, { fill, corner: 2 }));
+      tileElements[idx] = tile.el; // Store for focus management
       tile.el.style.cursor = "ns-resize";
       // Value-change settle: height/y interpolate when value changes outside a
       // gesture (external data, arrow-key edit, wheel-commit). Suppressed
       // during active wheel/drag via .vf-gesture-active on the host, so
       // cursor feedback stays instant (Part 2 / Interaction Principle 4).
       tile.el.style.transition = settleTransition(["y", "height", "fill"]);
+      // Make each bar individually focusable
+      tile.el.setAttribute('tabindex', '0');
+      tile.el.setAttribute('data-focusable', 'bar');
+      biEffect(() => {
+        const d = di();
+        if (d) tile.el.setAttribute('aria-label', `${d.label}: ${Math.round(d.value)}`);
+      });
       tile.el.addEventListener("pointerenter", () => { const d = di(); if (!wheelController.active && d) hover.value = d; });
       tile.el.addEventListener("pointerleave", () => { const d = di(); if (!wheelController.active && d && hover.value === d) hover.value = null; });
       tile.el.addEventListener("click", () => { const d = di(); if (!d) return; selected.value = selected.value === d ? null : d; });
+      tile.el.addEventListener("focus", () => { const d = di(); if (d) selected.value = d; });
+      tile.el.addEventListener("blur", () => { const d = di(); if (d && selected.value === d) selected.value = null; });
 
       const barCX = derive(() => barX.value + barW.value / 2);
 
@@ -456,14 +482,12 @@ export class MdBarChartLC extends Diagram {
       const rows = data.value as Bar[];
       const cur = selected.value;
       const i = cur ? rows.indexOf(cur) : -1;
-      if (ke.key === "Tab") {
-        if (!ke.shiftKey && i >= rows.length - 1) { selected.value = null; return; }
-        if (ke.shiftKey && i <= 0) { selected.value = null; return; }
-        selected.value = ke.shiftKey ? rows[(i <= 0 ? rows.length : i) - 1] ?? null : rows[(i + 1) % rows.length] ?? null;
-        ke.preventDefault(); return;
-      }
       if (ke.key === "ArrowDown" || ke.key === "ArrowUp") {
-        selected.value = ke.key === "ArrowUp" ? rows[(i <= 0 ? rows.length : i) - 1] ?? null : rows[(i + 1) % rows.length] ?? null;
+        const nextIdx = ke.key === "ArrowUp"
+          ? (i <= 0 ? rows.length : i) - 1
+          : (i + 1) % rows.length;
+        selected.value = rows[nextIdx] ?? null;
+        focusDatumH(selected.value);
         ke.preventDefault(); return;
       }
       if (!cur) return;
@@ -514,6 +538,13 @@ export class MdBarChartLC extends Diagram {
     }
 
     // Bars — live read from data.value[idx] so sort reorders visually.
+    const tileElementsH: SVGRectElement[] = []; // Track elements by index
+    // ID-based focus helper (matches selection/gesture pattern)
+    const focusDatumH = (d: Bar | null) => {
+      if (!d?.id) return;
+      const idx = (data.value as Bar[]).findIndex(item => item.id === d.id);
+      if (idx >= 0) tileElementsH[idx]?.focus();
+    };
     for (let idx = 0; idx < rows0.length; idx++) {
       const di = (): Bar | null => (data.value as Bar[])[idx] ?? null;
       const key = String(idx);
@@ -527,11 +558,21 @@ export class MdBarChartLC extends Diagram {
       const labelFill = derive(() => { const d = di(); return selected.value === d ? base : "#fff"; });
 
       const tile = s(rect(plotX, barY, barW, barH, { fill, corner: 3 }));
+      tileElementsH[idx] = tile.el; // Store for focus management
       tile.el.style.cursor = "ew-resize";
       tile.el.style.transition = settleTransition(["width", "fill"]);
+      // Make each bar individually focusable
+      tile.el.setAttribute('tabindex', '0');
+      tile.el.setAttribute('data-focusable', 'bar');
+      biEffect(() => {
+        const d = di();
+        if (d) tile.el.setAttribute('aria-label', `${d.label}: ${Math.round(d.value)}`);
+      });
       tile.el.addEventListener("pointerenter", () => { const d = di(); if (!wheelController.active && d) hover.value = d; });
       tile.el.addEventListener("pointerleave", () => { const d = di(); if (!wheelController.active && d && hover.value === d) hover.value = null; });
       tile.el.addEventListener("click", () => { const d = di(); if (!d) return; selected.value = selected.value === d ? null : d; });
+      tile.el.addEventListener("focus", () => { const d = di(); if (d) selected.value = d; });
+      tile.el.addEventListener("blur", () => { const d = di(); if (d && selected.value === d) selected.value = null; });
 
       const barCY = derive(() => barY.value + barH.value / 2);
       const minBand = this.minBandSize || 60;

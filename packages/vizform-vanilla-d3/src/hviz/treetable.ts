@@ -4,6 +4,18 @@ import { nodeColor, rollupMeasurement, childrenOf } from './pnodeUtils'
 export interface TreetableMounted {
   update(nodes: PNode[], measureKey: string): void
   destroy(): void
+  /**
+   * Returns the live root element, so a higher-level adapter can query
+   * `[data-leaf-value="<id>"]` cells and attach number-drag (or any other
+   * cell-level behavior) without re-traversing the data.
+   */
+  getRoot(): HTMLElement
+  /**
+   * Subscribe to render events. Fired after every render(); listener receives
+   * the set of leaf node ids that currently have visible value cells. Used by
+   * the React wrapper to re-attach number-drag on each update.
+   */
+  onRender(listener: (leafIds: string[]) => void): () => void
 }
 
 interface VisibleRow {
@@ -61,8 +73,11 @@ export function mountTreetable(
   root.appendChild(body)
   containerEl.appendChild(root)
 
+  const renderListeners = new Set<(leafIds: string[]) => void>()
+
   function render() {
     const visible = computeVisible(currentNodes, collapsed)
+    const leafIds: string[] = []
 
     // Keyed update: map existing rows by node id
     const existing = new Map<string, HTMLElement>()
@@ -98,7 +113,7 @@ export function mountTreetable(
           <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:oklch(0.88 0 0);">${node.name}</span>
           ${Object.entries(node.dims ?? {}).map(([, v]) => `<span style="font-size:10px;color:oklch(0.4 0 0);flex-shrink:0;">${v}</span>`).join('')}
         </div>
-        <div style="width:52px;text-align:right;color:oklch(0.7 0 0);font-variant-numeric:tabular-nums;">${fmtNum(value)}</div>
+        <div data-value-cell="${node.id}" ${!hasKids ? `data-leaf-value="${node.id}"` : ''} style="width:52px;text-align:right;color:oklch(0.7 0 0);font-variant-numeric:tabular-nums;${!hasKids ? 'cursor:ew-resize;touch-action:none;' : ''}">${fmtNum(value)}</div>
       `
 
       if (hasKids) {
@@ -111,6 +126,7 @@ export function mountTreetable(
         })
       }
 
+      if (!hasKids) leafIds.push(node.id)
       fragment.appendChild(row)
     }
 
@@ -118,6 +134,8 @@ export function mountTreetable(
     for (const el of existing.values()) el.remove()
 
     body.appendChild(fragment)
+
+    for (const l of renderListeners) l(leafIds)
   }
 
   render()
@@ -130,6 +148,13 @@ export function mountTreetable(
     },
     destroy() {
       containerEl.removeChild(root)
+    },
+    getRoot() {
+      return root
+    },
+    onRender(listener) {
+      renderListeners.add(listener)
+      return () => { renderListeners.delete(listener) }
     },
   }
 }

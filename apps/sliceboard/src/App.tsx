@@ -10,6 +10,7 @@ import { Icicle } from './viz/Icicle'
 import { Sunburst } from './viz/Sunburst'
 import {
   BrLcBar, BrLcLine, BrLcArea, BrLcScatter, BrLcPie, BrLcRadar, BrLcConcentricArc,
+  BrLcGauge, BrLcGaugeSegmented,
   BrLcPack, BrLcTreemap, BrLcIcicle, BrLcSunburst, BrLcSankey, BrLcSankeyFlow, BrLcTree,
 } from './viz/br/BrLcCharts'
 import {
@@ -21,10 +22,11 @@ import {
   addTile, removeTile, deleteDashboard, deleteDataset,
   activeDataset, activeDashboard, dashboardsForDataset,
   updateRow, updateRows, reorderLeaves, applyGroupBy,
+  drillSubtree, drillPath,
 } from './persistence'
 import type { Workspace, Dataset, Dashboard, Tile, TileKind, PNode } from './persistence'
 import { schemaFor } from './tile-config-schemas'
-import { hudStore, resetHudForDataset, useHudStore } from './store'
+import { hudStore, resetHudForDataset, useHudStore, useDrillNodeId } from './store'
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
 import './App.css'
@@ -51,7 +53,7 @@ function colorByGroup(nodes: PNode[]): PNode[] {
 const TILE_KINDS: TileKind[] = [
   'treetable',
   'br-lc-bar', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie',
-  'br-lc-radar', 'br-lc-concentric-arc',
+  'br-lc-radar', 'br-lc-concentric-arc', 'br-lc-gauge', 'br-lc-gauge-segmented',
   'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-sankey-flow', 'br-lc-tree',
 ]
 const TILE_LABELS: Record<TileKind, string> = {
@@ -64,6 +66,8 @@ const TILE_LABELS: Record<TileKind, string> = {
   'br-lc-pie':            'Pie',
   'br-lc-radar':          'Radar',
   'br-lc-concentric-arc': 'Concentric Arc',
+  'br-lc-gauge':          'Gauge',
+  'br-lc-gauge-segmented':'Gauge (segmented)',
   'br-lc-pack':           'Pack',
   'br-lc-treemap':        'Treemap',
   'br-lc-icicle':         'Icicle',
@@ -90,14 +94,21 @@ const TILE_LABELS: Record<TileKind, string> = {
 function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNodeReorder }: { tile: Tile; ds: Dataset; measureKey: string; onNodeUpdate: (rowId: string, measures: PNode['measures']) => void; onNodesUpdate: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void; onNodeReorder: (orderedIds: string[]) => void }) {
   const mk = tile.measureKey ?? measureKey
   const hud = useHudStore()
-  const { hoverId, selectionId, focusId } = hud
+  const { hoverId, selectionId, focusId, drillNodeId } = hud
   const onHover = (id: string | null) => hudStore.setHover(id)
   const onSelect = (id: string) => hudStore.setSelection(id)
   const onFocus = (id: string) => hudStore.setFocus(id)
 
   const depth = tile.depth || undefined // 0/undefined = all levels (chart shows full tree)
   const sortBy = tile.sortBy ?? 'index'
-  const rawNodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.rows, tile.groupBy) : ds.rows)
+  // Drill re-roots hierarchical tiles before any other transform. groupBy can
+  // synthesize a virtual parent on top of the drilled subtree; that's fine
+  // because drillSubtree returns plain PNodes the rest of the pipeline already
+  // understands. Drill only affects hier kinds — flat charts ignore it because
+  // their leaf set under the drill scope is just a subset of all leaves, which
+  // is still what we want (focused subset cross-tile).
+  const drilledRows = drillSubtree(ds.rows, drillNodeId)
+  const rawNodes = colorByGroup(tile.groupBy ? applyGroupBy(drilledRows, tile.groupBy) : drilledRows)
   const nodes = sortBy === 'value'
     ? [...rawNodes]
         .sort((a, b) => (b.measures[mk] ?? 0) - (a.measures[mk] ?? 0))
@@ -119,25 +130,27 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
     return <Sunburst nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} onUpdate={onNodeUpdate} />
   }
   if (tile.kind === 'treetable') {
-    return <HTreetable nodes={nodes} measureKey={mk} />
+    return <HTreetable nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} />
   }
 
   // ── BR-LC flat charts ────────────────────────────────────────────────────
   // All BR-LC flat charts get the same value-ordered nodes (natural order when
   // sortBy='index'). The chart draws the order it's handed; it owns no sort.
   if (tile.kind === 'br-lc-bar')            return <BrLcBar nodes={sortedNodes} measureKey={mk} maxItems={tile.maxItems} orientation={tile.orientation} colorMode={tile.colorMode} labelMode={tile.labelMode} valueMode={tile.valueMode} minBandSize={tile.minBandSize} onUpdate={onNodeUpdate} />
-  if (tile.kind === 'br-lc-bands')          return <BrLcBar nodes={sortedNodes} measureKey={mk} maxItems={tile.maxItems} orientation="horizontal" colorMode="palette" labelMode="inside" valueMode="inside" onUpdate={onNodeUpdate} />
+  if (tile.kind === 'br-lc-bands')          return <BrLcBar nodes={sortedNodes} measureKey={mk} maxItems={tile.maxItems} orientation={tile.orientation ?? 'horizontal'} colorMode="palette" labelMode="inside" valueMode="inside" onUpdate={onNodeUpdate} />
   if (tile.kind === 'br-lc-line')           return <BrLcLine nodes={sortedNodes} measureKey={mk} onUpdate={onNodeUpdate} />
   if (tile.kind === 'br-lc-area')           return <BrLcArea nodes={sortedNodes} measureKey={mk} onUpdate={onNodeUpdate} />
   if (tile.kind === 'br-lc-scatter')        return <BrLcScatter nodes={sortedNodes} xKey={tile.xKey ?? '_index'} yKey={tile.yKey ?? mk} onUpdate={onNodeUpdate} />
   if (tile.kind === 'br-lc-pie')            return <BrLcPie nodes={sortedNodes} measureKey={mk} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
   if (tile.kind === 'br-lc-radar')          return <BrLcRadar nodes={sortedNodes} measureKey={mk} onUpdate={onNodeUpdate} />
   if (tile.kind === 'br-lc-concentric-arc') return <BrLcConcentricArc nodes={sortedNodes} measureKey={mk} onUpdate={onNodeUpdate} />
+  if (tile.kind === 'br-lc-gauge')          return <BrLcGauge nodes={sortedNodes} measureKey={mk} label={tile.title ?? mk} />
+  if (tile.kind === 'br-lc-gauge-segmented')return <BrLcGaugeSegmented nodes={sortedNodes} measureKey={mk} label={tile.title ?? mk} />
 
   // ── BR-LC hierarchical charts ────────────────────────────────────────────
   if (tile.kind === 'br-lc-pack')           return <BrLcPack nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
   if (tile.kind === 'br-lc-treemap')        return <BrLcTreemap nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
-  if (tile.kind === 'br-lc-icicle')         return <BrLcIcicle nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
+  if (tile.kind === 'br-lc-icicle')         return <BrLcIcicle nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} orientation={tile.orientation} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
   if (tile.kind === 'br-lc-sunburst')       return <BrLcSunburst nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
   if (tile.kind === 'br-lc-sankey')         return <BrLcSankey edges={ds.edges ?? []} />
   if (tile.kind === 'br-lc-sankey-flow')    return <BrLcSankeyFlow />
@@ -182,8 +195,19 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
 
 // ─── Tile wrapper ─────────────────────────────────────────────────────────────
 
+// Kinds where depth selector is wired
+const HIER_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial', 'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst'])
+// Kinds where Order/Value sort selector is shown
+const VIZ_KINDS = new Set<TileKind>(['h-treemap', 'h-icicle', 'h-radial', 'treemap', 'radial', 'bands', 'br-lc-bar', 'br-lc-bands', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie', 'br-lc-radar', 'br-lc-concentric-arc', 'br-lc-gauge', 'br-lc-gauge-segmented', 'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree'])
+// Kinds that accept groupBy to add hierarchy to flat data
+const GROUPBY_KINDS = new Set<TileKind>(['br-lc-bar', 'br-lc-line', 'br-lc-area', 'br-lc-pie', 'br-lc-radar', 'br-lc-concentric-arc', 'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree'])
+// Kinds whose diagram can honestly exceed the tile (it announces its own bounds);
+// the tile body scrolls the overflow instead of clipping it. The data-driven
+// sankey grows tall with many links — scroll lets you reach all of it.
+const SCROLL_KINDS = new Set<TileKind>(['bands', 'br-lc-sankey'])
+
 function TileCard({
-  tile, ds, measureKey, onRemove, onMeasureChange, onXKeyChange, onYKeyChange, onDepthChange, onSortChange, onGroupByChange, onNodeUpdate, onNodesUpdate, onNodeReorder, availableMeasures,
+  tile, ds, measureKey, onRemove, onMeasureChange, onXKeyChange, onYKeyChange, onDepthChange, onSortChange, onOrientationChange, onGroupByChange, onNodeUpdate, onNodesUpdate, onNodeReorder, availableMeasures,
 }: {
   tile: Tile
   ds: Dataset
@@ -194,6 +218,7 @@ function TileCard({
   onYKeyChange: (key: string) => void
   onDepthChange: (depth: number) => void
   onSortChange: (sortBy: 'index' | 'value') => void
+  onOrientationChange: (orientation: 'vertical' | 'horizontal') => void
   onGroupByChange: (key: string | undefined) => void
   onNodeUpdate: (rowId: string, measures: PNode['measures']) => void
   onNodesUpdate: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
@@ -205,6 +230,9 @@ function TileCard({
   const showGroupBy = pickers.groupBy && ds.dimDefs.length > 0
   const depth = tile.depth ?? 0 // 0 = "All" (show full tree)
   const sortBy = tile.sortBy ?? 'index'
+  // Orientation default is kind-specific: bar defaults to vertical, icicle and
+  // bands default to horizontal.
+  const orientation = tile.orientation ?? (tile.kind === 'br-lc-bar' ? 'vertical' : 'horizontal')
   return (
     <div className="tile-card">
       <div className="tile-header">
@@ -232,6 +260,17 @@ function TileCard({
             >
               <option value="index">Order</option>
               <option value="value">Value</option>
+            </select>
+          )}
+          {pickers.orientation && (
+            <select
+              className="tile-measure-select"
+              value={orientation}
+              onChange={e => onOrientationChange(e.target.value as 'vertical' | 'horizontal')}
+              title="Orientation"
+            >
+              <option value="horizontal">Horizontal</option>
+              <option value="vertical">Vertical</option>
             </select>
           )}
           {pickers.xKey && pickers.yKey ? (
@@ -286,7 +325,26 @@ function TileCard({
           <button className="tile-close-btn" onClick={onRemove}>×</button>
         </div>
       </div>
-      <div className={`tile-body${schema.scrollBody ? ' tile-body--scroll' : ''}`}>
+      <div
+        className={`tile-body${schema.scrollBody ? ' tile-body--scroll' : ''}`}
+        onDoubleClick={schema.pickers.depth ? (e) => {
+          // Drill-in via dblclick on any hierarchical tile. The chart's single
+          // click already set selectionId; hoverId is wherever the cursor is
+          // right now, which is the natural "what did the user mean" target.
+          // Prefer hover over selection (last touched > last clicked).
+          const target = hudStore.getSnapshot().hoverId ?? hudStore.getSnapshot().selectionId
+          if (!target) return
+          const cur = hudStore.getSnapshot().drillNodeId
+          if (target === cur) return // already drilled here
+          if (target === '__root__') return // gen-1 root sentinel — can't drill into it
+          // Only meaningful if the target has children in the dataset under the
+          // current drill scope (avoid drilling to a leaf, which renders blank).
+          const hasChildren = ds.rows.some(r => r.parentId === target)
+          if (!hasChildren) return
+          e.preventDefault()
+          hudStore.setDrill(target)
+        } : undefined}
+      >
         <TileContent tile={tile} ds={ds} measureKey={measureKey} onNodeUpdate={onNodeUpdate} onNodesUpdate={onNodesUpdate} onNodeReorder={onNodeReorder} />
       </div>
     </div>
@@ -447,26 +505,102 @@ function DashboardPicker({
   )
 }
 
+// ─── Drill breadcrumb ─────────────────────────────────────────────────────────
+
+/**
+ * Renders the current drill path as clickable crumbs ahead of the dashboard:
+ *   Root › Goal › Project   [↑ up]
+ * Clicking any crumb (incl. "Root") drills directly to that level. The "↑ up"
+ * button drills out one level. Hidden entirely when no drill is active.
+ *
+ * Cross-tile sync is implicit: this component talks to the same hudStore every
+ * hierarchical tile reads from, so the whole dashboard updates atomically.
+ */
+function DrillBreadcrumb({ ds }: { ds: Dataset }) {
+  const drillNodeId = useDrillNodeId()
+  if (!drillNodeId) return null
+  const path = drillPath(ds.rows, drillNodeId)
+  if (path.length === 0) {
+    // Stale drill id pointing at a removed/foreign node — clear it so the
+    // dashboard stops trying to render an empty subtree.
+    hudStore.setDrill(null)
+    return null
+  }
+  const parent = path.length >= 2 ? path[path.length - 2]! : null
+  return (
+    <div className="sb-drill-bar" role="navigation" aria-label="Drill path">
+      <button
+        type="button"
+        className="sb-drill-crumb"
+        onClick={() => hudStore.setDrill(null)}
+      >
+        Root
+      </button>
+      {path.map((n, i) => {
+        const isCurrent = i === path.length - 1
+        return (
+          <span key={n.id} className="sb-drill-seg">
+            <span className="sb-drill-sep">›</span>
+            <button
+              type="button"
+              className={`sb-drill-crumb${isCurrent ? ' sb-drill-crumb--current' : ''}`}
+              onClick={() => hudStore.setDrill(isCurrent ? null : n.id)}
+              aria-current={isCurrent ? 'location' : undefined}
+              title={isCurrent ? 'Click to drill out fully' : `Drill to ${n.name}`}
+            >
+              {n.name}
+            </button>
+          </span>
+        )
+      })}
+      <button
+        type="button"
+        className="sb-btn sb-drill-up"
+        onClick={() => hudStore.setDrill(parent ? parent.id : null)}
+        title="Drill out one level (Esc)"
+      >
+        ↑ Up
+      </button>
+    </div>
+  )
+}
+
 // ─── Main app ─────────────────────────────────────────────────────────────────
 
 export function App() {
   const [ws, setWs] = useState<Workspace>(() => initWorkspace())
 
-  // Unified idle Esc: clear the current selection across every tile. Runs in the
-  // bubble phase, so a chart's own Esc (e.g. gen-1 VizRenderer's capture-phase
-  // drag-cancel) takes precedence and stops propagation before this fires — a
-  // drag-in-progress reverts instead of clearing selection. Does NOT touch focus
-  // (drill state) — Esc clears selection, not navigation.
+  // Unified idle Esc contract (bubble phase — a chart's own capture-phase Esc
+  // for drag-revert runs first and stops propagation). Priority order, per
+  // docs/interaction-principles.md and the drill ticket:
+  //   1. Drag active → chart cancels (handled in capture phase, never reaches here)
+  //   2. Selection active → clear selection
+  //   3. Drilled in → drill out one level (pop to parent of current drill root)
+  //   4. Else → fall through (browser default)
   useEffect(() => {
     const onEsc = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
-      if (hudStore.getSnapshot().selectionId == null) return // nothing to clear → let Esc fall through
-      e.preventDefault()
-      hudStore.setSelection(null)
+      const s = hudStore.getSnapshot()
+      if (s.selectionId != null) {
+        e.preventDefault()
+        hudStore.setSelection(null)
+        return
+      }
+      if (s.drillNodeId != null) {
+        // Drill out one level. Active dataset's rows are the source of truth
+        // for the parent chain — drillPath walks it for us.
+        const dsNow = activeDataset(ws)
+        if (!dsNow) return
+        const path = drillPath(dsNow.rows, s.drillNodeId)
+        // path = [root, ..., current]; pop to parent = path[length-2], or null if at top
+        const parent = path.length >= 2 ? path[path.length - 2]! : null
+        e.preventDefault()
+        hudStore.setDrill(parent ? parent.id : null)
+      }
     }
     window.addEventListener('keydown', onEsc)
     return () => window.removeEventListener('keydown', onEsc)
-  }, [])
+  }, [ws])
 
   function commit(next: Workspace) {
     setWs(next)
@@ -476,6 +610,25 @@ export function App() {
   const dash = activeDashboard(ws)
   const ds = dash ? ws.datasets.find(d => d.id === dash.datasetId) : activeDataset(ws)
   const measures = ds ? ds.measureDefs : []
+
+  // Drill is two-sourced: hudStore for live cross-tile reactivity, Dashboard
+  // for persistence. Sync the two by always treating the dashboard as the
+  // source of truth on entry/switch, and the store as the leading edge of
+  // user intent on exit. Mirror store → dash via an effect; hydrate dash →
+  // store when the active dashboard's persisted value changes.
+  const liveDrill = useDrillNodeId()
+  const persistedDrill = dash?.drillNodeId ?? null
+  useEffect(() => {
+    if (hudStore.getSnapshot().drillNodeId !== persistedDrill) {
+      hudStore.hydrateDrill(persistedDrill)
+    }
+  }, [dash?.id, persistedDrill])
+  useEffect(() => {
+    if (!dash) return
+    if ((dash.drillNodeId ?? null) === liveDrill) return
+    commit(updateDashboard(ws, { ...dash, drillNodeId: liveDrill }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveDrill])
 
   const switchDataset = useCallback((id: string) => {
     const next = { ...ws, activeDatasetId: id }
@@ -591,6 +744,11 @@ export function App() {
     commit(updateDashboard(ws, { ...dash, tiles: dash.tiles.map(t => t.id === tileId ? { ...t, groupBy } : t) }))
   }, [ws, dash])
 
+  const handleTileOrientation = useCallback((tileId: string, orientation: 'vertical' | 'horizontal') => {
+    if (!dash) return
+    commit(updateDashboard(ws, { ...dash, tiles: dash.tiles.map(t => t.id === tileId ? { ...t, orientation } : t) }))
+  }, [ws, dash])
+
   return (
     <div className="sb-root">
       <div className="sb-topbar">
@@ -614,6 +772,8 @@ export function App() {
         </div>
       </div>
 
+      {ds && <DrillBreadcrumb ds={ds} />}
+
       <div className="sb-grid-wrap">
         {ds && dash ? (
           <TileGrid
@@ -627,6 +787,7 @@ export function App() {
             onTileYKey={handleTileYKey}
             onTileDepth={handleTileDepth}
             onTileSort={handleTileSort}
+            onTileOrientation={handleTileOrientation}
             onTileGroupBy={handleTileGroupBy}
             onNodeUpdate={handleNodeUpdate}
             onNodesUpdate={handleNodesUpdate}
@@ -638,7 +799,7 @@ export function App() {
   )
 }
 
-function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeasure, onTileXKey, onTileYKey, onTileDepth, onTileSort, onTileGroupBy, onNodeUpdate, onNodesUpdate, onNodeReorder }: {
+function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeasure, onTileXKey, onTileYKey, onTileDepth, onTileSort, onTileOrientation, onTileGroupBy, onNodeUpdate, onNodesUpdate, onNodeReorder }: {
   dash: Dashboard
   ds: Dataset
   measures: { key: string; label: string }[]
@@ -649,6 +810,7 @@ function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeas
   onTileYKey: (tileId: string, key: string) => void
   onTileDepth: (tileId: string, depth: number) => void
   onTileSort: (tileId: string, sortBy: 'index' | 'value') => void
+  onTileOrientation: (tileId: string, orientation: 'vertical' | 'horizontal') => void
   onTileGroupBy: (tileId: string, key: string | undefined) => void
   onNodeUpdate: (rowId: string, measures: PNode['measures']) => void
   onNodesUpdate: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
@@ -679,6 +841,7 @@ function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeas
                 onYKeyChange={key => onTileYKey(tile.id, key)}
                 onDepthChange={d => onTileDepth(tile.id, d)}
                 onSortChange={s => onTileSort(tile.id, s)}
+                onOrientationChange={o => onTileOrientation(tile.id, o)}
                 onGroupByChange={k => onTileGroupBy(tile.id, k)}
                 onNodeUpdate={onNodeUpdate}
                 onNodesUpdate={onNodesUpdate}

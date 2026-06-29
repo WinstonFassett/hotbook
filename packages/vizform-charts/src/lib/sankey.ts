@@ -134,7 +134,7 @@ export function sankeyScene(
   const nodeColorProp = opts.nodeColorProp ?? cell<NodeColorProp>("layer");
   const linkColorMode = opts.linkColorMode ?? cell<LinkColorMode>("source");
 
-  host.tabIndex = 0;
+  host.tabIndex = -1; // Container not directly focusable, ribbons are
   host.style.outline = "none";
 
   // Resolve link endpoints to node indices.
@@ -191,6 +191,7 @@ export function sankeyScene(
   // link being edited mid-gesture (the gesture object itself is plain).
   const wheelLocked = cell<number | null>(null);
   const ribbonEls = new Map<Element, number>();
+  const ribbonElements: SVGPathElement[] = []; // Track elements by index for focus management
 
   // Wheel edits a link by index; snapshot/restore the one link cell's value.
   const wheelConfig = {
@@ -233,22 +234,29 @@ export function sankeyScene(
       if (focused.value !== null) { focused.value = null; e.preventDefault(); }
       return;
     }
-    if (e.key === "Tab") {
-      const cur = focused.value;
-      const last = linkValues.length - 1;
-      if (!e.shiftKey && cur === last) { focused.value = null; return; }
-      if (e.shiftKey && cur === 0) { focused.value = null; return; }
-      focused.value = e.shiftKey
-        ? ((cur ?? 0) - 1 + linkValues.length) % linkValues.length
-        : ((cur ?? -1) + 1) % linkValues.length;
-      e.preventDefault(); return;
-    }
     const idx = focused.value;
+    if (e.key === "Tab") {
+      // Tab cycles through ribbons
+      e.preventDefault();
+      const nextIdx = idx === null
+        ? 0
+        : e.shiftKey
+          ? (idx <= 0 ? linkDefs.length : idx) - 1
+          : (idx + 1) % linkDefs.length;
+      focused.value = nextIdx;
+      ribbonElements[nextIdx]?.focus();
+      return;
+    }
     if (idx === null) return;
     const v = linkValues[idx]!.value;
     const step = stepFn(v.value, e.shiftKey);
-    if (e.key === "ArrowUp" || e.key === "ArrowRight") { v.value = Math.max(LINK_MIN, v.value + step); e.preventDefault(); }
-    else if (e.key === "ArrowDown" || e.key === "ArrowLeft") { v.value = Math.max(LINK_MIN, v.value - step); e.preventDefault(); }
+    if (e.key === "ArrowUp" || e.key === "ArrowRight") {
+      v.value = Math.max(LINK_MIN, v.value + step);
+      e.preventDefault();
+    } else if (e.key === "ArrowDown" || e.key === "ArrowLeft") {
+      v.value = Math.max(LINK_MIN, v.value - step);
+      e.preventDefault();
+    }
   }) as EventListener);
 
   // Tooltip
@@ -281,9 +289,19 @@ export function sankeyScene(
     });
 
     const ribbon = s(pathD(d, { fill: stroke, opacity, stroke: "none" }));
+    ribbonElements[idx] = ribbon.el; // Store for focus management
     ribbonEls.set(ribbon.el, idx);
     if (ribbon.el.firstElementChild) ribbonEls.set(ribbon.el.firstElementChild, idx);
     ribbon.el.style.cursor = "pointer";
+    // Make each ribbon individually focusable
+    ribbon.el.setAttribute('tabindex', '0');
+    ribbon.el.setAttribute('data-focusable', 'ribbon');
+    biEffect(() => {
+      const b = layout.value.links[idx]!;
+      const sn = nodeIds[b.src] ?? String(b.src);
+      const tn = nodeIds[b.tgt] ?? String(b.tgt);
+      ribbon.el.setAttribute('aria-label', `${sn} to ${tn}: ${b.value.toFixed(1)}`);
+    });
     ribbon.el.addEventListener("pointerenter", (e) => {
       if (wheelController.active) return;
       hovered.value = idx;
@@ -295,7 +313,9 @@ export function sankeyScene(
     });
     ribbon.el.addEventListener("pointermove", (e) => { if (!wheelController.active) tooltipAt.value = toSVG(e as PointerEvent); });
     ribbon.el.addEventListener("pointerleave", () => { if (wheelController.active) return; if (hovered.value === idx) { hovered.value = null; tooltipVis.value = false; } });
-    ribbon.el.addEventListener("click", () => { focused.value = focused.value === idx ? null : idx; host.focus(); });
+    ribbon.el.addEventListener("click", () => { focused.value = focused.value === idx ? null : idx; });
+    ribbon.el.addEventListener("focus", () => { focused.value = idx; });
+    ribbon.el.addEventListener("blur", () => { if (focused.value === idx) focused.value = null; });
   }
 
   // ── Node bars + GROUP grip ─────────────────────────────────────────────────

@@ -6,12 +6,18 @@ export interface HudState {
   selectionId: string | null
   /** '__root__' = top level */
   focusId: string
+  /** Drill scope (cross-tile): null = render full tree from real root; non-null =
+   *  re-root every hierarchical tile at this PNode id. Distinct from
+   *  `tile.depth` (static "how many levels to render") and from `selectionId`
+   *  (which node is highlighted). Persisted on the dashboard. */
+  drillNodeId: string | null
 }
 
 const INIT: HudState = {
   hoverId: null,
   selectionId: null,
   focusId: '__root__',
+  drillNodeId: null,
 }
 
 let state: HudState = INIT
@@ -35,7 +41,10 @@ export const hudStore = {
   setHover: (id: string | null) => setState({ hoverId: id }),
   setSelection: (id: string | null) => setState({ selectionId: id }),
   setFocus: (id: string) => setState({ focusId: id }),
+  setDrill: (id: string | null) => setState({ drillNodeId: id }),
   reset: () => setState(INIT),
+  /** Seed drill from persisted dashboard state without resetting hover/select. */
+  hydrateDrill: (id: string | null) => setState({ drillNodeId: id }),
 }
 
 export function useHudStore(): HudState {
@@ -54,7 +63,11 @@ export function useFocusId(): string {
   return useSyncExternalStore(hudStore.subscribe, () => hudStore.getSnapshot().focusId)
 }
 
-/** Reset focus + selection when dataset changes */
+export function useDrillNodeId(): string | null {
+  return useSyncExternalStore(hudStore.subscribe, () => hudStore.getSnapshot().drillNodeId)
+}
+
+/** Reset focus + selection + drill when dataset changes */
 export function resetHudForDataset(_nodes: PNode[]) {
   hudStore.reset()
 }
