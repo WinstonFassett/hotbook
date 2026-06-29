@@ -77,7 +77,6 @@ export class MdScatterChartLC extends Diagram {
         selected.value === d ? "#fff" : hover.value === d ? "#a4c0f0" : COLOR
       );
       const dot = s(circle(pos, 5, { fill, stroke: "#0b0d12", strokeWidth: 1 }));
-      dot.el.style.cursor = "pointer";
       dot.el.addEventListener("pointerenter", () => { hover.value = d; });
       dot.el.addEventListener("pointerleave", () => { if (hover.value === d) hover.value = null; });
       dot.el.addEventListener("click", () => { selected.value = selected.value === d ? null : d; });

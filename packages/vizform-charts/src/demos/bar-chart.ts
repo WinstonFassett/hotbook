@@ -281,7 +281,7 @@ export class MdBarChartLC extends Diagram {
       const fill = derive(() => { const d = di(); return selected.value === d ? "#fff" : hover.value === d ? hoverColor : base; });
 
       const tile = s(rect(barX, barY, barW, barH, { fill, corner: 2 }));
-      tile.el.style.cursor = "pointer";
+      tile.el.style.cursor = "ns-resize";
       // Value-change settle: height/y interpolate when value changes outside a
       // gesture (external data, arrow-key edit, wheel-commit). Suppressed
       // during active wheel/drag via .vf-gesture-active on the host, so
@@ -527,7 +527,7 @@ export class MdBarChartLC extends Diagram {
       const labelFill = derive(() => { const d = di(); return selected.value === d ? base : "#fff"; });
 
       const tile = s(rect(plotX, barY, barW, barH, { fill, corner: 3 }));
-      tile.el.style.cursor = "pointer";
+      tile.el.style.cursor = "ew-resize";
       tile.el.style.transition = settleTransition(["width", "fill"]);
       tile.el.addEventListener("pointerenter", () => { const d = di(); if (!wheelController.active && d) hover.value = d; });
       tile.el.addEventListener("pointerleave", () => { const d = di(); if (!wheelController.active && d && hover.value === d) hover.value = null; });
