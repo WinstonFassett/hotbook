@@ -23,8 +23,11 @@ import {
   activeDataset, activeDashboard, dashboardsForDataset,
   updateRow, updateRows, reorderLeaves, applyGroupBy,
   drillSubtree, drillPath,
+  setLayoutMode, setSplitTree,
 } from './persistence'
 import type { Workspace, Dataset, Dashboard, Tile, TileKind, PNode } from './persistence'
+import { SplitView } from './SplitView'
+import { setSizes as setSplitSizes } from './splits'
 import { schemaFor } from './tile-config-schemas'
 import { hudStore, resetHudForDataset, useHudStore, useDrillNodeId } from './store'
 import 'react-grid-layout/css/styles.css'
@@ -729,6 +732,18 @@ export function App() {
     commit(updateDashboard(ws, { ...dash, tiles: dash.tiles.map(t => t.id === tileId ? { ...t, groupBy } : t) }))
   }, [ws, dash])
 
+  const handleLayoutModeToggle = useCallback(() => {
+    if (!dash) return
+    const next = (dash.layoutMode ?? 'grid') === 'grid' ? 'splits' : 'grid'
+    commit(setLayoutMode(ws, dash.id, next))
+  }, [ws, dash])
+
+  const handleSplitResize = useCallback((splitId: string, sizes: number[]) => {
+    if (!dash) return
+    const nextTree = setSplitSizes(dash.splitTree ?? null, splitId, sizes)
+    commit(setSplitTree(ws, dash.id, nextTree))
+  }, [ws, dash])
+
   return (
     <div className="sb-root">
       <div className="sb-topbar">
@@ -748,6 +763,15 @@ export function App() {
           onDelete={deleteDash}
         />
         <div className="sb-topbar-right">
+          {dash && (
+            <button
+              className="sb-btn"
+              onClick={handleLayoutModeToggle}
+              title="Toggle layout mode"
+            >
+              {(dash.layoutMode ?? 'grid') === 'grid' ? 'Grid' : 'Splits'}
+            </button>
+          )}
           <AddTileMenu onAdd={handleAddTile} />
         </div>
       </div>
@@ -756,22 +780,41 @@ export function App() {
 
       <div className="sb-grid-wrap">
         {ds && dash ? (
-          <TileGrid
-            dash={dash}
-            ds={ds}
-            measures={measures}
-            onLayoutChange={handleLayoutChange}
-            onRemoveTile={handleRemoveTile}
-            onTileMeasure={handleTileMeasure}
-            onTileXKey={handleTileXKey}
-            onTileYKey={handleTileYKey}
-            onTileDepth={handleTileDepth}
-            onTileSort={handleTileSort}
-            onTileGroupBy={handleTileGroupBy}
-            onNodeUpdate={handleNodeUpdate}
-            onNodesUpdate={handleNodesUpdate}
-            onNodeReorder={handleNodeReorder}
-          />
+          (dash.layoutMode ?? 'grid') === 'splits' ? (
+            <TileSplits
+              dash={dash}
+              ds={ds}
+              measures={measures}
+              onSplitResize={handleSplitResize}
+              onRemoveTile={handleRemoveTile}
+              onTileMeasure={handleTileMeasure}
+              onTileXKey={handleTileXKey}
+              onTileYKey={handleTileYKey}
+              onTileDepth={handleTileDepth}
+              onTileSort={handleTileSort}
+              onTileGroupBy={handleTileGroupBy}
+              onNodeUpdate={handleNodeUpdate}
+              onNodesUpdate={handleNodesUpdate}
+              onNodeReorder={handleNodeReorder}
+            />
+          ) : (
+            <TileGrid
+              dash={dash}
+              ds={ds}
+              measures={measures}
+              onLayoutChange={handleLayoutChange}
+              onRemoveTile={handleRemoveTile}
+              onTileMeasure={handleTileMeasure}
+              onTileXKey={handleTileXKey}
+              onTileYKey={handleTileYKey}
+              onTileDepth={handleTileDepth}
+              onTileSort={handleTileSort}
+              onTileGroupBy={handleTileGroupBy}
+              onNodeUpdate={handleNodeUpdate}
+              onNodesUpdate={handleNodesUpdate}
+              onNodeReorder={handleNodeReorder}
+            />
+          )
         ) : null}
       </div>
     </div>
@@ -829,6 +872,56 @@ function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeas
         </GridLayout>
       )}
       {dash.tiles.length === 0 && (
+        <div className="sb-grid-empty">No tiles — click "+ Tile" to add one</div>
+      )}
+    </div>
+  )
+}
+
+function TileSplits({ dash, ds, measures, onSplitResize, onRemoveTile, onTileMeasure, onTileXKey, onTileYKey, onTileDepth, onTileSort, onTileGroupBy, onNodeUpdate, onNodesUpdate, onNodeReorder }: {
+  dash: Dashboard
+  ds: Dataset
+  measures: { key: string; label: string }[]
+  onSplitResize: (splitId: string, sizes: number[]) => void
+  onRemoveTile: (id: string) => void
+  onTileMeasure: (tileId: string, key: string) => void
+  onTileXKey: (tileId: string, key: string) => void
+  onTileYKey: (tileId: string, key: string) => void
+  onTileDepth: (tileId: string, depth: number) => void
+  onTileSort: (tileId: string, sortBy: 'index' | 'value') => void
+  onTileGroupBy: (tileId: string, key: string | undefined) => void
+  onNodeUpdate: (rowId: string, measures: PNode['measures']) => void
+  onNodesUpdate: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
+  onNodeReorder: (orderedIds: string[]) => void
+}) {
+  const tilesById = new Map(dash.tiles.map(t => [t.id, t]))
+  const renderLeaf = (tileId: string) => {
+    const tile = tilesById.get(tileId)
+    if (!tile) return <div className="sb-grid-empty">Missing tile</div>
+    return (
+      <TileCard
+        tile={tile}
+        ds={ds}
+        measureKey={dash.measureKey}
+        availableMeasures={measures}
+        onRemove={() => onRemoveTile(tile.id)}
+        onMeasureChange={key => onTileMeasure(tile.id, key)}
+        onXKeyChange={key => onTileXKey(tile.id, key)}
+        onYKeyChange={key => onTileYKey(tile.id, key)}
+        onDepthChange={d => onTileDepth(tile.id, d)}
+        onSortChange={s => onTileSort(tile.id, s)}
+        onGroupByChange={k => onTileGroupBy(tile.id, k)}
+        onNodeUpdate={onNodeUpdate}
+        onNodesUpdate={onNodesUpdate}
+        onNodeReorder={onNodeReorder}
+      />
+    )
+  }
+  return (
+    <div className="sb-splits-root">
+      {dash.splitTree ? (
+        <SplitView node={dash.splitTree} renderLeaf={renderLeaf} onResize={onSplitResize} />
+      ) : (
         <div className="sb-grid-empty">No tiles — click "+ Tile" to add one</div>
       )}
     </div>

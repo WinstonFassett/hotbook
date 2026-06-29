@@ -2,6 +2,8 @@ import type { PNode } from '@winstonfassett/vizform-react-d3'
 import type { PEdge, ScalingMode } from '@winstonfassett/vizform-core'
 import { colorFor } from '@winstonfassett/vizform-core'
 import type { LayoutItem } from 'react-grid-layout'
+import type { SplitNode } from './splits'
+import { reconcile as reconcileSplitTree, defaultTree as defaultSplitTree } from './splits'
 
 export type { PNode, PEdge }
 
@@ -103,6 +105,12 @@ export interface Dashboard {
   /** Persisted drill scope (cross-tile). null/undefined = full tree from real
    *  root; non-null = every hierarchical tile re-roots at this PNode id. */
   drillNodeId?: string | null
+  /** Layout engine for this dashboard. Defaults to 'grid' (react-grid-layout).
+   *  'splits' uses a tree of resizable row/column splits with tiles as leaves. */
+  layoutMode?: 'grid' | 'splits'
+  /** Persisted split-tree for `layoutMode === 'splits'`. Reconciled against
+   *  `tiles` on load — see persistence.activeDashboard. */
+  splitTree?: SplitNode | null
 }
 
 // ─── Workspace ────────────────────────────────────────────────────────────────
@@ -116,7 +124,7 @@ export interface Workspace {
 
 // ─── Storage ──────────────────────────────────────────────────────────────────
 
-const LS_KEY = 'sb:workspace:v10'
+const LS_KEY = 'sb:workspace:v11'
 
 function genId(): string {
   return Math.random().toString(36).slice(2, 10)
@@ -770,17 +778,39 @@ export function addTile(ws: Workspace, dashId: string, kind: TileKind): Workspac
   if (!dash) return ws
   const tile: Tile = { id: genId(), kind }
   const layout: LayoutItem = { i: tile.id, x: 0, y: Infinity, w: 6, h: 8 }
-  return updateDashboard(ws, { ...dash, tiles: [...dash.tiles, tile], layout: [...dash.layout, layout] })
+  const nextTiles = [...dash.tiles, tile]
+  const splitTree = reconcileSplitTree(dash.splitTree ?? null, nextTiles.map(t => t.id))
+  return updateDashboard(ws, { ...dash, tiles: nextTiles, layout: [...dash.layout, layout], splitTree })
 }
 
 export function removeTile(ws: Workspace, dashId: string, tileId: string): Workspace {
   const dash = ws.dashboards.find(d => d.id === dashId)
   if (!dash) return ws
+  const nextTiles = dash.tiles.filter(t => t.id !== tileId)
+  const splitTree = reconcileSplitTree(dash.splitTree ?? null, nextTiles.map(t => t.id))
   return updateDashboard(ws, {
     ...dash,
-    tiles: dash.tiles.filter(t => t.id !== tileId),
+    tiles: nextTiles,
     layout: dash.layout.filter(l => l.i !== tileId),
+    splitTree,
   })
+}
+
+/** Switch a dashboard between grid and splits layout. When entering splits mode
+ *  for the first time, lazily build a default row-of-leaves tree from the
+ *  existing tile order. */
+export function setLayoutMode(ws: Workspace, dashId: string, mode: 'grid' | 'splits'): Workspace {
+  const dash = ws.dashboards.find(d => d.id === dashId)
+  if (!dash) return ws
+  let splitTree = dash.splitTree ?? null
+  if (mode === 'splits' && !splitTree) splitTree = defaultSplitTree(dash.tiles.map(t => t.id))
+  return updateDashboard(ws, { ...dash, layoutMode: mode, splitTree })
+}
+
+export function setSplitTree(ws: Workspace, dashId: string, splitTree: SplitNode | null): Workspace {
+  const dash = ws.dashboards.find(d => d.id === dashId)
+  if (!dash) return ws
+  return updateDashboard(ws, { ...dash, splitTree })
 }
 
 export function deleteDashboard(ws: Workspace, dashId: string): Workspace {

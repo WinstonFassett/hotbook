@@ -113,6 +113,59 @@
   overflow-y: auto;
 }
 
+/* Splits layout (alternative to react-grid-layout) */
+.sb-splits-root {
+  height: 100%;
+  width: 100%;
+  padding: 12px;
+  box-sizing: border-box;
+  display: flex;
+  min-height: 0;
+}
+.sb-splits-root > * { flex: 1; min-width: 0; min-height: 0; }
+.split-branch {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+}
+.split-cell {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.split-cell > .split-leaf,
+.split-cell > .split-branch { flex: 1; min-width: 0; min-height: 0; width: 100%; height: 100%; }
+.split-leaf {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+}
+.split-leaf > .tile-card { width: 100%; height: 100%; }
+.split-gutter {
+  flex-shrink: 0;
+  background: transparent;
+  position: relative;
+  z-index: 1;
+}
+.split-gutter--row {
+  width: 6px;
+  margin: 0 -2px;
+  cursor: col-resize;
+}
+.split-gutter--col {
+  height: 6px;
+  margin: -2px 0;
+  cursor: row-resize;
+}
+.split-gutter:hover { background: #2a2a2a; }
+.split-gutter:active { background: #3a3a3a; }
+
 /* Topbar extras */
 .sb-topbar-sep {
   color: #2a2a2a;
