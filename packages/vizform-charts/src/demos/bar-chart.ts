@@ -40,7 +40,18 @@ function makeData(): Bar[] {
 }
 
 export class MdBarChartLC extends Diagram {
-  static styles = `text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}`
+  static styles = `
+    text { pointer-events: none; }
+    ${FILL_STYLE}
+    ${GESTURE_SUPPRESSION_CSS}
+    [data-focusable]:focus {
+      outline: 2px solid #4a9eff;
+      outline-offset: 2px;
+    }
+    [data-focusable]:focus:not(:focus-visible) {
+      outline: none;
+    }
+  `
 
   readonly dataCell = cell<readonly Bar[]>(makeData());
 
@@ -63,7 +74,7 @@ export class MdBarChartLC extends Diagram {
 
   protected scene(s: Mount): void {
     const size = useHostSize(this, { width: W, height: H });
-    this.tabIndex = 0;
+    this.tabIndex = -1; // Container not directly focusable, items are
     this.style.outline = "none";
     const data = this.dataCell;
     if (this.orientation === 'horizontal') {
@@ -283,9 +294,18 @@ export class MdBarChartLC extends Diagram {
       // during active wheel/drag via .vf-gesture-active on the host, so
       // cursor feedback stays instant (Part 2 / Interaction Principle 4).
       tile.el.style.transition = settleTransition(["y", "height", "fill"]);
+      // Make each bar individually focusable
+      tile.el.setAttribute('tabindex', '0');
+      tile.el.setAttribute('data-focusable', 'bar');
+      biEffect(() => {
+        const d = di();
+        if (d) tile.el.setAttribute('aria-label', `${d.label}: ${Math.round(d.value)}`);
+      });
       tile.el.addEventListener("pointerenter", () => { const d = di(); if (!wheelController.active && d) hover.value = d; });
       tile.el.addEventListener("pointerleave", () => { const d = di(); if (!wheelController.active && d && hover.value === d) hover.value = null; });
       tile.el.addEventListener("click", () => { const d = di(); if (!d) return; selected.value = selected.value === d ? null : d; });
+      tile.el.addEventListener("focus", () => { const d = di(); if (d) selected.value = d; });
+      tile.el.addEventListener("blur", () => { const d = di(); if (d && selected.value === d) selected.value = null; });
 
       const barCX = derive(() => barX.value + barW.value / 2);
 
@@ -521,9 +541,18 @@ export class MdBarChartLC extends Diagram {
       const tile = s(rect(plotX, barY, barW, barH, { fill, corner: 3 }));
       tile.el.style.cursor = "pointer";
       tile.el.style.transition = settleTransition(["width", "fill"]);
+      // Make each bar individually focusable
+      tile.el.setAttribute('tabindex', '0');
+      tile.el.setAttribute('data-focusable', 'bar');
+      biEffect(() => {
+        const d = di();
+        if (d) tile.el.setAttribute('aria-label', `${d.label}: ${Math.round(d.value)}`);
+      });
       tile.el.addEventListener("pointerenter", () => { const d = di(); if (!wheelController.active && d) hover.value = d; });
       tile.el.addEventListener("pointerleave", () => { const d = di(); if (!wheelController.active && d && hover.value === d) hover.value = null; });
       tile.el.addEventListener("click", () => { const d = di(); if (!d) return; selected.value = selected.value === d ? null : d; });
+      tile.el.addEventListener("focus", () => { const d = di(); if (d) selected.value = d; });
+      tile.el.addEventListener("blur", () => { const d = di(); if (d && selected.value === d) selected.value = null; });
 
       const barCY = derive(() => barY.value + barH.value / 2);
       const minBand = this.minBandSize || 60;
