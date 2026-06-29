@@ -230,9 +230,12 @@ export class MdBarChartLC extends Diagram {
       const cur = selected.value;
       const i = cur ? rows.indexOf(cur) : -1;
       if (ke.key === "ArrowRight" || ke.key === "ArrowLeft") {
-        selected.value = ke.key === "ArrowLeft"
-          ? rows[(i <= 0 ? rows.length : i) - 1] ?? null
-          : rows[(i + 1) % rows.length] ?? null;
+        const nextIdx = ke.key === "ArrowLeft"
+          ? (i <= 0 ? rows.length : i) - 1
+          : (i + 1) % rows.length;
+        selected.value = rows[nextIdx] ?? null;
+        // Move focus to the newly selected bar
+        tileElements[nextIdx]?.focus();
         ke.preventDefault(); return;
       }
       if (!cur) return;
@@ -275,6 +278,7 @@ export class MdBarChartLC extends Diagram {
 
     // Bars — MAX_ROWS slots; each reads data.value[idx] live so sort reorders visually.
     const MAX_ROWS = rows0.length;
+    const tileElements: SVGRectElement[] = []; // Track elements by index for focus management
     for (let idx = 0; idx < MAX_ROWS; idx++) {
       const di = (): Bar | null => (data.value as Bar[])[idx] ?? null;
       const key = String(idx);
@@ -288,6 +292,7 @@ export class MdBarChartLC extends Diagram {
       const fill = derive(() => { const d = di(); return selected.value === d ? "#fff" : hover.value === d ? hoverColor : base; });
 
       const tile = s(rect(barX, barY, barW, barH, { fill, corner: 2 }));
+      tileElements[idx] = tile.el; // Store for focus management
       tile.el.style.cursor = "pointer";
       // Value-change settle: height/y interpolate when value changes outside a
       // gesture (external data, arrow-key edit, wheel-commit). Suppressed
@@ -473,9 +478,12 @@ export class MdBarChartLC extends Diagram {
       const cur = selected.value;
       const i = cur ? rows.indexOf(cur) : -1;
       if (ke.key === "ArrowDown" || ke.key === "ArrowUp") {
-        selected.value = ke.key === "ArrowUp"
-          ? rows[(i <= 0 ? rows.length : i) - 1] ?? null
-          : rows[(i + 1) % rows.length] ?? null;
+        const nextIdx = ke.key === "ArrowUp"
+          ? (i <= 0 ? rows.length : i) - 1
+          : (i + 1) % rows.length;
+        selected.value = rows[nextIdx] ?? null;
+        // Move focus to the newly selected bar
+        tileElementsH[nextIdx]?.focus();
         ke.preventDefault(); return;
       }
       if (!cur) return;
@@ -526,6 +534,7 @@ export class MdBarChartLC extends Diagram {
     }
 
     // Bars — live read from data.value[idx] so sort reorders visually.
+    const tileElementsH: SVGRectElement[] = []; // Track elements by index for focus management
     for (let idx = 0; idx < rows0.length; idx++) {
       const di = (): Bar | null => (data.value as Bar[])[idx] ?? null;
       const key = String(idx);
@@ -539,6 +548,7 @@ export class MdBarChartLC extends Diagram {
       const labelFill = derive(() => { const d = di(); return selected.value === d ? base : "#fff"; });
 
       const tile = s(rect(plotX, barY, barW, barH, { fill, corner: 3 }));
+      tileElementsH[idx] = tile.el; // Store for focus management
       tile.el.style.cursor = "pointer";
       tile.el.style.transition = settleTransition(["width", "fill"]);
       // Make each bar individually focusable
