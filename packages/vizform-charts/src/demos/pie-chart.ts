@@ -83,7 +83,10 @@ export class MdPieChartLC extends Diagram {
     });
 
     // Draw slices.
-    const sliceElements: SVGElement[] = []; // Track elements by index for focus management
+    const sliceElements = new Map<Slice, SVGElement>(); // Track elements by datum identity
+    const focusDatum = (d: Slice | null) => {
+      if (d) sliceElements.get(d)?.focus();
+    };
     for (let i = 0; i < (data.value as Slice[]).length; i++) {
       const d = (data.value as Slice[])[i]!;
       const color = PALETTE[i % PALETTE.length]!;
@@ -102,7 +105,7 @@ export class MdPieChartLC extends Diagram {
         strokeWidth: 1,
         opacity,
       }));
-      sliceElements[i] = sector.el; // Store for focus management
+      sliceElements.set(d, sector.el); // Store for focus management
       sector.el.style.cursor = "pointer";
       // Make each slice individually focusable
       sector.el.setAttribute('tabindex', '0');
@@ -230,8 +233,7 @@ export class MdPieChartLC extends Diagram {
           ? (i <= 0 ? rows.length : i) - 1
           : (i + 1) % rows.length;
         selected.value = rows[nextIdx] ?? null;
-        // Move focus to the newly selected slice
-        sliceElements[nextIdx]?.focus();
+        focusDatum(selected.value);
         ke.preventDefault(); return;
       }
       if (!cur) return;

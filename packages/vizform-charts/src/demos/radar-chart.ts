@@ -187,6 +187,12 @@ export class MdRadarChartLC extends Diagram {
 
     // Data points — one slot per MAX_SPOKES; each reads data.value[i] reactively.
     const spokeElements: SVGCircleElement[] = [];
+    // ID-based focus helper (matches selection/gesture pattern)
+    const focusDatum = (d: Spoke | null) => {
+      if (!d?.id) return;
+      const idx = (data.value as Spoke[]).findIndex(item => item.id === d.id);
+      if (idx >= 0) spokeElements[idx]?.focus();
+    };
     for (let i = 0; i < MAX_SPOKES; i++) {
       const dotPos = Vec.derive(() => {
         const rows = data.value as Spoke[];
@@ -338,8 +344,7 @@ export class MdRadarChartLC extends Diagram {
           ? (i <= 0 ? rows.length : i) - 1
           : (i + 1) % rows.length;
         selected.value = rows[nextIdx] ?? null;
-        // Move focus to the newly selected spoke
-        spokeElements[nextIdx]?.focus();
+        focusDatum(selected.value);
         ke.preventDefault(); return;
       }
       if (!cur) return;

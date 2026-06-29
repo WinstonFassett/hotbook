@@ -166,6 +166,12 @@ export class MdConcentricArcLC extends Diagram {
     // Always mount maxRings slots; slots past nCell.value are hidden.
     // di() reads the live datum at slot i so external data replacements are picked up.
     const ringElements: SVGElement[] = [];
+    // ID-based focus helper (matches selection/gesture pattern)
+    const focusDatum = (d: Ring | null) => {
+      if (!d?.id) return;
+      const idx = (data.value as Ring[]).findIndex(item => item.id === d.id);
+      if (idx >= 0) ringElements[idx]?.focus();
+    };
     for (let i = 0; i < maxRings; i++) {
       const di = (): Ring | null => (data.value as Ring[])[i] ?? null;
       // Radius from the slot's array position. Sliceboard already hands data in
@@ -334,8 +340,7 @@ export class MdConcentricArcLC extends Diagram {
           ? (i <= 0 ? rows.length : i) - 1
           : (i + 1) % rows.length;
         selected.value = rows[nextIdx] ?? null;
-        // Move focus to the newly selected ring
-        ringElements[nextIdx]?.focus();
+        focusDatum(selected.value);
         ke.preventDefault(); return;
       }
       const target = cur ?? hover.value;

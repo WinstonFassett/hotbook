@@ -73,15 +73,14 @@ export class MdScatterChartLC extends Diagram {
     };
 
     // Draw dots with focusable support.
-    const dotElements: SVGCircleElement[] = [];
-    let idx = 0;
+    const dotElements = new Map<Point, SVGCircleElement>();
     for (const d of data.value as Point[]) {
       const pos = Vec.derive(() => ({ x: ctx.xGet.value(d), y: ctx.yGet.value(d) }));
       const fill = derive(() =>
         selected.value === d ? "#fff" : hover.value === d ? "#a4c0f0" : COLOR
       );
       const dot = s(circle(pos, 5, { fill, stroke: "#0b0d12", strokeWidth: 1 }));
-      dotElements[idx] = dot.el as SVGCircleElement;
+      dotElements.set(d, dot.el as SVGCircleElement);
       dot.el.style.cursor = "pointer";
       // Make each dot individually focusable
       dot.el.setAttribute('tabindex', '0');
@@ -92,7 +91,6 @@ export class MdScatterChartLC extends Diagram {
       dot.el.addEventListener("click", () => { selected.value = selected.value === d ? null : d; });
       dot.el.addEventListener("focus", () => { selected.value = d; });
       dot.el.addEventListener("blur", () => { if (selected.value === d) selected.value = null; });
-      idx++;
     }
 
     attachCartesianGestures(this, svgEl, {
@@ -101,7 +99,7 @@ export class MdScatterChartLC extends Diagram {
       yPixel: (d) => (ctx.yScale.value as any)(d.y),
       mutateDatum: (d, delta) => mutateDatum(d, delta),
       order: () => data.value as Point[],
-      elements: dotElements,
+      focusDatum: (d) => { if (d) dotElements.get(d)?.focus(); },
     });
 
     // Selection ring.

@@ -81,12 +81,12 @@ export class MdAreaChartLC extends Diagram {
     };
 
     // Create focusable invisible circles for each point
-    const pointElements: SVGCircleElement[] = [];
+    const pointElements = new Map<Point, SVGCircleElement>();
     for (let i = 0; i < (data.value as Point[]).length; i++) {
       const pt = (data.value as Point[])[i]!;
       const pos = Vec.derive(() => ({ x: ctx.xGet.value(pt), y: ctx.yGet.value(pt) }));
       const focusCircle = s(circle(pos, 8, { fill: "transparent", stroke: "none" }));
-      pointElements[i] = focusCircle.el as SVGCircleElement;
+      pointElements.set(pt, focusCircle.el as SVGCircleElement);
       focusCircle.el.setAttribute('tabindex', '0');
       focusCircle.el.setAttribute('data-focusable', 'point');
       focusCircle.el.setAttribute('aria-label', `${pt.date.toLocaleDateString()}: ${Math.round(pt.value)}`);
@@ -104,7 +104,7 @@ export class MdAreaChartLC extends Diagram {
       yPixel: (d) => (ctx.yScale.value as any)(d.value),
       mutateDatum: (d, delta) => mutateDatum(d, delta),
       order: () => data.value as Point[],
-      elements: pointElements,
+      focusDatum: (d) => { if (d) pointElements.get(d)?.focus(); },
     });
 
     // Hover crosshair.

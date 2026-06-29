@@ -234,8 +234,7 @@ export class MdBarChartLC extends Diagram {
           ? (i <= 0 ? rows.length : i) - 1
           : (i + 1) % rows.length;
         selected.value = rows[nextIdx] ?? null;
-        // Move focus to the newly selected bar
-        tileElements[nextIdx]?.focus();
+        focusDatum(selected.value);
         ke.preventDefault(); return;
       }
       if (!cur) return;
@@ -278,7 +277,13 @@ export class MdBarChartLC extends Diagram {
 
     // Bars — MAX_ROWS slots; each reads data.value[idx] live so sort reorders visually.
     const MAX_ROWS = rows0.length;
-    const tileElements: SVGRectElement[] = []; // Track elements by index for focus management
+    const tileElements: SVGRectElement[] = []; // Track elements by index
+    // ID-based focus helper (matches selection/gesture pattern)
+    const focusDatum = (d: Bar | null) => {
+      if (!d?.id) return;
+      const idx = (data.value as Bar[]).findIndex(item => item.id === d.id);
+      if (idx >= 0) tileElements[idx]?.focus();
+    };
     for (let idx = 0; idx < MAX_ROWS; idx++) {
       const di = (): Bar | null => (data.value as Bar[])[idx] ?? null;
       const key = String(idx);
@@ -482,8 +487,7 @@ export class MdBarChartLC extends Diagram {
           ? (i <= 0 ? rows.length : i) - 1
           : (i + 1) % rows.length;
         selected.value = rows[nextIdx] ?? null;
-        // Move focus to the newly selected bar
-        tileElementsH[nextIdx]?.focus();
+        focusDatumH(selected.value);
         ke.preventDefault(); return;
       }
       if (!cur) return;
@@ -534,7 +538,13 @@ export class MdBarChartLC extends Diagram {
     }
 
     // Bars — live read from data.value[idx] so sort reorders visually.
-    const tileElementsH: SVGRectElement[] = []; // Track elements by index for focus management
+    const tileElementsH: SVGRectElement[] = []; // Track elements by index
+    // ID-based focus helper (matches selection/gesture pattern)
+    const focusDatumH = (d: Bar | null) => {
+      if (!d?.id) return;
+      const idx = (data.value as Bar[]).findIndex(item => item.id === d.id);
+      if (idx >= 0) tileElementsH[idx]?.focus();
+    };
     for (let idx = 0; idx < rows0.length; idx++) {
       const di = (): Bar | null => (data.value as Bar[])[idx] ?? null;
       const key = String(idx);

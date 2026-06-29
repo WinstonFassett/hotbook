@@ -31,8 +31,10 @@ export interface CartesianGestureOpts<TData> {
    * disable editing.
    */
   canEdit?: () => boolean;
-  /** Optional: element array for focus management. */
+  /** Optional: element array for focus management (deprecated, use focusDatum). */
   elements?: SVGElement[];
+  /** Optional: callback to focus the element for a given datum (ID-based, preferred). */
+  focusDatum?: (d: TData | null) => void;
 }
 
 export function attachCartesianGestures<TData>(
@@ -40,7 +42,7 @@ export function attachCartesianGestures<TData>(
   svgEl: SVGSVGElement,
   opts: CartesianGestureOpts<TData>,
 ): () => void {
-  const { ctx, state, findAtPixel, yPixel, mutateDatum, order, elements } = opts;
+  const { ctx, state, findAtPixel, yPixel, mutateDatum, order, elements, focusDatum } = opts;
   const canEdit = opts.canEdit ?? (() => true);
 
   const localPoint = (e: PointerEvent): { x: number; y: number } => {
@@ -139,8 +141,12 @@ export function attachCartesianGestures<TData>(
         ? (i <= 0 ? rows.length : i) - 1
         : (i + 1) % rows.length;
       state.selected.value = rows[nextIdx] ?? null;
-      // Move focus to the newly selected element if elements array provided
-      if (elements) elements[nextIdx]?.focus();
+      // Move focus: prefer ID-based callback, fall back to index-based array
+      if (focusDatum) {
+        focusDatum(state.selected.value);
+      } else if (elements) {
+        elements[nextIdx]?.focus();
+      }
       ke.preventDefault();
       return;
     }
