@@ -113,9 +113,9 @@ export class MdGroupedBarChartLC extends Diagram {
     const yMax = stacked
       ? Math.max(1, ...rows.map(rowTotal))
       : Math.max(1, ...rows.flatMap(r => r.series.map(p => p.value)));
-    const yScale = derive(() =>
-      scaleLinear().domain([0, yMax]).range([plotY + plotH.value, plotY]).nice()
-    );
+    // Scale frozen at scene-time (doesn't auto-range during gestures per Principle 15).
+    const yScaleBase = scaleLinear().domain([0, yMax]).range([plotY + plotH.value, plotY]).nice();
+    const yScale = cell(yScaleBase);
 
     // Y axis baseline.
     const ay1 = derive(() => plotY + plotH.value);
@@ -293,9 +293,9 @@ export class MdGroupedBarChartLC extends Diagram {
     const xMax = stacked
       ? Math.max(1, ...rows.map(rowTotal))
       : Math.max(1, ...rows.flatMap(r => r.series.map(p => p.value)));
-    const xScale = derive(() =>
-      scaleLinear().domain([0, xMax]).range([plotX, plotX + plotW.value]).nice()
-    );
+    // Scale frozen at scene-time (doesn't auto-range during gestures per Principle 15).
+    const xScaleBase = scaleLinear().domain([0, xMax]).range([plotX, plotX + plotW.value]).nice();
+    const xScale = cell(xScaleBase);
 
     // X axis baseline (top of plot doubles as numeric axis line).
     s(line(
@@ -512,9 +512,11 @@ export class MdGroupedBarChartLC extends Diagram {
         const t = dragController.target as SegmentRef | null;
         if (!t) return;
         const { y } = localPoint(pe);
-        const valueDelta = yScale.value.invert(y) - yScale.value.invert(dragStartY);
-        const currentValue = wheelConfig.snapshot(t) as number;
-        mutateSegment(t, currentValue + valueDelta - currentValue);
+        const row = (this.dataCell.value as GroupedBar[]).find(r => (r.id ?? r.label) === t.rowId);
+        const seg = row?.series.find(s => s.name === t.seriesName);
+        if (!seg) return;
+        // Set value to match y position directly (like bar-chart.ts).
+        mutateSegment(t, yScale.value.invert(y) - seg.value);
       },
       onEnd: () => {
         if (dragPointerId >= 0 && (this as any).hasPointerCapture?.(dragPointerId)) {
