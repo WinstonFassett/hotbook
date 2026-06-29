@@ -15,84 +15,55 @@ function assert(condition: boolean, message?: string) {
   if (!condition) throw new Error(message || 'Assertion failed')
 }
 
-// Test edge cases
-test('1 tile → 1 group', () => {
+// Test single pane with all tabs
+test('1 tile → 1 group with 1 tab', () => {
   const tree = defaultDockTree(['a'])
   assert(tree?.kind === 'group', 'Should be a group')
   assert(allGroups(tree).length === 1, 'Should have 1 group')
+  assert(allGroups(tree)[0]!.panels.length === 1, 'Should have 1 panel')
 })
 
-// Test 2×2 grid distribution
-test('2 tiles → 2×1 (round-robin)', () => {
+test('2 tiles → 1 group with 2 tabs', () => {
   const tree = defaultDockTree(['a', 'b'])
+  assert(tree?.kind === 'group', 'Should be a group')
   const groups = allGroups(tree)
-  assert(groups.length === 2, 'Should have 2 groups')
-  assert(groups[0]!.panels.length === 1, 'Group 0 should have 1 panel (a)')
-  assert(groups[1]!.panels.length === 1, 'Group 1 should have 1 panel (b)')
+  assert(groups.length === 1, 'Should have 1 group')
+  assert(groups[0]!.panels.length === 2, 'Should have 2 panels (tabs)')
 })
 
-test('3 tiles → 2×2 grid (round-robin)', () => {
-  const tree = defaultDockTree(['a', 'b', 'c'])
-  const groups = allGroups(tree)
-  assert(groups.length === 3, 'Should have 3 groups')
-  // Round-robin: a=0, b=1, c=2
-  assert(groups[0]!.panels.length === 1, 'Group 0 should have 1 panel (a)')
-  assert(groups[1]!.panels.length === 1, 'Group 1 should have 1 panel (b)')
-  assert(groups[2]!.panels.length === 1, 'Group 2 should have 1 panel (c)')
-})
-
-test('4 tiles → 2×2 grid (round-robin)', () => {
-  const tree = defaultDockTree(['a', 'b', 'c', 'd'])
-  assert(tree?.kind === 'split', 'Should be a split')
-  assert(tree.direction === 'col', 'Root should be col (2 rows)')
-  const groups = allGroups(tree)
-  assert(groups.length === 4, 'Should have 4 groups')
-  // Round-robin: a=0, b=1, c=2, d=3
-  assert(groups[0]!.panels.length === 1, 'Group 0 should have 1 panel (a)')
-  assert(groups[1]!.panels.length === 1, 'Group 1 should have 1 panel (b)')
-  assert(groups[2]!.panels.length === 1, 'Group 2 should have 1 panel (c)')
-  assert(groups[3]!.panels.length === 1, 'Group 3 should have 1 panel (d)')
-})
-
-test('5 tiles → 2×2 grid (round-robin, group 0 gets 2 panels)', () => {
+test('5 tiles → 1 group with 5 tabs', () => {
   const tree = defaultDockTree(['a', 'b', 'c', 'd', 'e'])
-  assert(tree?.kind === 'split', 'Should be a split')
-  assert(tree.direction === 'col', 'Root should be col')
+  assert(tree?.kind === 'group', 'Should be a group')
   const groups = allGroups(tree)
-  assert(groups.length === 4, 'Should have 4 groups')
-  // Round-robin: a=0, b=1, c=2, d=3, e=0
-  assert(groups[0]!.panels.length === 2, 'Group 0 should have 2 panels (a, e)')
-  assert(groups[1]!.panels.length === 1, 'Group 1 should have 1 panel (b)')
-  assert(groups[2]!.panels.length === 1, 'Group 2 should have 1 panel (c)')
-  assert(groups[3]!.panels.length === 1, 'Group 3 should have 1 panel (d)')
+  assert(groups.length === 1, 'Should have 1 group')
+  assert(groups[0]!.panels.length === 5, 'Should have 5 panels (tabs)')
 })
 
-test('8 tiles → 2×2 grid (round-robin, each group gets 2 panels)', () => {
-  const tree = defaultDockTree(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'])
+test('15 tiles → 1 group with 15 tabs', () => {
+  const tiles = Array.from({ length: 15 }, (_, i) => String.fromCharCode(97 + i))
+  const tree = defaultDockTree(tiles)
+  assert(tree?.kind === 'group', 'Should be a group')
   const groups = allGroups(tree)
-  assert(groups.length === 4, 'Should have 4 groups')
-  // Round-robin: a=0, b=1, c=2, d=3, e=0, f=1, g=2, h=3
-  assert(groups[0]!.panels.length === 2, 'Group 0 should have 2 panels (a, e)')
-  assert(groups[1]!.panels.length === 2, 'Group 1 should have 2 panels (b, f)')
-  assert(groups[2]!.panels.length === 2, 'Group 2 should have 2 panels (c, g)')
-  assert(groups[3]!.panels.length === 2, 'Group 3 should have 2 panels (d, h)')
+  assert(groups.length === 1, 'Should have 1 group')
+  assert(groups[0]!.panels.length === 15, 'Should have 15 panels (tabs)')
 })
 
 // Test removePanel
-test('removePanel collapses empty group', () => {
+test('removePanel with 2 tabs leaves 1', () => {
   const tree = defaultDockTree(['a', 'b'])
   const groups = allGroups(tree)
   const panelId = groups[0]!.panels[0]!.id
   const after = removePanel(tree, panelId)
-  assert(allGroups(after).length === 1, 'Should collapse to 1 group')
+  assert(allGroups(after).length === 1, 'Should still have 1 group')
+  assert(allGroups(after)[0]!.panels.length === 1, 'Should have 1 panel left')
 })
 
-// Test removeGroup
-test('removeGroup removes entire group', () => {
-  const tree = defaultDockTree(['a', 'b', 'c', 'd'])
+test('removePanel with 1 tab collapses to null', () => {
+  const tree = defaultDockTree(['a'])
   const groups = allGroups(tree)
-  const after = removeGroup(tree, groups[0]!.id)
-  assert(allGroups(after).length === 3, 'Should have 3 groups left')
+  const panelId = groups[0]!.panels[0]!.id
+  const after = removePanel(tree, panelId)
+  assert(after === null, 'Should collapse to null')
 })
 
 console.log('\nAll tests passed!')

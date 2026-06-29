@@ -45,35 +45,12 @@ export function makeSplit(direction: DockDir, children: DockNode[], sizes?: numb
   return { kind: 'split', id: nid(), direction, children, sizes: s }
 }
 
-/** Seed layout from a flat tile list. ALWAYS creates a 2×2 grid (4 groups),
- *  distributing all tiles as tabs round-robin across the 4 groups. */
+/** Seed layout from a flat tile list. Creates a single pane with all tiles
+ *  as tabs. User can split from there. */
 export function defaultDockTree(tileIds: string[]): DockNode | null {
   if (tileIds.length === 0) return null
-  if (tileIds.length === 1) return makeGroup([makePanel(tileIds[0]!)])
-
-  // Distribute tiles round-robin across 4 groups
-  const groups: DockPanel[][] = [[], [], [], []]
-  tileIds.forEach((id, i) => {
-    groups[i % 4]!.push(makePanel(id))
-  })
-
-  // Build 2×2 grid, only including groups that have panels
-  const topLeft = groups[0]!.length > 0 ? makeGroup(groups[0]!) : null
-  const topRight = groups[1]!.length > 0 ? makeGroup(groups[1]!) : null
-  const bottomLeft = groups[2]!.length > 0 ? makeGroup(groups[2]!) : null
-  const bottomRight = groups[3]!.length > 0 ? makeGroup(groups[3]!) : null
-
-  const topRow = [topLeft, topRight].filter((g): g is DockGroup => g !== null)
-  const bottomRow = [bottomLeft, bottomRight].filter((g): g is DockGroup => g !== null)
-
-  if (bottomRow.length === 0) {
-    // Only top row has content
-    return topRow.length === 1 ? topRow[0]! : makeSplit('row', topRow)
-  }
-
-  const topSplit = topRow.length === 1 ? topRow[0]! : makeSplit('row', topRow)
-  const bottomSplit = bottomRow.length === 1 ? bottomRow[0]! : makeSplit('row', bottomRow)
-  return makeSplit('col', [topSplit, bottomSplit])
+  // All tiles in one group as tabs
+  return makeGroup(tileIds.map(makePanel))
 }
 
 /** Walk the tree and collect every group (depth-first, left-to-right). */
