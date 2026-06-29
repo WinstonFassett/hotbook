@@ -521,12 +521,14 @@ function buildSeedWorkspace(): Workspace {
   const team  = buildTeamDataset()
   const life  = buildLifeDataset()
 
-  // Canon viz kinds for seed dashboard (retired gen-0/Svelte kinds excluded)
+  // Canon viz kinds for seed dashboard (retired gen-0/Svelte kinds excluded).
+  // Hierarchical charts first (top row) for drill dogfooding.
   const ALL_KINDS: TileKind[] = [
+    'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst',
     'treetable',
     'br-lc-bar', 'br-lc-bands', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie',
     'br-lc-radar', 'br-lc-concentric-arc',
-    'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-sankey-flow', 'br-lc-tree',
+    'br-lc-sankey', 'br-lc-sankey-flow', 'br-lc-tree',
   ]
 
   const GROUPBY_KINDS = new Set<TileKind>([

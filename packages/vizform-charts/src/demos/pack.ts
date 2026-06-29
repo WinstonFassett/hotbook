@@ -32,7 +32,7 @@ const DRILL_DURATION = 800; // ms — leave-timer / CSS settle window
 const DRILL_SEC = DRILL_DURATION / 1000; // s — bireactive anim clock runs in seconds
 
 export class MdPack extends Diagram {
-  static styles = `text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}`
+  static styles = `:host { overflow: hidden; }text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}`
   externalRoot?: BiNode
   maxDepth?: number
   drillKey?: string
@@ -110,10 +110,26 @@ export class MdPack extends Diagram {
         const biNode = nodeById.get(id);
         const lnode = biNode ? lmap.get(biNode) : null;
         if (lnode) {
-          tx0 = lnode.x - lnode.r;
-          ty0 = lnode.y - lnode.r;
-          tx1 = lnode.x + lnode.r;
-          ty1 = lnode.y + lnode.r;
+          // Viewport = union bounding box of all descendants of the drilled node.
+          const fd = nodeDepth.get(biNode!) ?? 0;
+          const maxWindow = maxD !== undefined ? fd + maxD : totalDepth;
+          let minX0 = Infinity, minY0 = Infinity, maxX1 = -Infinity, maxY1 = -Infinity;
+          for (const { node, depth: relDepth } of walkWithDepth(biNode!)) {
+            const absDepth = fd + relDepth;
+            if (absDepth > fd && absDepth <= maxWindow) {
+              const ln = lmap.get(node);
+              if (ln) {
+                const x0 = ln.x - ln.r, y0 = ln.y - ln.r;
+                const x1 = ln.x + ln.r, y1 = ln.y + ln.r;
+                if (x0 < minX0) minX0 = x0;
+                if (y0 < minY0) minY0 = y0;
+                if (x1 > maxX1) maxX1 = x1;
+                if (y1 > maxY1) maxY1 = y1;
+              }
+            }
+          }
+          if (maxX1 === -Infinity) { tx0 = 0; ty0 = 0; tx1 = W0; ty1 = H0; }
+          else { tx0 = minX0; ty0 = minY0; tx1 = maxX1; ty1 = maxY1; }
         } else {
           tx0 = 0; ty0 = 0; tx1 = W0; ty1 = H0;
         }
@@ -129,7 +145,14 @@ export class MdPack extends Diagram {
         return;
       }
       if (!drillChanged) {
-        // Resize-only (e.g. breadcrumb appeared): don't interrupt in-flight tween.
+        // Resize-only (e.g. breadcrumb appeared): re-tween from current to new target.
+        drillCancel?.();
+        drillCancel = this.anim.start(
+          tween(vx0, tx0, DRILL_SEC, easeOut),
+          tween(vy0, ty0, DRILL_SEC, easeOut),
+          tween(vx1, tx1, DRILL_SEC, easeOut),
+          tween(vy1, ty1, DRILL_SEC, easeOut),
+        );
         return;
       }
       // Cancel any in-flight drill tween before starting a new one.

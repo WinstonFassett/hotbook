@@ -541,24 +541,26 @@ export function App() {
   // Unified idle Esc contract (bubble phase — a chart's own capture-phase Esc
   // for drag-revert runs first and stops propagation). Priority order:
   //   1. Drag active → chart cancels (handled in capture phase, never reaches here)
-  //   2. Drilled in → drill out one level (any drillKey)
+  //   2. Focused chart is drilled → drill out that chart only (no cascade)
   //   3. Selection active → clear selection
   //   4. Else → fall through (browser default)
   useEffect(() => {
     const onEsc = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
       const s = hudStore.getSnapshot()
-      // Check if any drill is active (check 'default' key first, most common)
-      const activeDrillKey = Object.keys(s.drills).find(k => s.drills[k] != null)
-      if (activeDrillKey) {
-        const drillNodeId = s.drills[activeDrillKey]!
+      // Only drill out the FOCUSED chart — not the first one found.
+      // Charts have tabIndex=0 and a drillKey property; document.activeElement
+      // is the chart the user is interacting with.
+      const ae = document.activeElement as any
+      const focusedDrillKey = ae?.drillKey
+      if (focusedDrillKey && s.drills[focusedDrillKey] != null) {
+        const drillNodeId = s.drills[focusedDrillKey]!
         const dsNow = activeDataset(ws)
         if (!dsNow) return
         const path = drillPath(dsNow.rows, drillNodeId)
-        // path = [root, ..., current]; pop to parent = path[length-2], or null if at top
         const parent = path.length >= 2 ? path[path.length - 2]! : null
         e.preventDefault()
-        hudStore.setDrill(activeDrillKey, parent ? parent.id : null)
+        hudStore.setDrill(focusedDrillKey, parent ? parent.id : null)
         return
       }
       if (s.selectionId != null) {

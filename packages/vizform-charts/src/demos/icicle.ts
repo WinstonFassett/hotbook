@@ -33,7 +33,7 @@ const DRILL_DURATION = 800; // ms — leave-timer / CSS settle window
 const DRILL_SEC = DRILL_DURATION / 1000; // s — bireactive anim clock runs in seconds
 
 export class MdIcicleLC extends Diagram {
-  static styles = `text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}:host(.vf-gesture-active) circle[r="5"] { opacity: 0; } circle[r="5"] { transition: opacity 0.3s ease; }`
+  static styles = `:host { overflow: hidden; }text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}:host(.vf-gesture-active) circle[r="5"] { opacity: 0; } circle[r="5"] { transition: opacity 0.3s ease; }`
   externalRoot?: BiNode
   maxDepth?: number
   drillKey?: string
@@ -156,15 +156,23 @@ export class MdIcicleLC extends Diagram {
         if (lnode) {
           const fd = nodeDepth.get(biNode!) ?? 0;
           const maxWindow = maxD !== undefined ? fd + maxD : totalDepth;
-          // ty0 = focus node's top edge (context row included); ty1 = deepest children bottom.
-          let maxY1 = lnode.y1;
-          for (const { node, depth } of walkWithDepth(root)) {
-            if (depth > fd && depth <= maxWindow) {
+          // Viewport = union bounding box of the drilled node AND its descendants.
+          // Including the parent ensures icicle never shows only one level — the
+          // parent row stays visible as context at the top of the viewport.
+          let minX0 = lnode.x0, minY0 = lnode.y0, maxX1 = lnode.x1, maxY1 = lnode.y1;
+          for (const { node, depth: relDepth } of walkWithDepth(biNode!)) {
+            const absDepth = fd + relDepth;
+            if (absDepth > fd && absDepth <= maxWindow) {
               const ln = lmap.get(node);
-              if (ln && ln.y1 > maxY1) maxY1 = ln.y1;
+              if (ln) {
+                if (ln.x0 < minX0) minX0 = ln.x0;
+                if (ln.y0 < minY0) minY0 = ln.y0;
+                if (ln.x1 > maxX1) maxX1 = ln.x1;
+                if (ln.y1 > maxY1) maxY1 = ln.y1;
+              }
             }
           }
-          tx0 = lnode.x0; ty0 = lnode.y0; tx1 = lnode.x1; ty1 = maxY1;
+          tx0 = minX0; ty0 = minY0; tx1 = maxX1; ty1 = maxY1;
         } else {
           tx0 = 0; ty0 = 0; tx1 = W0; ty1 = H0;
         }
@@ -191,8 +199,14 @@ export class MdIcicleLC extends Diagram {
         return;
       }
       if (!drillChanged) {
-        // Resize-only (e.g. breadcrumb appeared): don't interrupt in-flight tween,
-        // just update the target so the tween ends at the new dimensions.
+        // Resize-only (e.g. breadcrumb appeared): re-tween from current to new target.
+        drillCancel?.();
+        drillCancel = this.anim.start(
+          tween(vx0, tx0, DRILL_SEC, easeOut),
+          tween(vy0, ty0, DRILL_SEC, easeOut),
+          tween(vx1, tx1, DRILL_SEC, easeOut),
+          tween(vy1, ty1, DRILL_SEC, easeOut),
+        );
         return;
       }
       // Cancel any in-flight drill tween before starting a new one.

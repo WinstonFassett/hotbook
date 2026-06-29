@@ -33,7 +33,7 @@ const DRILL_DURATION = 800; // ms — leave-timer / CSS settle window
 const DRILL_SEC = DRILL_DURATION / 1000; // s — bireactive anim clock runs in seconds
 
 export class MdSunburstLC extends Diagram {
-  static styles = `text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}:host(.vf-gesture-active) circle[r="5"] { opacity: 0; } circle[r="5"] { transition: opacity 0.3s ease; }`
+  static styles = `:host { overflow: hidden; }text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}:host(.vf-gesture-active) circle[r="5"] { opacity: 0; } circle[r="5"] { transition: opacity 0.3s ease; }`
   externalRoot?: BiNode
   maxDepth?: number
   drillKey?: string
@@ -193,7 +193,14 @@ export class MdSunburstLC extends Diagram {
         return;
       }
       if (!drillChanged) {
-        // Resize-only (e.g. breadcrumb appeared): don't interrupt in-flight tween.
+        // Resize-only (e.g. breadcrumb appeared): re-tween from current to new target.
+        drillCancel?.();
+        drillCancel = this.anim.start(
+          tween(va0, ta0, DRILL_SEC, easeOut),
+          tween(va1, ta1, DRILL_SEC, easeOut),
+          tween(vr0, tr0, DRILL_SEC, easeOut),
+          tween(vr1, tr1, DRILL_SEC, easeOut),
+        );
         return;
       }
       // Cancel any in-flight drill tween before starting a new one.
@@ -358,9 +365,16 @@ export class MdSunburstLC extends Diagram {
     }
 
     // Center hub rendered LAST so it sits above arcLayer and receives pointer events.
+    // When drilled, the hub becomes the center and retains the drilled node's color.
     const hubVisible = derive(() => this._drillIdCell.value !== null);
+    const hubFill = derive(() => {
+      const id = this._drillIdCell.value;
+      if (!id) return "#1a1d22";
+      const n = nodeById.get(id);
+      return n ? n.value.color : "#1a1d22";
+    });
     const hub = s(circle(center, derive(() => hubVisible.value ? 18 : 0), {
-      fill: "#1a1d22",
+      fill: hubFill,
       stroke: "#444",
       strokeWidth: 1,
     }));
