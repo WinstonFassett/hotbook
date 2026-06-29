@@ -99,38 +99,52 @@ export class MdSunburstLC extends Diagram {
       return n ? (nodeDepth.get(n) ?? 0) : 0;
     });
 
-    // Window: nodes in [focusDepth < depth <= focusDepth + maxD].
+    // Window: children of the drilled node only (not full-tree siblings).
+    // Walking the whole tree and including off-angle siblings produces slivers:
+    // their remapped angles fall outside [0, 2π] causing degenerate arc paths.
     const windowTarget = derive((): readonly BiNode[] => {
       const fd = focusDepth.value;
+      const id = this._drillIdCell.value;
       const maxWindow = maxD !== undefined ? fd + maxD : totalDepth;
       const result: BiNode[] = [];
-      for (const { node, depth } of walkWithDepth(root)) {
-        if (depth > fd && depth <= maxWindow) result.push(node);
+      const focusNode = id ? nodeById.get(id) : null;
+      for (const { node, depth: relDepth } of walkWithDepth(focusNode ?? root)) {
+        const absDepth = (focusNode ? fd : 0) + relDepth;
+        if (absDepth > fd && absDepth <= maxWindow) result.push(node);
       }
       return result;
     });
 
-    // Rendered set: current window + departing nodes (kept alive through tween).
+    // Rendered set: current window + departing nodes kept briefly for value-change animations.
+    // On drill: discard leavers immediately — they remap to degenerate arcs outside the viewport.
+    // On value-change: keep leavers for DRILL_DURATION so arcs animate out gracefully.
     const renderedSet = cell<readonly BiNode[]>([]);
     let leaveTimer: ReturnType<typeof setTimeout> | null = null;
+    let lastDrillId_rs: string | null = null;
     biEffect(() => {
       const newTarget = windowTarget.value;
+      const currentDrillId = untracked(() => this._drillIdCell.value);
+      const drillChanged = currentDrillId !== lastDrillId_rs;
+      lastDrillId_rs = currentDrillId;
       const prevRendered = untracked(() => renderedSet.value);
       const targetSet = new Set(newTarget);
       const leavers = prevRendered.filter(n => !targetSet.has(n));
       if (leaveTimer) { clearTimeout(leaveTimer); leaveTimer = null; }
-      renderedSet.value = leavers.length > 0 ? [...newTarget, ...leavers] : newTarget;
-      if (leavers.length > 0) {
+      if (leavers.length > 0 && !drillChanged) {
+        renderedSet.value = [...newTarget, ...leavers];
         leaveTimer = setTimeout(() => {
           leaveTimer = null;
           renderedSet.value = windowTarget.value;
         }, DRILL_DURATION + 50);
+      } else {
+        renderedSet.value = newTarget;
       }
     });
 
     let drillInited = false;
     let lastDrillId: string | null = null;
     let drillCancel: (() => void) | null = null;
+    let drillClassTimer: ReturnType<typeof setTimeout> | null = null;
     biEffect(() => {
       const id = this._drillIdCell.value;
       const rfull = Rfull.value;
@@ -143,10 +157,11 @@ export class MdSunburstLC extends Diagram {
         if (lnode) {
           const fd = nodeDepth.get(biNode!) ?? 0;
           const maxWindow = maxD !== undefined ? fd + maxD : totalDepth;
-          // tr0 = focus's outer radius (where children start); tr1 = deepest rendered ring outer edge.
+          // Walk only the focus subtree to find the deepest rendered ring.
           let maxR1 = lnode.y1;
-          for (const { node, depth } of walkWithDepth(root)) {
-            if (depth > fd && depth <= maxWindow) {
+          for (const { node, depth: relDepth } of walkWithDepth(biNode!)) {
+            const absDepth = fd + relDepth;
+            if (absDepth > fd && absDepth <= maxWindow) {
               const ln = lmap.get(node);
               if (ln && ln.y1 > maxR1) maxR1 = ln.y1;
             }
@@ -180,6 +195,15 @@ export class MdSunburstLC extends Diagram {
         drillInited = true;
         return;
       }
+      // Suppress CSS transitions on arc `d` attribute during drill (the bireactive
+      // tween sets `d` every frame; CSS interpolation between consecutive frames
+      // causes large-arc-flag flips → sliver/spoke artifacts).
+      if (drillClassTimer) { clearTimeout(drillClassTimer); drillClassTimer = null; }
+      this.classList.add('vf-gesture-active');
+      drillClassTimer = setTimeout(() => {
+        drillClassTimer = null;
+        this.classList.remove('vf-gesture-active');
+      }, DRILL_DURATION + 60);
       // Drive the viewport tween on this Diagram's anim clock — `tween()` alone
       // only builds a generator; it must be started to advance per frame.
       drillCancel = this.anim.start(

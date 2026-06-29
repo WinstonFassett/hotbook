@@ -25,6 +25,7 @@ import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { GESTURE_SUPPRESSION_CSS, settleTransition } from "../lib/transitions";
 import { dragCancelable } from "../lib/esc-contract";
+import type { ElementWithBridge } from "../lib/hud-bridge";
 
 const W = 720;
 const H = 360;
@@ -95,32 +96,47 @@ export class MdIcicleLC extends Diagram {
       return n ? (nodeDepth.get(n) ?? 0) : 0;
     });
 
-    // Window: nodes in [focusDepth < depth <= focusDepth + maxD].
+    // Window: when drilled (fd > 0) include focus node as context row + descendants only.
+    // Walk focus subtree so sibling nodes outside viewport x-range don't bleed in.
+    // At root (fd = 0) walk full tree, exclude root itself.
     const windowTarget = derive((): readonly BiNode[] => {
       const fd = focusDepth.value;
+      const id = this._drillIdCell.value;
       const maxWindow = maxD !== undefined ? fd + maxD : totalDepth;
       const result: BiNode[] = [];
-      for (const { node, depth } of walkWithDepth(root)) {
-        if (depth > fd && depth <= maxWindow) result.push(node);
+      const focusNode = id ? nodeById.get(id) : null;
+      const startNode = focusNode ?? root;
+      const baseDepth = focusNode ? fd : 0;
+      for (const { node, depth: relDepth } of walkWithDepth(startNode)) {
+        const absDepth = baseDepth + relDepth;
+        if ((fd > 0 ? absDepth >= fd : absDepth > 0) && absDepth <= maxWindow) result.push(node);
       }
       return result;
     });
 
-    // Rendered set: current window + departing nodes (kept alive through tween).
+    // Rendered set: current window + departing nodes kept briefly for value-change animations.
+    // On drill: discard leavers immediately — they remap to off-canvas positions.
+    // On value-change: keep leavers for DRILL_DURATION so tiles animate out gracefully.
     const renderedSet = cell<readonly BiNode[]>([]);
     let leaveTimer: ReturnType<typeof setTimeout> | null = null;
+    let lastDrillId_rs: string | null = null;
     biEffect(() => {
       const newTarget = windowTarget.value;
+      const currentDrillId = untracked(() => this._drillIdCell.value);
+      const drillChanged = currentDrillId !== lastDrillId_rs;
+      lastDrillId_rs = currentDrillId;
       const prevRendered = untracked(() => renderedSet.value);
       const targetSet = new Set(newTarget);
       const leavers = prevRendered.filter(n => !targetSet.has(n));
       if (leaveTimer) { clearTimeout(leaveTimer); leaveTimer = null; }
-      renderedSet.value = leavers.length > 0 ? [...newTarget, ...leavers] : newTarget;
-      if (leavers.length > 0) {
+      if (leavers.length > 0 && !drillChanged) {
+        renderedSet.value = [...newTarget, ...leavers];
         leaveTimer = setTimeout(() => {
           leaveTimer = null;
           renderedSet.value = windowTarget.value;
         }, DRILL_DURATION + 50);
+      } else {
+        renderedSet.value = newTarget;
       }
     });
 
@@ -139,7 +155,7 @@ export class MdIcicleLC extends Diagram {
         if (lnode) {
           const fd = nodeDepth.get(biNode!) ?? 0;
           const maxWindow = maxD !== undefined ? fd + maxD : totalDepth;
-          // ty0 = focus's outer edge (where children start); ty1 = deepest rendered row bottom.
+          // ty0 = focus node's top edge (context row included); ty1 = deepest children bottom.
           let maxY1 = lnode.y1;
           for (const { node, depth } of walkWithDepth(root)) {
             if (depth > fd && depth <= maxWindow) {
@@ -147,7 +163,7 @@ export class MdIcicleLC extends Diagram {
               if (ln && ln.y1 > maxY1) maxY1 = ln.y1;
             }
           }
-          tx0 = lnode.x0; ty0 = lnode.y1; tx1 = lnode.x1; ty1 = maxY1;
+          tx0 = lnode.x0; ty0 = lnode.y0; tx1 = lnode.x1; ty1 = maxY1;
         } else {
           tx0 = 0; ty0 = 0; tx1 = W0; ty1 = H0;
         }
@@ -232,7 +248,16 @@ export class MdIcicleLC extends Diagram {
       tile.el.dataset.id = node.value.id ?? "";
       tile.el.style.cursor = "pointer";
       tile.el.style.transition = settleTransition(["x", "y", "width", "height"]);
-      tile.el.addEventListener("click", () => { state.focused.value = node; });
+      tile.el.addEventListener("click", () => {
+        const fd = focusDepth.value;
+        if (fd > 0 && node.value.id === this._drillIdCell.value) {
+          const parent = parentOf(node);
+          const drillKey = (this as any).drillKey ?? "default";
+          (this as ElementWithBridge).brSync?.emitDrill?.(drillKey, parent?.value.id ?? null);
+        } else {
+          state.focused.value = node;
+        }
+      });
       tile.el.addEventListener("pointerenter", () => { state.hovered.current = node; hoverCell.value = node; state.emitHover?.(node); });
       tile.el.addEventListener("pointerleave", () => { if (state.hovered.current === node) { state.hovered.current = null; hoverCell.value = null; state.emitHover?.(null); } });
 

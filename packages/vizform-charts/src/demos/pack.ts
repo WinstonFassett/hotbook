@@ -2,6 +2,8 @@ import {
   Anchor,
   Diagram,
   derive,
+  forEach,
+  group,
   label,
   type Mount,
   cell,
@@ -13,6 +15,7 @@ import {
   effect as biEffect,
   untracked,
 } from "bireactive";
+import type { ElementWithBridge } from "../lib/hud-bridge";
 import { pack as d3pack, type HierarchyCircularNode } from "d3-hierarchy";
 import { depthFill, labelInk } from "../lib/depth-color";
 import { buildHierarchy } from "../lib/interaction";
@@ -67,11 +70,22 @@ export class MdPack extends Diagram {
       return map;
     });
 
-    // Build a flat id→BiNode index for drill lookup.
+    // Pre-build static maps (tree structure is immutable).
     const nodeById = new Map<string, BiNode>();
-    for (const { node } of walkWithDepth(root)) {
+    const nodeDepth = new Map<BiNode, number>();
+    let totalDepth = 0;
+    for (const { node, depth } of walkWithDepth(root)) {
       if (node.value.id) nodeById.set(node.value.id, node);
+      nodeDepth.set(node, depth);
+      if (depth > totalDepth) totalDepth = depth;
     }
+
+    const focusDepth = derive(() => {
+      const id = this._drillIdCell.value;
+      if (!id) return 0;
+      const n = nodeById.get(id);
+      return n ? (nodeDepth.get(n) ?? 0) : 0;
+    });
 
     // Viewport cells: the region of layout-space currently mapped to canvas.
     // Default: full canvas (x in [0,W], y in [0,H]).
@@ -126,10 +140,58 @@ export class MdPack extends Diagram {
       );
     });
 
-    const maxD = this.maxDepth
-    for (const { node, depth, isLeaf } of walkWithDepth(root)) {
-      if (maxD !== undefined && depth > maxD) continue;
-      // Remap layout coords through the animated viewport.
+    const maxD = this.maxDepth;
+
+    // Window: when drilled (fd > 0) include focus node as context circle + descendants.
+    // Walk focus subtree only so off-screen sibling circles don't leak into the canvas.
+    // At root (fd = 0) walk full tree, exclude root itself.
+    const windowTarget = derive((): readonly BiNode[] => {
+      const fd = focusDepth.value;
+      const id = this._drillIdCell.value;
+      const maxWindow = maxD !== undefined ? fd + maxD : totalDepth;
+      const result: BiNode[] = [];
+      const focusNode = id ? nodeById.get(id) : null;
+      const startNode = focusNode ?? root;
+      const baseDepth = focusNode ? fd : 0;
+      for (const { node, depth: relDepth } of walkWithDepth(startNode)) {
+        const absDepth = baseDepth + relDepth;
+        if ((fd > 0 ? absDepth >= fd : absDepth > 0) && absDepth <= maxWindow) result.push(node);
+      }
+      return result;
+    });
+
+    // Rendered set: current window + departing nodes kept briefly for value-change animations.
+    // On drill: discard leavers immediately — they remap to off-canvas positions.
+    // On value-change: keep leavers for DRILL_DURATION so circles animate out gracefully.
+    const renderedSet = cell<readonly BiNode[]>([]);
+    let leaveTimer: ReturnType<typeof setTimeout> | null = null;
+    let lastDrillId_rs: string | null = null;
+    biEffect(() => {
+      const newTarget = windowTarget.value;
+      const currentDrillId = untracked(() => this._drillIdCell.value);
+      const drillChanged = currentDrillId !== lastDrillId_rs;
+      lastDrillId_rs = currentDrillId;
+      const prevRendered = untracked(() => renderedSet.value);
+      const targetSet = new Set(newTarget);
+      const leavers = prevRendered.filter(n => !targetSet.has(n));
+      if (leaveTimer) { clearTimeout(leaveTimer); leaveTimer = null; }
+      if (leavers.length > 0 && !drillChanged) {
+        renderedSet.value = [...newTarget, ...leavers];
+        leaveTimer = setTimeout(() => {
+          leaveTimer = null;
+          renderedSet.value = windowTarget.value;
+        }, DRILL_DURATION + 50);
+      } else {
+        renderedSet.value = newTarget;
+      }
+    });
+
+    // Windowed node rendering.
+    const nodeLayer = s(group());
+    forEach(nodeLayer, renderedSet, (node) => {
+      const nd = nodeDepth.get(node) ?? 0;
+      const isLeaf = (node.children as BiNode[]).length === 0;
+
       const cx = derive(() => {
         const raw = layout.value.get(node)?.x ?? 0;
         const spanW = vx1.value - vx0.value;
@@ -148,24 +210,30 @@ export class MdPack extends Diagram {
       const stroke = derive(() =>
         state.focused.value === node ? "#fff"
         : hoverCell.value === node ? "#c8cdd6"
-        : depth === 0 ? "#444" : "#0b0d12",
+        : nd === 0 ? "#444" : "#0b0d12",
       );
       const strokeWidth = derive(() => (state.focused.value === node || hoverCell.value === node ? 2 : 1));
 
-      // Color-by-parent: brighten by depth (deeper circles wash out). Root is
-      // kept as a faint backdrop. Replaces the uniform opacity dim.
-      const nodeFill = depthFill(node.value.color, depth);
-      const disc = s(
-        circle(Vec.derive(() => ({ x: cx.value, y: cy.value })), r, {
-          fill: depth === 0 ? node.value.color : nodeFill.toString(),
-          opacity: depth === 0 ? 0.12 : 1,
-          stroke,
-          strokeWidth,
-        }),
-      );
+      const isContextNode = nd > 0 && node.value.id === this._drillIdCell.value;
+      const nodeFill = depthFill(node.value.color, nd);
+      const disc = circle(Vec.derive(() => ({ x: cx.value, y: cy.value })), r, {
+        fill: nd === 0 ? node.value.color : nodeFill.toString(),
+        opacity: (nd === 0 || isContextNode) ? 0.18 : 1,
+        stroke,
+        strokeWidth,
+      });
       disc.el.style.cursor = "pointer";
       disc.el.style.transition = settleTransition(["cx", "cy", "r"]);
-      disc.el.addEventListener("click", () => { state.focused.value = node; });
+      disc.el.addEventListener("click", () => {
+        const fd = focusDepth.value;
+        if (fd > 0 && node.value.id === this._drillIdCell.value) {
+          const parent = parentOf(node);
+          const drillKey = (this as any).drillKey ?? "default";
+          (this as ElementWithBridge).brSync?.emitDrill?.(drillKey, parent?.value.id ?? null);
+        } else {
+          state.focused.value = node;
+        }
+      });
       disc.el.addEventListener("pointerenter", () => { state.hovered.current = node; hoverCell.value = node; state.emitHover?.(node); });
       disc.el.addEventListener("pointerleave", () => { if (state.hovered.current === node) { state.hovered.current = null; hoverCell.value = null; state.emitHover?.(null); } });
 
@@ -174,11 +242,13 @@ export class MdPack extends Diagram {
           if (r.value <= 14) return "";
           return `${node.value.label}\n${node.value.total.value.toFixed(0)}`;
         });
-        s(label(Vec.derive(() => ({ x: cx.value, y: cy.value })), text, {
+        const lbl = label(Vec.derive(() => ({ x: cx.value, y: cy.value })), text, {
           size: 10, align: Anchor.Center, fill: labelInk(nodeFill),
-        }));
+        });
+        return [disc, lbl];
       }
-    }
+      return disc;
+    }, { key: (n) => n.value.id ?? "" });
 
     if (!this.hasAttribute('no-source')) s(label(view.bottom.up(10), derive(() => {
       const f = state.focused.value;

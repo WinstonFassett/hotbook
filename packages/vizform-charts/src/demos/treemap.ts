@@ -2,6 +2,8 @@ import {
   Anchor,
   Diagram,
   derive,
+  forEach,
+  group,
   label,
   type Mount,
   cell,
@@ -13,6 +15,7 @@ import {
   effect as biEffect,
   untracked,
 } from "bireactive";
+import type { ElementWithBridge } from "../lib/hud-bridge";
 import { treemap, treemapSquarify, type HierarchyRectangularNode } from "d3-hierarchy";
 import { depthFill, labelInk } from "../lib/depth-color";
 import { buildHierarchy } from "../lib/interaction";
@@ -73,11 +76,22 @@ export class MdTreemapLC extends Diagram {
       return map;
     });
 
-    // Build id→BiNode index for drill lookup.
+    // Pre-build static maps (tree structure is immutable).
     const nodeById = new Map<string, BiNode>();
-    for (const { node } of walkWithDepth(root)) {
+    const nodeDepth = new Map<BiNode, number>();
+    let totalDepth = 0;
+    for (const { node, depth } of walkWithDepth(root)) {
       if (node.value.id) nodeById.set(node.value.id, node);
+      nodeDepth.set(node, depth);
+      if (depth > totalDepth) totalDepth = depth;
     }
+
+    const focusDepth = derive(() => {
+      const id = this._drillIdCell.value;
+      if (!id) return 0;
+      const n = nodeById.get(id);
+      return n ? (nodeDepth.get(n) ?? 0) : 0;
+    });
 
     // Viewport cells: region of layout-space mapped to canvas. Default: full canvas.
     const vx0 = num(0);
@@ -124,9 +138,58 @@ export class MdTreemapLC extends Diagram {
       );
     });
 
-    const maxD = this.maxDepth
-    for (const { node, depth, isLeaf } of walkWithDepth(root)) {
-      if (maxD !== undefined && depth > maxD) continue;
+    const maxD = this.maxDepth;
+
+    // Window: when drilled (fd > 0) include focus node as context header + descendants.
+    // Walk focus subtree only so off-screen sibling rects don't leak into the canvas.
+    // At root (fd = 0) walk full tree, exclude root itself.
+    const windowTarget = derive((): readonly BiNode[] => {
+      const fd = focusDepth.value;
+      const id = this._drillIdCell.value;
+      const maxWindow = maxD !== undefined ? fd + maxD : totalDepth;
+      const result: BiNode[] = [];
+      const focusNode = id ? nodeById.get(id) : null;
+      const startNode = focusNode ?? root;
+      const baseDepth = focusNode ? fd : 0;
+      for (const { node, depth: relDepth } of walkWithDepth(startNode)) {
+        const absDepth = baseDepth + relDepth;
+        if ((fd > 0 ? absDepth >= fd : absDepth > 0) && absDepth <= maxWindow) result.push(node);
+      }
+      return result;
+    });
+
+    // Rendered set: current window + departing nodes kept briefly for value-change animations.
+    // On drill: discard leavers immediately — they remap to off-canvas positions.
+    // On value-change: keep leavers for DRILL_DURATION so tiles animate out gracefully.
+    const renderedSet = cell<readonly BiNode[]>([]);
+    let leaveTimer: ReturnType<typeof setTimeout> | null = null;
+    let lastDrillId_rs: string | null = null;
+    biEffect(() => {
+      const newTarget = windowTarget.value;
+      const currentDrillId = untracked(() => this._drillIdCell.value);
+      const drillChanged = currentDrillId !== lastDrillId_rs;
+      lastDrillId_rs = currentDrillId;
+      const prevRendered = untracked(() => renderedSet.value);
+      const targetSet = new Set(newTarget);
+      const leavers = prevRendered.filter(n => !targetSet.has(n));
+      if (leaveTimer) { clearTimeout(leaveTimer); leaveTimer = null; }
+      if (leavers.length > 0 && !drillChanged) {
+        renderedSet.value = [...newTarget, ...leavers];
+        leaveTimer = setTimeout(() => {
+          leaveTimer = null;
+          renderedSet.value = windowTarget.value;
+        }, DRILL_DURATION + 50);
+      } else {
+        renderedSet.value = newTarget;
+      }
+    });
+
+    // Windowed node rendering.
+    const nodeLayer = s(group());
+    forEach(nodeLayer, renderedSet, (node) => {
+      const nd = nodeDepth.get(node) ?? 0;
+      const isLeaf = (node.children as BiNode[]).length === 0;
+
       const x = derive(() => {
         const raw = layout.value.get(node)?.x0 ?? 0;
         const spanW = vx1.value - vx0.value;
@@ -138,41 +201,49 @@ export class MdTreemapLC extends Diagram {
         return spanH === 0 ? 0 : (raw - vy0.value) / spanH * Hc.value;
       });
       const w = derive(() => {
-        const lnode = layout.value.get(node);
-        const rawW = Math.max(0, (lnode?.x1 ?? 0) - (lnode?.x0 ?? 0));
+        const ln = layout.value.get(node);
+        const rawW = Math.max(0, (ln?.x1 ?? 0) - (ln?.x0 ?? 0));
         const spanW = vx1.value - vx0.value;
         return spanW === 0 ? 0 : rawW / spanW * Wc.value;
       });
       const h = derive(() => {
-        const lnode = layout.value.get(node);
-        const rawH = Math.max(0, (lnode?.y1 ?? 0) - (lnode?.y0 ?? 0));
+        const ln = layout.value.get(node);
+        const rawH = Math.max(0, (ln?.y1 ?? 0) - (ln?.y0 ?? 0));
         const spanH = vy1.value - vy0.value;
         return spanH === 0 ? 0 : rawH / spanH * Hc.value;
       });
       const stroke = derive(() =>
         state.focused.value === node ? "#fff"
         : hoverCell.value === node ? "#c8cdd6"
-        : depth === 0 ? "#444" : "#0b0d12",
+        : nd === 0 ? "#444" : "#0b0d12",
       );
       const strokeWidth = derive(() => (state.focused.value === node || hoverCell.value === node ? 2 : 1));
 
-      // Color-by-parent: brighten by depth (deeper tiles wash out). Root kept as
-      // a faint backdrop. Replaces the uniform opacity dim.
-      const nodeFill = depthFill(node.value.color, depth);
-      const tile = s(rect(x, y, w, h, {
-        fill: depth === 0 ? node.value.color : nodeFill.toString(),
-        opacity: depth === 0 ? 0.12 : 1,
+      const isContextNode = nd > 0 && node.value.id === this._drillIdCell.value;
+      const nodeFill = depthFill(node.value.color, nd);
+      const tile = rect(x, y, w, h, {
+        fill: nd === 0 ? node.value.color : nodeFill.toString(),
+        opacity: (nd === 0 || isContextNode) ? 0.18 : 1,
         stroke,
         strokeWidth,
         corner: 3,
-      }));
+      });
       tile.el.style.cursor = "pointer";
       tile.el.style.transition = settleTransition(["x", "y", "width", "height"]);
-      tile.el.addEventListener("click", () => { state.focused.value = node; });
+      tile.el.addEventListener("click", () => {
+        const fd = focusDepth.value;
+        if (fd > 0 && node.value.id === this._drillIdCell.value) {
+          const parent = parentOf(node);
+          const drillKey = (this as any).drillKey ?? "default";
+          (this as ElementWithBridge).brSync?.emitDrill?.(drillKey, parent?.value.id ?? null);
+        } else {
+          state.focused.value = node;
+        }
+      });
       tile.el.addEventListener("pointerenter", () => { state.hovered.current = node; hoverCell.value = node; state.emitHover?.(node); });
       tile.el.addEventListener("pointerleave", () => { if (state.hovered.current === node) { state.hovered.current = null; hoverCell.value = null; state.emitHover?.(null); } });
 
-      if (depth > 0) {
+      if (nd > 0) {
         const text = derive(() => {
           const w0 = w.value, h0 = h.value;
           if (w0 <= 28 || h0 <= 16) return "";
@@ -180,13 +251,15 @@ export class MdTreemapLC extends Diagram {
             ? `${node.value.label}\n${node.value.total.value.toFixed(0)}`
             : node.value.label;
         });
-        s(label(
+        const lbl = label(
           Vec.derive(() => ({ x: x.value + w.value / 2, y: y.value + (isLeaf ? h.value / 2 : 10) })),
           text,
           { size: isLeaf ? 11 : 10, align: Anchor.Center, fill: labelInk(nodeFill), bold: !isLeaf },
-        ));
+        );
+        return [tile, lbl];
       }
-    }
+      return tile;
+    }, { key: (n) => n.value.id ?? "" });
 
     if (!this.hasAttribute('no-source')) s(label(view.bottom.up(10), derive(() => {
       const f = state.focused.value;
