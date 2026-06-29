@@ -15,6 +15,7 @@ export { MdSankeySimple, MdSankeyComplex, MdSankeyHierarchy } from './demos/sank
 export { MdSankeyFlow } from './demos/sankey-flow'
 export { MdTreeChart } from './demos/tree-chart'
 export { MdBudgetTree } from './demos/budget-tree'
+export { MdGanttChartLC, type GanttTask } from './demos/gantt'
 // Public lib utilities and types consumers may need:
 export type { ElementWithBridge, BrSyncBridge } from './lib/hud-bridge'
 export type { BiNode } from './lib/tree'

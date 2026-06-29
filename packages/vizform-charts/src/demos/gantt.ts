@@ -1,0 +1,464 @@
+// GanttChart — bireactive Gantt with time axis + draggable task bars.
+//
+// Schema (per task):
+//   { id, label, start: Date, end: Date, color? }
+//
+// Interactions:
+//   - hover/select a task (click)
+//   - Tab / Shift+Tab to navigate tasks
+//   - drag bar body          → shift both start & end (preserves duration)
+//   - drag left  handle      → move start only
+//   - drag right handle      → move end only
+//   - ←/→ on selected task   → nudge by 1 day (shift = 7 days)
+//   - Escape clears selection
+//
+// Bireactive: all reactive state lives in cells; the scene re-derives from
+// `dataCell`, so external edits or in-chart drags reflow without React.
+
+import {
+  Anchor, cell, circle, derive, Diagram, effect as biEffect,
+  label, line, type Mount, rect, Vec,
+} from "bireactive";
+import { scaleBand, scaleTime } from "d3-scale";
+import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
+import { useHostSize, FILL_STYLE, type HostSize } from "../lib/host-size";
+import {
+  GESTURE_ACTIVE_CLASS,
+  GESTURE_SUPPRESSION_CSS,
+  hoverTransition,
+  settleTransition,
+} from "../lib/transitions";
+
+const W = 720;
+const H = 360;
+const DAY_MS = 86400 * 1000;
+const PALETTE = ['#e08888', '#d4a86c', '#ccc060', '#7ec87e', '#60c4c0', '#7aaae8', '#b090e0', '#8899b4'];
+
+export interface GanttTask {
+  id: string;
+  label: string;
+  start: Date;
+  end: Date;
+  color?: string;
+}
+
+function lightenHex(hex: string, t: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const m = (c: number) => Math.round(c + (255 - c) * t).toString(16).padStart(2, '0');
+  return `#${m(r)}${m(g)}${m(b)}`;
+}
+
+function makeSample(): GanttTask[] {
+  const start = new Date(2026, 0, 1).getTime();
+  return [
+    { id: 't1', label: 'Discovery',   start: new Date(start + 0  * DAY_MS), end: new Date(start + 7  * DAY_MS) },
+    { id: 't2', label: 'Design',      start: new Date(start + 5  * DAY_MS), end: new Date(start + 14 * DAY_MS) },
+    { id: 't3', label: 'Build core',  start: new Date(start + 12 * DAY_MS), end: new Date(start + 28 * DAY_MS) },
+    { id: 't4', label: 'QA',          start: new Date(start + 25 * DAY_MS), end: new Date(start + 34 * DAY_MS) },
+    { id: 't5', label: 'Launch',      start: new Date(start + 33 * DAY_MS), end: new Date(start + 36 * DAY_MS) },
+  ];
+}
+
+type DragKind = 'move' | 'start' | 'end';
+
+export class MdGanttChartLC extends Diagram {
+  static styles = `text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}`;
+
+  readonly dataCell = cell<readonly GanttTask[]>(makeSample());
+
+  /** Pad domain by this many days on each side of the data extent. */
+  domainPadDays = 2;
+
+  set externalData(v: GanttTask[] | undefined) {
+    if (v) this.dataCell.value = v;
+  }
+  get externalData(): GanttTask[] | undefined {
+    return this.dataCell.value as GanttTask[];
+  }
+
+  protected scene(s: Mount): void {
+    const size = useHostSize(this, { width: W, height: H });
+    this.tabIndex = 0;
+    this.style.outline = "none";
+    this.#draw(s, size);
+  }
+
+  #color(idx: number, task: GanttTask): string {
+    return task.color ?? PALETTE[idx % PALETTE.length]!;
+  }
+
+  #draw(s: Mount, { w: Wc, h: Hc }: HostSize) {
+    const PAD = { top: 20, right: 24, bottom: 36, left: 120 };
+    const plotX = PAD.left, plotY = PAD.top;
+
+    const data = this.dataCell;
+    const rows0 = data.value as GanttTask[];
+
+    this.view(Wc, Hc);
+
+    const plotW = derive(() => Math.max(0, Wc.value - PAD.left - PAD.right));
+    const plotH = derive(() => Math.max(0, Hc.value - PAD.top - PAD.bottom));
+
+    // x-scale: time domain spans data extent ± domainPadDays.
+    const xScale = derive(() => {
+      const rows = data.value as GanttTask[];
+      let lo = rows[0]?.start.getTime() ?? Date.now();
+      let hi = rows[0]?.end.getTime() ?? lo + DAY_MS;
+      for (const t of rows) {
+        if (t.start.getTime() < lo) lo = t.start.getTime();
+        if (t.end.getTime()   > hi) hi = t.end.getTime();
+      }
+      const pad = this.domainPadDays * DAY_MS;
+      return scaleTime()
+        .domain([new Date(lo - pad), new Date(hi + pad)])
+        .range([plotX, plotX + plotW.value]);
+    });
+
+    // y-scale: band keyed by index so identical labels don't collapse.
+    const yBand = derive(() =>
+      scaleBand<string>()
+        .domain((data.value as GanttTask[]).map((_, i) => String(i)))
+        .range([plotY, plotY + plotH.value])
+        .padding(0.25)
+    );
+
+    const hover = cell<GanttTask | null>(null);
+    const selected = cell<GanttTask | null>(null);
+
+    const svgEl = (this as any).svg as SVGSVGElement;
+    const localPoint = (e: PointerEvent) => {
+      const r = svgEl.getBoundingClientRect();
+      const vb = svgEl.viewBox?.baseVal;
+      const sx = vb && vb.width ? vb.width / r.width : 1;
+      const sy = vb && vb.height ? vb.height / r.height : 1;
+      return { x: (e.clientX - r.left) * sx, y: (e.clientY - r.top) * sy };
+    };
+    const findAtPixelY = (py: number): GanttTask | null => {
+      const ys = yBand.value;
+      const step = ys.step();
+      const rows = data.value as GanttTask[];
+      for (let i = 0; i < rows.length; i++) {
+        const by = ys(String(i)) ?? -1;
+        if (py >= by && py < by + step) return rows[i]!;
+      }
+      return null;
+    };
+
+    const setGestureActive = (on: boolean) => this.classList.toggle(GESTURE_ACTIVE_CLASS, on);
+    const commit = () => this.dispatchEvent(new CustomEvent("gesturecommit"));
+
+    // Mutate one task; keep ms granularity but snap to whole days.
+    const snapDay = (ms: number) => Math.round(ms / DAY_MS) * DAY_MS;
+    const setRange = (t: GanttTask, startMs: number, endMs: number) => {
+      // Enforce min duration 1 day, keep start ≤ end.
+      const min = DAY_MS;
+      let s0 = snapDay(startMs);
+      let s1 = snapDay(endMs);
+      if (s1 - s0 < min) s1 = s0 + min;
+      t.start = new Date(s0);
+      t.end = new Date(s1);
+      data.value = [...data.value];
+    };
+    const nudge = (t: GanttTask, days: number) => {
+      const delta = days * DAY_MS;
+      setRange(t, t.start.getTime() + delta, t.end.getTime() + delta);
+    };
+
+    // ─── Pointer drag (body / start / end) ─────────────────────────────────
+    let dragPointerId = -1;
+    let dragKind: DragKind | null = null;
+    let dragTarget: GanttTask | null = null;
+    let dragOriginMs = 0;     // pointer x at drag start (in ms)
+    let dragOriginStart = 0;  // task.start at drag start (ms)
+    let dragOriginEnd = 0;    // task.end   at drag start (ms)
+
+    const xToMs = (px: number): number => (xScale.value as any).invert(px).getTime();
+
+    this.addEventListener("pointerleave", () => {
+      if (dragKind == null) hover.value = null;
+    });
+
+    this.addEventListener("pointerdown", (e) => {
+      const pe = e as PointerEvent;
+      const { x, y } = localPoint(pe);
+      const t = findAtPixelY(y);
+      if (!t) return;
+
+      const sx = (xScale.value as any)(t.start);
+      const ex = (xScale.value as any)(t.end);
+      const EDGE = 6;
+      let kind: DragKind;
+      if (Math.abs(x - sx) <= EDGE) kind = 'start';
+      else if (Math.abs(x - ex) <= EDGE) kind = 'end';
+      else if (x >= sx && x <= ex) kind = 'move';
+      else return;
+
+      dragPointerId = pe.pointerId;
+      dragKind = kind;
+      dragTarget = t;
+      dragOriginMs = xToMs(x);
+      dragOriginStart = t.start.getTime();
+      dragOriginEnd = t.end.getTime();
+      selected.value = t;
+      (this as any).setPointerCapture(pe.pointerId);
+      setGestureActive(true);
+      pe.preventDefault();
+    });
+
+    this.addEventListener("pointermove", (e) => {
+      const pe = e as PointerEvent;
+      if (dragKind == null || !dragTarget) {
+        hover.value = findAtPixelY(localPoint(pe).y);
+        return;
+      }
+      const ms = xToMs(localPoint(pe).x);
+      const dms = ms - dragOriginMs;
+      if (dragKind === 'move') {
+        setRange(dragTarget, dragOriginStart + dms, dragOriginEnd + dms);
+      } else if (dragKind === 'start') {
+        setRange(dragTarget, dragOriginStart + dms, dragOriginEnd);
+      } else {
+        setRange(dragTarget, dragOriginStart, dragOriginEnd + dms);
+      }
+    });
+
+    const endDrag = () => {
+      if (dragKind == null) return;
+      if (dragPointerId >= 0 && (this as any).hasPointerCapture?.(dragPointerId)) {
+        (this as any).releasePointerCapture(dragPointerId);
+      }
+      dragPointerId = -1;
+      dragKind = null;
+      dragTarget = null;
+      setGestureActive(false);
+      commit();
+    };
+    this.addEventListener("pointerup", endDrag);
+    this.addEventListener("pointercancel", endDrag);
+
+    this.addEventListener("click", (e) => {
+      // Only treat a click as selection if it wasn't a drag commit.
+      if (dragKind != null) return;
+      const { x, y } = localPoint(e as PointerEvent);
+      const t = findAtPixelY(y);
+      if (!t) { selected.value = null; return; }
+      const sx = (xScale.value as any)(t.start);
+      const ex = (xScale.value as any)(t.end);
+      if (x < sx || x > ex) { selected.value = null; return; }
+      selected.value = selected.value === t ? null : t;
+    });
+
+    this.addEventListener("keydown", (e) => {
+      const ke = e as KeyboardEvent;
+      const rows = data.value as GanttTask[];
+      const cur = selected.value;
+      const i = cur ? rows.indexOf(cur) : -1;
+      if (ke.key === "Escape") {
+        if (cur) { selected.value = null; ke.preventDefault(); }
+        return;
+      }
+      if (ke.key === "Tab" || ke.key === "ArrowUp" || ke.key === "ArrowDown") {
+        const dir = (ke.key === "ArrowUp" || (ke.key === "Tab" && ke.shiftKey)) ? -1 : +1;
+        const n = rows.length;
+        if (n === 0) return;
+        const next = rows[((i < 0 ? 0 : i + dir) + n) % n] ?? null;
+        selected.value = next; ke.preventDefault(); return;
+      }
+      if (!cur) return;
+      const step = ke.shiftKey ? 7 : 1;
+      if (ke.key === "ArrowRight") { nudge(cur, +step); ke.preventDefault(); }
+      else if (ke.key === "ArrowLeft") { nudge(cur, -step); ke.preventDefault(); }
+    });
+
+    // ─── Time axis (bottom) ────────────────────────────────────────────────
+    const axisY = derive(() => plotY + plotH.value);
+    s(line(
+      Vec.derive(() => ({ x: plotX, y: axisY.value })),
+      Vec.derive(() => ({ x: plotX + plotW.value, y: axisY.value })),
+      { thin: true, opacity: 0.5, stroke: "#888" },
+    ));
+    // Ticks: pick from d3-scale.
+    // We render up to ~8 ticks; each tick re-derives from xScale + plotH.
+    const MAX_TICKS = 8;
+    for (let k = 0; k < MAX_TICKS; k++) {
+      const tickInfo = derive(() => {
+        const sc: any = xScale.value;
+        const ticks: Date[] = sc.ticks(MAX_TICKS) as Date[];
+        const fmt = sc.tickFormat(MAX_TICKS);
+        const t = ticks[k];
+        return t ? { x: sc(t) as number, label: fmt(t) as string } : null;
+      });
+      const tx = derive(() => tickInfo.value?.x ?? -9999);
+      const text = derive(() => tickInfo.value?.label ?? "");
+      const opacity = derive(() => (tickInfo.value ? 1 : 0));
+      s(
+        line(
+          Vec.derive(() => ({ x: tx.value, y: plotY })),
+          Vec.derive(() => ({ x: tx.value, y: axisY.value })),
+          { thin: true, stroke: "#888", opacity: derive(() => opacity.value * 0.15) },
+        ),
+        line(
+          Vec.derive(() => ({ x: tx.value, y: axisY.value })),
+          Vec.derive(() => ({ x: tx.value, y: axisY.value + 4 })),
+          { thin: true, stroke: "#888", opacity: derive(() => opacity.value * 0.6) },
+        ),
+        label(
+          Vec.derive(() => ({ x: tx.value, y: axisY.value + 16 })),
+          text,
+          { size: 10, align: Anchor.Center, fill: "#888", opacity },
+        ),
+      );
+    }
+
+    // Today marker — only drawn if "now" lands inside the visible domain.
+    const nowMs = Date.now();
+    const nowX = derive(() => {
+      const sc: any = xScale.value;
+      const [d0, d1] = sc.domain() as [Date, Date];
+      if (nowMs < d0.getTime() || nowMs > d1.getTime()) return null;
+      return sc(new Date(nowMs)) as number;
+    });
+    s(line(
+      Vec.derive(() => ({ x: nowX.value ?? -9999, y: plotY })),
+      Vec.derive(() => ({ x: nowX.value ?? -9999, y: axisY.value })),
+      { thin: true, dashed: true, stroke: "#e08888", opacity: derive(() => nowX.value == null ? 0 : 0.7) },
+    ));
+
+    // ─── Row labels (live read so reorder reflows) ─────────────────────────
+    const MAX_ROWS = rows0.length;
+    for (let idx = 0; idx < MAX_ROWS; idx++) {
+      const di = (): GanttTask | null => (data.value as GanttTask[])[idx] ?? null;
+      const key = String(idx);
+      const barY = derive(() => yBand.value(key) ?? 0);
+      const barH = derive(() => yBand.value.bandwidth());
+      const barCY = derive(() => barY.value + barH.value / 2);
+
+      s(label(
+        Vec.derive(() => ({ x: plotX - 8, y: barCY.value })),
+        derive(() => di()?.label ?? ""),
+        { size: 11, align: Anchor.Right, fill: "#bbb", opacity: 0.85 },
+      ));
+
+      // Row highlight (subtle background on hover/selected).
+      const rowFill = derive(() => {
+        const d = di(); if (!d) return 0;
+        return (hover.value === d || selected.value === d) ? 0.05 : 0;
+      });
+      const rh = s(rect(
+        plotX, barY,
+        derive(() => plotW.value),
+        barH,
+        { fill: "#ffffff", opacity: rowFill },
+      ));
+      rh.el.style.pointerEvents = "none";
+      rh.el.style.transition = "opacity 0.1s ease";
+    }
+
+    // ─── Task bars ─────────────────────────────────────────────────────────
+    for (let idx = 0; idx < MAX_ROWS; idx++) {
+      const di = (): GanttTask | null => (data.value as GanttTask[])[idx] ?? null;
+      const key = String(idx);
+      const base = (() => {
+        const t = rows0[idx]; return t ? this.#color(idx, t) : '#888';
+      })();
+      const hoverColor = lightenHex(base, 0.35);
+
+      const barY = derive(() => yBand.value(key) ?? 0);
+      const barH = derive(() => yBand.value.bandwidth());
+      const xS = derive(() => { const d = di(); return d ? (xScale.value as any)(d.start) as number : 0; });
+      const xE = derive(() => { const d = di(); return d ? (xScale.value as any)(d.end)   as number : 0; });
+      const barW = derive(() => Math.max(0, xE.value - xS.value));
+      const fill = derive(() => {
+        const d = di();
+        return selected.value === d ? "#fff" : hover.value === d ? hoverColor : base;
+      });
+
+      const tile = s(rect(xS, barY, barW, barH, { fill, corner: 3 }));
+      tile.el.style.cursor = "grab";
+      tile.el.style.transition = settleTransition(["x", "width", "fill"]);
+
+      // Inside label (task name) — shown when bar wide enough.
+      const inOpacity = derive(() => barW.value >= 60 ? 1 : 0);
+      const labelFill = derive(() => { const d = di(); return selected.value === d ? base : "#fff"; });
+      s(label(
+        Vec.derive(() => ({ x: xS.value + 8, y: barY.value + barH.value / 2 })),
+        derive(() => di()?.label ?? ""),
+        { size: 11, align: Anchor.Left, fill: labelFill, opacity: inOpacity },
+      ));
+
+      // Duration label (outside, right of bar) on hover/select.
+      const showDur = derive(() => {
+        const d = di();
+        return (hover.value === d || selected.value === d) ? 1 : 0;
+      });
+      s(label(
+        Vec.derive(() => ({ x: xE.value + 6, y: barY.value + barH.value / 2 })),
+        derive(() => {
+          const d = di(); if (!d) return "";
+          const days = Math.round((d.end.getTime() - d.start.getTime()) / DAY_MS);
+          return `${days}d`;
+        }),
+        { size: 10, align: Anchor.Left, fill: "#aaa", opacity: showDur },
+      ));
+
+      // Resize handles at edges — visible on hover/selected.
+      const handleR = derive(() => { const d = di(); return selected.value === d ? 5 : 4; });
+      const handleOpacity = derive(() => {
+        const d = di();
+        return (hover.value === d || selected.value === d) ? 1 : 0;
+      });
+      const handleFill = derive(() => { const d = di(); return selected.value === d ? "#fff" : hoverColor; });
+
+      const startHandle = s(circle(
+        Vec.derive(() => ({ x: xS.value, y: barY.value + barH.value / 2 })),
+        handleR,
+        { fill: handleFill, stroke: "#0b0d12", strokeWidth: 1.5, opacity: handleOpacity },
+      ));
+      startHandle.el.style.cursor = "ew-resize";
+      startHandle.el.style.transition = hoverTransition("opacity");
+
+      const endHandle = s(circle(
+        Vec.derive(() => ({ x: xE.value, y: barY.value + barH.value / 2 })),
+        handleR,
+        { fill: handleFill, stroke: "#0b0d12", strokeWidth: 1.5, opacity: handleOpacity },
+      ));
+      endHandle.el.style.cursor = "ew-resize";
+      endHandle.el.style.transition = hoverTransition("opacity");
+    }
+
+    // ─── Caption / readout ────────────────────────────────────────────────
+    s(label(
+      Vec.derive(() => ({ x: Wc.value / 2, y: 12 })),
+      derive(() => {
+        const p = selected.value ?? hover.value;
+        if (!p) return "Gantt — click · Tab navigate · ←/→ nudge · drag body/handles";
+        const fmt = (d: Date) => d.toLocaleDateString();
+        const days = Math.round((p.end.getTime() - p.start.getTime()) / DAY_MS);
+        return `${p.label}  ${fmt(p.start)} → ${fmt(p.end)}  (${days}d)`;
+      }),
+      { size: 11, align: Anchor.Center, opacity: 0.7 },
+    ));
+
+    this.#bridge(data, hover, selected);
+  }
+
+  #bridge(
+    data: ReturnType<typeof cell<readonly GanttTask[]>>,
+    hover: ReturnType<typeof cell<GanttTask | null>>,
+    selected: ReturnType<typeof cell<GanttTask | null>>,
+  ) {
+    const idOf = (d: GanttTask | null) => d?.id ?? null;
+    const datumAt = (id: string | null) =>
+      id == null ? null : (data.value as GanttTask[]).find(d => d.id === id) ?? null;
+    let applying = false;
+    const bridge = makeBridge({
+      setHover: (key) => { applying = true; hover.value = datumAt(key); applying = false; },
+      setSelect: (key) => { applying = true; selected.value = datumAt(key); applying = false; },
+    });
+    (this as unknown as ElementWithBridge).brSync = bridge;
+    biEffect(() => { if (!applying) bridge.emitHover(idOf(hover.value)); });
+    biEffect(() => { if (!applying) bridge.emitSelect(idOf(selected.value)); });
+  }
+}
