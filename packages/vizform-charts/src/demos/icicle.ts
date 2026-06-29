@@ -3,14 +3,14 @@ import {
   circle,
   Diagram,
   derive,
+  forEach,
+  group,
   label,
   type Mount,
   cell,
-  Num,
   rect,
   Vec,
   num,
-  play,
   tween,
   easeOut,
   effect as biEffect,
@@ -28,7 +28,8 @@ import { dragCancelable } from "../lib/esc-contract";
 
 const W = 720;
 const H = 360;
-const DRILL_DURATION = 800;
+const DRILL_DURATION = 800; // ms — leave-timer / CSS settle window
+const DRILL_SEC = DRILL_DURATION / 1000; // s — bireactive anim clock runs in seconds
 
 export class MdIcicleLC extends Diagram {
   static styles = `text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}`
@@ -59,74 +60,132 @@ export class MdIcicleLC extends Diagram {
     const hoverCell = cell<BiNode | null>(null);
     state.hoverCell = hoverCell;
 
-    // Build id→BiNode index for drill lookup.
+    // Pre-build static maps (tree structure is immutable).
     const nodeById = new Map<string, BiNode>();
-    for (const { node } of walkWithDepth(root)) {
+    const nodeDepth = new Map<BiNode, number>();
+    let totalDepth = 0;
+    for (const { node, depth } of walkWithDepth(root)) {
       if (node.value.id) nodeById.set(node.value.id, node);
+      nodeDepth.set(node, depth);
+      if (depth > totalDepth) totalDepth = depth;
     }
 
-    const maxD = this.maxDepth
+    const maxD = this.maxDepth;
+
+    // Natural partition layout — no pre-scaling. Viewport does all fitting.
     const layout = derive(() => {
       const h = buildHierarchy(root);
-      const totalDepth = h.height; // levels below root
-      // partition distributes H across (totalDepth+1) levels (depth 0 through totalDepth).
-      // We skip depth 0 in rendering. To make visible rows fill Hc exactly, scale partition
-      // height so one extra row fits above the viewport, then offset y by rowH to shift
-      // visible rows up to y=0.
-      const visibleDepth = maxD !== undefined ? Math.min(maxD, totalDepth) : totalDepth;
-      const scaledH = visibleDepth > 0 ? Hc.value * (totalDepth + 1) / visibleDepth : Hc.value;
-      partition<BiNode>().size([Wc.value, scaledH])(h);
-      const rowH = visibleDepth > 0 ? Hc.value / visibleDepth : 0;
+      partition<BiNode>().size([Wc.value, Hc.value])(h);
       const map = new Map<BiNode, HierarchyRectangularNode<BiNode>>();
-      h.each((d) => {
-        const node = d as HierarchyRectangularNode<BiNode>;
-        // Shift all y coords up by one row so depth-1 tiles start at y=0.
-        map.set(d.data, {
-          ...node,
-          y0: node.y0 - rowH,
-          y1: node.y1 - rowH,
-        } as HierarchyRectangularNode<BiNode>);
-      });
+      h.each((d) => map.set(d.data, d as HierarchyRectangularNode<BiNode>));
       return map;
     });
-    // Viewport cells: region of layout-space mapped to canvas. Default: full canvas.
+
+    // Viewport cells: region of layout-space mapped to canvas.
     const vx0 = num(0);
     const vy0 = num(0);
     const vx1 = num(W);
     const vy1 = num(H);
 
+    // Focus depth (reactive, used by window + handles).
+    const focusDepth = derive(() => {
+      const id = this._drillIdCell.value;
+      if (!id) return 0;
+      const n = nodeById.get(id);
+      return n ? (nodeDepth.get(n) ?? 0) : 0;
+    });
+
+    // Window: nodes in [focusDepth < depth <= focusDepth + maxD].
+    const windowTarget = derive((): readonly BiNode[] => {
+      const fd = focusDepth.value;
+      const maxWindow = maxD !== undefined ? fd + maxD : totalDepth;
+      const result: BiNode[] = [];
+      for (const { node, depth } of walkWithDepth(root)) {
+        if (depth > fd && depth <= maxWindow) result.push(node);
+      }
+      return result;
+    });
+
+    // Rendered set: current window + departing nodes (kept alive through tween).
+    const renderedSet = cell<readonly BiNode[]>([]);
+    let leaveTimer: ReturnType<typeof setTimeout> | null = null;
+    biEffect(() => {
+      const newTarget = windowTarget.value;
+      const prevRendered = untracked(() => renderedSet.value);
+      const targetSet = new Set(newTarget);
+      const leavers = prevRendered.filter(n => !targetSet.has(n));
+      if (leaveTimer) { clearTimeout(leaveTimer); leaveTimer = null; }
+      renderedSet.value = leavers.length > 0 ? [...newTarget, ...leavers] : newTarget;
+      if (leavers.length > 0) {
+        leaveTimer = setTimeout(() => {
+          leaveTimer = null;
+          renderedSet.value = windowTarget.value;
+        }, DRILL_DURATION + 50);
+      }
+    });
+
     let drillInited = false;
     let lastDrillId: string | null = null;
+    let drillCancel: (() => void) | null = null;
     biEffect(() => {
       const id = this._drillIdCell.value;
       const W0 = Wc.value, H0 = Hc.value;
       let tx0: number, ty0: number, tx1: number, ty1: number;
+
+      const lmap = untracked(() => layout.value);
       if (id) {
-        const lmap = untracked(() => layout.value);
         const biNode = nodeById.get(id);
         const lnode = biNode ? lmap.get(biNode) : null;
         if (lnode) {
-          tx0 = lnode.x0; ty0 = lnode.y0; tx1 = lnode.x1; ty1 = lnode.y1;
+          const fd = nodeDepth.get(biNode!) ?? 0;
+          const maxWindow = maxD !== undefined ? fd + maxD : totalDepth;
+          // ty0 = focus's outer edge (where children start); ty1 = deepest rendered row bottom.
+          let maxY1 = lnode.y1;
+          for (const { node, depth } of walkWithDepth(root)) {
+            if (depth > fd && depth <= maxWindow) {
+              const ln = lmap.get(node);
+              if (ln && ln.y1 > maxY1) maxY1 = ln.y1;
+            }
+          }
+          tx0 = lnode.x0; ty0 = lnode.y1; tx1 = lnode.x1; ty1 = maxY1;
         } else {
           tx0 = 0; ty0 = 0; tx1 = W0; ty1 = H0;
         }
       } else {
-        tx0 = 0; ty0 = 0; tx1 = W0; ty1 = H0;
+        // At root: map [root.y1, maxRendered.y1] → canvas so depth-1 starts at y=0.
+        const rootLayout = lmap.get(root);
+        ty0 = rootLayout ? rootLayout.y1 : 0;
+        const maxWindow = maxD !== undefined ? maxD : totalDepth;
+        let maxY1 = H0;
+        for (const { node, depth } of walkWithDepth(root)) {
+          if (depth > 0 && depth <= maxWindow) {
+            const ln = lmap.get(node);
+            if (ln && ln.y1 > maxY1) maxY1 = ln.y1;
+          }
+        }
+        tx0 = 0; tx1 = W0; ty1 = maxY1;
       }
+
       const drillChanged = id !== lastDrillId;
       lastDrillId = id;
+      // Cancel any in-flight drill tween before snapping or re-tweening.
+      drillCancel?.();
+      drillCancel = null;
       if (!drillInited || !drillChanged) {
         vx0.value = tx0; vy0.value = ty0; vx1.value = tx1; vy1.value = ty1;
         drillInited = true;
         return;
       }
-      play(tween(vx0, tx0, DRILL_DURATION, easeOut));
-      play(tween(vy0, ty0, DRILL_DURATION, easeOut));
-      play(tween(vx1, tx1, DRILL_DURATION, easeOut));
-      play(tween(vy1, ty1, DRILL_DURATION, easeOut));
+      // Drive the viewport tween on this Diagram's anim clock — `tween()` alone
+      // only builds a generator; it must be started to advance per frame.
+      drillCancel = this.anim.start(
+        tween(vx0, tx0, DRILL_SEC, easeOut),
+        tween(vy0, ty0, DRILL_SEC, easeOut),
+        tween(vx1, tx1, DRILL_SEC, easeOut),
+        tween(vy1, ty1, DRILL_SEC, easeOut),
+      );
     });
 
-    // Helper: remap raw layout coordinate through animated viewport.
     const remapX = (rawX: number) => {
       const spanW = vx1.value - vx0.value;
       return spanW === 0 ? 0 : (rawX - vx0.value) / spanW * Wc.value;
@@ -136,9 +195,12 @@ export class MdIcicleLC extends Diagram {
       return spanH === 0 ? 0 : (rawY - vy0.value) / spanH * Hc.value;
     };
 
-    for (const { node, depth, isLeaf } of walkWithDepth(root)) {
-      if (depth === 0) continue;
-      if (maxD !== undefined && depth > maxD) continue;
+    // Windowed node rendering.
+    const nodeLayer = s(group());
+    forEach(nodeLayer, renderedSet, (node) => {
+      const depth = nodeDepth.get(node) ?? 1;
+      const isLeaf = (node.children as BiNode[]).length === 0;
+
       const x = derive(() => remapX(layout.value.get(node)?.x0 ?? 0));
       const y = derive(() => remapY(layout.value.get(node)?.y0 ?? 0));
       const w = derive(() => {
@@ -160,16 +222,14 @@ export class MdIcicleLC extends Diagram {
       );
       const strokeWidth = derive(() => (state.focused.value === node || hoverCell.value === node ? 2 : 1));
 
-      // Color-by-parent: brighten by depth so the root band stays saturated and
-      // deeper bands wash out toward the leaves (mirrors LayerChart; replaces the
-      // uniform opacity dim that muddied every non-leaf band identically).
       const nodeFill = depthFill(node.value.color, depth);
-      const tile = s(rect(x, y, w, h, {
+      const tile = rect(x, y, w, h, {
         fill: nodeFill.toString(),
         stroke,
         strokeWidth,
         corner: 2,
-      }));
+      });
+      tile.el.dataset.id = node.value.id ?? "";
       tile.el.style.cursor = "pointer";
       tile.el.style.transition = settleTransition(["x", "y", "width", "height"]);
       tile.el.addEventListener("click", () => { state.focused.value = node; });
@@ -183,102 +243,99 @@ export class MdIcicleLC extends Diagram {
           ? `${node.value.label}\n${node.value.total.value.toFixed(0)}`
           : node.value.label;
       });
-      s(label(
+      const lbl = label(
         Vec.derive(() => ({ x: x.value + w.value / 2, y: y.value + h.value / 2 })),
         text,
         { size: isLeaf ? 11 : 10, align: Anchor.Center, fill: labelInk(nodeFill), bold: !isLeaf },
-      ));
-    }
+      );
+      return [tile, lbl];
+    }, { key: (n) => n.value.id });
 
-    // Boundary-knob resize handles: for each parent with >=2 children, drop a
-    // draggable pill on each interior x-boundary. The two adjacent siblings a,b
-    // share a contiguous x-span [a.x0, b.x1]; the boundary sits where their
-    // widths split proportional to value. Dragging reapportions a.total/b.total
-    // (sum preserved by the group's Num.lens) and the partition layout
-    // re-derives reactively. Same lens as the Budget Tree demo, positioned from
-    // the live layout map. Skip the synthetic root row (depth 0).
+    // Windowed handle rendering: one entry per sibling boundary (bNode identifies the boundary).
     if (!this.hasAttribute("no-handles")) {
-      for (const { node: parent, depth } of walkWithDepth(root)) {
-        if (maxD !== undefined && depth >= maxD) continue;
-        const kids = parent.children as BiNode[];
-        if (kids.length < 2) continue;
-        for (let i = 1; i < kids.length; i++) {
-          const aNode = kids[i - 1]!;
-          const bNode = kids[i]!;
-          const a = aNode.value.total;
-          const b = bNode.value.total;
-          // Live span geometry: [spanX0, spanX1] covers both siblings; row Y band
-          // comes from either child's depth row (same y0/y1).
-          const spanX0 = derive(() => layout.value.get(aNode)?.x0 ?? 0);
-          const spanX1 = derive(() => layout.value.get(bNode)?.x1 ?? 0);
-          const rowY0 = derive(() => layout.value.get(aNode)?.y0 ?? 0);
-          const rowY1 = derive(() => layout.value.get(aNode)?.y1 ?? 0);
+      // Handle source: (parent, siblingIndex) pairs for in-window parents that are not the deepest level.
+      type HandleItem = { parent: BiNode; i: number; aNode: BiNode; bNode: BiNode };
+      const handleWindow = derive((): readonly HandleItem[] => {
+        const fd = focusDepth.value;
+        const maxWindow = maxD !== undefined ? fd + maxD : totalDepth;
+        const items: HandleItem[] = [];
+        for (const n of renderedSet.value) {
+          const d = nodeDepth.get(n) ?? 0;
+          if (d <= fd || d >= maxWindow) continue; // skip focus-level and deepest-rendered
+          const kids = n.children as BiNode[];
+          if (kids.length < 2) continue;
+          for (let i = 1; i < kids.length; i++) {
+            items.push({ parent: n, i, aNode: kids[i - 1]!, bNode: kids[i]! });
+          }
+        }
+        return items;
+      });
 
-          // Drag target: a Vec lens whose ONLY writable sources are the two
-          // value cells (a, b). Span geometry is read-only layout output, so it's
-          // peeked inside the lens — never written back. Listing derived cells as
-          // lens sources corrupts the backward-propagation graph (propagateBwd
-          // reads `.parent` on them and throws). The read side here is only used
-          // by drag() to seed the gesture; the *visual* position is a separate
-          // reactive derive (knobX) so the pill tracks layout changes live.
-          const knob = Vec.lens(
-            [a, b] as const,
-            (vals: readonly [number, number]) => {
-              const [va, vb] = vals;
-              const x0 = spanX0.peek();
-              const x1 = spanX1.peek();
-              const sum = va + vb;
-              const frac = sum === 0 ? 0.5 : va / sum;
-              // Return screen-space coords so drag() uses consistent space.
-              const lx = x0 + frac * (x1 - x0);
-              const ly = (rowY0.peek() + rowY1.peek()) / 2;
-              return { x: remapX(lx), y: remapY(ly) };
-            },
-            (target, vals) => {
-              const [va, vb] = vals;
-              // Convert screen-space target back to layout-space for fraction math.
-              const svxSpan = vx1.value - vx0.value;
-              const layoutX = svxSpan === 0 ? 0 : vx0.value + (target.x / Wc.value) * svxSpan;
-              const x0 = spanX0.peek();
-              const x1 = spanX1.peek();
-              const sum = va + vb;
-              if (sum === 0 || x1 <= x0) return [va, vb];
-              let frac = (layoutX - x0) / (x1 - x0);
-              frac = Math.max(0, Math.min(1, frac));
-              const newA = frac * sum;
-              return [newA, sum - newA];
-            },
-          );
+      const handleLayer = s(group());
+      forEach(handleLayer, handleWindow, ({ aNode, bNode }) => {
+        const a = aNode.value.total;
+        const b = bNode.value.total;
 
-          const knobPos = Vec.derive(() => {
-            const va = a.value, vb = b.value;
-            const x0 = spanX0.value, x1 = spanX1.value;
+        const spanX0 = derive(() => layout.value.get(aNode)?.x0 ?? 0);
+        const spanX1 = derive(() => layout.value.get(bNode)?.x1 ?? 0);
+        const rowY0 = derive(() => layout.value.get(aNode)?.y0 ?? 0);
+        const rowY1 = derive(() => layout.value.get(aNode)?.y1 ?? 0);
+
+        const knob = Vec.lens(
+          [a, b] as const,
+          (vals: readonly [number, number]) => {
+            const [va, vb] = vals;
+            const x0 = spanX0.peek();
+            const x1 = spanX1.peek();
             const sum = va + vb;
             const frac = sum === 0 ? 0.5 : va / sum;
             const lx = x0 + frac * (x1 - x0);
-            const ly = (rowY0.value + rowY1.value) / 2;
+            const ly = (rowY0.peek() + rowY1.peek()) / 2;
             return { x: remapX(lx), y: remapY(ly) };
-          });
-          const active = cell(false);
-          const dot = s(
-            circle(knobPos, 5, {
-              fill: aNode.value.color,
-              stroke: derive(() => active.value ? "#fff" : "#000"),
-              strokeWidth: 1.5,
-            }),
-          );
-          // Cancelable drag: snapshots [a,b] on down; the gesture owns its Esc
-          // listener and reverts on Esc.
-          dragCancelable(dot, knob, [a, b], {
-            host: this,
-            onStart: () => { active.value = true; },
-            onEnd: () => { active.value = false; },
-          });
-          dot.el.style.cursor = "ew-resize";
-          dot.el.addEventListener("pointerenter", () => { active.value = true; });
-          dot.el.addEventListener("pointerleave", () => { active.value = false; });
-        }
-      }
+          },
+          (target, vals) => {
+            const [va, vb] = vals;
+            const svxSpan = vx1.value - vx0.value;
+            const layoutX = svxSpan === 0 ? 0 : vx0.value + (target.x / Wc.value) * svxSpan;
+            const x0 = spanX0.peek();
+            const x1 = spanX1.peek();
+            const sum = va + vb;
+            if (sum === 0 || x1 <= x0) return [va, vb];
+            let frac = (layoutX - x0) / (x1 - x0);
+            frac = Math.max(0, Math.min(1, frac));
+            const newA = frac * sum;
+            return [newA, sum - newA];
+          },
+        );
+
+        const knobPos = Vec.derive(() => {
+          const va = a.value, vb = b.value;
+          const x0 = spanX0.value, x1 = spanX1.value;
+          const sum = va + vb;
+          const frac = sum === 0 ? 0.5 : va / sum;
+          const lx = x0 + frac * (x1 - x0);
+          const ly = (rowY0.value + rowY1.value) / 2;
+          return { x: remapX(lx), y: remapY(ly) };
+        });
+
+        const active = cell(false);
+        const dot = circle(knobPos, 5, {
+          fill: aNode.value.color,
+          stroke: derive(() => active.value ? "#fff" : "#000"),
+          strokeWidth: 1.5,
+        });
+        const dispose = dragCancelable(dot, knob, [a, b], {
+          host: this,
+          onStart: () => { active.value = true; },
+          onEnd: () => { active.value = false; },
+        });
+        dot.track(dispose);
+        dot.el.style.cursor = "ew-resize";
+        dot.el.addEventListener("pointerenter", () => { active.value = true; });
+        dot.el.addEventListener("pointerleave", () => { active.value = false; });
+
+        return dot;
+      }, { key: ({ bNode }) => bNode.value.id });
     }
 
     if (!this.hasAttribute('no-source')) s(label(view.bottom.up(10), derive(() => {

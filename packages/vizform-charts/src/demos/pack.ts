@@ -8,7 +8,6 @@ import {
   circle,
   Vec,
   num,
-  play,
   tween,
   easeOut,
   effect as biEffect,
@@ -26,7 +25,8 @@ import { GESTURE_SUPPRESSION_CSS, settleTransition } from "../lib/transitions";
 const W = 480;
 const H = 480;
 const PAD = 2;
-const DRILL_DURATION = 800;
+const DRILL_DURATION = 800; // ms — leave-timer / CSS settle window
+const DRILL_SEC = DRILL_DURATION / 1000; // s — bireactive anim clock runs in seconds
 
 export class MdPack extends Diagram {
   static styles = `text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}`
@@ -85,6 +85,7 @@ export class MdPack extends Diagram {
     // Reads layout via untracked so value edits don't re-fire the tween.
     let drillInited = false;
     let lastDrillId: string | null = null;
+    let drillCancel: (() => void) | null = null;
     biEffect(() => {
       const id = this._drillIdCell.value;
       const W0 = Wc.value, H0 = Hc.value;
@@ -107,15 +108,22 @@ export class MdPack extends Diagram {
       // Animate only when drill id changes; snap for initial load and resize.
       const drillChanged = id !== lastDrillId;
       lastDrillId = id;
+      // Cancel any in-flight drill tween before snapping or re-tweening.
+      drillCancel?.();
+      drillCancel = null;
       if (!drillInited || !drillChanged) {
         vx0.value = tx0; vy0.value = ty0; vx1.value = tx1; vy1.value = ty1;
         drillInited = true;
         return;
       }
-      play(tween(vx0, tx0, DRILL_DURATION, easeOut));
-      play(tween(vy0, ty0, DRILL_DURATION, easeOut));
-      play(tween(vx1, tx1, DRILL_DURATION, easeOut));
-      play(tween(vy1, ty1, DRILL_DURATION, easeOut));
+      // Drive the viewport tween on this Diagram's anim clock — `tween()` alone
+      // only builds a generator; it must be started to advance per frame.
+      drillCancel = this.anim.start(
+        tween(vx0, tx0, DRILL_SEC, easeOut),
+        tween(vy0, ty0, DRILL_SEC, easeOut),
+        tween(vx1, tx1, DRILL_SEC, easeOut),
+        tween(vy1, ty1, DRILL_SEC, easeOut),
+      );
     });
 
     const maxD = this.maxDepth

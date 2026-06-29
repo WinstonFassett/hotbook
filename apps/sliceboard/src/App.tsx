@@ -22,7 +22,7 @@ import {
   addTile, removeTile, deleteDashboard, deleteDataset,
   activeDataset, activeDashboard, dashboardsForDataset,
   updateRow, updateRows, reorderLeaves, applyGroupBy,
-  drillSubtree, drillPath,
+  drillPath,
 } from './persistence'
 import type { Workspace, Dataset, Dashboard, Tile, TileKind, PNode } from './persistence'
 import { schemaFor } from './tile-config-schemas'
@@ -103,8 +103,12 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
   const sortBy = tile.sortBy ?? 'index'
   const schema = schemaFor(tile.kind)
   const drillKey = tile.id
-  const drillNodeId = useDrillNodeId(drillKey)
-  const sourceRows = schema.drillKey ? drillSubtree(ds.rows, drillNodeId) : ds.rows
+  // drill-v2 (internal zoom): br-lc hier charts receive the FULL tree and zoom
+  // internally via their own drillNodeId (wired in BrLcCharts.tsx). Pruning to a
+  // subtree here would change hierShapeKey and remount the element on drill —
+  // resetting the viewport and snapping instead of tweening. Legacy D3 hier
+  // charts are retired, so nothing else depends on the old prune path.
+  const sourceRows = ds.rows
   const rawNodes = colorByGroup(tile.groupBy ? applyGroupBy(sourceRows, tile.groupBy) : sourceRows)
   const nodes = sortBy === 'value'
     ? [...rawNodes]
