@@ -359,8 +359,8 @@ export class MdSunburstLC extends Diagram {
         });
         const dispose = dragCancelable(dot, knob, [a, b], {
           host: this,
-          onStart: () => { active.value = true; },
-          onEnd: () => { active.value = false; },
+          onStart: () => { active.value = true; dot.el.style.cursor = "grabbing"; },
+          onEnd: () => { active.value = false; dot.el.style.cursor = "grab"; },
         });
         dot.track(dispose);
         dot.el.style.cursor = "grab";

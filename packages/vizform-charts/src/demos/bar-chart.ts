@@ -298,7 +298,7 @@ export class MdBarChartLC extends Diagram {
 
       const tile = s(rect(barX, barY, barW, barH, { fill, corner: 2 }));
       tileElements[idx] = tile.el; // Store for focus management
-      tile.el.style.cursor = "pointer";
+      tile.el.style.cursor = "ns-resize";
       // Value-change settle: height/y interpolate when value changes outside a
       // gesture (external data, arrow-key edit, wheel-commit). Suppressed
       // during active wheel/drag via .vf-gesture-active on the host, so
@@ -338,7 +338,7 @@ export class MdBarChartLC extends Diagram {
         } else {
           s(label(Vec.derive(() => ({ x: barCX.value, y: barY.value - 6 })),
             derive(() => { const d = di(); return d ? `${Math.round(d.value)}` : ""; }),
-            { size: 10, align: Anchor.Center, fill: "#888", opacity: derive(() => barH.value > 0 ? 1 : 0) }));
+            { size: 10, align: Anchor.Center, fill: "#888", opacity: derive(() => barH.value >= 8 ? 1 : 0) }));
         }
       }
 
@@ -559,7 +559,7 @@ export class MdBarChartLC extends Diagram {
 
       const tile = s(rect(plotX, barY, barW, barH, { fill, corner: 3 }));
       tileElementsH[idx] = tile.el; // Store for focus management
-      tile.el.style.cursor = "pointer";
+      tile.el.style.cursor = "ew-resize";
       tile.el.style.transition = settleTransition(["width", "fill"]);
       // Make each bar individually focusable
       tile.el.setAttribute('tabindex', '0');

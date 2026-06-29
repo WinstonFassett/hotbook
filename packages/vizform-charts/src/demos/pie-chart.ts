@@ -106,7 +106,6 @@ export class MdPieChartLC extends Diagram {
         opacity,
       }));
       sliceElements.set(d, sector.el); // Store for focus management
-      sector.el.style.cursor = "pointer";
       // Make each slice individually focusable
       sector.el.setAttribute('tabindex', '0');
       sector.el.setAttribute('data-focusable', 'slice');
@@ -198,8 +197,8 @@ export class MdPieChartLC extends Diagram {
         // there is no sort-order concern here.
         dragCancelable(dot, knob, [a, b], {
           host: this,
-          onStart: () => { active.value = true; (this as any).gestureActive = true; },
-          onEnd: () => { active.value = false; (this as any).gestureActive = false; this.dispatchEvent(new CustomEvent("gesturecommit")); },
+          onStart: () => { active.value = true; (this as any).gestureActive = true; dot.el.style.cursor = "grabbing"; },
+          onEnd: () => { active.value = false; (this as any).gestureActive = false; dot.el.style.cursor = "grab"; this.dispatchEvent(new CustomEvent("gesturecommit")); },
         });
         dot.el.style.cursor = "grab";
         dot.el.addEventListener("pointerenter", () => { active.value = true; });

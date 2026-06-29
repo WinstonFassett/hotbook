@@ -386,11 +386,14 @@ export function sankeyScene(
         },
       );
       const gripVis = Vec.derive(() => frozenGripPos ?? gripPos());
-      const grip = s(circle(gripVis, 5, {
+      const gripX = derive(() => gripVis.value.x - 7);
+      const gripY = derive(() => gripVis.value.y - 2);
+      const grip = s(rect(gripX, gripY, 14, 4, {
         fill: "#0b0d12",
         stroke: derive(() => nodeActive.value ? "#fff" : fill.value),
-        strokeWidth: 2,
+        strokeWidth: 1.5,
         opacity: derive(() => nodeActive.value ? 1 : 0),
+        corner: 2,
       }));
       grip.el.style.cursor = "ns-resize";
       grip.el.style.transition = "opacity 0.12s";

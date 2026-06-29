@@ -81,7 +81,6 @@ export class MdScatterChartLC extends Diagram {
       );
       const dot = s(circle(pos, 5, { fill, stroke: "#0b0d12", strokeWidth: 1 }));
       dotElements.set(d, dot.el as SVGCircleElement);
-      dot.el.style.cursor = "pointer";
       // Make each dot individually focusable
       dot.el.setAttribute('tabindex', '0');
       dot.el.setAttribute('data-focusable', 'point');
