@@ -575,10 +575,10 @@ function buildSeedWorkspace(): Workspace {
   return {
     datasets: [life, fruit, team, supply],
     dashboards: [
-      { id: 'dash-life',   datasetId: life.id,   name: 'Life',          createdAt: NOW, layout: lifeViz.layout,   tiles: lifeViz.tiles,   measureKey: 'est' },
-      { id: 'dash-fruit',  datasetId: fruit.id,  name: 'Fruit',         createdAt: NOW, layout: fruitViz.layout,  tiles: fruitViz.tiles,  measureKey: 'value' },
-      { id: 'dash-team',   datasetId: team.id,   name: 'Team',          createdAt: NOW, layout: teamViz.layout,   tiles: teamViz.tiles,   measureKey: 'budget' },
-      { id: 'dash-supply', datasetId: supply.id, name: 'Supply chain',  createdAt: NOW, layout: supplyLayout,     tiles: supplyTiles,     measureKey: 'value' },
+      { id: 'dash-life',   datasetId: life.id,   name: 'Life',          createdAt: NOW, layout: lifeViz.layout,   tiles: lifeViz.tiles,   measureKey: 'est',    layoutMode: 'splits', dockTree: defaultDockTree(lifeViz.tiles.map(t => t.id)) },
+      { id: 'dash-fruit',  datasetId: fruit.id,  name: 'Fruit',         createdAt: NOW, layout: fruitViz.layout,  tiles: fruitViz.tiles,  measureKey: 'value',  layoutMode: 'splits', dockTree: defaultDockTree(fruitViz.tiles.map(t => t.id)) },
+      { id: 'dash-team',   datasetId: team.id,   name: 'Team',          createdAt: NOW, layout: teamViz.layout,   tiles: teamViz.tiles,   measureKey: 'budget', layoutMode: 'splits', dockTree: defaultDockTree(teamViz.tiles.map(t => t.id)) },
+      { id: 'dash-supply', datasetId: supply.id, name: 'Supply chain',  createdAt: NOW, layout: supplyLayout,     tiles: supplyTiles,     measureKey: 'value',  layoutMode: 'splits', dockTree: defaultDockTree(supplyTiles.map(t => t.id)) },
     ],
     activeDatasetId: life.id,
     activeDashboardId: 'dash-life',
