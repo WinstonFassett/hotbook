@@ -56,8 +56,15 @@ export interface SankeySceneOptions {
   H: number;
   nodeIds: string[];
   linkDefs: LinkDef[];
+  /** Optional group id per node, aligned to nodeIds. Same-group nodes are
+   *  stacked contiguously within their column; each cluster gets a labeled
+   *  container rendered behind the bars. null/undefined = ungrouped. */
+  groups?: (string | null)[];
   nodeWidth?: number;
   nodePadding?: number;
+  /** Extra px between adjacent nodes from DIFFERENT groups in the same
+   *  column. Ignored if no node has a group. Defaults to 0. */
+  groupGap?: number;
   interp?: (t: number) => string;
   labelSize?: number;
   // Explicit string-id mode (true = node IDs are strings, false = numeric indices)
@@ -128,6 +135,8 @@ export function sankeyScene(
     W, H, nodeIds, linkDefs,
     nodeWidth = 12, nodePadding = 6,
     interp = interpolateCool, labelSize = 10,
+    groups,
+    groupGap = groups ? 16 : 0,
   } = opts;
   const stepFn = opts.stepFn ?? ((v: number, shift: boolean) => dynamicWheelStep(v, shift));
 
@@ -160,14 +169,14 @@ export function sankeyScene(
   // flow never rescales the rest of the diagram (the d3-sankey rubberiness we
   // dropped d3 to avoid). The diagram grows/shrinks in its own space; the viewer
   // frames the announced bounds (below).
-  const topology: SankeyTopology = buildTopology(nodeIds.length, src, tgt);
+  const topology: SankeyTopology = buildTopology(nodeIds.length, src, tgt, groups);
 
   // Choose the ruler ONCE from the initial values so the diagram opens sized to
   // fit ~H, then hold it constant. Every later pixel↔value conversion (drag,
   // wheel, grip placement) uses THIS same pxPerUnit, so all manipulation is at
   // the scale the geometry was drawn at.
   const pxPerUnit = initialPxPerUnit(topology, linkValues.map((l) => l.value.value), H, nodePadding);
-  const dims = { W, pxPerUnit, nodeWidth, nodePadding };
+  const dims = { W, pxPerUnit, nodeWidth, nodePadding, groupGap };
 
   const layout = derive<SankeyLayout>(() =>
     computeLayout(topology, linkValues.map((l) => l.value.value), dims)
@@ -260,6 +269,57 @@ export function sankeyScene(
   const tooltipText = cell("");
   const tooltipAt = cell({ x: 0, y: 0 });
   const tooltipVis = cell(false);
+
+  // ── Group containers ──────────────────────────────────────────────────────
+  // Drawn FIRST so they sit behind ribbons and node bars. One rounded rect
+  // per contiguous (group, column) cluster, expanded slightly past the node
+  // bar so the bar reads as "inside" the group. Labels float just above.
+  if (groups) {
+    const GROUP_PAD_X = 6, GROUP_PAD_Y = 6;
+    const groupBoxesD = derive(() => layout.value.groups);
+    // We can't know up-front how many group boxes will appear; re-render via
+    // a derived count. Cap defensively at nodeIds.length (one box per node
+    // worst case) which is the natural ceiling.
+    const maxBoxes = nodeIds.length;
+    for (let i = 0; i < maxBoxes; i++) {
+      const idx = i;
+      const has = derive(() => groupBoxesD.value[idx] !== undefined);
+      const x = derive(() => {
+        const b = groupBoxesD.value[idx];
+        return b ? b.x0 - GROUP_PAD_X : 0;
+      });
+      const y = derive(() => {
+        const b = groupBoxesD.value[idx];
+        return b ? b.y0 - GROUP_PAD_Y : 0;
+      });
+      const w = derive(() => {
+        const b = groupBoxesD.value[idx];
+        return b ? (b.x1 - b.x0) + GROUP_PAD_X * 2 : 0;
+      });
+      const h = derive(() => {
+        const b = groupBoxesD.value[idx];
+        return b ? (b.y1 - b.y0) + GROUP_PAD_Y * 2 : 0;
+      });
+      const opacity = derive(() => has.value ? 1 : 0);
+      s(rect(x, y, w, h, {
+        fill: "rgba(120,140,180,0.06)",
+        stroke: "rgba(160,180,210,0.35)",
+        strokeWidth: 1,
+        opacity,
+      }));
+      const lblX = derive(() => {
+        const b = groupBoxesD.value[idx];
+        return b ? (b.x0 + b.x1) / 2 : 0;
+      });
+      const lblY = derive(() => {
+        const b = groupBoxesD.value[idx];
+        return b ? b.y0 - GROUP_PAD_Y - 4 : 0;
+      });
+      s(label(Vec.derive(() => ({ x: lblX.value, y: lblY.value })),
+        derive(() => groupBoxesD.value[idx]?.group ?? ""),
+        { size: Math.max(9, labelSize - 1), align: Anchor.Center, fill: "#9aa0a8", opacity }));
+    }
+  }
 
   // ── Ribbons ──────────────────────────────────────────────────────────────
   for (let i = 0; i < linkDefs.length; i++) {

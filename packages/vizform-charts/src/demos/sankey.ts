@@ -245,3 +245,68 @@ export class MdSankeyHierarchy extends Diagram {
     }), { size: 10, align: Anchor.Center, fill: "#9aa0a8" }));
   }
 }
+
+// ---------------------------------------------------------------------------
+// Take 4 (WIN-56 spike): Grouped sankey — genuine flow values between leaf
+// nodes, with optional group/parent membership rendered as containers
+// surrounding the bars. Same DM as the flat sankey (drag/wheel/keyboard);
+// the only addition is per-node group ids plumbed through the layout so
+// same-group nodes stack contiguously and a labeled rect floats behind.
+// ---------------------------------------------------------------------------
+
+// Stylised cross-team flow: 3 source teams → 3 capability groups → 2 outputs.
+// Groups are real (intra-column clustering); links are genuine cross-group
+// flows whose totals matter — every edit re-conserves at each node.
+const GROUPED_NODES = [
+  // sources (org units)
+  "Alice", "Bob", "Carol",
+  // middle (capabilities)
+  "Design", "Build", "Ship",
+  // sinks (initiatives)
+  "Launch", "Retain",
+];
+const GROUPED_GROUPS: (string | null)[] = [
+  "Team A", "Team A", "Team B",
+  "Capabilities", "Capabilities", "Capabilities",
+  "Outcomes", "Outcomes",
+];
+const GROUPED_LINKS: LinkDef[] = [
+  { source: "Alice", target: "Design", init: 8 },
+  { source: "Alice", target: "Build",  init: 6 },
+  { source: "Bob",   target: "Build",  init: 9 },
+  { source: "Bob",   target: "Ship",   init: 4 },
+  { source: "Carol", target: "Design", init: 5 },
+  { source: "Carol", target: "Ship",   init: 7 },
+  { source: "Design", target: "Launch", init: 9 },
+  { source: "Design", target: "Retain", init: 4 },
+  { source: "Build",  target: "Launch", init: 11 },
+  { source: "Build",  target: "Retain", init: 4 },
+  { source: "Ship",   target: "Launch", init: 6 },
+  { source: "Ship",   target: "Retain", init: 5 },
+];
+
+export class MdSankeyGrouped extends Diagram {
+  static styles = `text { pointer-events: none; }`;
+  protected scene(s: Mount): void {
+    const W = 560, H = 360;
+    const view = this.view(W + 160, H + 64);
+    const { focused, hovered, wheelLocked, linkValues, nodeColorProp, linkColorMode } = sankeyScene(this, s, {
+      W, H,
+      nodeIds: GROUPED_NODES,
+      linkDefs: GROUPED_LINKS,
+      groups: GROUPED_GROUPS,
+      stringIds: true,
+      nodePadding: 6,
+      groupGap: 22,
+      interp: interpolateCool,
+      labelSize: 10,
+    });
+    renderColorControls(s, view, nodeColorProp, linkColorMode);
+    s(label(view.bottom.up(40), derive(() => {
+      const i = focused.value ?? wheelLocked.value ?? hovered.value;
+      if (i === null) return "grouped flow · drag bars/grips · cmd+wheel or ↑↓ · Tab cycles links";
+      const lv = linkValues[i]!;
+      return `${lv.source} → ${lv.target}: ${lv.value.value.toFixed(1)} · ↑↓ / cmd+wheel · Tab`;
+    }), { size: 10, align: Anchor.Center, fill: "#9aa0a8" }));
+  }
+}

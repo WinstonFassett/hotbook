@@ -31,6 +31,8 @@ export interface SankeyTopology {
   inc: number[][];
   /** Nodes per column, in stack order (top→bottom). */
   columns: number[][];
+  /** Optional group id per node (null = ungrouped). Stable across renders. */
+  group: (string | null)[];
 }
 
 export interface SankeyDims {
@@ -42,6 +44,19 @@ export interface SankeyDims {
   pxPerUnit: number;
   nodeWidth: number;
   nodePadding: number;
+  /** Extra padding (in addition to nodePadding) inserted between adjacent
+   *  nodes that belong to DIFFERENT groups within the same column. 0 = no
+   *  visual separation between groups. */
+  groupGap?: number;
+}
+
+export interface GroupBox {
+  /** Group id (matches topology.group entries). */
+  group: string;
+  /** Column this cluster belongs to. */
+  layer: number;
+  /** Bounding box around the contiguous node cluster (in data space). */
+  x0: number; x1: number; y0: number; y1: number;
 }
 
 export interface Bounds { x: number; y: number; w: number; h: number }
@@ -63,6 +78,9 @@ export interface LinkBand {
 export interface SankeyLayout {
   nodes: NodeBox[];
   links: LinkBand[];
+  /** One box per contiguous group cluster per column. Empty when no node
+   *  has a group. Order is undefined — consumers key by (group, layer). */
+  groups: GroupBox[];
   /** px per unit value — the CONSTANT ruler this layout was built with. Every
    *  pixel↔value conversion (drag, wheel, grip placement) must use THIS so all
    *  manipulation happens at the same scale the geometry was drawn at. */
@@ -81,7 +99,12 @@ export interface SankeyLayout {
  * layering) so every link points strictly rightward. Stack orders are the input
  * order of nodes/links — stable and predictable for editing.
  */
-export function buildTopology(nodeCount: number, src: number[], tgt: number[]): SankeyTopology {
+export function buildTopology(
+  nodeCount: number,
+  src: number[],
+  tgt: number[],
+  groups?: (string | null)[],
+): SankeyTopology {
   const out: number[][] = Array.from({ length: nodeCount }, () => []);
   const inc: number[][] = Array.from({ length: nodeCount }, () => []);
   for (let i = 0; i < src.length; i++) {
@@ -105,10 +128,33 @@ export function buildTopology(nodeCount: number, src: number[], tgt: number[]): 
   for (let i = 0; i < nodeCount; i++) maxLayer = Math.max(maxLayer, layer[i]!);
   for (let i = 0; i < nodeCount; i++) if (out[i]!.length === 0) layer[i] = maxLayer;
 
+  const group: (string | null)[] = new Array(nodeCount).fill(null);
+  if (groups) for (let i = 0; i < nodeCount; i++) group[i] = groups[i] ?? null;
+
   const columns: number[][] = Array.from({ length: maxLayer + 1 }, () => []);
   for (let i = 0; i < nodeCount; i++) columns[layer[i]!]!.push(i);
 
-  return { nodeCount, layer, maxLayer, src, tgt, out, inc, columns };
+  // Reorder each column so same-group nodes are contiguous. Stable: groups
+  // appear in first-seen order; within a group, original input order is kept.
+  if (groups) {
+    for (let c = 0; c < columns.length; c++) {
+      const col = columns[c]!;
+      const order = new Map<string | null, number>();
+      let nextOrder = 0;
+      for (const n of col) {
+        const g = group[n];
+        if (!order.has(g)) order.set(g, nextOrder++);
+      }
+      col.sort((a, b) => {
+        const ga = order.get(group[a])!;
+        const gb = order.get(group[b])!;
+        if (ga !== gb) return ga - gb;
+        return col.indexOf(a) - col.indexOf(b); // stable within group
+      });
+    }
+  }
+
+  return { nodeCount, layer, maxLayer, src, tgt, out, inc, columns, group };
 }
 
 /** Node throughput per node = max(incoming sum, outgoing sum). */
@@ -144,14 +190,32 @@ export function computeLayout(
   values: number[],
   dims: SankeyDims,
 ): SankeyLayout {
-  const { nodeCount, layer, maxLayer, out, inc, columns } = topology;
+  const { nodeCount, layer, maxLayer, out, inc, columns, group } = topology;
   const { W, pxPerUnit, nodeWidth, nodePadding } = dims;
+  const groupGap = dims.groupGap ?? 0;
 
   const through = throughputs(topology, values);
 
+  // Count group boundaries within a column (adjacent nodes with different
+  // group ids). Each boundary contributes one extra groupGap on top of
+  // the regular nodePadding gap.
+  const groupBoundaries = (col: number[]): number => {
+    let n = 0;
+    for (let i = 1; i < col.length; i++) {
+      if (group[col[i]!] !== group[col[i - 1]!] || group[col[i]!] === null) {
+        // count a boundary whenever group changes OR when either side is
+        // ungrouped (so ungrouped nodes don't accidentally widen the diagram)
+        if (group[col[i]!] !== group[col[i - 1]!]) n++;
+      }
+    }
+    return n;
+  };
+
   // Column heights at the constant ruler; the figure height is the tallest.
   const colHeight = (col: number[]) =>
-    col.reduce((a, n) => a + through[n]! * pxPerUnit, 0) + nodePadding * Math.max(0, col.length - 1);
+    col.reduce((a, n) => a + through[n]! * pxPerUnit, 0) +
+    nodePadding * Math.max(0, col.length - 1) +
+    groupGap * groupBoundaries(col);
   let figH = 0;
   for (const col of columns) figH = Math.max(figH, colHeight(col));
 
@@ -160,13 +224,34 @@ export function computeLayout(
     maxLayer === 0 ? 0 : (l / maxLayer) * (W - nodeWidth);
 
   // Place nodes: stack each column top→bottom, centered against the tallest.
+  // While stacking, also accumulate per-(group, layer) bounding boxes for
+  // contiguous same-group runs so the renderer can draw group containers.
   const nodes: NodeBox[] = new Array(nodeCount);
+  const groupBoxes: GroupBox[] = [];
   for (const col of columns) {
     let y = (figH - colHeight(col)) / 2;
-    for (const n of col) {
+    let prevGroup: string | null | undefined = undefined;
+    let curBox: GroupBox | null = null;
+    for (let i = 0; i < col.length; i++) {
+      const n = col[i]!;
       const h = through[n]! * pxPerUnit;
       const x0 = colX(layer[n]!);
+      // Group-aware spacing: at a group boundary insert groupGap on top of
+      // the standard nodePadding from the previous iteration's tail.
+      if (i > 0 && group[n] !== prevGroup) y += groupGap;
       nodes[n] = { x0, x1: x0 + nodeWidth, y0: y, y1: y + h, value: through[n]!, layer: layer[n]! };
+      const g: string | null = group[n] ?? null;
+      if (g !== null) {
+        if (g !== prevGroup) {
+          curBox = { group: g, layer: layer[n]!, x0, x1: x0 + nodeWidth, y0: y, y1: y + h };
+          groupBoxes.push(curBox);
+        } else if (curBox) {
+          curBox.y1 = y + h;
+        }
+      } else {
+        curBox = null;
+      }
+      prevGroup = g;
       y += h + nodePadding;
     }
   }
@@ -202,7 +287,7 @@ export function computeLayout(
   // Announce true bounds (node bars span x; ribbons stay within the figure height).
   const bounds: Bounds = { x: 0, y: 0, w: W, h: figH };
 
-  return { nodes, links, pxPerUnit, bounds };
+  return { nodes, links, groups: groupBoxes, pxPerUnit, bounds };
 }
 
 /** Constant-width horizontal ribbon path (two mirrored cubic curves). */
