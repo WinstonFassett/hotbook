@@ -310,6 +310,11 @@ interface HierProps {
   onUpdateMany?: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
 }
 
+// Icicle adds an orientation toggle (horizontal partition vs vertical icicle).
+interface IcicleProps extends HierProps {
+  orientation?: 'vertical' | 'horizontal'
+}
+
 function makeHier(tag: string, { nodes, measureKey, depth, sortBy, onUpdate, onUpdateMany }: HierProps) {
   const shapeKey = hierShapeKey(tag, nodes, measureKey, depth, sortBy)
   const valueKey = hierValueKey(nodes, measureKey)
@@ -326,8 +331,13 @@ export function BrLcTreemap(props: HierProps) {
   return <BrLcTile source={makeHier('v-br-treemap', props)} />
 }
 
-export function BrLcIcicle(props: HierProps) {
-  return <BrLcTile source={makeHier('v-br-icicle', props)} />
+export function BrLcIcicle({ orientation = 'horizontal', ...rest }: IcicleProps) {
+  const shapeKey = hierShapeKey('v-br-icicle', rest.nodes, rest.measureKey, rest.depth, rest.sortBy, orientation)
+  const valueKey = hierValueKey(rest.nodes, rest.measureKey)
+  return <BrLcTile source={makeHierSource({
+    tag: 'v-br-icicle', nodes: rest.nodes, measureKey: rest.measureKey, depth: rest.depth, sortBy: rest.sortBy,
+    orientation, shapeKey, valueKey, onUpdate: rest.onUpdate, onUpdateMany: rest.onUpdateMany,
+  })} />
 }
 
 export function BrLcSunburst(props: HierProps) {

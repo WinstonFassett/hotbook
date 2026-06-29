@@ -108,6 +108,7 @@ export interface VizConfigSchema {
     groupBy?: boolean
     xKey?: boolean        // scatter only
     yKey?: boolean        // scatter only
+    orientation?: boolean // vertical | horizontal (icicle/partition)
   }
   gestureModes?: ScalingMode[]
   cascadeSupported?: boolean

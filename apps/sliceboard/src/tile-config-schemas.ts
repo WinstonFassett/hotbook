@@ -19,6 +19,11 @@ const HIER_FULL: VizConfigSchema = {
   pickers: { measure: true, sort: true, depth: true },
 }
 
+// Icicle supports an orientation toggle (horizontal partition vs vertical icicle).
+const HIER_FULL_ORIENT: VizConfigSchema = {
+  pickers: { measure: true, sort: true, depth: true, orientation: true },
+}
+
 export const TILE_CONFIG_SCHEMAS: Map<TileKind, VizConfigSchema> = new Map([
   // ─── treetable ────────────────────────────────────────────────────────────
   ['treetable', { pickers: { measure: true } }],
@@ -40,7 +45,7 @@ export const TILE_CONFIG_SCHEMAS: Map<TileKind, VizConfigSchema> = new Map([
   // ─── bireactive LC-port hier charts ───────────────────────────────────────
   ['br-lc-pack',     HIER_FULL],
   ['br-lc-treemap',  HIER_FULL],
-  ['br-lc-icicle',   HIER_FULL],
+  ['br-lc-icicle',   HIER_FULL_ORIENT],
   ['br-lc-sunburst', HIER_FULL],
 
   // ─── bireactive LC-port graph charts ──────────────────────────────────────
