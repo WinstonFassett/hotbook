@@ -91,7 +91,6 @@ export class MdPieChartLC extends Diagram {
         strokeWidth: 1,
         opacity,
       }));
-      sector.el.style.cursor = "pointer";
       sector.el.addEventListener("pointerenter", () => { if (!wheelController.active) hover.value = d; });
       sector.el.addEventListener("pointerleave", () => { if (!wheelController.active && hover.value === d) hover.value = null; });
       sector.el.addEventListener("click", () => { selected.value = selected.value === d ? null : d; });

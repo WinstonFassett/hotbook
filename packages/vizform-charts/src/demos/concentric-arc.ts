@@ -171,7 +171,6 @@ export class MdConcentricArcLC extends Diagram {
         derive(() => visible.value && rInner.value >= 1 ? arcD(rOuter.value, rInner.value, START, START + TWO_PI, corner.value) : ""),
         { fill: slotColor, opacity: derive(() => { const d = di(); return hover.value === d || selected.value === d ? 0.25 : 0.18; }) }
       ));
-      trackEl.el.style.cursor = "pointer";
       trackEl.el.addEventListener("pointerenter", () => { const d = di(); if (d && !wheelController.active) hover.value = d; });
       trackEl.el.addEventListener("pointerleave", () => { const d = di(); if (d && !wheelController.active && hover.value === d) hover.value = null; });
       trackEl.el.addEventListener("click", () => { const d = di(); if (!d) return; selected.value = selected.value === d ? null : d; this.focus(); });
@@ -193,7 +192,6 @@ export class MdConcentricArcLC extends Diagram {
       const valueStroke = derive(() => { const d = di(); return selected.value === d ? "#fff" : hover.value === d ? (d?.color ?? "none") : "none"; });
       const valueStrokeW = derive(() => { const d = di(); return selected.value === d ? 1.5 : hover.value === d ? 3 : 0; });
       const valueEl = gs(pathD(valueD, { fill: slotColor, stroke: valueStroke, strokeWidth: valueStrokeW }));
-      valueEl.el.style.cursor = "pointer";
       valueEl.el.style.transition = "d 0.1s";
       valueEl.el.addEventListener("pointerenter", () => { const d = di(); if (d && !wheelController.active) hover.value = d; });
       valueEl.el.addEventListener("pointerleave", () => { const d = di(); if (d && !wheelController.active && hover.value === d) hover.value = null; });
