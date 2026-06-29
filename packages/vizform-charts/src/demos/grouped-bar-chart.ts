@@ -110,12 +110,14 @@ export class MdGroupedBarChartLC extends Diagram {
         .padding(0.05)
     );
 
-    const yMax = stacked
-      ? Math.max(1, ...rows.map(rowTotal))
-      : Math.max(1, ...rows.flatMap(r => r.series.map(p => p.value)));
-    // Scale frozen at scene-time (doesn't auto-range during gestures per Principle 15).
-    const yScaleBase = scaleLinear().domain([0, yMax]).range([plotY + plotH.value, plotY]).nice();
-    const yScale = cell(yScaleBase);
+    // Scale auto-ranges to contain all values (re-derives when data changes).
+    const yScale = derive(() => {
+      const data = this.dataCell.value;
+      const yMax = stacked
+        ? Math.max(1, ...data.map(rowTotal))
+        : Math.max(1, ...data.flatMap(r => r.series.map(p => p.value)));
+      return scaleLinear().domain([0, yMax]).range([plotY + plotH.value, plotY]).nice();
+    });
 
     // Y axis baseline.
     const ay1 = derive(() => plotY + plotH.value);
@@ -290,12 +292,14 @@ export class MdGroupedBarChartLC extends Diagram {
         .padding(0.05)
     );
 
-    const xMax = stacked
-      ? Math.max(1, ...rows.map(rowTotal))
-      : Math.max(1, ...rows.flatMap(r => r.series.map(p => p.value)));
-    // Scale frozen at scene-time (doesn't auto-range during gestures per Principle 15).
-    const xScaleBase = scaleLinear().domain([0, xMax]).range([plotX, plotX + plotW.value]).nice();
-    const xScale = cell(xScaleBase);
+    // Scale auto-ranges to contain all values (re-derives when data changes).
+    const xScale = derive(() => {
+      const data = this.dataCell.value;
+      const xMax = stacked
+        ? Math.max(1, ...data.map(rowTotal))
+        : Math.max(1, ...data.flatMap(r => r.series.map(p => p.value)));
+      return scaleLinear().domain([0, xMax]).range([plotX, plotX + plotW.value]).nice();
+    });
 
     // X axis baseline (top of plot doubles as numeric axis line).
     s(line(
