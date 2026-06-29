@@ -658,33 +658,6 @@ export function drillPath(rows: PNode[], drillNodeId: string | null): PNode[] {
   return path
 }
 
-/**
- * Filter `rows` to the subtree rooted at `drillNodeId` (the drilled node plus
- * all descendants). The drilled node's `parentId` is rewritten to `null` so
- * downstream buildBiTree treats it as the real root. null/missing → identity.
- */
-export function drillSubtree(rows: PNode[], drillNodeId: string | null): PNode[] {
-  if (!drillNodeId) return rows
-  const byId = new Map(rows.map(n => [n.id, n]))
-  const root = byId.get(drillNodeId)
-  if (!root) return rows // stale drill id (e.g. from another dataset) — fall back to full tree
-  // BFS down through children
-  const keep = new Set<string>([root.id])
-  const queue = [root.id]
-  while (queue.length) {
-    const pid = queue.shift()!
-    for (const r of rows) {
-      if (r.parentId === pid && !keep.has(r.id)) {
-        keep.add(r.id)
-        queue.push(r.id)
-      }
-    }
-  }
-  return rows
-    .filter(r => keep.has(r.id))
-    .map(r => r.id === root.id ? { ...r, parentId: null } : r)
-}
-
 // ─── Mutations ────────────────────────────────────────────────────────────────
 
 export function updateRow(ws: Workspace, dsId: string, rowId: string, patch: Partial<PNode>): Workspace {
