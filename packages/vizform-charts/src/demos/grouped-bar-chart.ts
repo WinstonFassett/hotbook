@@ -110,13 +110,17 @@ export class MdGroupedBarChartLC extends Diagram {
         .padding(0.05)
     );
 
-    // Scale auto-ranges to contain all values (re-derives when data changes).
-    const yScale = derive(() => {
+    // Reactive yMax for scale and axis labels.
+    const yMax = derive(() => {
       const data = this.dataCell.value;
-      const yMax = stacked
+      return stacked
         ? Math.max(1, ...data.map(rowTotal))
         : Math.max(1, ...data.flatMap(r => r.series.map(p => p.value)));
-      return scaleLinear().domain([0, yMax]).range([plotY + plotH.value, plotY]).nice();
+    });
+
+    // Scale auto-ranges to contain all values (re-derives when data changes).
+    const yScale = derive(() => {
+      return scaleLinear().domain([0, yMax.value]).range([plotY + plotH.value, plotY]).nice();
     });
 
     // Y axis baseline.
@@ -130,15 +134,15 @@ export class MdGroupedBarChartLC extends Diagram {
     // Y axis ticks (4 evenly-spaced).
     const TICKS = 4;
     for (let t = 0; t <= TICKS; t++) {
-      const v = (yMax * t) / TICKS;
-      const ty = derive(() => yScale.value(v));
+      const v = derive(() => (yMax.value * t) / TICKS);
+      const ty = derive(() => yScale.value(v.value));
       s(line(
         Vec.derive(() => ({ x: plotX - 4, y: ty.value })),
         Vec.derive(() => ({ x: plotX, y: ty.value })),
         { thin: true, opacity: 0.4, stroke: "#888" },
       ));
       s(label(Vec.derive(() => ({ x: plotX - 8, y: ty.value + 3 })),
-        `${Math.round(v)}`, { size: 10, align: Anchor.Right, fill: "#888", opacity: 0.8 }));
+        derive(() => `${Math.round(v.value)}`), { size: 10, align: Anchor.Right, fill: "#888", opacity: 0.8 }));
     }
 
     // Category labels.
@@ -292,13 +296,17 @@ export class MdGroupedBarChartLC extends Diagram {
         .padding(0.05)
     );
 
-    // Scale auto-ranges to contain all values (re-derives when data changes).
-    const xScale = derive(() => {
+    // Reactive xMax for scale and axis labels.
+    const xMax = derive(() => {
       const data = this.dataCell.value;
-      const xMax = stacked
+      return stacked
         ? Math.max(1, ...data.map(rowTotal))
         : Math.max(1, ...data.flatMap(r => r.series.map(p => p.value)));
-      return scaleLinear().domain([0, xMax]).range([plotX, plotX + plotW.value]).nice();
+    });
+
+    // Scale auto-ranges to contain all values (re-derives when data changes).
+    const xScale = derive(() => {
+      return scaleLinear().domain([0, xMax.value]).range([plotX, plotX + plotW.value]).nice();
     });
 
     // X axis baseline (top of plot doubles as numeric axis line).
@@ -309,15 +317,15 @@ export class MdGroupedBarChartLC extends Diagram {
     ));
     const TICKS = 4;
     for (let t = 0; t <= TICKS; t++) {
-      const v = (xMax * t) / TICKS;
-      const tx = derive(() => xScale.value(v));
+      const v = derive(() => (xMax.value * t) / TICKS);
+      const tx = derive(() => xScale.value(v.value));
       s(line(
         Vec.derive(() => ({ x: tx.value, y: plotY - 4 })),
         Vec.derive(() => ({ x: tx.value, y: plotY })),
         { thin: true, opacity: 0.4, stroke: "#888" },
       ));
       s(label(Vec.derive(() => ({ x: tx.value, y: plotY - 8 })),
-        `${Math.round(v)}`, { size: 10, align: Anchor.Center, fill: "#888", opacity: 0.8 }));
+        derive(() => `${Math.round(v.value)}`), { size: 10, align: Anchor.Center, fill: "#888", opacity: 0.8 }));
     }
 
     // Category labels on left.
