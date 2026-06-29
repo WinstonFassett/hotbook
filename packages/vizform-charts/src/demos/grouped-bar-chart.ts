@@ -513,10 +513,26 @@ export class MdGroupedBarChartLC extends Diagram {
         if (!t) return;
         const { y } = localPoint(pe);
         const row = (this.dataCell.value as GroupedBar[]).find(r => (r.id ?? r.label) === t.rowId);
-        const seg = row?.series.find(s => s.name === t.seriesName);
-        if (!seg) return;
-        // Set value to match y position directly (like bar-chart.ts).
-        mutateSegment(t, yScale.value.invert(y) - seg.value);
+        if (!row) return;
+        const segIdx = row.series.findIndex(s => s.name === t.seriesName);
+        if (segIdx < 0) return;
+        const seg = row.series[segIdx]!;
+
+        if (stacked) {
+          // For stacked: y position represents total stack height at cursor.
+          // Compute accumulated values below this segment.
+          let accBelow = 0;
+          for (let i = 0; i < segIdx; i++) {
+            accBelow += row.series[i]!.value;
+          }
+          // New segment value = (stack height at y) - (values below)
+          const stackHeight = yScale.value.invert(y);
+          const newValue = Math.max(0, stackHeight - accBelow);
+          mutateSegment(t, newValue - seg.value);
+        } else {
+          // For grouped: y position maps directly to segment value.
+          mutateSegment(t, yScale.value.invert(y) - seg.value);
+        }
       },
       onEnd: () => {
         if (dragPointerId >= 0 && (this as any).hasPointerCapture?.(dragPointerId)) {
