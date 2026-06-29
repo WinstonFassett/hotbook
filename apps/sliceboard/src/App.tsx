@@ -612,19 +612,20 @@ export function App() {
   // source of truth on entry/switch, and the store as the leading edge of
   // user intent on exit. Mirror store → dash via an effect; hydrate dash →
   // store when the active dashboard's persisted value changes.
-  const liveDrill = useDrillNodeId()
-  const persistedDrill = dash?.drillNodeId ?? null
+  const liveDrills = hudStore.getSnapshot().drills
+  const persistedDrills = dash?.drills ?? (dash?.drillNodeId ? { default: dash.drillNodeId } : {})
   useEffect(() => {
-    if (hudStore.getSnapshot().drillNodeId !== persistedDrill) {
-      hudStore.hydrateDrill(persistedDrill)
+    const currentDrills = hudStore.getSnapshot().drills
+    if (JSON.stringify(currentDrills) !== JSON.stringify(persistedDrills)) {
+      hudStore.hydrateDrills(persistedDrills)
     }
-  }, [dash?.id, persistedDrill])
+  }, [dash?.id, persistedDrills])
   useEffect(() => {
     if (!dash) return
-    if ((dash.drillNodeId ?? null) === liveDrill) return
-    commit(updateDashboard(ws, { ...dash, drillNodeId: liveDrill }))
+    if (JSON.stringify(dash.drills ?? {}) === JSON.stringify(liveDrills)) return
+    commit(updateDashboard(ws, { ...dash, drills: liveDrills }))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [liveDrill])
+  }, [liveDrills])
 
   const switchDataset = useCallback((id: string) => {
     const next = { ...ws, activeDatasetId: id }
