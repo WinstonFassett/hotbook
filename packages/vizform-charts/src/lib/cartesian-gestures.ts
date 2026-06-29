@@ -132,12 +132,6 @@ export function attachCartesianGestures<TData>(
     if (rows.length === 0) return;
     const cur = state.selected.value;
     const i = cur ? rows.indexOf(cur) : -1;
-    if (ke.key === "Tab") {
-      state.selected.value = ke.shiftKey
-        ? rows[(i <= 0 ? rows.length : i) - 1] ?? null
-        : rows[(i + 1) % rows.length] ?? null;
-      ke.preventDefault(); return;
-    }
     if (ke.key === "ArrowRight") { state.selected.value = rows[(i + 1) % rows.length] ?? null; ke.preventDefault(); return; }
     if (ke.key === "ArrowLeft") { state.selected.value = rows[(i <= 0 ? rows.length : i) - 1] ?? null; ke.preventDefault(); return; }
     if (!cur || !canEdit()) return;

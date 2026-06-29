@@ -218,10 +218,11 @@ export class MdBarChartLC extends Diagram {
       const rows = data.value as Bar[];
       const cur = selected.value;
       const i = cur ? rows.indexOf(cur) : -1;
-      if (ke.key === "Tab" || ke.key === "ArrowRight" || ke.key === "ArrowLeft") {
-        const next = (ke.key === "ArrowLeft" || (ke.key === "Tab" && ke.shiftKey))
-          ? rows[(i <= 0 ? rows.length : i) - 1] ?? null : rows[(i + 1) % rows.length] ?? null;
-        selected.value = next; ke.preventDefault(); return;
+      if (ke.key === "ArrowRight" || ke.key === "ArrowLeft") {
+        selected.value = ke.key === "ArrowLeft"
+          ? rows[(i <= 0 ? rows.length : i) - 1] ?? null
+          : rows[(i + 1) % rows.length] ?? null;
+        ke.preventDefault(); return;
       }
       if (!cur) return;
       const step = dynamicWheelStep(cur.value, ke.shiftKey);
@@ -451,10 +452,11 @@ export class MdBarChartLC extends Diagram {
       const rows = data.value as Bar[];
       const cur = selected.value;
       const i = cur ? rows.indexOf(cur) : -1;
-      if (ke.key === "Tab" || ke.key === "ArrowDown" || ke.key === "ArrowUp") {
-        const next = (ke.key === "ArrowUp" || (ke.key === "Tab" && ke.shiftKey))
-          ? rows[(i <= 0 ? rows.length : i) - 1] ?? null : rows[(i + 1) % rows.length] ?? null;
-        selected.value = next; ke.preventDefault(); return;
+      if (ke.key === "ArrowDown" || ke.key === "ArrowUp") {
+        selected.value = ke.key === "ArrowUp"
+          ? rows[(i <= 0 ? rows.length : i) - 1] ?? null
+          : rows[(i + 1) % rows.length] ?? null;
+        ke.preventDefault(); return;
       }
       if (!cur) return;
       const step = ke.shiftKey ? 5 : 1;

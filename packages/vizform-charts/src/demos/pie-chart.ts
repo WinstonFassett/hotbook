@@ -207,11 +207,10 @@ export class MdPieChartLC extends Diagram {
       const rows = data.value as Slice[];
       const cur = selected.value;
       const i = cur ? rows.indexOf(cur) : -1;
-      if (ke.key === "Tab" || ke.key === "ArrowRight" || ke.key === "ArrowLeft") {
-        const next = (ke.key === "ArrowLeft" || (ke.key === "Tab" && ke.shiftKey))
+      if (ke.key === "ArrowRight" || ke.key === "ArrowLeft") {
+        selected.value = ke.key === "ArrowLeft"
           ? rows[(i <= 0 ? rows.length : i) - 1] ?? null
           : rows[(i + 1) % rows.length] ?? null;
-        selected.value = next;
         ke.preventDefault(); return;
       }
       if (!cur) return;

@@ -233,13 +233,6 @@ export function sankeyScene(
       if (focused.value !== null) { focused.value = null; e.preventDefault(); }
       return;
     }
-    if (e.key === "Tab") {
-      const cur = focused.value;
-      focused.value = e.shiftKey
-        ? ((cur ?? 0) - 1 + linkValues.length) % linkValues.length
-        : ((cur ?? -1) + 1) % linkValues.length;
-      e.preventDefault(); return;
-    }
     const idx = focused.value;
     if (idx === null) return;
     const v = linkValues[idx]!.value;
