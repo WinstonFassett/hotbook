@@ -26,11 +26,17 @@ export class MdIcicleLC extends Diagram {
   static styles = `text { pointer-events: none; }${FILL_STYLE}`
   externalRoot?: BiNode
   maxDepth?: number
+  /** Icicle orientation. "horizontal" (default) stacks depth levels along the
+   *  x-axis with siblings split vertically — a classic partition chart. "vertical"
+   *  stacks depth along y with siblings split horizontally (the original icicle). */
+  orientation?: "horizontal" | "vertical"
   protected scene(s: Mount): void {
     const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
     const view = this.view(Wc, Hc);
     this.tabIndex = 0;
     this.style.outline = "none";
+
+    const isHoriz = (this.orientation ?? "horizontal") === "horizontal";
 
     const root = this.externalRoot ?? portfolio();
     const parentIdx = buildParentIndex(root);
@@ -49,23 +55,39 @@ export class MdIcicleLC extends Diagram {
     const layout = derive(() => {
       const h = buildHierarchy(root);
       const totalDepth = h.height; // levels below root
-      // partition distributes H across (totalDepth+1) levels (depth 0 through totalDepth).
-      // We skip depth 0 in rendering. To make visible rows fill Hc exactly, scale partition
-      // height so one extra row fits above the viewport, then offset y by rowH to shift
-      // visible rows up to y=0.
+      // partition distributes the depth-axis across (totalDepth+1) levels
+      // (depth 0 through totalDepth). We skip depth 0 in rendering. To make
+      // visible rows fill the depth canvas dimension exactly, scale the
+      // partition depth extent so one extra row fits above the viewport, then
+      // shift depth coords by one row so depth-1 tiles start at 0.
       const visibleDepth = maxD !== undefined ? Math.min(maxD, totalDepth) : totalDepth;
-      const scaledH = visibleDepth > 0 ? Hc.value * (totalDepth + 1) / visibleDepth : Hc.value;
-      partition<BiNode>().size([Wc.value, scaledH])(h);
-      const rowH = visibleDepth > 0 ? Hc.value / visibleDepth : 0;
+      // d3 partition.size([x, y]) divides siblings along x and stacks depth
+      // along y. For horizontal we feed the sibling axis as the canvas height
+      // and the depth axis as the canvas width, then swap coords in the map.
+      const sibAxis = isHoriz ? Hc.value : Wc.value;
+      const depthCanvas = isHoriz ? Wc.value : Hc.value;
+      const scaledDepth = visibleDepth > 0 ? depthCanvas * (totalDepth + 1) / visibleDepth : depthCanvas;
+      partition<BiNode>().size([sibAxis, scaledDepth])(h);
+      const rowDepth = visibleDepth > 0 ? depthCanvas / visibleDepth : 0;
       const map = new Map<BiNode, HierarchyRectangularNode<BiNode>>();
       h.each((d) => {
         const node = d as HierarchyRectangularNode<BiNode>;
-        // Shift all y coords up by one row so depth-1 tiles start at y=0.
-        map.set(d.data, {
-          ...node,
-          y0: node.y0 - rowH,
-          y1: node.y1 - rowH,
-        } as HierarchyRectangularNode<BiNode>);
+        if (isHoriz) {
+          // Swap: partition x (sibling) → canvas y, partition y (depth) → canvas x.
+          map.set(d.data, {
+            ...node,
+            x0: node.y0 - rowDepth,
+            x1: node.y1 - rowDepth,
+            y0: node.x0,
+            y1: node.x1,
+          } as HierarchyRectangularNode<BiNode>);
+        } else {
+          map.set(d.data, {
+            ...node,
+            y0: node.y0 - rowDepth,
+            y1: node.y1 - rowDepth,
+          } as HierarchyRectangularNode<BiNode>);
+        }
       });
       return map;
     });
@@ -113,12 +135,15 @@ export class MdIcicleLC extends Diagram {
     }
 
     // Boundary-knob resize handles: for each parent with >=2 children, drop a
-    // draggable pill on each interior x-boundary. The two adjacent siblings a,b
-    // share a contiguous x-span [a.x0, b.x1]; the boundary sits where their
-    // widths split proportional to value. Dragging reapportions a.total/b.total
-    // (sum preserved by the group's Num.lens) and the partition layout
-    // re-derives reactively. Same lens as the Budget Tree demo, positioned from
-    // the live layout map. Skip the synthetic root row (depth 0).
+    // draggable pill on each interior sibling boundary. The two adjacent
+    // siblings a,b share a contiguous span along the sibling axis; the boundary
+    // sits where their widths split proportional to value. Dragging
+    // reapportions a.total/b.total (sum preserved by the group's Num.lens) and
+    // the partition layout re-derives reactively. Same lens as the Budget Tree
+    // demo, positioned from the live layout map. Skip the synthetic root row
+    // (depth 0). Orientation picks which canvas axis the boundary runs along:
+    // vertical icicle → boundary is vertical, knob drags along x (ew-resize);
+    // horizontal icicle → boundary is horizontal, knob drags along y (ns-resize).
     if (!this.hasAttribute("no-handles")) {
       for (const { node: parent, depth } of walkWithDepth(root)) {
         if (maxD !== undefined && depth >= maxD) continue;
@@ -129,12 +154,14 @@ export class MdIcicleLC extends Diagram {
           const bNode = kids[i]!;
           const a = aNode.value.total;
           const b = bNode.value.total;
-          // Live span geometry: [spanX0, spanX1] covers both siblings; row Y band
-          // comes from either child's depth row (same y0/y1).
-          const spanX0 = derive(() => layout.value.get(aNode)?.x0 ?? 0);
-          const spanX1 = derive(() => layout.value.get(bNode)?.x1 ?? 0);
-          const rowY0 = derive(() => layout.value.get(aNode)?.y0 ?? 0);
-          const rowY1 = derive(() => layout.value.get(aNode)?.y1 ?? 0);
+          // Live span geometry along the SIBLING axis: [spanA0, spanA1] covers
+          // both siblings. The depth-axis band [rowA0, rowA1] comes from either
+          // child's depth row. For vertical, sibling axis = x, depth axis = y;
+          // for horizontal, sibling axis = y, depth axis = x.
+          const spanA0 = derive(() => isHoriz ? (layout.value.get(aNode)?.y0 ?? 0) : (layout.value.get(aNode)?.x0 ?? 0));
+          const spanA1 = derive(() => isHoriz ? (layout.value.get(bNode)?.y1 ?? 0) : (layout.value.get(bNode)?.x1 ?? 0));
+          const rowA0 = derive(() => isHoriz ? (layout.value.get(aNode)?.x0 ?? 0) : (layout.value.get(aNode)?.y0 ?? 0));
+          const rowA1 = derive(() => isHoriz ? (layout.value.get(aNode)?.x1 ?? 0) : (layout.value.get(aNode)?.y1 ?? 0));
 
           // Drag target: a Vec lens whose ONLY writable sources are the two
           // value cells (a, b). Span geometry is read-only layout output, so it's
@@ -142,24 +169,27 @@ export class MdIcicleLC extends Diagram {
           // lens sources corrupts the backward-propagation graph (propagateBwd
           // reads `.parent` on them and throws). The read side here is only used
           // by drag() to seed the gesture; the *visual* position is a separate
-          // reactive derive (knobX) so the pill tracks layout changes live.
+          // reactive derive (knobPos) so the pill tracks layout changes live.
           const knob = Vec.lens(
             [a, b] as const,
             (vals: readonly [number, number]) => {
               const [va, vb] = vals;
-              const x0 = spanX0.peek();
-              const x1 = spanX1.peek();
+              const s0 = spanA0.peek();
+              const s1 = spanA1.peek();
               const sum = va + vb;
               const frac = sum === 0 ? 0.5 : va / sum;
-              return { x: x0 + frac * (x1 - x0), y: (rowY0.peek() + rowY1.peek()) / 2 };
+              const along = s0 + frac * (s1 - s0);
+              const across = (rowA0.peek() + rowA1.peek()) / 2;
+              return isHoriz ? { x: across, y: along } : { x: along, y: across };
             },
             (target, vals) => {
               const [va, vb] = vals;
-              const x0 = spanX0.peek();
-              const x1 = spanX1.peek();
+              const s0 = spanA0.peek();
+              const s1 = spanA1.peek();
               const sum = va + vb;
-              if (sum === 0 || x1 <= x0) return [va, vb];
-              let frac = (target.x - x0) / (x1 - x0);
+              if (sum === 0 || s1 <= s0) return [va, vb];
+              const t = isHoriz ? target.y : target.x;
+              let frac = (t - s0) / (s1 - s0);
               frac = Math.max(0, Math.min(1, frac));
               const newA = frac * sum;
               return [newA, sum - newA];
@@ -168,10 +198,12 @@ export class MdIcicleLC extends Diagram {
 
           const knobPos = Vec.derive(() => {
             const va = a.value, vb = b.value;
-            const x0 = spanX0.value, x1 = spanX1.value;
+            const s0 = spanA0.value, s1 = spanA1.value;
             const sum = va + vb;
             const frac = sum === 0 ? 0.5 : va / sum;
-            return { x: x0 + frac * (x1 - x0), y: (rowY0.value + rowY1.value) / 2 };
+            const along = s0 + frac * (s1 - s0);
+            const across = (rowA0.value + rowA1.value) / 2;
+            return isHoriz ? { x: across, y: along } : { x: along, y: across };
           });
           const active = cell(false);
           const dot = s(
@@ -188,7 +220,7 @@ export class MdIcicleLC extends Diagram {
             onStart: () => { active.value = true; },
             onEnd: () => { active.value = false; },
           });
-          dot.el.style.cursor = "ew-resize";
+          dot.el.style.cursor = isHoriz ? "ns-resize" : "ew-resize";
           dot.el.addEventListener("pointerenter", () => { active.value = true; });
           dot.el.addEventListener("pointerleave", () => { active.value = false; });
         }

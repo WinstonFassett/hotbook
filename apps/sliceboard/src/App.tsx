@@ -137,7 +137,7 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
   // All BR-LC flat charts get the same value-ordered nodes (natural order when
   // sortBy='index'). The chart draws the order it's handed; it owns no sort.
   if (tile.kind === 'br-lc-bar')            return <BrLcBar nodes={sortedNodes} measureKey={mk} maxItems={tile.maxItems} orientation={tile.orientation} colorMode={tile.colorMode} labelMode={tile.labelMode} valueMode={tile.valueMode} minBandSize={tile.minBandSize} onUpdate={onNodeUpdate} />
-  if (tile.kind === 'br-lc-bands')          return <BrLcBar nodes={sortedNodes} measureKey={mk} maxItems={tile.maxItems} orientation="horizontal" colorMode="palette" labelMode="inside" valueMode="inside" onUpdate={onNodeUpdate} />
+  if (tile.kind === 'br-lc-bands')          return <BrLcBar nodes={sortedNodes} measureKey={mk} maxItems={tile.maxItems} orientation={tile.orientation ?? 'horizontal'} colorMode="palette" labelMode="inside" valueMode="inside" onUpdate={onNodeUpdate} />
   if (tile.kind === 'br-lc-line')           return <BrLcLine nodes={sortedNodes} measureKey={mk} onUpdate={onNodeUpdate} />
   if (tile.kind === 'br-lc-area')           return <BrLcArea nodes={sortedNodes} measureKey={mk} onUpdate={onNodeUpdate} />
   if (tile.kind === 'br-lc-scatter')        return <BrLcScatter nodes={sortedNodes} xKey={tile.xKey ?? '_index'} yKey={tile.yKey ?? mk} onUpdate={onNodeUpdate} />
@@ -150,7 +150,7 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
   // ── BR-LC hierarchical charts ────────────────────────────────────────────
   if (tile.kind === 'br-lc-pack')           return <BrLcPack nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
   if (tile.kind === 'br-lc-treemap')        return <BrLcTreemap nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
-  if (tile.kind === 'br-lc-icicle')         return <BrLcIcicle nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
+  if (tile.kind === 'br-lc-icicle')         return <BrLcIcicle nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} orientation={tile.orientation} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
   if (tile.kind === 'br-lc-sunburst')       return <BrLcSunburst nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
   if (tile.kind === 'br-lc-sankey')         return <BrLcSankey edges={ds.edges ?? []} />
   if (tile.kind === 'br-lc-sankey-flow')    return <BrLcSankeyFlow />
@@ -207,7 +207,7 @@ const GROUPBY_KINDS = new Set<TileKind>(['br-lc-bar', 'br-lc-line', 'br-lc-area'
 const SCROLL_KINDS = new Set<TileKind>(['bands', 'br-lc-sankey'])
 
 function TileCard({
-  tile, ds, measureKey, onRemove, onMeasureChange, onXKeyChange, onYKeyChange, onDepthChange, onSortChange, onGroupByChange, onNodeUpdate, onNodesUpdate, onNodeReorder, availableMeasures,
+  tile, ds, measureKey, onRemove, onMeasureChange, onXKeyChange, onYKeyChange, onDepthChange, onSortChange, onOrientationChange, onGroupByChange, onNodeUpdate, onNodesUpdate, onNodeReorder, availableMeasures,
 }: {
   tile: Tile
   ds: Dataset
@@ -218,6 +218,7 @@ function TileCard({
   onYKeyChange: (key: string) => void
   onDepthChange: (depth: number) => void
   onSortChange: (sortBy: 'index' | 'value') => void
+  onOrientationChange: (orientation: 'vertical' | 'horizontal') => void
   onGroupByChange: (key: string | undefined) => void
   onNodeUpdate: (rowId: string, measures: PNode['measures']) => void
   onNodesUpdate: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
@@ -229,6 +230,9 @@ function TileCard({
   const showGroupBy = pickers.groupBy && ds.dimDefs.length > 0
   const depth = tile.depth ?? 0 // 0 = "All" (show full tree)
   const sortBy = tile.sortBy ?? 'index'
+  // Orientation default is kind-specific: bar defaults to vertical, icicle and
+  // bands default to horizontal.
+  const orientation = tile.orientation ?? (tile.kind === 'br-lc-bar' ? 'vertical' : 'horizontal')
   return (
     <div className="tile-card">
       <div className="tile-header">
@@ -256,6 +260,17 @@ function TileCard({
             >
               <option value="index">Order</option>
               <option value="value">Value</option>
+            </select>
+          )}
+          {pickers.orientation && (
+            <select
+              className="tile-measure-select"
+              value={orientation}
+              onChange={e => onOrientationChange(e.target.value as 'vertical' | 'horizontal')}
+              title="Orientation"
+            >
+              <option value="horizontal">Horizontal</option>
+              <option value="vertical">Vertical</option>
             </select>
           )}
           {pickers.xKey && pickers.yKey ? (
@@ -729,6 +744,11 @@ export function App() {
     commit(updateDashboard(ws, { ...dash, tiles: dash.tiles.map(t => t.id === tileId ? { ...t, groupBy } : t) }))
   }, [ws, dash])
 
+  const handleTileOrientation = useCallback((tileId: string, orientation: 'vertical' | 'horizontal') => {
+    if (!dash) return
+    commit(updateDashboard(ws, { ...dash, tiles: dash.tiles.map(t => t.id === tileId ? { ...t, orientation } : t) }))
+  }, [ws, dash])
+
   return (
     <div className="sb-root">
       <div className="sb-topbar">
@@ -767,6 +787,7 @@ export function App() {
             onTileYKey={handleTileYKey}
             onTileDepth={handleTileDepth}
             onTileSort={handleTileSort}
+            onTileOrientation={handleTileOrientation}
             onTileGroupBy={handleTileGroupBy}
             onNodeUpdate={handleNodeUpdate}
             onNodesUpdate={handleNodesUpdate}
@@ -778,7 +799,7 @@ export function App() {
   )
 }
 
-function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeasure, onTileXKey, onTileYKey, onTileDepth, onTileSort, onTileGroupBy, onNodeUpdate, onNodesUpdate, onNodeReorder }: {
+function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeasure, onTileXKey, onTileYKey, onTileDepth, onTileSort, onTileOrientation, onTileGroupBy, onNodeUpdate, onNodesUpdate, onNodeReorder }: {
   dash: Dashboard
   ds: Dataset
   measures: { key: string; label: string }[]
@@ -789,6 +810,7 @@ function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeas
   onTileYKey: (tileId: string, key: string) => void
   onTileDepth: (tileId: string, depth: number) => void
   onTileSort: (tileId: string, sortBy: 'index' | 'value') => void
+  onTileOrientation: (tileId: string, orientation: 'vertical' | 'horizontal') => void
   onTileGroupBy: (tileId: string, key: string | undefined) => void
   onNodeUpdate: (rowId: string, measures: PNode['measures']) => void
   onNodesUpdate: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
@@ -819,6 +841,7 @@ function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeas
                 onYKeyChange={key => onTileYKey(tile.id, key)}
                 onDepthChange={d => onTileDepth(tile.id, d)}
                 onSortChange={s => onTileSort(tile.id, s)}
+                onOrientationChange={o => onTileOrientation(tile.id, o)}
                 onGroupByChange={k => onTileGroupBy(tile.id, k)}
                 onNodeUpdate={onNodeUpdate}
                 onNodesUpdate={onNodesUpdate}
