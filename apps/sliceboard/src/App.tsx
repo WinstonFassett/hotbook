@@ -94,21 +94,17 @@ const TILE_LABELS: Record<TileKind, string> = {
 function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNodeReorder }: { tile: Tile; ds: Dataset; measureKey: string; onNodeUpdate: (rowId: string, measures: PNode['measures']) => void; onNodesUpdate: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void; onNodeReorder: (orderedIds: string[]) => void }) {
   const mk = tile.measureKey ?? measureKey
   const hud = useHudStore()
-  const { hoverId, selectionId, focusId, drillNodeId } = hud
+  const { hoverId, selectionId, focusId } = hud
   const onHover = (id: string | null) => hudStore.setHover(id)
   const onSelect = (id: string) => hudStore.setSelection(id)
   const onFocus = (id: string) => hudStore.setFocus(id)
 
   const depth = tile.depth || undefined // 0/undefined = all levels (chart shows full tree)
   const sortBy = tile.sortBy ?? 'index'
-  // Drill re-roots hierarchical tiles before any other transform. groupBy can
-  // synthesize a virtual parent on top of the drilled subtree; that's fine
-  // because drillSubtree returns plain PNodes the rest of the pipeline already
-  // understands. Drill only affects hier kinds — flat charts ignore it because
-  // their leaf set under the drill scope is just a subset of all leaves, which
-  // is still what we want (focused subset cross-tile).
-  const drilledRows = drillSubtree(ds.rows, drillNodeId)
-  const rawNodes = colorByGroup(tile.groupBy ? applyGroupBy(drilledRows, tile.groupBy) : drilledRows)
+  // No more global drillSubtree — each hier chart receives the full dataset and
+  // drills internally via scale remap (not data re-root). Flat charts get the
+  // full dataset as well; they just show all leaves.
+  const rawNodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.rows, tile.groupBy) : ds.rows)
   const nodes = sortBy === 'value'
     ? [...rawNodes]
         .sort((a, b) => (b.measures[mk] ?? 0) - (a.measures[mk] ?? 0))

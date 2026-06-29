@@ -100,8 +100,10 @@ export interface Dashboard {
   layout: LayoutItem[]
   tiles: Tile[]
   measureKey: string
-  /** Persisted drill scope (cross-tile). null/undefined = full tree from real
-   *  root; non-null = every hierarchical tile re-roots at this PNode id. */
+  /** Persisted drill scope map: drillKey → drillNodeId. Tiles with same drillKey
+   *  share drill context. Each chart drills internally via scale remap. */
+  drills?: Record<string, string | null>
+  /** Legacy single drill scope - migrated to drills['default'] on load. */
   drillNodeId?: string | null
 }
 

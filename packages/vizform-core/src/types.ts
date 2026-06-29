@@ -108,10 +108,11 @@ export interface VizConfigSchema {
     groupBy?: boolean
     xKey?: boolean        // scatter only
     yKey?: boolean        // scatter only
-    orientation?: boolean // vertical | horizontal (icicle/partition)
   }
   gestureModes?: ScalingMode[]
   cascadeSupported?: boolean
   fixedTotalSupported?: boolean
   scrollBody?: boolean    // replaces SCROLL_KINDS
+  drillKey?: string       // default "default" — tiles with same drillKey share drill context
+  showBreadcrumb?: boolean // default true for hier charts when drilled
 }
