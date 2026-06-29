@@ -45,20 +45,32 @@ export function makeSplit(direction: DockDir, children: DockNode[], sizes?: numb
   return { kind: 'split', id: nid(), direction, children, sizes: s }
 }
 
-/** Seed layout from a flat tile list. 1: single group. 2: row of two groups
- *  (one tile each). 3+: 2-col grid (left/right `col` stacks). Matches the
- *  user's "2×2 or 2×1 to start" guidance — short layouts skip the col
- *  wrappers so the user isn't immediately asked to think nested. */
+/** Seed layout from a flat tile list. Creates a 2×2 or 2×1 grid of groups
+ *  where each group contains multiple tabs. 1-2 tiles: single row. 3-4 tiles:
+ *  2×1 row. 5+ tiles: 2×2 grid (4 groups max for initial layout, rest go into
+ *  first group as tabs). User can drag tabs between groups afterward. */
 export function defaultDockTree(tileIds: string[]): DockNode | null {
   if (tileIds.length === 0) return null
   if (tileIds.length === 1) return makeGroup([makePanel(tileIds[0]!)])
   if (tileIds.length === 2) {
+    // 2 tiles → 2 groups side-by-side (2×1)
     return makeSplit('row', tileIds.map(id => makeGroup([makePanel(id)])))
   }
-  const half = Math.ceil(tileIds.length / 2)
-  const left = makeSplit('col', tileIds.slice(0, half).map(id => makeGroup([makePanel(id)])))
-  const right = makeSplit('col', tileIds.slice(half).map(id => makeGroup([makePanel(id)])))
-  return makeSplit('row', [left, right])
+  if (tileIds.length <= 4) {
+    // 3-4 tiles → 2×1 (two groups side-by-side, distribute tiles as tabs)
+    const half = Math.ceil(tileIds.length / 2)
+    const leftPanels = tileIds.slice(0, half).map(makePanel)
+    const rightPanels = tileIds.slice(half).map(makePanel)
+    return makeSplit('row', [makeGroup(leftPanels), makeGroup(rightPanels)])
+  }
+  // 5+ tiles → 2×2 grid (4 groups, distribute first 4 tiles one per group, rest as tabs in first group)
+  const topLeft = makeGroup([makePanel(tileIds[0]!), ...tileIds.slice(4).map(makePanel)])
+  const topRight = makeGroup([makePanel(tileIds[1]!)])
+  const bottomLeft = makeGroup([makePanel(tileIds[2]!)])
+  const bottomRight = makeGroup([makePanel(tileIds[3]!)])
+  const topRow = makeSplit('row', [topLeft, topRight])
+  const bottomRow = makeSplit('row', [bottomLeft, bottomRight])
+  return makeSplit('col', [topRow, bottomRow])
 }
 
 /** Walk the tree and collect every group (depth-first, left-to-right). */
@@ -171,6 +183,28 @@ export function removeTileFromDock(node: DockNode | null, tileId: string): DockN
     const activeId = g.activeId && panels.some(p => p.id === g.activeId) ? g.activeId : panels[0]!.id
     return { ...g, panels, activeId }
   })
+}
+
+/** Remove a specific panel by id. The containing group collapses if it becomes
+ *  empty. Used for the per-panel close (×) action. */
+export function removePanel(node: DockNode | null, panelId: string): DockNode | null {
+  return mapGroups(node, g => {
+    if (!g.panels.some(p => p.id === panelId)) return g
+    const panels = g.panels.filter(p => p.id !== panelId)
+    if (panels.length === 0) return null
+    const activeId = g.activeId === panelId
+      ? (panels[0]?.id ?? null)
+      : g.activeId
+    return { ...g, panels, activeId }
+  })
+}
+
+/** Remove an entire group by id. The parent split auto-collapses if it ends up
+ *  with <2 children. All panels in the group are removed (tiles remain in the
+ *  Tiles list — this just removes them from the layout). Used for "close this
+ *  group" or "delete split" actions. */
+export function removeGroup(node: DockNode | null, groupId: string): DockNode | null {
+  return replaceGroup(node, groupId, null)
 }
 
 /** Drop panels whose tileId is gone; append any tile not yet present as a new
