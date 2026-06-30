@@ -13,6 +13,7 @@ import type { PNode } from '../../persistence'
 import { buildBiTree } from './tree'
 import type { BiNode } from './tree'
 import { hudStore } from '../../store'
+import { wheelController, dragController } from '@winstonfassett/vizform-charts'
 
 // ─── Epsilon + helpers ────────────────────────────────────────────────────────
 
@@ -192,7 +193,10 @@ export function bindTile(container: HTMLElement, source: TileSource): TileContro
         const mounted = currentSourceRef.current
         mounted.syncFrom?.(nextSource)
         if (el) {
-          mounted.applyData(el, { gestureActive: !!el.gestureActive, lastRef })
+          // Treat any active gesture (drag OR wheel) as frozen — do not snap
+          // values back from the store while the user is actively editing.
+          const frozen = !!el.gestureActive || wheelController.active || dragController.active
+          mounted.applyData(el, { gestureActive: frozen, lastRef })
         }
       }
     },
@@ -249,7 +253,7 @@ export function makeFlatSource<D>(spec: FlatSpec<D>): TileSource {
     initialLast(el: HTMLElement): Map<string, number> {
       const typedEl = el as ElWithDataCell<D>
       const s = specRef.current
-      const arr = typedEl.dataCell?.value as D[] ?? []
+      const arr = typedEl.dataCell?.peek() as D[] ?? []
       return new Map(arr.map(d => [s.idOf(d), s.readValue(d)]))
     },
 
@@ -257,7 +261,11 @@ export function makeFlatSource<D>(spec: FlatSpec<D>): TileSource {
       const typedEl = el as ElWithDataCell<D>
       if (!typedEl.dataCell) return
       const s = specRef.current
-      const arr = typedEl.dataCell.value as D[]
+      // Use peek() to avoid registering dataCell as a bireactive dependency of
+      // whatever effect called applyData. If we used .value here, the DockView
+      // biEffect (which calls _syncChart → applyData) would re-fire on every
+      // dataCell write, overwriting in-flight gesture edits with stale store values.
+      const arr = typedEl.dataCell.peek() as D[]
       const valueById = new Map<string, number>()
       for (let j = 0; j < s.ids.length; j++) valueById.set(s.ids[j]!, s.values[j]!)
 
@@ -378,6 +386,7 @@ export function makeHierSource(spec: HierSpec): TileSource {
   const leavesRef = { current: [] as BiNode[] }
   const measureKeyRef = { current: spec.measureKey }
   const drillKeyRef = { current: spec.drillKey }
+  const drillNodeIdRef = { current: spec.drillNodeId as string | null | undefined }
   const showBreadcrumbRef = { current: spec.showBreadcrumb }
 
   const source: TileSource = {
@@ -399,26 +408,35 @@ export function makeHierSource(spec: HierSpec): TileSource {
     },
 
     initialLast(_el: HTMLElement): Map<string, number> {
-      return new Map(leavesRef.current.map(l => [l.value.id, l.value.total.value]))
+      return new Map(leavesRef.current.map(l => [l.value.id, l.value.total.peek()]))
     },
 
-    applyData(el: HTMLElement, { lastRef }) {
+    applyData(el: HTMLElement, { gestureActive, lastRef }) {
       // Apply external store changes into the live leaf cells, in place.
+      // Skip during active gestures — wheel/drag are editing the live cells right
+      // now; overwriting them from the store would snap values back.
+      if (gestureActive) return
+      // Use peek() to avoid registering Num cells as deps of whichever bireactive
+      // effect called applyData — DockView's biEffect calls this via _syncChart, and
+      // accidentally tracking Num cells would make DockView re-render on every value
+      // change, causing overwrite loops.
       const byId = new Map(nodesRef.current.map(n => [n.id, n]))
       for (const leaf of leavesRef.current) {
         const node = byId.get(leaf.value.id)
         if (!node) continue
         const target = node.measures[measureKeyRef.current] ?? 0
-        if (!near(leaf.value.total.value, target)) {
+        if (!near(leaf.value.total.peek(), target)) {
           leaf.value.total.value = target
           lastRef.set(leaf.value.id, target)
         }
       }
-      // Update drill key reactively (drillNodeId is synced directly by bindHudSync,
-      // bypassing the React round-trip that was losing tiles on pop-out).
       const typedEl = el as ElWithRoot
       if (drillKeyRef.current !== undefined) typedEl.drillKey = drillKeyRef.current
       if (showBreadcrumbRef.current !== undefined) typedEl.showBreadcrumb = showBreadcrumbRef.current
+      // Push drillNodeId so Esc/breadcrumb drill changes reach the chart element.
+      if (drillNodeIdRef.current !== undefined && typedEl.drillNodeId !== drillNodeIdRef.current) {
+        typedEl.drillNodeId = drillNodeIdRef.current
+      }
     },
 
     bindEditOut(_el: HTMLElement, lastRef: Map<string, number>): () => void {
@@ -455,6 +473,7 @@ export function makeHierSource(spec: HierSpec): TileSource {
       onUpdateManyRef.current = nextSpec.onUpdateMany
       measureKeyRef.current = nextSpec.measureKey
       drillKeyRef.current = nextSpec.drillKey
+      drillNodeIdRef.current = nextSpec.drillNodeId
       showBreadcrumbRef.current = nextSpec.showBreadcrumb
     },
   }

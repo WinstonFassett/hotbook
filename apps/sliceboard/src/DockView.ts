@@ -74,6 +74,7 @@ interface PanelCtrl {
   tileCtrl: TileController | null
   simpleEl: HTMLElement | null
   simpleDataKey: string
+  tileId: string
   dispose: () => void
 }
 
@@ -108,17 +109,35 @@ export class DockView extends HTMLElement {
     root.style.cssText = 'flex:1;min-height:0;position:relative;overflow:hidden'
     this.appendChild(root)
 
+    let lastTiles: TileRecord[] | null = null
     const stopEffect = biEffect(() => {
       const dock = dockCell.value
       const tiles = tilesCell.value
-      this._renderRoot(root, dock, tiles)
+      const tilesChanged = tiles !== lastTiles
+      lastTiles = tiles
+      this._renderRoot(root, dock, tiles, tilesChanged)
     })
 
+    let lastDrills: Record<string, string | null> = {}
     this._unsubHud = hudStore.subscribe(() => {
       // Re-render drill breadcrumbs on drill change — panel bodies contain them
       const dock = dockCell.value
       const tiles = tilesCell.value
       this._syncDrillBreadcrumbs(dock, tiles)
+      // Only push drillNodeId to chart elements when drills actually changed.
+      // Firing _syncChart on every hudStore change (hover, select) would overwrite
+      // in-flight gesture edits with stale store values.
+      const currentDrills = hudStore.getSnapshot().drills
+      const drillsChanged = JSON.stringify(currentDrills) !== JSON.stringify(lastDrills)
+      if (drillsChanged) {
+        lastDrills = { ...currentDrills }
+        for (const [panelId, ctrl] of this._panelCtrls) {
+          if (ctrl.tileCtrl) {
+            const tileRec = tiles.find(t => t.tile.id === ctrl.tileId)
+            if (tileRec) this._syncChart(panelId, tileRec)
+          }
+        }
+      }
     })
 
     this._ro = new ResizeObserver(() => {
@@ -165,7 +184,7 @@ export class DockView extends HTMLElement {
 
   // ─── Internal render ──────────────────────────────────────────────────────
 
-  private _renderRoot(root: HTMLElement, dock: DockNode | null, tiles: TileRecord[]) {
+  private _renderRoot(root: HTMLElement, dock: DockNode | null, tiles: TileRecord[], tilesChanged: boolean) {
     const maximized = findMaximizedGroup(dock)
     const target = maximized ?? dock
 
@@ -186,19 +205,19 @@ export class DockView extends HTMLElement {
     }
 
     // Same root id — patch in place (handles size and activeId changes without rebuild)
-    this._patchNode(existingEl!, target, tiles)
+    this._patchNode(existingEl!, target, tiles, tilesChanged)
   }
 
   // ─── Keyed in-place patch ─────────────────────────────────────────────────
   // Only called when node.id matches existing DOM element. Avoids rebuild for
   // hot-path mutations (gutter resize → flex only, tab switch → class toggle + panel swap).
 
-  private _patchNode(el: HTMLElement, node: DockNode, tiles: TileRecord[]) {
-    if (node.kind === 'group') this._patchGroup(el, node, tiles)
-    else this._patchSplit(el, node, tiles)
+  private _patchNode(el: HTMLElement, node: DockNode, tiles: TileRecord[], tilesChanged: boolean) {
+    if (node.kind === 'group') this._patchGroup(el, node, tiles, tilesChanged)
+    else this._patchSplit(el, node, tiles, tilesChanged)
   }
 
-  private _patchSplit(el: HTMLElement, split: DockSplit, tiles: TileRecord[]) {
+  private _patchSplit(el: HTMLElement, split: DockSplit, tiles: TileRecord[], tilesChanged: boolean) {
     const total = split.sizes.reduce((a, b) => a + b, 0) || 1
     const cells = Array.from(el.children).filter(c => (c as HTMLElement).classList.contains('dv-cell')) as HTMLElement[]
 
@@ -218,12 +237,12 @@ export class DockView extends HTMLElement {
         cell.innerHTML = ''
         cell.appendChild(this._buildNode(child, tiles))
       } else {
-        this._patchNode(childEl, child, tiles)
+        this._patchNode(childEl, child, tiles, tilesChanged)
       }
     })
   }
 
-  private _patchGroup(el: HTMLElement, group: DockGroup, tiles: TileRecord[]) {
+  private _patchGroup(el: HTMLElement, group: DockGroup, tiles: TileRecord[], tilesChanged: boolean) {
     // Tab strip: toggle active class only — no rebuild
     el.querySelectorAll<HTMLElement>('.dv-tab').forEach(tab => {
       tab.classList.toggle('dv-tab--active', tab.dataset.panelId === group.activeId)
@@ -246,8 +265,9 @@ export class DockView extends HTMLElement {
       body.querySelectorAll('.dv-panel').forEach(p => p.remove())
       const wrap = this._getPanelContent(active.id, active.tileId, tiles)
       if (wrap) body.appendChild(wrap)
-    } else {
-      // Same panel — sync source data so edits reach the live chart (syncFrom/applyData)
+    } else if (tilesChanged) {
+      // Same panel, tiles data changed — sync source data (syncFrom/applyData).
+      // Skip when only dock changed (gutter drag) to avoid overwriting in-flight gesture edits.
       const tileRec = tiles.find(t => t.tile.id === active.tileId)
       if (tileRec) this._syncChart(active.id, tileRec)
     }
@@ -685,6 +705,7 @@ export class DockView extends HTMLElement {
           tileCtrl,
           simpleEl: null,
           simpleDataKey: '',
+          tileId: tile.id,
           dispose: () => { tileCtrl.dispose(); container.remove() },
         }
         this._panelCtrls.set(panelId, ctrl)
@@ -712,6 +733,7 @@ export class DockView extends HTMLElement {
             tileCtrl: null,
             simpleEl: el,
             simpleDataKey: dk,
+            tileId: tile.id,
             dispose: () => { if (body.contains(el)) body.removeChild(el) },
           }
           this._panelCtrls.set(panelId, ctrl)

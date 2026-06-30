@@ -95,7 +95,7 @@ export class MdBarChartLC extends Diagram {
     const PAD = { top: 16, right: 24, bottom: 36, left: 48 };
     const plotX = PAD.left, plotY = PAD.top;
 
-    const rows0 = data.value as Bar[];
+    const rows0 = data.peek() as Bar[];
 
     // Overflow mode: fixed bar width per bar, chart scrolls horizontally.
     const BAR_STEP = 56; // px per bar (step including gap) in overflow mode
@@ -368,7 +368,7 @@ export class MdBarChartLC extends Diagram {
     const PAD = { top: 16, right: 64, bottom: 16, left: 16 };
     const plotX = PAD.left, plotY = PAD.top;
 
-    const rows0 = data.value as Bar[];
+    const rows0 = data.peek() as Bar[];
 
     // Overflow mode: fixed band height per row, chart scrolls vertically.
     const BAND_STEP = 44; // px per band (step including gap) in overflow mode

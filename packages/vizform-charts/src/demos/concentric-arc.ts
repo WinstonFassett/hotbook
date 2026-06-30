@@ -87,7 +87,9 @@ export class MdConcentricArcLC extends Diagram {
     const data = this.dataCell;
     const maxRings = this.maxRings;
     // n for the static render loop (mount-time snapshot, safe because externalData caps at maxRings).
-    const n = Math.min((data.value as Ring[]).length, maxRings);
+    // Use peek() so this mount-time read doesn't register dataCell as a dep of whatever
+    // bireactive effect triggered the mount (e.g. DockView's biEffect).
+    const n = Math.min((data.peek() as Ring[]).length, maxRings);
     // Reactive count drives thickness so it re-derives if data changes after mount.
     const nCell = derive(() => Math.min((data.value as Ring[]).length, maxRings));
 

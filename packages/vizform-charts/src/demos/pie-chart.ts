@@ -87,8 +87,9 @@ export class MdPieChartLC extends Diagram {
     const focusDatum = (d: Slice | null) => {
       if (d) sliceElements.get(d)?.focus();
     };
-    for (let i = 0; i < (data.value as Slice[]).length; i++) {
-      const d = (data.value as Slice[])[i]!;
+    const slices0 = data.peek() as Slice[]
+    for (let i = 0; i < slices0.length; i++) {
+      const d = slices0[i]!;
       const color = PALETTE[i % PALETTE.length]!;
 
       const arcDatum = derive(() => arcs.value[i]);
@@ -133,7 +134,7 @@ export class MdPieChartLC extends Diagram {
     }
 
     if (!this.hasAttribute("no-handles")) {
-      const rows = data.value as Slice[];
+      const rows = data.peek() as Slice[];
       for (let i = 0; i < rows.length - 1; i++) {
         const a = rows[i]!.value;
         const b = rows[i + 1]!.value;

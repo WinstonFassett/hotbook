@@ -82,8 +82,9 @@ export class MdAreaChartLC extends Diagram {
 
     // Create focusable invisible circles for each point
     const pointElements = new Map<Point, SVGCircleElement>();
-    for (let i = 0; i < (data.value as Point[]).length; i++) {
-      const pt = (data.value as Point[])[i]!;
+    const points0 = data.peek() as Point[]
+    for (let i = 0; i < points0.length; i++) {
+      const pt = points0[i]!;
       const pos = Vec.derive(() => ({ x: ctx.xGet.value(pt), y: ctx.yGet.value(pt) }));
       const focusCircle = s(circle(pos, 8, { fill: "transparent", stroke: "none" }));
       pointElements.set(pt, focusCircle.el as SVGCircleElement);

@@ -17,6 +17,7 @@ export { MdTreeChart } from './demos/tree-chart'
 export { MdBudgetTree } from './demos/budget-tree'
 // Public lib utilities and types consumers may need:
 export type { ElementWithBridge, BrSyncBridge } from './lib/hud-bridge'
+export { wheelController, dragController } from './lib/interaction'
 export type { BiNode } from './lib/tree'
 export { group, leaf, leaves } from './lib/tree'
 export { numberDrag, type NumberDragOpts } from './lib/number-drag'

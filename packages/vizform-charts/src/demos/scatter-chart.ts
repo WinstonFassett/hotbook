@@ -74,7 +74,7 @@ export class MdScatterChartLC extends Diagram {
 
     // Draw dots with focusable support.
     const dotElements = new Map<Point, SVGCircleElement>();
-    for (const d of data.value as Point[]) {
+    for (const d of data.peek() as Point[]) {
       const pos = Vec.derive(() => ({ x: ctx.xGet.value(d), y: ctx.yGet.value(d) }));
       const fill = derive(() =>
         selected.value === d ? "#fff" : hover.value === d ? "#a4c0f0" : COLOR
