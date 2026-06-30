@@ -10,7 +10,7 @@
 // primitive — used by the gauge center readout, but applicable anywhere a
 // scalar is shown.
 
-import { dragController } from "./interaction";
+import { dragController, wheelController, dynamicWheelStep } from "./interaction";
 
 export interface NumberDragOpts {
   /** Get the current value at gesture-start (snapshot) and during drag (read). */
@@ -92,8 +92,31 @@ export function numberDrag(el: HTMLElement | SVGElement, opts: NumberDragOpts): 
 
   el.addEventListener("pointerdown", onDown);
 
+  // Wheel edit (ctrl+wheel / cmd+wheel).
+  const wheelConfig = {
+    snapshot: () => opts.get(),
+    restore: (_t: unknown, snap: number) => { opts.set(clamp(snap)); },
+    onEnd: () => { opts.onEnd?.(false); },
+  };
+  const onWheel = (e: Event) => {
+    const we = e as WheelEvent;
+    if (!we.ctrlKey && !we.metaKey) return;
+    const t = wheelController.begin(el, wheelConfig);
+    if (!t) return;
+    we.preventDefault();
+    const cur = opts.get();
+    const step = dynamicWheelStep(cur, we.shiftKey);
+    let mul = 1;
+    if (we.altKey) mul *= altMul;
+    const delta = (we.deltaY < 0 ? step : -step) * mul;
+    opts.set(clamp(cur + delta));
+    opts.onStart?.();
+  };
+  el.addEventListener("wheel", onWheel, { passive: false });
+
   return () => {
     el.removeEventListener("pointerdown", onDown);
+    el.removeEventListener("wheel", onWheel);
     if (pointerId !== -1) dragController.cancel();
     el.style.cursor = prevCursor;
   };
