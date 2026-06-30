@@ -246,6 +246,10 @@ export class DockView extends HTMLElement {
       body.querySelectorAll('.dv-panel').forEach(p => p.remove())
       const wrap = this._getPanelContent(active.id, active.tileId, tiles)
       if (wrap) body.appendChild(wrap)
+    } else {
+      // Same panel — sync source data so edits reach the live chart (syncFrom/applyData)
+      const tileRec = tiles.find(t => t.tile.id === active.tileId)
+      if (tileRec) this._syncChart(active.id, tileRec)
     }
 
     // Re-apply drop indicators for current drag state
@@ -638,6 +642,22 @@ export class DockView extends HTMLElement {
     })
   }
 
+  // ─── Chart data sync (same panel, data changed) ──────────────────────────
+
+  private _syncChart(panelId: string, tileRec: TileRecord) {
+    const existing = this._panelCtrls.get(panelId)
+    if (!existing?.tileCtrl) return
+    const { tile, ds, measureKey } = tileRec
+    const drillNodeId = hudStore.getSnapshot().drills[tile.id] ?? null
+    const ctx: TileRenderContext = { tile, ds, measureKey, drillNodeId,
+      onUpdate: tileRec.onUpdate as any,
+      onUpdateMany: tileRec.onUpdateMany as any,
+      onNodeReorder: tileRec.onNodeReorder,
+    }
+    const source = buildTileSource(ctx)
+    if (source) existing.tileCtrl.update(source)
+  }
+
   // ─── Chart mounting ───────────────────────────────────────────────────────
 
   private _mountChart(body: HTMLElement, panelId: string, tileRec: TileRecord) {
@@ -702,7 +722,7 @@ export class DockView extends HTMLElement {
         // Unsupported retired kind — show placeholder
         const ph = document.createElement('div')
         ph.style.cssText = 'display:flex;align-items:center;justify-content:center;width:100%;height:100%;opacity:0.4;font-size:12px'
-        ph.textContent = `${tile.kind} (unsupported)`
+        ph.textContent = `${tile.kind} (not yet ported)`
         body.appendChild(ph)
       }
     }
