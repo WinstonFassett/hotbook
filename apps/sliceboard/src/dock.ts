@@ -271,7 +271,9 @@ export function dropOnEdge(node: DockNode | null, panelId: string, targetGroupId
   const newGroup = makeGroup([panel])
   const direction: DockDir = edge === 'left' || edge === 'right' ? 'row' : 'col'
   const placeAfter = edge === 'right' || edge === 'down'
-  const split = makeSplit(direction, placeAfter ? [stillTarget, newGroup] : [newGroup, stillTarget])
+  // Target keeps 75%, dropped panel gets 25%
+  const sizes = placeAfter ? [3, 1] : [1, 3]
+  const split = makeSplit(direction, placeAfter ? [stillTarget, newGroup] : [newGroup, stillTarget], sizes)
   const result = replaceNode(detached, stillTarget.id, split)
   return result ?? detached
 }
@@ -362,10 +364,11 @@ export function dropGroupOnEdge(node: DockNode | null, sourceGroupId: string, ta
     return makeSplit('row', [detached, source])
   }
 
-  // Create split on requested edge
+  // Create split on requested edge. Target keeps 75%, source gets 25%.
   const direction: DockDir = edge === 'left' || edge === 'right' ? 'row' : 'col'
   const placeAfter = edge === 'right' || edge === 'down'
-  const split = makeSplit(direction, placeAfter ? [stillTarget, source] : [source, stillTarget])
+  const sizes = placeAfter ? [3, 1] : [1, 3]
+  const split = makeSplit(direction, placeAfter ? [stillTarget, source] : [source, stillTarget], sizes)
   const result = replaceNode(detached, stillTarget.id, split)
   return result ?? detached
 }
