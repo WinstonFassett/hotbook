@@ -1,4 +1,3 @@
-import { useSyncExternalStore } from 'react'
 import type { PNode } from './persistence'
 
 export interface HudState {
@@ -46,26 +45,6 @@ export const hudStore = {
   reset: () => setState(INIT),
   /** Seed drills from persisted dashboard state without resetting hover/select. */
   hydrateDrills: (drills: Record<string, string | null>) => setState({ drills }),
-}
-
-export function useHudStore(): HudState {
-  return useSyncExternalStore(hudStore.subscribe, hudStore.getSnapshot)
-}
-
-export function useHoverId(): string | null {
-  return useSyncExternalStore(hudStore.subscribe, () => hudStore.getSnapshot().hoverId)
-}
-
-export function useSelectionId(): string | null {
-  return useSyncExternalStore(hudStore.subscribe, () => hudStore.getSnapshot().selectionId)
-}
-
-export function useFocusId(): string {
-  return useSyncExternalStore(hudStore.subscribe, () => hudStore.getSnapshot().focusId)
-}
-
-export function useDrillNodeId(drillKey: string = 'default'): string | null {
-  return useSyncExternalStore(hudStore.subscribe, () => hudStore.getSnapshot().drills[drillKey] ?? null)
 }
 
 /** Reset focus + selection + drill when dataset changes */
