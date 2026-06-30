@@ -17,7 +17,7 @@ import {
 import type { Workspace, Dataset, Dashboard, Tile, TileKind } from './persistence'
 import { hudStore, resetHudForDataset } from './store'
 import type { TileRecord } from './DockView'
-import { DockView } from './DockView'
+import './DockView'
 import { defaultDockTree, reconcile, addTileToDock } from './dock'
 
 // ─── Tile metadata ─────────────────────────────────────────────────────────────

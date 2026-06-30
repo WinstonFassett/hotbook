@@ -46,10 +46,12 @@ export function makeSplit(direction: DockDir, children: DockNode[], sizes?: numb
   return { kind: 'split', id: nid(), direction, children, sizes: s }
 }
 
-/** Seed layout from a flat tile list. 1: single group. 2: row of two groups
- *  (one tile each). 3+: 2-col grid (left/right `col` stacks). Matches the
- *  user's "2×2 or 2×1 to start" guidance — short layouts skip the col
- *  wrappers so the user isn't immediately asked to think nested. */
+/** Seed layout from a flat tile list.
+ *  1 tile  → single tabbed group.
+ *  2 tiles → 2 side-by-side groups, one tile each.
+ *  3+      → 2 side-by-side tabbed groups (left gets first half, right gets rest).
+ *            All tiles in each column are TABBED, not split, so no matter how many
+ *            tiles there are the layout is always 2 full-height panes. */
 export function defaultDockTree(tileIds: string[]): DockNode | null {
   if (tileIds.length === 0) return null
   if (tileIds.length === 1) return makeGroup([makePanel(tileIds[0]!)])
@@ -57,9 +59,9 @@ export function defaultDockTree(tileIds: string[]): DockNode | null {
     return makeSplit('row', tileIds.map(id => makeGroup([makePanel(id)])))
   }
   const half = Math.ceil(tileIds.length / 2)
-  const left = makeSplit('col', tileIds.slice(0, half).map(id => makeGroup([makePanel(id)])))
-  const right = makeSplit('col', tileIds.slice(half).map(id => makeGroup([makePanel(id)])))
-  return makeSplit('row', [left, right])
+  const leftPanels = tileIds.slice(0, half).map(makePanel)
+  const rightPanels = tileIds.slice(half).map(makePanel)
+  return makeSplit('row', [makeGroup(leftPanels), makeGroup(rightPanels)])
 }
 
 /** Walk the tree and collect every group (depth-first, left-to-right). */
