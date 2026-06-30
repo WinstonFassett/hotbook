@@ -10,6 +10,7 @@ import type { TileSource } from './viz/br/bindTile'
 import { hudStore } from './store'
 import { applyGroupBy } from './persistence'
 import { colorFor } from '@winstonfassett/vizform-core'
+import { mountTreetable } from '@winstonfassett/vizform-vanilla-d3'
 
 import {
   MdBarChartLC,
@@ -271,6 +272,15 @@ export function buildSimpleMount(ctx: TileRenderContext): ((el: HTMLElement) => 
   const leaves = rawNodes.filter(n => !rawNodes.some(m => m.parentId === n.id))
   const { kind } = tile
 
+  if (kind === 'treetable') {
+    const mk = tile.measureKey ?? measureKey
+    const nodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.rows, tile.groupBy) : ds.rows)
+    return (el: HTMLElement) => {
+      el.style.cssText = 'width:100%;height:100%;overflow:auto'
+      mountTreetable(el, nodes, mk)
+    }
+  }
+
   if (kind === 'br-lc-gauge') {
     const value = leaves.reduce((a, b) => a + (b.measures[mk] ?? 0), 0)
     const text = tile.title ?? mk
@@ -303,6 +313,7 @@ export function buildSimpleMount(ctx: TileRenderContext): ((el: HTMLElement) => 
 /** The custom element tag for a simple-mount tile kind */
 export function simpleTag(kind: string): string | null {
   const map: Record<string, string> = {
+    'treetable': 'div',
     'br-lc-gauge': 'v-br-gauge',
     'br-lc-gauge-segmented': 'v-br-gauge-segmented',
     'br-lc-sankey': 'v-br-sankey',
@@ -318,6 +329,9 @@ export function simpleDataKey(ctx: TileRenderContext): string {
   const rawNodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.rows, tile.groupBy) : ds.rows)
   const leaves = rawNodes.filter(n => !rawNodes.some(m => m.parentId === n.id))
   const { kind } = tile
+  if (kind === 'treetable') {
+    return `treetable|${mk}|${ds.rows.length}`
+  }
   if (kind === 'br-lc-gauge' || kind === 'br-lc-gauge-segmented') {
     return `${kind}|${mk}|${leaves.reduce((a, b) => a + (b.measures[mk] ?? 0), 0)}`
   }
