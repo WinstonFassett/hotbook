@@ -1,9 +1,22 @@
-import type { PNode } from '@winstonfassett/vizform-react-d3'
-import type { PEdge, ScalingMode } from '@winstonfassett/vizform-core'
+import type { PNode, PEdge, ScalingMode } from '@winstonfassett/vizform-core'
 import { colorFor } from '@winstonfassett/vizform-core'
-import type { LayoutItem } from 'react-grid-layout'
 
 export type { PNode, PEdge }
+
+// Minimal shape of the legacy grid layout items — kept for persistence compatibility
+// with stored dashboards. The dock model replaces the grid in the new shell.
+export interface LayoutItem {
+  i: string
+  x: number
+  y: number
+  w: number
+  h: number
+  minW?: number
+  maxW?: number
+  minH?: number
+  maxH?: number
+  static?: boolean
+}
 
 // ─── Schema defs ──────────────────────────────────────────────────────────────
 
