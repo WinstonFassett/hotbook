@@ -23,7 +23,7 @@ import { buildParentIndex, type BiNode } from "../lib/tree";
 import { portfolio, walkWithDepth } from "../lib/portfolio";
 import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
-import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, settleTransition } from "../lib/transitions";
+import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS } from "../lib/transitions";
 
 const W = 480;
 const H = 480;
@@ -226,20 +226,31 @@ export class MdPack extends Diagram {
       const nd = nodeDepth.get(node) ?? 0;
       const isLeaf = (node.children as BiNode[]).length === 0;
 
+      // Uniform scale — pack circles must stay circular or they overlap.
+      // Use min(Wc/spanW, Hc/spanH) so the content fits and stays proportional.
       const cx = derive(() => {
         const raw = layout.value.get(node)?.x ?? 0;
         const spanW = vx1.value - vx0.value;
-        return spanW === 0 ? 0 : (raw - vx0.value) / spanW * Wc.value;
+        const spanH = vy1.value - vy0.value;
+        if (spanW === 0 || spanH === 0) return 0;
+        const scale = Math.min(Wc.value / spanW, Hc.value / spanH);
+        return (raw - vx0.value) * scale + (Wc.value - spanW * scale) / 2;
       });
       const cy = derive(() => {
         const raw = layout.value.get(node)?.y ?? 0;
+        const spanW = vx1.value - vx0.value;
         const spanH = vy1.value - vy0.value;
-        return spanH === 0 ? 0 : (raw - vy0.value) / spanH * Hc.value;
+        if (spanW === 0 || spanH === 0) return 0;
+        const scale = Math.min(Wc.value / spanW, Hc.value / spanH);
+        return (raw - vy0.value) * scale + (Hc.value - spanH * scale) / 2;
       });
       const r = derive(() => {
         const raw = layout.value.get(node)?.r ?? 0;
         const spanW = vx1.value - vx0.value;
-        return spanW === 0 ? 0 : raw / spanW * Wc.value;
+        const spanH = vy1.value - vy0.value;
+        if (spanW === 0 || spanH === 0) return 0;
+        const scale = Math.min(Wc.value / spanW, Hc.value / spanH);
+        return raw * scale;
       });
       const stroke = derive(() =>
         state.focused.value === node ? "#fff"
@@ -248,17 +259,21 @@ export class MdPack extends Diagram {
       );
       const strokeWidth = derive(() => (state.focused.value === node || hoverCell.value === node ? 2 : 1));
 
-      const isContextNode = nd > 0 && node.value.id === this._drillIdCell.value;
+      const isContextNode = derive(() => nd > 0 && node.value.id === this._drillIdCell.value);
       const nodeFill = depthFill(node.value.color, nd);
       const disc = circle(Vec.derive(() => ({ x: cx.value, y: cy.value })), r, {
         fill: nd === 0 ? node.value.color : nodeFill.toString(),
-        opacity: (nd === 0 || isContextNode) ? 0.18 : 1,
         stroke,
         strokeWidth,
       });
       disc.el.dataset.id = node.value.id ?? "";
+      biEffect(() => {
+        disc.el.style.opacity = (nd === 0 || isContextNode.value) ? '0.18' : '1';
+      });
       disc.el.style.cursor = "pointer";
-      disc.el.style.transition = settleTransition(["cx", "cy", "r"]);
+      // No CSS transition on cx/cy/r — the viewport tween (vx0..vy1) drives
+      // these via derive(), and a CSS transition would double-animate, chasing
+      // the tween and causing overlapping circles on zoom-out.
       disc.el.setAttribute('tabindex', '0');
       disc.el.setAttribute('data-focusable', 'circle');
       biEffect(() => {
@@ -275,6 +290,8 @@ export class MdPack extends Diagram {
           const targetId = (parent && (nodeDepth.get(parent) ?? 0) > 0)
             ? (parent.value.id ?? null)
             : null;
+          // Drill directly — don't wait for a round-trip.
+          this.drillNodeId = targetId;
           const drillKey = (this as any).drillKey ?? "default";
           (this as ElementWithBridge).brSync?.emitDrill?.(drillKey, targetId);
         }

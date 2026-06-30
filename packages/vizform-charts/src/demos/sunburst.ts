@@ -395,6 +395,8 @@ export class MdSunburstLC extends Diagram {
       const targetId = (parent && (nodeDepth.get(parent) ?? 0) > 0)
         ? (parent.value.id ?? null)
         : null;
+      // Drill directly — don't wait for a round-trip.
+      this.drillNodeId = targetId;
       const drillKey = (this as any).drillKey ?? "default";
       const br = (this as ElementWithBridge).brSync;
       br?.emitDrill?.(drillKey, targetId);

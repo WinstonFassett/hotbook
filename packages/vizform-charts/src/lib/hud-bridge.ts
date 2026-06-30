@@ -16,6 +16,8 @@ export interface BrSyncBridge {
   setExternalHover(id: string | null): void;
   /** Mark the node with this id as selected/focused (null clears). Idempotent. */
   setExternalSelect(id: string | null): void;
+  /** Drill into the node with this id (null pops to root). Idempotent. */
+  setExternalDrill?(id: string | null): void;
   /** Subscribe to the chart's own hover changes. Returns an unsubscribe. */
   onHover(cb: (id: string | null) => void): () => void;
   /** Subscribe to the chart's own select/focus changes. Returns an unsubscribe. */
@@ -33,6 +35,7 @@ export interface ElementWithBridge extends HTMLElement {
 export function makeBridge(opts: {
   setHover: (id: string | null) => void;
   setSelect: (id: string | null) => void;
+  setDrill?: (id: string | null) => void;
 }): BrSyncBridge & {
   emitHover: (id: string | null) => void;
   emitSelect: (id: string | null) => void;
@@ -44,6 +47,7 @@ export function makeBridge(opts: {
   return {
     setExternalHover: opts.setHover,
     setExternalSelect: opts.setSelect,
+    setExternalDrill: opts.setDrill,
     onHover: cb => { hoverCbs.add(cb); return () => hoverCbs.delete(cb); },
     onSelect: cb => { selectCbs.add(cb); return () => selectCbs.delete(cb); },
     onDrill: cb => { drillCbs.add(cb); return () => drillCbs.delete(cb); },

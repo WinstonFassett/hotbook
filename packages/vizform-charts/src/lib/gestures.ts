@@ -117,6 +117,9 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
       state.focused.value = id ? byId.get(id) ?? null : null;
       applyingExternal = false;
     },
+    setDrill: (id) => {
+      (host as any).drillNodeId = id;
+    },
   });
   (host as ElementWithBridge).brSync = bridge;
 
@@ -124,8 +127,16 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
     const node = state.hovered.current ?? state.focused.value;
     if (!node || node === root) return;
     if ((node.children as BiNode[]).length === 0) return;
-    const drillKey = (host as any).drillKey ?? 'default';
+    // Drill directly — the chart owns its drill state. Emit for sliceboard's
+    // benefit (breadcrumb, persistence, sibling-tile propagation) but don't
+    // wait for a round-trip to actually drill.
+    const host2 = host as any;
+    if (host2.drillNodeId !== undefined) host2.drillNodeId = node.value.id;
+    const drillKey = host2.drillKey ?? 'default';
     bridge.emitDrill(drillKey, node.value.id);
+    // Keep focus on the chart host so Escape can drill out. The dblclick
+    // target (a tile) may be torn down by the re-render, losing focus.
+    host.focus({ preventScroll: true });
   };
   host.addEventListener("dblclick", onDblClick);
 

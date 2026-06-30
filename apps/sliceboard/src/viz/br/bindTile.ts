@@ -44,23 +44,37 @@ export function bindHudSync(el: ElWithBrSync): () => void {
   if (!bridge) return () => {}
   let lastInHover: string | null = null
   let lastInSelect: string | null = null
+  let lastInDrill: string | null = null
 
   const offHover = bridge.onHover(id => { if (id !== lastInHover) hudStore.setHover(id) })
   const offSelect = bridge.onSelect(id => { if (id !== lastInSelect) hudStore.setSelection(id) })
   const offDrill = bridge.onDrill ? bridge.onDrill((drillKey, id) => {
-    hudStore.setDrill(drillKey, id === '' ? null : id)
+    const resolved = id === '' ? null : id
+    lastInDrill = resolved
+    hudStore.setDrill(drillKey, resolved)
   }) : () => {}
 
   const unsub = hudStore.subscribe(() => {
     const s = hudStore.getSnapshot()
     if (s.hoverId !== lastInHover) { lastInHover = s.hoverId; bridge.setExternalHover(s.hoverId) }
     if (s.selectionId !== lastInSelect) { lastInSelect = s.selectionId; bridge.setExternalSelect(s.selectionId) }
+    // Sync drill directly — bypasses React round-trip that was losing tiles on pop-out.
+    const drillKey = (el as any).drillKey
+    if (drillKey && bridge.setExternalDrill) {
+      const drillId = s.drills[drillKey] ?? null
+      if (drillId !== lastInDrill) { lastInDrill = drillId; bridge.setExternalDrill(drillId) }
+    }
   })
   // Seed current store state into the freshly mounted element.
   const s0 = hudStore.getSnapshot()
   lastInHover = s0.hoverId; lastInSelect = s0.selectionId
   bridge.setExternalHover(s0.hoverId)
   bridge.setExternalSelect(s0.selectionId)
+  const drillKey0 = (el as any).drillKey
+  if (drillKey0 && bridge.setExternalDrill) {
+    lastInDrill = s0.drills[drillKey0] ?? null
+    bridge.setExternalDrill(lastInDrill)
+  }
 
   return () => { offHover(); offSelect(); offDrill(); unsub() }
 }
@@ -380,7 +394,6 @@ export function makeHierSource(spec: HierSpec): TileSource {
       const typedEl = el as ElWithRoot
       typedEl.externalRoot = root
       if (spec.depth !== undefined) typedEl.maxDepth = spec.depth
-      if (spec.drillNodeId !== undefined) typedEl.drillNodeId = spec.drillNodeId
       if (spec.drillKey !== undefined) typedEl.drillKey = spec.drillKey
       if (spec.showBreadcrumb !== undefined) typedEl.showBreadcrumb = spec.showBreadcrumb
     },
@@ -401,9 +414,9 @@ export function makeHierSource(spec: HierSpec): TileSource {
           lastRef.set(leaf.value.id, target)
         }
       }
-      // Update drill props reactively
+      // Update drill key reactively (drillNodeId is synced directly by bindHudSync,
+      // bypassing the React round-trip that was losing tiles on pop-out).
       const typedEl = el as ElWithRoot
-      if (drillNodeIdRef.current !== undefined) typedEl.drillNodeId = drillNodeIdRef.current
       if (drillKeyRef.current !== undefined) typedEl.drillKey = drillKeyRef.current
       if (showBreadcrumbRef.current !== undefined) typedEl.showBreadcrumb = showBreadcrumbRef.current
     },

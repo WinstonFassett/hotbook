@@ -28,6 +28,8 @@ const HIER_FULL: VizConfigSchema = {
 // Icicle supports an orientation toggle (horizontal partition vs vertical icicle).
 const HIER_FULL_ORIENT: VizConfigSchema = {
   pickers: { measure: true, sort: true, depth: true, orientation: true },
+  drillKey: 'default',
+  showBreadcrumb: true,
 }
 
 export const TILE_CONFIG_SCHEMAS: Map<TileKind, VizConfigSchema> = new Map([

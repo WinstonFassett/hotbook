@@ -157,9 +157,12 @@ export class MdTreemapLC extends Diagram {
     let lastDrillId: string | null = null;
     let drillCancel: (() => void) | null = null;
     let drillClassTimer: ReturnType<typeof setTimeout> | null = null;
+    let drillSnapTimer: ReturnType<typeof setTimeout> | null = null;
+    let pendingDrillId: string | null | undefined = undefined;
     const retargetTiles = (id: string | null, animate: boolean) => {
       drillCancel?.();
       drillCancel = null;
+      if (drillSnapTimer) { clearTimeout(drillSnapTimer); drillSnapTimer = null; }
       const gens: ReturnType<typeof tween>[] = [];
       for (const [node, g] of tileGeo) {
         const t = targetRect(node, id);
@@ -174,7 +177,17 @@ export class MdTreemapLC extends Diagram {
           g.cx.value = t.x; g.cy.value = t.y; g.cw.value = t.w; g.ch.value = t.h;
         }
       }
-      if (animate && gens.length) drillCancel = this.anim.start(...gens);
+      if (animate && gens.length) {
+        drillCancel = this.anim.start(...gens);
+        drillSnapTimer = setTimeout(() => {
+          drillSnapTimer = null;
+          drillCancel = null;
+          // Snap to exact d3 layout — the tween may not land on exact
+          // floating-point targets, and layout re-derives during the tween
+          // were suppressed by the drillCancel guard.
+          retargetTiles(id, false);
+        }, DRILL_DURATION + 60);
+      }
     };
     biEffect(() => {
       const id = this._drillIdCell.value;
@@ -184,7 +197,16 @@ export class MdTreemapLC extends Diagram {
       const drillChanged = id !== lastDrillId;
       lastDrillId = id;
       if (!drillInited) { drillInited = true; retargetTiles(id, false); return; }
-      if (!drillChanged) { retargetTiles(id, false); return; } // resize-only: snap
+      if (!drillChanged) {
+        // Resize-only: snap UNLESS a drill tween is in flight (the layout
+        // re-derives during the tween, which re-triggers this biEffect with
+        // the same drill id — we must not snap or it kills the animation).
+        if (drillCancel) return;
+        retargetTiles(id, false); return;
+      }
+      // Drill: animate — but if tileGeo is empty (forEach hasn't committed yet),
+      // defer until tiles are populated.
+      if (tileGeo.size === 0) { pendingDrillId = id; return; }
       retargetTiles(id, true); // drill: animate
       if (drillClassTimer) { clearTimeout(drillClassTimer); drillClassTimer = null; }
       this.classList.add(GESTURE_ACTIVE_CLASS);
@@ -238,15 +260,39 @@ export class MdTreemapLC extends Diagram {
       }
     });
 
+    // Flush a pending drill animation once forEach has populated tileGeo.
+    // Uses requestAnimationFrame to defer past the forEach commit — the biEffect
+    // fires when renderedSet changes, but forEach writes to tileGeo in a later
+    // render cycle. rAF runs after the DOM has been updated.
+    biEffect(() => {
+      void renderedSet.value;
+      if (pendingDrillId !== undefined) {
+        const id = pendingDrillId;
+        pendingDrillId = undefined;
+        requestAnimationFrame(() => {
+          if (tileGeo.size > 0) {
+            retargetTiles(id, true);
+            if (drillClassTimer) { clearTimeout(drillClassTimer); drillClassTimer = null; }
+            this.classList.add(GESTURE_ACTIVE_CLASS);
+            drillClassTimer = setTimeout(() => {
+              drillClassTimer = null;
+              this.classList.remove(GESTURE_ACTIVE_CLASS);
+            }, DRILL_DURATION + 60);
+          }
+        });
+      }
+    });
+
     // Windowed node rendering.
     const nodeLayer = s(group());
     forEach(nodeLayer, renderedSet, (node) => {
       const nd = nodeDepth.get(node) ?? 0;
       const isLeaf = (node.children as BiNode[]).length === 0;
 
-      // Per-tile screen geometry. Seed at the current focus target so a tile
-      // entering on drill-in appears at its correct destination, then the drill
-      // tween (already in flight or fired right after) animates the rest.
+      // Per-tile screen geometry. Seed at the current drill target so new tiles
+      // (entering the rendered set) appear at their correct destination. Existing
+      // tiles keep their tileGeo cells from the previous render — the drill tween
+      // animates those from their current position to the new target.
       const seed = targetRect(node, untracked(() => this._drillIdCell.value));
       const cx = num(seed.x), cy = num(seed.y), cw = num(seed.w), ch = num(seed.h);
       tileGeo.set(node, { cx, cy, cw, ch });
@@ -259,16 +305,18 @@ export class MdTreemapLC extends Diagram {
       );
       const strokeWidth = derive(() => (state.focused.value === node || hoverCell.value === node ? 2 : 1));
 
-      const isContextNode = nd > 0 && node.value.id === this._drillIdCell.value;
+      const isContextNode = derive(() => nd > 0 && node.value.id === this._drillIdCell.value);
       const nodeFill = depthFill(node.value.color, nd);
       const tile = rect(x, y, w, h, {
         fill: nd === 0 ? node.value.color : nodeFill.toString(),
-        opacity: (nd === 0 || isContextNode) ? 0.18 : 1,
         stroke,
         strokeWidth,
         corner: 3,
       });
       tile.el.dataset.id = node.value.id ?? "";
+      biEffect(() => {
+        tile.el.style.opacity = (nd === 0 || isContextNode.value) ? '0.18' : '1';
+      });
       tile.el.style.cursor = "pointer";
       tile.el.setAttribute('tabindex', '0');
       tile.el.setAttribute('data-focusable', 'tile');
@@ -290,6 +338,8 @@ export class MdTreemapLC extends Diagram {
           const targetId = (parent && (nodeDepth.get(parent) ?? 0) > 0)
             ? (parent.value.id ?? null)
             : null;
+          // Drill directly — don't wait for a round-trip.
+          this.drillNodeId = targetId;
           const drillKey = (this as any).drillKey ?? "default";
           (this as ElementWithBridge).brSync?.emitDrill?.(drillKey, targetId);
         }
@@ -297,8 +347,9 @@ export class MdTreemapLC extends Diagram {
       tile.el.addEventListener("pointerenter", () => { state.hovered.current = node; hoverCell.value = node; state.emitHover?.(node); });
       tile.el.addEventListener("pointerleave", () => { if (state.hovered.current === node) { state.hovered.current = null; hoverCell.value = null; state.emitHover?.(null); } });
 
-      if (nd > 0 && !isContextNode) {
+      if (nd > 0) {
         const text = derive(() => {
+          if (isContextNode.value) return ""; // skip label on context node
           const w0 = w.value, h0 = h.value;
           if (w0 <= 28 || h0 <= 16) return "";
           return isLeaf
