@@ -1,22 +1,26 @@
-// GanttChart — bireactive Gantt with time axis, draggable task bars,
-// and finish-to-start dependency connectors.
+// GanttChart — bireactive Gantt with BIDIRECTIONAL constraint solving.
 //
 // Schema (per task):
-//   { id, label, start: Date, end: Date, color?, deps?: string[] }
+//   { id, label, start: Date, end: Date, color?,
+//     deps?: Array<string | {from: string, lag?: number}> }
+//
+// Bidirectional Constraints:
+//   - Drag right → push successors forward
+//   - Drag left → push predecessors backward
+//   - Lag support: positive = gap, negative = lead/overlap
+//   - Space conservation: tasks return to origin when drag reverses
 //
 // Interactions:
 //   - hover/select a task (click)
 //   - Tab / Shift+Tab to navigate tasks
-//   - drag bar body          → shift both start & end (preserves duration)
+//   - drag bar body          → shift both start & end + bidirectional push
 //   - drag left  handle      → move start only
 //   - drag right handle      → move end only
 //   - ←/→ on selected task   → nudge by 1 day (shift = 7 days)
-//   - Escape clears selection
+//   - Escape reverts all tasks to snapshot
 //
 // Connectors: every `deps[]` entry draws an orthogonal finish-to-start
 // arrow from the predecessor's end-edge into the dependent's start-edge.
-// Edges follow the same reactive `xScale` / `yBand` cells the bars do,
-// so dragging either endpoint reflows the route instantly.
 //
 // Bireactive: all reactive state lives in cells; the scene re-derives from
 // `dataCell`, so external edits or in-chart drags reflow without React.
@@ -46,15 +50,20 @@ const H = 360;
 const DAY_MS = 86400 * 1000;
 const PALETTE = ['#e08888', '#d4a86c', '#ccc060', '#7ec87e', '#60c4c0', '#7aaae8', '#b090e0', '#8899b4'];
 
+export interface GanttDependency {
+  from: string;  // predecessor task ID
+  lag?: number;  // gap in days (positive = wait, negative = overlap/lead). Default: 0
+}
+
 export interface GanttTask {
   id: string;
   label: string;
   start: Date;
   end: Date;
   color?: string;
-  /** IDs of tasks this one depends on (finish-to-start). Renders an
-   *  orthogonal arrow from each predecessor's end into this task's start. */
-  deps?: string[];
+  /** Dependencies with optional lag. Finish-to-start relationships.
+   *  Can be string[] for backward compatibility or GanttDependency[] for lag support. */
+  deps?: Array<string | GanttDependency>;
 }
 
 function lightenHex(hex: string, t: number): string {
@@ -63,6 +72,15 @@ function lightenHex(hex: string, t: number): string {
   const b = parseInt(hex.slice(5, 7), 16);
   const m = (c: number) => Math.round(c + (255 - c) * t).toString(16).padStart(2, '0');
   return `#${m(r)}${m(g)}${m(b)}`;
+}
+
+// Helper functions for working with flexible dependency format
+function getDepId(dep: string | GanttDependency): string {
+  return typeof dep === 'string' ? dep : dep.from;
+}
+
+function getDepLag(dep: string | GanttDependency): number {
+  return typeof dep === 'string' ? 0 : (dep.lag ?? 0);
 }
 
 function makeSample(): GanttTask[] {
@@ -171,47 +189,190 @@ export class MdGanttChartLC extends Diagram {
 
     // Mutate one task; keep ms granularity but snap to whole days.
     const snapDay = (ms: number) => Math.round(ms / DAY_MS) * DAY_MS;
-    // Forward-propagate dep constraints in topological order. Each task with
-    // deps snaps to start = max(pred.end). Pure forward — predecessors aren't
-    // dragged back when a successor moves earlier (the dragged task is anchor).
-    // `exclude` skips a task (typically the one being actively dragged).
-    const propagateDeps = (exclude?: GanttTask) => {
+
+    // BIDIRECTIONAL constraint propagation with lag support.
+    // Pushes successors forward AND predecessors backward based on drag direction.
+    // The `anchor` task (being dragged) is never moved by propagation.
+    const propagateDeps = (anchor?: GanttTask, origins?: Map<string, {start: number; end: number}>) => {
       if (!this.enforceDeps) return;
       const rows = data.value as GanttTask[];
       const byId = new Map(rows.map(t => [t.id, t]));
-      const indeg = new Map<string, number>();
-      for (const t of rows) indeg.set(t.id, 0);
-      for (const t of rows) for (const dep of t.deps ?? []) if (byId.has(dep)) indeg.set(t.id, (indeg.get(t.id) ?? 0) + 1);
-      // Kahn's algorithm: process tasks once their preds are resolved so each
-      // dep read sees its final value before its dependent gets snapped.
-      const queue: GanttTask[] = [];
-      for (const t of rows) if ((indeg.get(t.id) ?? 0) === 0) queue.push(t);
+
+      // Build graph structures
       const successors = new Map<string, GanttTask[]>();
-      for (const t of rows) for (const dep of t.deps ?? []) {
-        if (!byId.has(dep)) continue;
-        const arr = successors.get(dep) ?? [];
-        arr.push(t);
-        successors.set(dep, arr);
+      const predecessors = new Map<string, GanttTask[]>();
+
+      for (const t of rows) {
+        for (const dep of t.deps ?? []) {
+          const predId = getDepId(dep);
+          if (!byId.has(predId)) continue;
+
+          const pred = byId.get(predId)!;
+          const arr = successors.get(predId) ?? [];
+          arr.push(t);
+          successors.set(predId, arr);
+
+          const predArr = predecessors.get(t.id) ?? [];
+          predArr.push(pred);
+          predecessors.set(t.id, predArr);
+        }
       }
-      while (queue.length) {
-        const t = queue.shift()!;
-        // Skip the excluded task (being actively dragged) — it's the anchor.
-        const preds = (t.deps ?? []).map(id => byId.get(id)).filter((p): p is GanttTask => !!p);
-        if (preds.length && t !== exclude) {
-          const latest = Math.max(...preds.map(p => p.end.getTime()));
-          if (t.start.getTime() !== latest) {
-            const dur = t.end.getTime() - t.start.getTime();
-            t.start = new Date(latest);
-            t.end = new Date(latest + dur);
+
+      // Determine drag direction if we have an anchor and origins
+      let direction: 'forward' | 'backward' | 'both' = 'both';
+      if (anchor && origins) {
+        const origin = origins.get(anchor.id);
+        if (origin) {
+          const delta = anchor.start.getTime() - origin.start;
+          const THRESHOLD = 0.5 * DAY_MS;
+          if (delta > THRESHOLD) direction = 'forward';
+          else if (delta < -THRESHOLD) direction = 'backward';
+        }
+      }
+
+      const anchorId = anchor?.id;
+
+      // Forward propagation: push successors right
+      if (direction === 'forward' || direction === 'both') {
+        const topo = topologicalSort(rows);
+        for (const id of topo) {
+          if (id === anchorId) continue;
+          const task = byId.get(id)!;
+
+          let minStart = -Infinity;
+          for (const dep of task.deps ?? []) {
+            const predId = getDepId(dep);
+            const lag = getDepLag(dep);
+            const pred = byId.get(predId);
+            if (!pred) continue;
+
+            const constraint = pred.end.getTime() + lag * DAY_MS;
+            minStart = Math.max(minStart, constraint);
+          }
+
+          if (minStart > task.start.getTime()) {
+            const duration = task.end.getTime() - task.start.getTime();
+            task.start = new Date(minStart);
+            task.end = new Date(minStart + duration);
           }
         }
-        for (const s of successors.get(t.id) ?? []) {
-          const remaining = (indeg.get(s.id) ?? 1) - 1;
-          indeg.set(s.id, remaining);
-          if (remaining === 0) queue.push(s);
+      }
+
+      // Backward propagation: push predecessors left
+      if (direction === 'backward' || direction === 'both') {
+        const topo = topologicalSort(rows).reverse();
+        for (const id of topo) {
+          if (id === anchorId) continue;
+          const task = byId.get(id)!;
+
+          // For each predecessor, check if it needs to move backward
+          const preds = predecessors.get(id) ?? [];
+          for (const pred of preds) {
+            if (pred.id === anchorId) continue;
+
+            // Find the dependency edge to get the lag
+            const dep = task.deps?.find(d => getDepId(d) === pred.id);
+            const lag = dep ? getDepLag(dep) : 0;
+
+            // Calculate maximum end for predecessor based on successor's start
+            const maxEnd = task.start.getTime() - lag * DAY_MS;
+
+            if (pred.end.getTime() > maxEnd) {
+              const duration = pred.end.getTime() - pred.start.getTime();
+              pred.end = new Date(maxEnd);
+              pred.start = new Date(maxEnd - duration);
+            }
+          }
+        }
+      }
+
+      // Space conservation: try to return tasks toward origin if no constraints prevent it
+      if (origins && direction !== 'forward') {
+        const topo = topologicalSort(rows);
+        for (const id of topo) {
+          if (id === anchorId) continue;
+          const task = byId.get(id)!;
+          const origin = origins.get(id);
+          if (!origin) continue;
+
+          const currentStart = task.start.getTime();
+          const originStart = origin.start;
+
+          // Only try to move back if task is ahead of origin
+          if (currentStart <= originStart) continue;
+
+          // Calculate safe backward position without violating constraints
+          let safeStart = -Infinity;
+
+          // Check predecessor constraints
+          for (const dep of task.deps ?? []) {
+            const predId = getDepId(dep);
+            const lag = getDepLag(dep);
+            const pred = byId.get(predId);
+            if (!pred) continue;
+            safeStart = Math.max(safeStart, pred.end.getTime() + lag * DAY_MS);
+          }
+
+          // Check successor constraints
+          for (const succ of successors.get(id) ?? []) {
+            const dep = succ.deps?.find(d => getDepId(d) === id);
+            const lag = dep ? getDepLag(dep) : 0;
+            const maxEnd = succ.start.getTime() - lag * DAY_MS;
+            const duration = task.end.getTime() - task.start.getTime();
+            safeStart = Math.max(safeStart, maxEnd - duration);
+          }
+
+          // Move back toward origin as far as safe
+          const targetStart = Math.max(safeStart, originStart);
+          if (targetStart < currentStart) {
+            const duration = task.end.getTime() - task.start.getTime();
+            task.start = new Date(targetStart);
+            task.end = new Date(targetStart + duration);
+          }
         }
       }
     };
+
+    // Topological sort helper for Kahn's algorithm
+    function topologicalSort(tasks: GanttTask[]): string[] {
+      const byId = new Map(tasks.map(t => [t.id, t]));
+      const indeg = new Map<string, number>();
+
+      for (const t of tasks) indeg.set(t.id, 0);
+      for (const t of tasks) {
+        for (const dep of t.deps ?? []) {
+          const predId = getDepId(dep);
+          if (byId.has(predId)) {
+            indeg.set(t.id, (indeg.get(t.id) ?? 0) + 1);
+          }
+        }
+      }
+
+      const queue: string[] = [];
+      for (const t of tasks) {
+        if ((indeg.get(t.id) ?? 0) === 0) queue.push(t.id);
+      }
+
+      const result: string[] = [];
+      while (queue.length) {
+        const id = queue.shift()!;
+        result.push(id);
+
+        // Find successors
+        for (const other of tasks) {
+          for (const dep of other.deps ?? []) {
+            const predId = getDepId(dep);
+            if (predId === id) {
+              const remaining = (indeg.get(other.id) ?? 1) - 1;
+              indeg.set(other.id, remaining);
+              if (remaining === 0) queue.push(other.id);
+            }
+          }
+        }
+      }
+
+      return result;
+    }
     const setRange = (t: GanttTask, startMs: number, endMs: number, skipPropagation = false) => {
       // Enforce min duration 1 day, keep start ≤ end.
       const min = DAY_MS;
@@ -240,49 +401,93 @@ export class MdGanttChartLC extends Diagram {
 
     // ─── Pointer drag (body / start / end) ─────────────────────────────────
     //
-    // Uses the shared `dragController` — one app-wide drag, with snapshot /
-    // restore on Esc (Interaction Principle Rule 6). Snapshot captures both
-    // start and end ms so Esc reverts the full task range. The controller
-    // owns move/up/cancel/Esc/blur listeners for the lifetime of the gesture.
+    // BIDIRECTIONAL DRAG: Snapshots ALL task positions for space conservation.
+    // During drag, applies real-time bidirectional constraint solving.
+    // On Escape, restores ALL tasks to snapshot positions.
+    // The controller owns move/up/cancel/Esc/blur listeners for the lifetime of the gesture.
     let dragPointerId = -1;
 
     const xToMs = (px: number): number => (xScale.value as any).invert(px).getTime();
 
-    interface DragSnap { start: number; end: number; originMs: number; kind: DragKind }
+    interface DragSnap {
+      start: number;
+      end: number;
+      originMs: number;
+      kind: DragKind;
+      allPositions: Map<string, {start: number; end: number}>;  // Snapshot ALL tasks
+    }
 
     const dragConfig = (kind: DragKind, originMs: number) => ({
       snapshot: (t: GanttTask): DragSnap => {
         setGestureActive(true);
-        return { start: t.start.getTime(), end: t.end.getTime(), originMs, kind };
+
+        // Snapshot ALL task positions for bidirectional solving and space conservation
+        const allPositions = new Map<string, {start: number; end: number}>();
+        const rows = data.value as GanttTask[];
+        for (const task of rows) {
+          allPositions.set(task.id, {
+            start: task.start.getTime(),
+            end: task.end.getTime()
+          });
+        }
+
+        return { start: t.start.getTime(), end: t.end.getTime(), originMs, kind, allPositions };
       },
-      restore: (t: GanttTask, snap: DragSnap) => {
-        setRange(t, snap.start, snap.end, true);
+
+      restore: (_t: GanttTask, snap: DragSnap) => {
+        // Restore ALL tasks to snapshot positions (not just the dragged one)
+        const rows = data.value as GanttTask[];
+        for (const task of rows) {
+          const pos = snap.allPositions.get(task.id);
+          if (pos) {
+            task.start = new Date(pos.start);
+            task.end = new Date(pos.end);
+          }
+        }
+        data.value = [...data.value];
       },
+
       onMove: (pe: PointerEvent, snap: DragSnap) => {
         const t = dragController.target as GanttTask | null;
         if (!t) return;
         const dms = xToMs(localPoint(pe).x) - snap.originMs;
+
+        // Apply drag to target task
         if (snap.kind === 'move') {
-          // For move, preserve the original duration exactly (don't let snapDay change it)
           const dur = snap.end - snap.start;
           const newStart = snapDay(snap.start + dms);
-          setRange(t, newStart, newStart + dur, true); // skip propagation during drag
+          t.start = new Date(newStart);
+          t.end = new Date(newStart + dur);
         } else if (snap.kind === 'start') {
-          setRange(t, snap.start + dms, snap.end, true);
+          t.start = new Date(snapDay(snap.start + dms));
+          // end stays same
         } else {
-          setRange(t, snap.start, snap.end + dms, true);
+          t.end = new Date(snapDay(snap.end + dms));
+          // start stays same
         }
+
+        // Real-time bidirectional constraint solving during drag
+        if (this.enforceDeps) {
+          propagateDeps(t, snap.allPositions);
+        }
+
+        data.value = [...data.value];
       },
+
       onEnd: (_canceled: boolean) => {
         if (dragPointerId >= 0 && (this as any).hasPointerCapture?.(dragPointerId)) {
           (this as any).releasePointerCapture(dragPointerId);
         }
         dragPointerId = -1;
         setGestureActive(false);
-        // Apply dep constraints on drag end (not during drag)
+
+        // Final propagation on commit (if not canceled)
         if (this.enforceDeps && !_canceled) {
-          propagateDeps();
-          data.value = [...data.value];
+          const t = dragController.target as GanttTask | null;
+          if (t) {
+            propagateDeps(t);
+            data.value = [...data.value];
+          }
         }
         commit();
       },
@@ -344,7 +549,16 @@ export class MdGanttChartLC extends Diagram {
     const wheelConfig = {
       snapshot: (t: GanttTask): DragSnap => {
         setGestureActive(true);
-        return { start: t.start.getTime(), end: t.end.getTime(), originMs: 0, kind: 'end' as DragKind };
+        // Capture all task positions for constraint solving
+        const allPositions = new Map<string, {start: number; end: number}>();
+        const rows = data.value as GanttTask[];
+        for (const task of rows) {
+          allPositions.set(task.id, {
+            start: task.start.getTime(),
+            end: task.end.getTime()
+          });
+        }
+        return { start: t.start.getTime(), end: t.end.getTime(), originMs: 0, kind: 'end' as DragKind, allPositions };
       },
       restore: (t: GanttTask, snap: DragSnap) => { setRange(t, snap.start, snap.end, true); },
       onEnd: () => {
@@ -577,7 +791,7 @@ export class MdGanttChartLC extends Diagram {
     // pathD's `d` string is reactive, so positions follow drag/resize.
     type DepEdge = { from: string; to: string };
     const initialEdges: DepEdge[] = [];
-    for (const t of rows0) for (const dep of t.deps ?? []) initialEdges.push({ from: dep, to: t.id });
+    for (const t of rows0) for (const dep of t.deps ?? []) initialEdges.push({ from: getDepId(dep), to: t.id });
 
     for (const edge of initialEdges) {
       // Live lookup so a re-sorted data array (same ids, new order) still
