@@ -387,7 +387,8 @@ export class DockView extends HTMLElement {
       tab.addEventListener('pointerdown', (e) => {
         if (e.button !== 0) return
         if ((e.target as HTMLElement).closest('.dv-tab-close')) return
-        this._activatePanel(group.id, p.id)
+        // Don't activate on mousedown — wait to see if this becomes a drag.
+        // _startTabDrag will activate on pointerup if no drag threshold was crossed.
         this._startTabDrag(e, group, p.id, p.tileId, label)
       })
 
@@ -783,9 +784,11 @@ export class DockView extends HTMLElement {
   private _startTabDrag(e: PointerEvent, group: DockGroup, panelId: string, tileId: string, label: string) {
     const startX = e.clientX
     const startY = e.clientY
+    let dragging = false
 
     const onMove = (ev: PointerEvent) => {
-      if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 4) return
+      if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 6) return
+      dragging = true
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
       this._beginDrag({ kind: 'panel', panelId, sourceGroupId: group.id, tileId, x: ev.clientX, y: ev.clientY, label, over: null })
@@ -793,6 +796,8 @@ export class DockView extends HTMLElement {
     const onUp = () => {
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
+      // No drag occurred — treat as a click and activate
+      if (!dragging) this._activatePanel(group.id, panelId)
     }
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
@@ -926,10 +931,10 @@ export class DockView extends HTMLElement {
       const r = bodyEl.getBoundingClientRect()
       const xFrac = (clientX - r.left) / r.width
       const yFrac = (clientY - r.top) / r.height
-      if (yFrac < 0.25) return { kind: 'edge', groupId, edge: 'up' }
-      if (yFrac > 0.75) return { kind: 'edge', groupId, edge: 'down' }
-      if (xFrac < 0.25) return { kind: 'edge', groupId, edge: 'left' }
-      if (xFrac > 0.75) return { kind: 'edge', groupId, edge: 'right' }
+      if (yFrac < 0.33) return { kind: 'edge', groupId, edge: 'up' }
+      if (yFrac > 0.67) return { kind: 'edge', groupId, edge: 'down' }
+      if (xFrac < 0.33) return { kind: 'edge', groupId, edge: 'left' }
+      if (xFrac > 0.67) return { kind: 'edge', groupId, edge: 'right' }
       return { kind: 'tab', groupId, index: -1 }
     }
 
