@@ -208,16 +208,23 @@ export class MdIcicleLC extends Diagram {
           const fd = nodeDepth.get(biNode!) ?? 0;
           const maxWindow = maxD !== undefined ? fd + maxD : totalDepth;
           // Depth axis: from focus node's depth row to deepest descendant.
-          let maxX1 = lnode.x1;
+          // Horizontal: depth is layout x; vertical: depth is layout y.
+          const d0 = isHoriz ? lnode.x0 : lnode.y0;
+          const d1 = isHoriz ? lnode.x1 : lnode.y1;
+          let maxD1 = d1;
           for (const { node, depth: relDepth } of walkWithDepth(biNode!)) {
             const absDepth = fd + relDepth;
             if (absDepth <= maxWindow) {
               const ln = lmap.get(node);
-              if (ln && ln.x1 > maxX1) maxX1 = ln.x1;
+              if (ln) {
+                const nd1 = isHoriz ? ln.x1 : ln.y1;
+                if (nd1 > maxD1) maxD1 = nd1;
+              }
             }
           }
-          tx0 = lnode.x0; tx1 = maxX1;
-          ty0 = lnode.y0; ty1 = lnode.y1;
+          tx0 = d0; tx1 = maxD1;
+          ty0 = isHoriz ? lnode.y0 : lnode.x0;
+          ty1 = isHoriz ? lnode.y1 : lnode.x1;
         }
       } else {
         // At root: depth axis = full canvas, sibling axis = full canvas.
@@ -261,12 +268,16 @@ export class MdIcicleLC extends Diagram {
     // Remap layout-space coords through viewport cells → canvas coords.
     // vx = depth axis, vy = sibling axis.
     const remapX = (raw: number) => {
-      const span = vx1.value - vx0.value;
-      return span === 0 ? 0 : (raw - vx0.value) / span * Wc.value;
+      const v0 = isHoriz ? vx0.value : vy0.value;
+      const v1 = isHoriz ? vx1.value : vy1.value;
+      const span = v1 - v0;
+      return span === 0 ? 0 : (raw - v0) / span * Wc.value;
     };
     const remapY = (raw: number) => {
-      const span = vy1.value - vy0.value;
-      return span === 0 ? 0 : (raw - vy0.value) / span * Hc.value;
+      const v0 = isHoriz ? vy0.value : vx0.value;
+      const v1 = isHoriz ? vy1.value : vx1.value;
+      const span = v1 - v0;
+      return span === 0 ? 0 : (raw - v0) / span * Hc.value;
     };
 
     // Windowed tile rendering via forEach (keyed by node id).
@@ -365,7 +376,7 @@ export class MdIcicleLC extends Diagram {
         const items: HandleItem[] = [];
         for (const n of renderedSet.value) {
           const d = nodeDepth.get(n) ?? 0;
-          if (d <= fd || d >= maxWindow) continue;
+          if (d < fd || d >= maxWindow) continue;
           const kids = n.children as BiNode[];
           if (kids.length < 2) continue;
           for (let i = 1; i < kids.length; i++) {
@@ -401,7 +412,9 @@ export class MdIcicleLC extends Diagram {
             const frac = sum === 0 ? 0.5 : va / sum;
             const along = s0 + frac * (s1 - s0);
             const across = (rowA0.peek() + rowA1.peek()) / 2;
-            return isHoriz ? { x: across, y: along } : { x: along, y: across };
+            const lx = isHoriz ? across : along;
+            const ly = isHoriz ? along : across;
+            return { x: remapX(lx), y: remapY(ly) };
           },
           (target, vals) => {
             const [va, vb] = vals;
@@ -409,8 +422,12 @@ export class MdIcicleLC extends Diagram {
             const s1 = spanA1.peek();
             const sum = va + vb;
             if (sum === 0 || s1 <= s0) return [va, vb];
+            // Convert layout-space span to canvas space to match drag target.
+            const cs0 = isHoriz ? remapY(s0) : remapX(s0);
+            const cs1 = isHoriz ? remapY(s1) : remapX(s1);
+            if (cs1 <= cs0) return [va, vb];
             const t = isHoriz ? target.y : target.x;
-            let frac = (t - s0) / (s1 - s0);
+            let frac = (t - cs0) / (cs1 - cs0);
             frac = Math.max(0, Math.min(1, frac));
             const newA = frac * sum;
             return [newA, sum - newA];
@@ -424,7 +441,9 @@ export class MdIcicleLC extends Diagram {
           const frac = sum === 0 ? 0.5 : va / sum;
           const along = s0 + frac * (s1 - s0);
           const across = (rowA0.value + rowA1.value) / 2;
-          return isHoriz ? { x: across, y: along } : { x: along, y: across };
+          const lx = isHoriz ? across : along;
+          const ly = isHoriz ? along : across;
+          return { x: remapX(lx), y: remapY(ly) };
         });
         const active = cell(false);
         const dot = circle(knobPos, 5, {

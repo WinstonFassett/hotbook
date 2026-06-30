@@ -266,6 +266,7 @@ export class MdTreemapLC extends Diagram {
     // render cycle. rAF runs after the DOM has been updated.
     biEffect(() => {
       void renderedSet.value;
+      void this._drillIdCell.value;
       if (pendingDrillId !== undefined) {
         const id = pendingDrillId;
         pendingDrillId = undefined;

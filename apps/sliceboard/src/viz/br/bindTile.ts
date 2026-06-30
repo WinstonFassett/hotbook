@@ -377,7 +377,6 @@ export function makeHierSource(spec: HierSpec): TileSource {
   const onUpdateManyRef = { current: spec.onUpdateMany }
   const leavesRef = { current: [] as BiNode[] }
   const measureKeyRef = { current: spec.measureKey }
-  const drillNodeIdRef = { current: spec.drillNodeId }
   const drillKeyRef = { current: spec.drillKey }
   const showBreadcrumbRef = { current: spec.showBreadcrumb }
 
@@ -394,6 +393,7 @@ export function makeHierSource(spec: HierSpec): TileSource {
       const typedEl = el as ElWithRoot
       typedEl.externalRoot = root
       if (spec.depth !== undefined) typedEl.maxDepth = spec.depth
+      if (spec.drillNodeId !== undefined) typedEl.drillNodeId = spec.drillNodeId
       if (spec.drillKey !== undefined) typedEl.drillKey = spec.drillKey
       if (spec.showBreadcrumb !== undefined) typedEl.showBreadcrumb = spec.showBreadcrumb
     },
@@ -454,7 +454,6 @@ export function makeHierSource(spec: HierSpec): TileSource {
       onUpdateRef.current = nextSpec.onUpdate
       onUpdateManyRef.current = nextSpec.onUpdateMany
       measureKeyRef.current = nextSpec.measureKey
-      drillNodeIdRef.current = nextSpec.drillNodeId
       drillKeyRef.current = nextSpec.drillKey
       showBreadcrumbRef.current = nextSpec.showBreadcrumb
     },
