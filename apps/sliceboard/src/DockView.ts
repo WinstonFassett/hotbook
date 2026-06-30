@@ -167,50 +167,109 @@ export class DockView extends HTMLElement {
 
   private _renderRoot(root: HTMLElement, dock: DockNode | null, tiles: TileRecord[]) {
     const maximized = findMaximizedGroup(dock)
-    // Clear and re-render
-    // We manage DOM ourselves to avoid full teardown on every cell update.
-    // Instead use keyed reconciliation: groups/splits by their node.id.
-    this._reconcileRoot(root, dock, tiles, maximized)
-  }
+    const target = maximized ?? dock
 
-  private _reconcileRoot(
-    container: HTMLElement,
-    dock: DockNode | null,
-    tiles: TileRecord[],
-    maximized: DockGroup | null,
-  ) {
-    // Remove any drop overlay ghost first
-    const existingOverlay = container.querySelector('.dv-drop-overlay')
-    if (existingOverlay) existingOverlay.remove()
-
-    if (!dock) {
-      container.innerHTML = '<div class="dv-empty">No panels — click "+ Tile" to add one</div>'
+    if (!target) {
+      if (root.firstElementChild?.classList.contains('dv-empty')) return
+      root.innerHTML = '<div class="dv-empty">No panels — click "+ Tile" to add one</div>'
       return
     }
 
-    if (maximized) {
-      container.innerHTML = ''
-      const groupEl = this._renderGroup(maximized, tiles)
-      container.appendChild(groupEl)
+    const existingEl = root.firstElementChild as HTMLElement | null
+    const existingId = existingEl?.dataset.splitId ?? existingEl?.dataset.groupId
+
+    if (!existingId || existingId !== target.id) {
+      // Structural change — full rebuild
+      root.innerHTML = ''
+      root.appendChild(this._buildNode(target, tiles))
       return
     }
 
-    container.innerHTML = ''
-    const nodeEl = this._renderNode(dock, tiles)
-    container.appendChild(nodeEl)
+    // Same root id — patch in place (handles size and activeId changes without rebuild)
+    this._patchNode(existingEl!, target, tiles)
+  }
 
-    // Render drag overlay if active
-    if (this._dragState?.over) {
-      this._renderDropOverlay(container, this._dragState.over)
+  // ─── Keyed in-place patch ─────────────────────────────────────────────────
+  // Only called when node.id matches existing DOM element. Avoids rebuild for
+  // hot-path mutations (gutter resize → flex only, tab switch → class toggle + panel swap).
+
+  private _patchNode(el: HTMLElement, node: DockNode, tiles: TileRecord[]) {
+    if (node.kind === 'group') this._patchGroup(el, node, tiles)
+    else this._patchSplit(el, node, tiles)
+  }
+
+  private _patchSplit(el: HTMLElement, split: DockSplit, tiles: TileRecord[]) {
+    const total = split.sizes.reduce((a, b) => a + b, 0) || 1
+    const cells = Array.from(el.children).filter(c => (c as HTMLElement).classList.contains('dv-cell')) as HTMLElement[]
+
+    if (cells.length !== split.children.length) {
+      // Child count changed — rebuild split
+      el.parentElement!.replaceChild(this._buildNode(split, tiles), el)
+      return
+    }
+
+    split.children.forEach((child, i) => {
+      const cell = cells[i]!
+      // Hot path for gutter drag: just update flex, no DOM rebuild
+      cell.style.flex = String((split.sizes[i] ?? 1) / total)
+      const childEl = cell.firstElementChild as HTMLElement | null
+      const childId = childEl?.dataset.splitId ?? childEl?.dataset.groupId
+      if (!childEl || childId !== child.id) {
+        cell.innerHTML = ''
+        cell.appendChild(this._buildNode(child, tiles))
+      } else {
+        this._patchNode(childEl, child, tiles)
+      }
+    })
+  }
+
+  private _patchGroup(el: HTMLElement, group: DockGroup, tiles: TileRecord[]) {
+    // Tab strip: toggle active class only — no rebuild
+    el.querySelectorAll<HTMLElement>('.dv-tab').forEach(tab => {
+      tab.classList.toggle('dv-tab--active', tab.dataset.panelId === group.activeId)
+    })
+
+    const body = el.querySelector<HTMLElement>('.dv-body')
+    if (!body) return
+
+    const active = group.panels.find(p => p.id === group.activeId) ?? group.panels[0]
+    if (!active) { body.innerHTML = ''; return }
+
+    const existingPanelEl = body.querySelector<HTMLElement>('.dv-panel')
+    const existingPanelId = existingPanelEl?.dataset.panelId
+
+    // Remove stale drop indicators
+    body.querySelectorAll('.dv-drop-indicator').forEach(e => e.remove())
+
+    if (existingPanelId !== active.id) {
+      // Active panel changed — swap panel content, chart containers stay alive in _panelCtrls
+      body.querySelectorAll('.dv-panel').forEach(p => p.remove())
+      const wrap = this._getPanelContent(active.id, active.tileId, tiles)
+      if (wrap) body.appendChild(wrap)
+    }
+
+    // Re-apply drop indicators for current drag state
+    const drag = this._dragState
+    if (drag?.over && drag.over.kind === 'edge' && drag.over.groupId === group.id) {
+      const ind = document.createElement('div')
+      ind.className = `dv-drop-indicator dv-drop-indicator--${drag.over.edge}`
+      body.appendChild(ind)
+    }
+    if (drag?.over && drag.over.kind === 'tab' && drag.over.groupId === group.id) {
+      const ind = document.createElement('div')
+      ind.className = 'dv-drop-indicator dv-drop-indicator--center'
+      body.appendChild(ind)
     }
   }
 
-  private _renderNode(node: DockNode, tiles: TileRecord[]): HTMLElement {
-    if (node.kind === 'group') return this._renderGroup(node, tiles)
-    return this._renderSplit(node, tiles)
+  // ─── Build (first mount or structural change) ─────────────────────────────
+
+  private _buildNode(node: DockNode, tiles: TileRecord[]): HTMLElement {
+    if (node.kind === 'group') return this._buildGroup(node, tiles)
+    return this._buildSplit(node, tiles)
   }
 
-  private _renderSplit(split: DockSplit, tiles: TileRecord[]): HTMLElement {
+  private _buildSplit(split: DockSplit, tiles: TileRecord[]): HTMLElement {
     const el = document.createElement('div')
     el.className = `dv-branch dv-branch--${split.direction}`
     el.dataset.splitId = split.id
@@ -222,7 +281,7 @@ export class DockView extends HTMLElement {
       const cell = document.createElement('div')
       cell.className = 'dv-cell'
       cell.style.cssText = `flex:${(split.sizes[i] ?? 1) / total};min-width:0;min-height:0;overflow:hidden;position:relative`
-      cell.appendChild(this._renderNode(child, tiles))
+      cell.appendChild(this._buildNode(child, tiles))
       el.appendChild(cell)
 
       if (i < split.children.length - 1) {
@@ -239,17 +298,15 @@ export class DockView extends HTMLElement {
     return el
   }
 
-  private _renderGroup(group: DockGroup, tiles: TileRecord[]): HTMLElement {
+  private _buildGroup(group: DockGroup, tiles: TileRecord[]): HTMLElement {
     const el = document.createElement('div')
     el.className = 'dv-group'
     el.dataset.groupId = group.id
     el.style.cssText = 'display:flex;flex-direction:column;width:100%;height:100%;overflow:hidden'
 
-    // Tab strip
     const strip = this._renderTabStrip(group, tiles)
     el.appendChild(strip)
 
-    // Panel body
     const body = document.createElement('div')
     body.className = 'dv-body'
     body.dataset.groupId = group.id
@@ -258,11 +315,10 @@ export class DockView extends HTMLElement {
 
     const active = group.panels.find(p => p.id === group.activeId) ?? group.panels[0]
     if (active) {
-      const panelWrap = this._getPanelContent(active.panelId ?? active.id, active.tileId, tiles)
+      const panelWrap = this._getPanelContent(active.id, active.tileId, tiles)
       if (panelWrap) body.appendChild(panelWrap)
     }
 
-    // Drop indicator overlay
     const drag = this._dragState
     if (drag?.over && drag.over.kind === 'edge' && drag.over.groupId === group.id) {
       const ind = document.createElement('div')
@@ -304,6 +360,7 @@ export class DockView extends HTMLElement {
       const tab = document.createElement('div')
       tab.className = `dv-tab${isActive ? ' dv-tab--active' : ''}`
       tab.dataset.tabIndex = String(i)
+      tab.dataset.panelId = p.id
       tab.title = label
 
       const labelEl = document.createElement('span')
@@ -361,6 +418,7 @@ export class DockView extends HTMLElement {
 
     const wrap = document.createElement('div')
     wrap.className = 'dv-panel'
+    wrap.dataset.panelId = panelId
     wrap.style.cssText = 'width:100%;height:100%;display:flex;flex-direction:column;overflow:hidden'
 
     const schema = schemaFor(tileRec.tile.kind)
