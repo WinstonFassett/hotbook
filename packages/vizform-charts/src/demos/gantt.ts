@@ -581,14 +581,21 @@ export class MdGanttChartLC extends Diagram {
         }
         return { start: t.start.getTime(), end: t.end.getTime(), originMs: 0, kind: 'end' as DragKind, allPositions };
       },
-      restore: (t: GanttTask, snap: DragSnap) => { setRange(t, snap.start, snap.end, true); },
+      restore: (_t: GanttTask, snap: DragSnap) => {
+        // Restore ALL tasks to snapshot positions (not just the resized one)
+        const rows = data.value as GanttTask[];
+        for (const task of rows) {
+          const pos = snap.allPositions.get(task.id);
+          if (pos) {
+            task.start = new Date(pos.start);
+            task.end = new Date(pos.end);
+          }
+        }
+        data.value = [...data.value];
+      },
       onEnd: () => {
         setGestureActive(false);
-        // Apply dep constraints on wheel end (not during resize)
-        if (this.enforceDeps) {
-          propagateDeps();
-          data.value = [...data.value];
-        }
+        // Constraints are now enforced in real-time during wheel gesture
         commit();
       },
     };
@@ -601,7 +608,8 @@ export class MdGanttChartLC extends Diagram {
       const curDays = Math.max(1, Math.round((t.end.getTime() - t.start.getTime()) / DAY_MS));
       const step = dynamicWheelStep(curDays, we.shiftKey);
       const delta = (we.deltaY < 0 ? +step : -step) * DAY_MS;
-      setRange(t, t.start.getTime(), t.end.getTime() + delta, true);
+      // Enable constraint propagation during wheel gesture (real-time enforcement)
+      setRange(t, t.start.getTime(), t.end.getTime() + delta, false);
     }, { passive: false });
 
     // ─── Keyboard ────────────────────────────────────────────────────────
