@@ -30,7 +30,7 @@ import {
   ensureArrowMarker,
   label, line, type Mount, pathD, rect, Vec,
 } from "bireactive";
-import { scaleBand, scaleTime } from "d3-scale";
+import { scaleTime } from "d3-scale";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE, type HostSize } from "../lib/host-size";
 import {
@@ -49,6 +49,11 @@ const W = 720;
 const H = 360;
 const DAY_MS = 86400 * 1000;
 const PALETTE = ['#e08888', '#d4a86c', '#ccc060', '#7ec87e', '#60c4c0', '#7aaae8', '#b090e0', '#8899b4'];
+
+// Fixed row sizing for idiomatic Gantt layout
+const ROW_H = 32;      // Row height
+const ROW_GAP = 8;     // Gap between rows
+const ROW_STEP = ROW_H + ROW_GAP; // Total step per row
 
 export interface GanttDependency {
   from: string;  // predecessor task ID
@@ -154,13 +159,9 @@ export class MdGanttChartLC extends Diagram {
         .range([plotX, plotX + plotW.value]);
     });
 
-    // y-scale: band keyed by index so identical labels don't collapse.
-    const yBand = derive(() =>
-      scaleBand<string>()
-        .domain((data.value as GanttTask[]).map((_, i) => String(i)))
-        .range([plotY, plotY + plotH.value])
-        .padding(0.25)
-    );
+    // Fixed row positioning: y = plotY + (index * ROW_STEP)
+    const rowY = (index: number) => plotY + (index * ROW_STEP);
+    const rowCenterY = (index: number) => rowY(index) + ROW_H / 2;
 
     const hover = cell<GanttTask | null>(null);
     const selected = cell<GanttTask | null>(null);
@@ -174,12 +175,10 @@ export class MdGanttChartLC extends Diagram {
       return { x: (e.clientX - r.left) * sx, y: (e.clientY - r.top) * sy };
     };
     const findAtPixelY = (py: number): GanttTask | null => {
-      const ys = yBand.value;
-      const step = ys.step();
       const rows = data.value as GanttTask[];
       for (let i = 0; i < rows.length; i++) {
-        const by = ys(String(i)) ?? -1;
-        if (py >= by && py < by + step) return rows[i]!;
+        const by = rowY(i);
+        if (py >= by && py < by + ROW_STEP) return rows[i]!;
       }
       return null;
     };
@@ -708,13 +707,11 @@ export class MdGanttChartLC extends Diagram {
     const MAX_ROWS = rows0.length;
     for (let idx = 0; idx < MAX_ROWS; idx++) {
       const di = (): GanttTask | null => (data.value as GanttTask[])[idx] ?? null;
-      const key = String(idx);
-      const barY = derive(() => yBand.value(key) ?? 0);
-      const barH = derive(() => yBand.value.bandwidth());
-      const barCY = derive(() => barY.value + barH.value / 2);
+      const barY = rowY(idx);
+      const barCY = rowCenterY(idx);
 
       s(label(
-        Vec.derive(() => ({ x: plotX - 8, y: barCY.value })),
+        Vec.derive(() => ({ x: plotX - 8, y: barCY })),
         derive(() => di()?.label ?? ""),
         { size: 11, align: Anchor.Right, fill: "#bbb", opacity: 0.85 },
       ));
@@ -727,7 +724,7 @@ export class MdGanttChartLC extends Diagram {
       const rh = s(rect(
         plotX, barY,
         derive(() => plotW.value),
-        barH,
+        ROW_H,
         { fill: "#ffffff", opacity: rowFill },
       ));
       rh.el.style.pointerEvents = "none";
@@ -737,14 +734,13 @@ export class MdGanttChartLC extends Diagram {
     // ─── Task bars ─────────────────────────────────────────────────────────
     for (let idx = 0; idx < MAX_ROWS; idx++) {
       const di = (): GanttTask | null => (data.value as GanttTask[])[idx] ?? null;
-      const key = String(idx);
       const base = (() => {
         const t = rows0[idx]; return t ? this.#color(idx, t) : '#888';
       })();
       const hoverColor = lightenHex(base, 0.35);
 
-      const barY = derive(() => yBand.value(key) ?? 0);
-      const barH = derive(() => yBand.value.bandwidth());
+      const barY = rowY(idx);
+      const barCY = rowCenterY(idx);
       const xS = derive(() => { const d = di(); return d ? (xScale.value as any)(d.start) as number : 0; });
       const xE = derive(() => { const d = di(); return d ? (xScale.value as any)(d.end)   as number : 0; });
       const barW = derive(() => Math.max(0, xE.value - xS.value));
@@ -753,7 +749,7 @@ export class MdGanttChartLC extends Diagram {
         return selected.value === d ? "#fff" : hover.value === d ? hoverColor : base;
       });
 
-      const tile = s(rect(xS, barY, barW, barH, { fill, corner: 3 }));
+      const tile = s(rect(xS, barY, barW, ROW_H, { fill, corner: 3 }));
       tile.el.style.cursor = "grab";
       tile.el.style.transition = settleTransition(["x", "width", "fill"]);
 
@@ -761,7 +757,7 @@ export class MdGanttChartLC extends Diagram {
       const inOpacity = derive(() => barW.value >= 60 ? 1 : 0);
       const labelFill = derive(() => { const d = di(); return selected.value === d ? base : "#fff"; });
       s(label(
-        Vec.derive(() => ({ x: xS.value + 8, y: barY.value + barH.value / 2 })),
+        Vec.derive(() => ({ x: xS.value + 8, y: barCY })),
         derive(() => di()?.label ?? ""),
         { size: 11, align: Anchor.Left, fill: labelFill, opacity: inOpacity },
       ));
@@ -772,7 +768,7 @@ export class MdGanttChartLC extends Diagram {
         return (hover.value === d || selected.value === d) ? 1 : 0;
       });
       s(label(
-        Vec.derive(() => ({ x: xE.value + 6, y: barY.value + barH.value / 2 })),
+        Vec.derive(() => ({ x: xE.value + 6, y: barCY })),
         derive(() => {
           const d = di(); if (!d) return "";
           const days = Math.round((d.end.getTime() - d.start.getTime()) / DAY_MS);
@@ -790,7 +786,7 @@ export class MdGanttChartLC extends Diagram {
       const handleFill = derive(() => { const d = di(); return selected.value === d ? "#fff" : hoverColor; });
 
       const startHandle = s(circle(
-        Vec.derive(() => ({ x: xS.value, y: barY.value + barH.value / 2 })),
+        Vec.derive(() => ({ x: xS.value, y: barCY })),
         handleR,
         { fill: handleFill, stroke: "#0b0d12", strokeWidth: 1.5, opacity: handleOpacity },
       ));
@@ -798,7 +794,7 @@ export class MdGanttChartLC extends Diagram {
       startHandle.el.style.transition = hoverTransition("opacity");
 
       const endHandle = s(circle(
-        Vec.derive(() => ({ x: xE.value, y: barY.value + barH.value / 2 })),
+        Vec.derive(() => ({ x: xE.value, y: barCY })),
         handleR,
         { fill: handleFill, stroke: "#0b0d12", strokeWidth: 1.5, opacity: handleOpacity },
       ));
