@@ -843,12 +843,10 @@ export class MdGanttChartLC extends Diagram {
         const fIdx = indexById.value.get(f.id)!;
         const tIdx = indexById.value.get(t.id)!;
         const xS = xScale.value as any;
-        const ys = yBand.value;
-        const bh = ys.bandwidth();
         const x0 = xS(f.end) as number;
         const x1 = xS(t.start) as number;
-        const y0 = (ys(String(fIdx)) ?? 0) + bh / 2;
-        const y1 = (ys(String(tIdx)) ?? 0) + bh / 2;
+        const y0 = rowCenterY(fIdx);
+        const y1 = rowCenterY(tIdx);
         // Step path: out from f end, vertical to t row, in to t start.
         // If t.start is to the left of f.end, route around: go right STUB,
         // down/up half a row, back left, vertical, then in to t.start.
@@ -858,7 +856,7 @@ export class MdGanttChartLC extends Diagram {
           return `M ${x0} ${y0} L ${midX} ${y0} L ${midX} ${y1} L ${tipX} ${y1}`;
         }
         // Back-route (predecessor finishes AFTER successor starts — overlap).
-        const stepDown = (y1 > y0 ? +1 : -1) * (ys.step() - bh) / 2;
+        const stepDown = (y1 > y0 ? +1 : -1) * ROW_GAP / 2;
         const lift = y0 + stepDown;
         const outX = x0 + STUB;
         const backX = Math.min(tipX - STUB, x1 - STUB);
