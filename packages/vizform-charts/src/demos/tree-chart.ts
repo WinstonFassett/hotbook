@@ -88,6 +88,17 @@ export class MdTreeChart extends Diagram {
     // Derived cell for orientation (must be separate derived cell for reactive tracking)
     const isHoriz = derive(() => this._orientationCell.value === 'horizontal');
 
+    // Tweened swap amount for smooth orientation transitions (0 = vertical, 1 = horizontal)
+    const swapAmount = num(isHoriz.value ? 1 : 0);
+    let swapCancel: (() => void) | null = null;
+    let swapInited = false;
+    biEffect(() => {
+      const target = isHoriz.value ? 1 : 0;
+      if (!swapInited) { swapInited = true; swapAmount.value = target; return; }
+      swapCancel?.();
+      swapCancel = this.anim.start(tween(swapAmount, target, SORT_SEC, easeOut));
+    });
+
     // tree() layout: assigns .x (0..1) and .y (depth) per node
     const layout = derive(() => {
       const h = buildHierarchy(root, this._sortByCell.value);
@@ -133,12 +144,16 @@ export class MdTreeChart extends Diagram {
     }
     const posOf = (n: BiNode) => {
       const c = posCells.get(n);
-      const isHorizontal = layout.value.isHorizontal;
-      // For horizontal orientation, swap x and y
-      if (isHorizontal) {
-        return { x: PAD_LEFT + (c?.ly.value ?? 0), y: PAD_TOP + (c?.lx.value ?? 0) };
-      }
-      return { x: PAD_LEFT + (c?.lx.value ?? 0), y: PAD_TOP + (c?.ly.value ?? 0) };
+      const lxVal = c?.lx.value ?? 0;
+      const lyVal = c?.ly.value ?? 0;
+      const swap = swapAmount.value; // 0 = vertical, 1 = horizontal
+      // Interpolate between vertical and horizontal coordinate systems
+      // Vertical: x uses lx, y uses ly
+      // Horizontal: x uses ly, y uses lx
+      // Lerp: vertical + (horizontal - vertical) * swap
+      const x = PAD_LEFT + (lxVal + (lyVal - lxVal) * swap);
+      const y = PAD_TOP + (lyVal + (lxVal - lyVal) * swap);
+      return { x, y };
     };
 
     // Draw edges first (under nodes)
