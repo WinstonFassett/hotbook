@@ -355,6 +355,7 @@ interface ElWithRoot extends HTMLElement {
   drillKey?: string
   showBreadcrumb?: boolean
   sortBy?: 'index' | 'value'
+  orientation?: 'horizontal' | 'vertical'
 }
 
 export interface HierSpec {
@@ -362,6 +363,8 @@ export interface HierSpec {
   nodes: PNode[]
   measureKey: string
   depth?: number
+  sortBy?: 'index' | 'value'
+  orientation?: 'horizontal' | 'vertical'
   sortBy?: 'index' | 'value'
   shapeKey: string
   valueKey: string
@@ -381,6 +384,7 @@ export function makeHierSource(spec: HierSpec): TileSource {
   const drillKeyRef = { current: spec.drillKey }
   const showBreadcrumbRef = { current: spec.showBreadcrumb }
   const sortByRef = { current: spec.sortBy ?? 'index' }
+  const orientationRef = { current: spec.orientation }
 
   const source: TileSource = {
     tag: spec.tag,
@@ -399,6 +403,8 @@ export function makeHierSource(spec: HierSpec): TileSource {
       if (spec.drillKey !== undefined) typedEl.drillKey = spec.drillKey
       if (spec.showBreadcrumb !== undefined) typedEl.showBreadcrumb = spec.showBreadcrumb
       typedEl.sortBy = sortByRef.current
+      delete (typedEl as any).orientation;
+      if (orientationRef.current !== undefined) typedEl.orientation = orientationRef.current
     },
 
     initialLast(_el: HTMLElement): Map<string, number> {
@@ -425,6 +431,10 @@ export function makeHierSource(spec: HierSpec): TileSource {
       // Sync sortBy reactively — the chart's setter writes a reactive cell so
       // the layout re-derives and tweens to the new order (no remount).
       typedEl.sortBy = sortByRef.current
+      // Delete any own property that shadows the prototype getter/setter,
+      // then assign — this ensures the reactive setter fires.
+      delete (typedEl as any).orientation;
+      if (orientationRef.current !== undefined) typedEl.orientation = orientationRef.current
     },
 
     bindEditOut(_el: HTMLElement, lastRef: Map<string, number>): () => void {
@@ -463,6 +473,7 @@ export function makeHierSource(spec: HierSpec): TileSource {
       drillKeyRef.current = nextSpec.drillKey
       showBreadcrumbRef.current = nextSpec.showBreadcrumb
       sortByRef.current = nextSpec.sortBy ?? 'index'
+      orientationRef.current = nextSpec.orientation
     },
   }
 

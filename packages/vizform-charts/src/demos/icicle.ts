@@ -62,13 +62,17 @@ export class MdIcicleLC extends Diagram {
   get sortBy(): 'index' | 'value' { return this._sortByCell.value }
   set sortBy(v: 'index' | 'value') { this._sortByCell.value = v }
 
+  private _orientationCell = cell<'horizontal' | 'vertical'>('horizontal')
+  get orientation(): 'horizontal' | 'vertical' { return this._orientationCell.value }
+  set orientation(v: 'horizontal' | 'vertical') { this._orientationCell.value = v }
+
   protected scene(s: Mount): void {
     const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
     const view = this.view(Wc, Hc);
     this.tabIndex = -1;
     this.style.outline = "none";
 
-    const isHoriz = (this.orientation ?? "horizontal") === "horizontal";
+    const isHoriz = derive(() => this._orientationCell.value === 'horizontal');
 
     const root = this.externalRoot ?? portfolio();
     const parentIdx = buildParentIndex(root);
@@ -103,15 +107,15 @@ export class MdIcicleLC extends Diagram {
       const h = buildHierarchy(root, this._sortByCell.value);
       const td = h.height; // levels below root
       const visibleDepth = maxD !== undefined ? Math.min(maxD, td) : td;
-      const sibAxis = isHoriz ? Hc.value : Wc.value;
-      const depthCanvas = isHoriz ? Wc.value : Hc.value;
+      const sibAxis = isHoriz.value ? Hc.value : Wc.value;
+      const depthCanvas = isHoriz.value ? Wc.value : Hc.value;
       const scaledDepth = visibleDepth > 0 ? depthCanvas * (td + 1) / visibleDepth : depthCanvas;
       partition<BiNode>().size([sibAxis, scaledDepth])(h);
       const rowDepth = visibleDepth > 0 ? depthCanvas / visibleDepth : 0;
       const map = new Map<BiNode, HierarchyRectangularNode<BiNode>>();
       h.each((d) => {
         const node = d as HierarchyRectangularNode<BiNode>;
-        if (isHoriz) {
+        if (isHoriz.value) {
           map.set(d.data, {
             ...node,
             x0: node.y0 - rowDepth,
@@ -135,8 +139,8 @@ export class MdIcicleLC extends Diagram {
     // for vertical, depth axis = canvas y, sibling axis = canvas x.
     const vx0 = num(0);
     const vy0 = num(0);
-    const vx1 = num(isHoriz ? W : H);
-    const vy1 = num(isHoriz ? H : W);
+    const vx1 = num(isHoriz.value ? W : H);
+    const vy1 = num(isHoriz.value ? H : W);
 
     // Focus depth (reactive).
     const focusDepth = derive(() => {
@@ -200,9 +204,10 @@ export class MdIcicleLC extends Diagram {
     biEffect(() => {
       const id = this._drillIdCell.value;
       void Wc.value; void Hc.value; // track resize
+      void isHoriz.value; // track orientation
       const W0 = Wc.value, H0 = Hc.value;
-      const depthCanvas = isHoriz ? W0 : H0;
-      const sibCanvas = isHoriz ? H0 : W0;
+      const depthCanvas = isHoriz.value ? W0 : H0;
+      const sibCanvas = isHoriz.value ? H0 : W0;
 
       let tx0 = 0, ty0 = 0, tx1 = depthCanvas, ty1 = sibCanvas;
       const lmap = untracked(() => layout.value);
@@ -214,22 +219,22 @@ export class MdIcicleLC extends Diagram {
           const maxWindow = maxD !== undefined ? fd + maxD : totalDepth;
           // Depth axis: from focus node's depth row to deepest descendant.
           // Horizontal: depth is layout x; vertical: depth is layout y.
-          const d0 = isHoriz ? lnode.x0 : lnode.y0;
-          const d1 = isHoriz ? lnode.x1 : lnode.y1;
+          const d0 = isHoriz.value ? lnode.x0 : lnode.y0;
+          const d1 = isHoriz.value ? lnode.x1 : lnode.y1;
           let maxD1 = d1;
           for (const { node, depth: relDepth } of walkWithDepth(biNode!)) {
             const absDepth = fd + relDepth;
             if (absDepth <= maxWindow) {
               const ln = lmap.get(node);
               if (ln) {
-                const nd1 = isHoriz ? ln.x1 : ln.y1;
+                const nd1 = isHoriz.value ? ln.x1 : ln.y1;
                 if (nd1 > maxD1) maxD1 = nd1;
               }
             }
           }
           tx0 = d0; tx1 = maxD1;
-          ty0 = isHoriz ? lnode.y0 : lnode.x0;
-          ty1 = isHoriz ? lnode.y1 : lnode.x1;
+          ty0 = isHoriz.value ? lnode.y0 : lnode.x0;
+          ty1 = isHoriz.value ? lnode.y1 : lnode.x1;
         }
       } else {
         // At root: depth axis = full canvas, sibling axis = full canvas.
@@ -273,14 +278,14 @@ export class MdIcicleLC extends Diagram {
     // Remap layout-space coords through viewport cells → canvas coords.
     // vx = depth axis, vy = sibling axis.
     const remapX = (raw: number) => {
-      const v0 = isHoriz ? vx0.value : vy0.value;
-      const v1 = isHoriz ? vx1.value : vy1.value;
+      const v0 = isHoriz.value ? vx0.value : vy0.value;
+      const v1 = isHoriz.value ? vx1.value : vy1.value;
       const span = v1 - v0;
       return span === 0 ? 0 : (raw - v0) / span * Wc.value;
     };
     const remapY = (raw: number) => {
-      const v0 = isHoriz ? vy0.value : vx0.value;
-      const v1 = isHoriz ? vy1.value : vx1.value;
+      const v0 = isHoriz.value ? vy0.value : vx0.value;
+      const v1 = isHoriz.value ? vy1.value : vx1.value;
       const span = v1 - v0;
       return span === 0 ? 0 : (raw - v0) / span * Hc.value;
     };
@@ -421,10 +426,10 @@ export class MdIcicleLC extends Diagram {
         // both siblings. The depth-axis band [rowA0, rowA1] comes from either
         // child's depth row. For vertical, sibling axis = x, depth axis = y;
         // for horizontal, sibling axis = y, depth axis = x.
-        const spanA0 = derive(() => isHoriz ? (layout.value.get(aNode)?.y0 ?? 0) : (layout.value.get(aNode)?.x0 ?? 0));
-        const spanA1 = derive(() => isHoriz ? (layout.value.get(bNode)?.y1 ?? 0) : (layout.value.get(bNode)?.x1 ?? 0));
-        const rowA0 = derive(() => isHoriz ? (layout.value.get(aNode)?.x0 ?? 0) : (layout.value.get(aNode)?.y0 ?? 0));
-        const rowA1 = derive(() => isHoriz ? (layout.value.get(aNode)?.x1 ?? 0) : (layout.value.get(aNode)?.y1 ?? 0));
+        const spanA0 = derive(() => isHoriz.value ? (layout.value.get(aNode)?.y0 ?? 0) : (layout.value.get(aNode)?.x0 ?? 0));
+        const spanA1 = derive(() => isHoriz.value ? (layout.value.get(bNode)?.y1 ?? 0) : (layout.value.get(bNode)?.x1 ?? 0));
+        const rowA0 = derive(() => isHoriz.value ? (layout.value.get(aNode)?.x0 ?? 0) : (layout.value.get(aNode)?.y0 ?? 0));
+        const rowA1 = derive(() => isHoriz.value ? (layout.value.get(aNode)?.x1 ?? 0) : (layout.value.get(aNode)?.y1 ?? 0));
 
         // Drag target: a Vec lens whose ONLY writable sources are the two
         // value cells (a, b). Span geometry is read-only layout output, so it's
@@ -439,8 +444,9 @@ export class MdIcicleLC extends Diagram {
             const frac = sum === 0 ? 0.5 : va / sum;
             const along = s0 + frac * (s1 - s0);
             const across = (rowA0.peek() + rowA1.peek()) / 2;
-            const lx = isHoriz ? across : along;
-            const ly = isHoriz ? along : across;
+            const h = isHoriz.peek();
+            const lx = h ? across : along;
+            const ly = h ? along : across;
             return { x: remapX(lx), y: remapY(ly) };
           },
           (target, vals) => {
@@ -449,11 +455,12 @@ export class MdIcicleLC extends Diagram {
             const s1 = spanA1.peek();
             const sum = va + vb;
             if (sum === 0 || s1 <= s0) return [va, vb];
+            const h = isHoriz.peek();
             // Convert layout-space span to canvas space to match drag target.
-            const cs0 = isHoriz ? remapY(s0) : remapX(s0);
-            const cs1 = isHoriz ? remapY(s1) : remapX(s1);
+            const cs0 = h ? remapY(s0) : remapX(s0);
+            const cs1 = h ? remapY(s1) : remapX(s1);
             if (cs1 <= cs0) return [va, vb];
-            const t = isHoriz ? target.y : target.x;
+            const t = h ? target.y : target.x;
             let frac = (t - cs0) / (cs1 - cs0);
             frac = Math.max(0, Math.min(1, frac));
             const newA = frac * sum;
@@ -468,8 +475,9 @@ export class MdIcicleLC extends Diagram {
           const frac = sum === 0 ? 0.5 : va / sum;
           const along = s0 + frac * (s1 - s0);
           const across = (rowA0.value + rowA1.value) / 2;
-          const lx = isHoriz ? across : along;
-          const ly = isHoriz ? along : across;
+          const h = isHoriz.value;
+          const lx = h ? across : along;
+          const ly = h ? along : across;
           return { x: remapX(lx), y: remapY(ly) };
         });
         const active = cell(false);
@@ -484,7 +492,7 @@ export class MdIcicleLC extends Diagram {
           onEnd: () => { active.value = false; dot.el.style.cursor = "grab"; },
         });
         dot.track(dispose);
-        dot.el.style.cursor = isHoriz ? "ns-resize" : "ew-resize";
+        biEffect(() => { dot.el.style.cursor = isHoriz.value ? "ns-resize" : "ew-resize"; });
         dot.el.addEventListener("pointerenter", () => { active.value = true; });
         dot.el.addEventListener("pointerleave", () => { active.value = false; });
 
