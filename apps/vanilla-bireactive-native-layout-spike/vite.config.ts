@@ -9,6 +9,11 @@ const bireactiveSrc = fileURLToPath(
 );
 
 export default defineConfig({
+  base: '/native-layout/',
+  build: {
+    outDir: '../../apps/sliceboard/dist/native-layout',
+    emptyOutDir: true,
+  },
   resolve: {
     alias: {
       "@bireactive": bireactiveSrc,
