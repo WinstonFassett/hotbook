@@ -34,6 +34,8 @@ import {
   MdTreeChart,
 } from '@winstonfassett/vizform-charts'
 
+import { MdGantt } from '../../../../vanilla-bireactive-spike/src/elements/gantt'
+
 // Register custom elements once
 const TAGS = [
   ['v-br-bar',            MdBarChartLC],
@@ -52,6 +54,7 @@ const TAGS = [
   ['v-br-sankey',         MdSankeySimple],
   ['v-br-sankey-flow',    MdSankeyFlow],
   ['v-br-tree',           MdTreeChart],
+  ['v-br-gantt',          MdGantt],
 ] as const
 
 for (const [tag, cls] of TAGS) {
@@ -365,5 +368,47 @@ export function BrLcSankey({ edges }: SankeyProps) {
 // ─── Sankey (conservation flow) ─────────────────────────────────────────────────
 export function BrLcSankeyFlow() {
   const ref = useBrElement<MdSankeyFlow>('v-br-sankey-flow', () => {}, [])
+  return <div ref={ref} style={{ width: '100%', height: '100%' }} />
+}
+
+// ─── Gantt (project tasks with dependencies) ───────────────────────────────────
+
+interface GanttProps {
+  nodes: PNode[]
+  edges: PEdge[]
+}
+
+export function BrLcGantt({ nodes, edges }: GanttProps) {
+  // Transform sliceboard PNode format to Gantt task format
+  // Expected measures: start (number), end (number)
+  const tasks = nodes.map(n => ({
+    id: n.id,
+    name: n.name,
+    lo: n.measures.start ?? 0,
+    hi: n.measures.end ?? (n.measures.start ?? 0) + (n.measures.duration ?? 1),
+    color: n.color ?? '#5b8def',
+  }))
+
+  // Transform sliceboard PEdge format to Gantt dependency format
+  // source/target are node IDs, lag is optional (defaults to 0)
+  const deps = edges.map(e => ({
+    from: e.source,
+    to: e.target,
+    lag: e.lag ?? 0,
+  }))
+
+  const data = { tasks, deps }
+  const ref = useBrElement<MdGantt>('v-br-gantt', el => {
+    (el as any).externalData = data
+  }, [JSON.stringify(data)])
+
+  if (nodes.length === 0) {
+    return (
+      <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.4, fontSize: 12 }}>
+        No task data — add rows with start/end measures
+      </div>
+    )
+  }
+
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }

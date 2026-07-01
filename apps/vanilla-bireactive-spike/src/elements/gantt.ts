@@ -57,18 +57,21 @@ function makeTasks(): Task[] {
   return TASKS.map(t => ({ def: t, range: range(t.lo, t.hi) }));
 }
 
-// Topologically order tasks once for the cascade-on-drag policy.
-function topoOrder(): string[] {
+// Topologically order tasks for the cascade-on-drag policy.
+function topoOrder(
+  taskDefs: TaskDef[],
+  depDefs: Array<{ from: string; to: string; lag: number }>
+): string[] {
   const indeg = new Map<string, number>();
-  for (const t of TASKS) indeg.set(t.id, 0);
-  for (const d of DEPS) indeg.set(d.to, (indeg.get(d.to) ?? 0) + 1);
+  for (const t of taskDefs) indeg.set(t.id, 0);
+  for (const d of depDefs) indeg.set(d.to, (indeg.get(d.to) ?? 0) + 1);
   const queue: string[] = [];
   for (const [k, v] of indeg) if (v === 0) queue.push(k);
   const out: string[] = [];
   while (queue.length) {
     const k = queue.shift()!;
     out.push(k);
-    for (const d of DEPS.filter(x => x.from === k)) {
+    for (const d of depDefs.filter(x => x.from === k)) {
       const n = (indeg.get(d.to) ?? 0) - 1;
       indeg.set(d.to, n);
       if (n === 0) queue.push(d.to);
@@ -76,13 +79,18 @@ function topoOrder(): string[] {
   }
   return out;
 }
-const TOPO = topoOrder();
 
 export class MdGantt extends Diagram {
+  externalData?: { tasks: TaskDef[]; deps: Array<{ from: string; to: string; lag: number }> };
+
   protected scene(s: Mount): void {
     const view = this.view(W, H);
-    const tasks = makeTasks();
+    // Use external data if provided, otherwise fall back to demo data
+    const taskDefs = this.externalData?.tasks ?? TASKS;
+    const depDefs = this.externalData?.deps ?? DEPS;
+    const tasks = taskDefs.map(t => ({ def: t, range: range(t.lo, t.hi) }));
     const byId = new Map(tasks.map(t => [t.def.id, t]));
+    const topo = topoOrder(taskDefs, depDefs);
 
     // Total day range from data, with a little headroom.
     const T0 = 0;
@@ -118,9 +126,9 @@ export class MdGantt extends Diagram {
     // dependencies. Width is preserved (sliding, not stretching) unless
     // the user is editing an endpoint.
     const propagate = () => {
-      for (const id of TOPO) {
+      for (const id of topo) {
         const t = byId.get(id)!;
-        const incoming = DEPS.filter(d => d.to === id);
+        const incoming = depDefs.filter(d => d.to === id);
         if (!incoming.length) continue;
         let minStart = -Infinity;
         for (const d of incoming) {
@@ -276,7 +284,7 @@ export class MdGantt extends Diagram {
 
     // --- dependency edges (arrows) ---
     // Drawn after bodies so they overlay; simple right-angle elbow.
-    for (const d of DEPS) {
+    for (const d of depDefs) {
       const from = byId.get(d.from)!;
       const to = byId.get(d.to)!;
       const fromIdx = tasks.findIndex(x => x.def.id === d.from);

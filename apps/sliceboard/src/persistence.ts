@@ -17,6 +17,7 @@ export interface PEdge {
   source: string
   target: string
   value: number
+  lag?: number  // For Gantt: minimum days between finish and start (finish-to-start lag)
 }
 
 export interface DimDef {
@@ -67,6 +68,7 @@ export type TileKind =
   | 'br-lc-sankey'
   | 'br-lc-sankey-flow'
   | 'br-lc-tree'
+  | 'br-lc-gantt'
   | RetiredTileKind
 
 export interface Tile {
@@ -516,6 +518,42 @@ function buildSupplyChainDataset(): Dataset {
   }
 }
 
+// ─── Dataset 5: Project Schedule (tasks + dependencies for Gantt) ─────────────
+
+function buildProjectDataset(): Dataset {
+  _idc = 0
+  // Tasks with start/end/duration measures
+  const rows: PNode[] = [
+    row('Design', { start: 0, end: 10, duration: 10 }, {}, null, '#5b8def'),
+    row('API', { start: 12, end: 25, duration: 13 }, {}, null, '#7ed321'),
+    row('UI', { start: 14, end: 30, duration: 16 }, {}, null, '#f5a623'),
+    row('QA', { start: 32, end: 42, duration: 10 }, {}, null, '#e25c5c'),
+    row('Ship', { start: 44, end: 48, duration: 4 }, {}, null, '#9b59b6'),
+  ]
+  // Dependencies with finish-to-start lag
+  const edges: PEdge[] = [
+    { source: rows[0]!.id, target: rows[1]!.id, value: 0, lag: 2 },  // Design → API (2 day lag)
+    { source: rows[0]!.id, target: rows[2]!.id, value: 0, lag: 4 },  // Design → UI (4 day lag)
+    { source: rows[1]!.id, target: rows[3]!.id, value: 0, lag: 2 },  // API → QA (2 day lag)
+    { source: rows[2]!.id, target: rows[3]!.id, value: 0, lag: 2 },  // UI → QA (2 day lag)
+    { source: rows[3]!.id, target: rows[4]!.id, value: 0, lag: 2 },  // QA → Ship (2 day lag)
+  ]
+  return {
+    id: 'ds-project',
+    name: 'Project schedule (gantt)',
+    createdAt: NOW,
+    shape: 'graph',
+    rows,
+    edges,
+    measureDefs: [
+      { key: 'start', label: 'Start Day' },
+      { key: 'end', label: 'End Day' },
+      { key: 'duration', label: 'Duration (days)' },
+    ],
+    dimDefs: [],
+  }
+}
+
 function buildSeedWorkspace(): Workspace {
   const fruit = buildFruitDataset()
   const team  = buildTeamDataset()
@@ -558,14 +596,18 @@ function buildSeedWorkspace(): Workspace {
   const supply   = buildSupplyChainDataset()
   const supplyTiles: Tile[] = [{ id: 'sp-0', kind: 'br-lc-sankey', title: 'Supply chain' }]
   const supplyLayout: LayoutItem[] = [{ i: 'sp-0', x: 0, y: 0, w: 12, h: 8 }]
+  const project  = buildProjectDataset()
+  const projectTiles: Tile[] = [{ id: 'pj-0', kind: 'br-lc-gantt', title: 'Project schedule' }]
+  const projectLayout: LayoutItem[] = [{ i: 'pj-0', x: 0, y: 0, w: 12, h: 8 }]
 
   return {
-    datasets: [life, fruit, team, supply],
+    datasets: [life, fruit, team, supply, project],
     dashboards: [
-      { id: 'dash-life',   datasetId: life.id,   name: 'Life',          createdAt: NOW, layout: lifeViz.layout,   tiles: lifeViz.tiles,   measureKey: 'est' },
-      { id: 'dash-fruit',  datasetId: fruit.id,  name: 'Fruit',         createdAt: NOW, layout: fruitViz.layout,  tiles: fruitViz.tiles,  measureKey: 'value' },
-      { id: 'dash-team',   datasetId: team.id,   name: 'Team',          createdAt: NOW, layout: teamViz.layout,   tiles: teamViz.tiles,   measureKey: 'budget' },
-      { id: 'dash-supply', datasetId: supply.id, name: 'Supply chain',  createdAt: NOW, layout: supplyLayout,     tiles: supplyTiles,     measureKey: 'value' },
+      { id: 'dash-life',    datasetId: life.id,    name: 'Life',            createdAt: NOW, layout: lifeViz.layout,   tiles: lifeViz.tiles,    measureKey: 'est' },
+      { id: 'dash-fruit',   datasetId: fruit.id,   name: 'Fruit',           createdAt: NOW, layout: fruitViz.layout,  tiles: fruitViz.tiles,   measureKey: 'value' },
+      { id: 'dash-team',    datasetId: team.id,    name: 'Team',            createdAt: NOW, layout: teamViz.layout,   tiles: teamViz.tiles,    measureKey: 'budget' },
+      { id: 'dash-supply',  datasetId: supply.id,  name: 'Supply chain',    createdAt: NOW, layout: supplyLayout,     tiles: supplyTiles,      measureKey: 'value' },
+      { id: 'dash-project', datasetId: project.id, name: 'Project schedule',createdAt: NOW, layout: projectLayout,    tiles: projectTiles,     measureKey: 'duration' },
     ],
     activeDatasetId: life.id,
     activeDashboardId: 'dash-life',
