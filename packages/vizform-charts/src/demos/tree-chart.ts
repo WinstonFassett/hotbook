@@ -47,6 +47,10 @@ export class MdTreeChart extends Diagram {
   private _sortByCell = cell<'index' | 'value'>('index')
   get sortBy(): 'index' | 'value' { return this._sortByCell.value }
   set sortBy(v: 'index' | 'value') { this._sortByCell.value = v }
+
+  private _orientationCell = cell<'vertical' | 'horizontal'>('vertical')
+  get orientation(): 'vertical' | 'horizontal' { return this._orientationCell.value }
+  set orientation(v: 'vertical' | 'horizontal') { this._orientationCell.value = v }
   protected scene(s: Mount): void {
     const root = this.externalRoot ?? portfolio();
 
@@ -76,30 +80,33 @@ export class MdTreeChart extends Diagram {
     // tree() layout: assigns .x (0..1) and .y (depth) per node
     const layout = derive(() => {
       const h = buildHierarchy(root, this._sortByCell.value);
-      tree<BiNode>().size([
-        cW - PAD_LEFT - PAD_RIGHT,
-        cH - PAD_TOP - PAD_BOTTOM,
-      ])(h);
+      const isHorizontal = this._orientationCell.value === 'horizontal';
+      // For horizontal orientation, swap width/height so depth goes horizontally
+      tree<BiNode>().size(
+        isHorizontal
+          ? [cH - PAD_TOP - PAD_BOTTOM, cW - PAD_LEFT - PAD_RIGHT]
+          : [cW - PAD_LEFT - PAD_RIGHT, cH - PAD_TOP - PAD_BOTTOM]
+      )(h);
       const map = new Map<BiNode, HierarchyPointNode<BiNode>>();
       h.each((d) => map.set(d.data, d as HierarchyPointNode<BiNode>));
-      return map;
+      return { map, isHorizontal };
     });
 
     // Per-node layout-position cells (tweened on sort). Pre-built so both edges
     // and nodes can read from the same tweened positions.
     const posCells = new Map<BiNode, { lx: ReturnType<typeof num>; ly: ReturnType<typeof num> }>();
     for (const { node } of walkWithDepth(root)) {
-      const lseed = untracked(() => layout.value.get(node)) ?? { x: 0, y: 0 };
+      const lseed = untracked(() => layout.value.map.get(node)) ?? { x: 0, y: 0 };
       const lx = num(lseed.x), ly = num(lseed.y);
       posCells.set(node, { lx, ly });
       const ltarget = derive(() => {
-        const nd = layout.value.get(node);
+        const nd = layout.value.map.get(node);
         return { x: nd?.x ?? 0, y: nd?.y ?? 0 };
       });
       let lcancel: (() => void) | null = null;
       let lInited = false;
       biEffect(() => {
-        const t = ltarget.value; // track layout (reacts to sort + value + size)
+        const t = ltarget.value; // track layout (reacts to sort + value + size + orientation)
         if (!lInited) { lInited = true; lx.value = t.x; ly.value = t.y; return; }
         if (this.classList.contains(GESTURE_ACTIVE_CLASS)) {
           lcancel?.(); lcancel = null;
@@ -115,6 +122,11 @@ export class MdTreeChart extends Diagram {
     }
     const posOf = (n: BiNode) => {
       const c = posCells.get(n);
+      const isHorizontal = layout.value.isHorizontal;
+      // For horizontal orientation, swap x and y
+      if (isHorizontal) {
+        return { x: PAD_LEFT + (c?.ly.value ?? 0), y: PAD_TOP + (c?.lx.value ?? 0) };
+      }
       return { x: PAD_LEFT + (c?.lx.value ?? 0), y: PAD_TOP + (c?.ly.value ?? 0) };
     };
 
