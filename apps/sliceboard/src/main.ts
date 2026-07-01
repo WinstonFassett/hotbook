@@ -140,24 +140,14 @@ function buildTileRecords(dash: Dashboard, ds: Dataset): TileRecord[] {
 
 // ─── Dock tree per dashboard ──────────────────────────────────────────────────
 
-// Dashboard doesn't have a dockTree field yet — we synthesize from tiles
-// on first load and persist changes via dockchange events. We stash the
-// current dock tree in a per-dashboard map, keyed by dashId.
-const dockTrees = new Map<string, ReturnType<typeof defaultDockTree>>()
-
 function getDockTree(dash: Dashboard) {
-  const existing = dockTrees.get(dash.id)
-  if (existing !== undefined) {
-    // Reconcile against current tile set
+  if (dash.dockTree) {
+    // Reconcile persisted tree against current tile set
     const tileIds = dash.tiles.map(t => t.id)
-    const reconciled = reconcile(existing, tileIds)
-    dockTrees.set(dash.id, reconciled)
-    return reconciled
+    return reconcile(dash.dockTree, tileIds)
   }
   const tileIds = dash.tiles.map(t => t.id)
-  const tree = defaultDockTree(tileIds)
-  dockTrees.set(dash.id, tree)
-  return tree
+  return defaultDockTree(tileIds)
 }
 
 // ─── Render ───────────────────────────────────────────────────────────────────
@@ -418,8 +408,9 @@ function handleAddTile(kind: TileKind) {
   const newTile = next.dashboards.find(d => d.id === dash.id)!.tiles.at(-1)!
   const currentTree = getDockTree(dash)
   const newTree = addTileToDock(currentTree, newTile.id)
-  dockTrees.set(dash.id, newTree)
-  commit(next)
+  const updatedDash = next.dashboards.find(d => d.id === dash.id)!
+  ws = updateDashboard(next, { ...updatedDash, dockTree: newTree })
+  commit(ws)
 }
 
 // ─── Esc handler ─────────────────────────────────────────────────────────────
@@ -453,10 +444,8 @@ dockView.addEventListener('dockchange', (e: Event) => {
   const detail = (e as CustomEvent).detail
   const dash = activeDashboard(ws)
   if (!dash) return
-  dockTrees.set(dash.id, detail)
-  // Persist dock tree alongside workspace. For now dock tree is in-memory
-  // (Dashboard doesn't yet have a dockTree field). Persistence migration
-  // is a follow-up once the shape is stable.
+  ws = updateDashboard(ws, { ...dash, dockTree: detail })
+  commit(ws)
 })
 
 // ─── Mount ────────────────────────────────────────────────────────────────────
