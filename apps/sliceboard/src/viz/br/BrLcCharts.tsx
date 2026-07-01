@@ -355,18 +355,18 @@ export function BrLcTreetable(props: HierProps) {
   const drillNodeId = useDrillNodeId(props.drillKey ?? 'default')
   const source = makeHier('v-br-treetable', { ...props, drillNodeId })
 
-  // Extend source to add numberDrag to leaf cells after render
+  // Extend source to add numberDrag to ALL value cells (parents and leaves)
   const originalMountProps = source.mountProps
   const extendedSource = {
     ...source,
     mountProps(el: HTMLElement) {
       originalMountProps?.(el)
 
-      // numberDrag integration (similar to HTreetable)
+      // numberDrag integration - attach to ALL nodes for sum-redistribute editing
       const disposers: Array<() => void> = []
       const typedEl = el as any // MdTreetableLC
 
-      const unsubRender = typedEl.onRender?.((leafIds: string[]) => {
+      const unsubRender = typedEl.onRender?.((allNodeIds: string[]) => {
         // Clean up previous drag handlers
         for (const d of disposers.splice(0)) d()
 
@@ -377,29 +377,30 @@ export function BrLcTreetable(props: HierProps) {
         const biRoot = typedEl.externalRoot
         if (!biRoot) return
 
-        // Build a map of leaf BiNodes by id
-        const leavesOf = (node: any): any[] => {
-          const children = node.children as any[]
-          if (children.length === 0) return [node]
-          return children.flatMap(leavesOf)
+        // Build a map of ALL BiNodes by id (including parents)
+        const allNodes: any[] = []
+        const walk = (node: any) => {
+          allNodes.push(node)
+          for (const child of node.children as any[]) walk(child)
         }
-        const leaves = leavesOf(biRoot)
-        const leafMap = new Map(leaves.map(l => [l.value.id, l]))
+        walk(biRoot)
+        const nodeMap = new Map(allNodes.map(n => [n.value.id, n]))
 
-        // Attach numberDrag to each visible leaf cell
-        for (const id of leafIds) {
-          const cell = root.querySelector<HTMLElement>(`[data-leaf-value="${id}"]`)
+        // Attach numberDrag to ALL visible value cells
+        for (const id of allNodeIds) {
+          const cell = root.querySelector<HTMLElement>(`[data-editable-value="${id}"]`)
           if (!cell) continue
 
-          const leaf = leafMap.get(id)
-          if (!leaf) continue
+          const biNode = nodeMap.get(id)
+          if (!biNode) continue
 
-          const get = () => leaf.value.total.value
+          const get = () => biNode.value.total.value
           const set = (v: number) => {
-            leaf.value.total.value = v
-            const node = nodes.find(n => n.id === id)
-            if (node && onUpdate) {
-              onUpdate(id, { ...node.measures, [measureKey]: v })
+            // Write to the BiNode - lens will handle redistribution for parents
+            biNode.value.total.value = v
+            const pnode = nodes.find(n => n.id === id)
+            if (pnode && onUpdate) {
+              onUpdate(id, { ...pnode.measures, [measureKey]: v })
             }
           }
 

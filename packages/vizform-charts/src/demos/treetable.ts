@@ -1,4 +1,4 @@
-import { leavesOf } from "bireactive";
+import { leavesOf, effect } from "bireactive";
 import type { BiNode } from "../lib/tree";
 import { portfolio } from "../lib/portfolio";
 
@@ -45,6 +45,9 @@ function computeVisible(root: BiNode, collapsed: Set<string>): VisibleRow[] {
  * MdTreetableLC - HTML-based hierarchical treetable for BiNode data.
  * Does NOT extend Diagram because tables need HTML DOM for proper scrolling
  * and text layout. Registers as a custom element for integration with sliceboard.
+ *
+ * Supports reactive value updates and editing of both leaves AND parents via
+ * the bireactive sum-redistribute lens pattern.
  */
 export class MdTreetableLC extends HTMLElement {
   externalRoot?: BiNode;
@@ -56,7 +59,8 @@ export class MdTreetableLC extends HTMLElement {
   private root!: HTMLDivElement;
   private body!: HTMLDivElement;
   private collapsed = new Set<string>();
-  private renderListeners = new Set<(leafIds: string[]) => void>();
+  private renderListeners = new Set<(allNodeIds: string[]) => void>();
+  private valueEffectDisposers = new Map<string, () => void>();
 
   connectedCallback() {
     this.render();
@@ -87,7 +91,7 @@ export class MdTreetableLC extends HTMLElement {
     }
 
     const visible = computeVisible(rootNode, this.collapsed);
-    const leafIds: string[] = [];
+    const allNodeIds: string[] = [];
 
     // Keyed update
     const existing = new Map<string, HTMLElement>();
@@ -99,6 +103,8 @@ export class MdTreetableLC extends HTMLElement {
     const fragment = document.createDocumentFragment();
     for (const { node, depth, hasKids } of visible) {
       const nodeId = node.value.id ?? '';
+      allNodeIds.push(nodeId);
+
       let row = existing.get(nodeId);
       existing.delete(nodeId);
 
@@ -113,7 +119,6 @@ export class MdTreetableLC extends HTMLElement {
       const indent = (depth - 1) * INDENT_WIDTH;
       const isCollapsed = this.collapsed.has(nodeId);
       const color = node.value.color;
-      const value = node.value.total.value;
 
       row.innerHTML = `
         <div style="flex:1;display:flex;align-items:center;gap:4px;padding-left:${indent}px;min-width:0;">
@@ -124,7 +129,7 @@ export class MdTreetableLC extends HTMLElement {
           <span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;"></span>
           <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:oklch(0.88 0 0);">${node.value.label}</span>
         </div>
-        <div data-value-cell="${nodeId}" ${!hasKids ? `data-leaf-value="${nodeId}"` : ''} style="width:60px;text-align:right;color:oklch(0.7 0 0);font-variant-numeric:tabular-nums;${!hasKids ? 'cursor:ew-resize;touch-action:none;' : ''}">${fmtNum(value)}</div>
+        <div data-value-cell="${nodeId}" data-editable-value="${nodeId}" style="width:60px;text-align:right;color:oklch(0.7 0 0);font-variant-numeric:tabular-nums;cursor:ew-resize;touch-action:none;"></div>
       `;
 
       // Attach expand/collapse handler
@@ -141,30 +146,57 @@ export class MdTreetableLC extends HTMLElement {
         });
       }
 
-      if (!hasKids) leafIds.push(nodeId);
+      // Set up reactive value display
+      const valueCell = row.querySelector<HTMLElement>(`[data-value-cell="${nodeId}"]`);
+      if (valueCell) {
+        // Clean up old effect if it exists
+        const oldDispose = this.valueEffectDisposers.get(nodeId);
+        oldDispose?.();
+
+        // Create reactive effect to update value display
+        const dispose = effect(() => {
+          const value = node.value.total.value;
+          valueCell.textContent = fmtNum(value);
+        });
+
+        this.valueEffectDisposers.set(nodeId, dispose);
+      }
+
       fragment.appendChild(row);
     }
 
-    // Remove stale rows
-    for (const el of existing.values()) {
+    // Remove stale rows and clean up their effects
+    for (const [id, el] of existing.entries()) {
       el.remove();
+      const dispose = this.valueEffectDisposers.get(id);
+      dispose?.();
+      this.valueEffectDisposers.delete(id);
     }
 
     this.body.appendChild(fragment);
 
     // Notify render listeners (for number-drag attachment)
+    // Pass ALL node ids (parents and leaves) for editing
     for (const listener of this.renderListeners) {
-      listener(leafIds);
+      listener(allNodeIds);
     }
   }
 
   // API for React wrapper
-  onRender(listener: (leafIds: string[]) => void): () => void {
+  onRender(listener: (allNodeIds: string[]) => void): () => void {
     this.renderListeners.add(listener);
     return () => { this.renderListeners.delete(listener); };
   }
 
   getRoot(): HTMLElement {
     return this.root;
+  }
+
+  disconnectedCallback() {
+    // Clean up all effects
+    for (const dispose of this.valueEffectDisposers.values()) {
+      dispose();
+    }
+    this.valueEffectDisposers.clear();
   }
 }
