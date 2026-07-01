@@ -31,6 +31,7 @@ const W = 720;
 const H = 360;
 const DRILL_DURATION = 800; // ms — leave-timer / CSS settle window
 const DRILL_SEC = DRILL_DURATION / 1000; // s — bireactive anim clock runs in seconds
+const SORT_SEC = 0.35; // s — sort/reorder tween duration
 
 export class MdIcicleLC extends Diagram {
   static styles = `
@@ -57,13 +58,21 @@ export class MdIcicleLC extends Diagram {
   get drillNodeId(): string | null { return this._drillIdCell.value }
   set drillNodeId(id: string | null) { this._drillIdCell.value = id ?? null }
 
+  private _sortByCell = cell<'index' | 'value'>('index')
+  get sortBy(): 'index' | 'value' { return this._sortByCell.value }
+  set sortBy(v: 'index' | 'value') { this._sortByCell.value = v }
+
+  private _orientationCell = cell<'horizontal' | 'vertical'>('horizontal')
+  get orientation(): 'horizontal' | 'vertical' { return this._orientationCell.value }
+  set orientation(v: 'horizontal' | 'vertical') { this._orientationCell.value = v }
+
   protected scene(s: Mount): void {
     const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
     const view = this.view(Wc, Hc);
     this.tabIndex = -1;
     this.style.outline = "none";
 
-    const isHoriz = (this.orientation ?? "horizontal") === "horizontal";
+    const isHoriz = derive(() => this._orientationCell.value === 'horizontal');
 
     const root = this.externalRoot ?? portfolio();
     const parentIdx = buildParentIndex(root);
@@ -95,18 +104,18 @@ export class MdIcicleLC extends Diagram {
     // tiles start at 0. For horizontal, partition's x (sibling) → canvas y and
     // partition's y (depth) → canvas x; for vertical, no swap needed.
     const layout = derive(() => {
-      const h = buildHierarchy(root);
+      const h = buildHierarchy(root, this._sortByCell.value);
       const td = h.height; // levels below root
       const visibleDepth = maxD !== undefined ? Math.min(maxD, td) : td;
-      const sibAxis = isHoriz ? Hc.value : Wc.value;
-      const depthCanvas = isHoriz ? Wc.value : Hc.value;
+      const sibAxis = isHoriz.value ? Hc.value : Wc.value;
+      const depthCanvas = isHoriz.value ? Wc.value : Hc.value;
       const scaledDepth = visibleDepth > 0 ? depthCanvas * (td + 1) / visibleDepth : depthCanvas;
       partition<BiNode>().size([sibAxis, scaledDepth])(h);
       const rowDepth = visibleDepth > 0 ? depthCanvas / visibleDepth : 0;
       const map = new Map<BiNode, HierarchyRectangularNode<BiNode>>();
       h.each((d) => {
         const node = d as HierarchyRectangularNode<BiNode>;
-        if (isHoriz) {
+        if (isHoriz.value) {
           map.set(d.data, {
             ...node,
             x0: node.y0 - rowDepth,
@@ -130,8 +139,8 @@ export class MdIcicleLC extends Diagram {
     // for vertical, depth axis = canvas y, sibling axis = canvas x.
     const vx0 = num(0);
     const vy0 = num(0);
-    const vx1 = num(isHoriz ? W : H);
-    const vy1 = num(isHoriz ? H : W);
+    const vx1 = num(isHoriz.value ? W : H);
+    const vy1 = num(isHoriz.value ? H : W);
 
     // Focus depth (reactive).
     const focusDepth = derive(() => {
@@ -195,9 +204,10 @@ export class MdIcicleLC extends Diagram {
     biEffect(() => {
       const id = this._drillIdCell.value;
       void Wc.value; void Hc.value; // track resize
+      void isHoriz.value; // track orientation
       const W0 = Wc.value, H0 = Hc.value;
-      const depthCanvas = isHoriz ? W0 : H0;
-      const sibCanvas = isHoriz ? H0 : W0;
+      const depthCanvas = isHoriz.value ? W0 : H0;
+      const sibCanvas = isHoriz.value ? H0 : W0;
 
       let tx0 = 0, ty0 = 0, tx1 = depthCanvas, ty1 = sibCanvas;
       const lmap = untracked(() => layout.value);
@@ -209,22 +219,22 @@ export class MdIcicleLC extends Diagram {
           const maxWindow = maxD !== undefined ? fd + maxD : totalDepth;
           // Depth axis: from focus node's depth row to deepest descendant.
           // Horizontal: depth is layout x; vertical: depth is layout y.
-          const d0 = isHoriz ? lnode.x0 : lnode.y0;
-          const d1 = isHoriz ? lnode.x1 : lnode.y1;
+          const d0 = isHoriz.value ? lnode.x0 : lnode.y0;
+          const d1 = isHoriz.value ? lnode.x1 : lnode.y1;
           let maxD1 = d1;
           for (const { node, depth: relDepth } of walkWithDepth(biNode!)) {
             const absDepth = fd + relDepth;
             if (absDepth <= maxWindow) {
               const ln = lmap.get(node);
               if (ln) {
-                const nd1 = isHoriz ? ln.x1 : ln.y1;
+                const nd1 = isHoriz.value ? ln.x1 : ln.y1;
                 if (nd1 > maxD1) maxD1 = nd1;
               }
             }
           }
           tx0 = d0; tx1 = maxD1;
-          ty0 = isHoriz ? lnode.y0 : lnode.x0;
-          ty1 = isHoriz ? lnode.y1 : lnode.x1;
+          ty0 = isHoriz.value ? lnode.y0 : lnode.x0;
+          ty1 = isHoriz.value ? lnode.y1 : lnode.x1;
         }
       } else {
         // At root: depth axis = full canvas, sibling axis = full canvas.
@@ -268,14 +278,14 @@ export class MdIcicleLC extends Diagram {
     // Remap layout-space coords through viewport cells → canvas coords.
     // vx = depth axis, vy = sibling axis.
     const remapX = (raw: number) => {
-      const v0 = isHoriz ? vx0.value : vy0.value;
-      const v1 = isHoriz ? vx1.value : vy1.value;
+      const v0 = isHoriz.value ? vx0.value : vy0.value;
+      const v1 = isHoriz.value ? vx1.value : vy1.value;
       const span = v1 - v0;
       return span === 0 ? 0 : (raw - v0) / span * Wc.value;
     };
     const remapY = (raw: number) => {
-      const v0 = isHoriz ? vy0.value : vx0.value;
-      const v1 = isHoriz ? vy1.value : vx1.value;
+      const v0 = isHoriz.value ? vy0.value : vx0.value;
+      const v1 = isHoriz.value ? vy1.value : vx1.value;
       const span = v1 - v0;
       return span === 0 ? 0 : (raw - v0) / span * Hc.value;
     };
@@ -286,18 +296,40 @@ export class MdIcicleLC extends Diagram {
       const depth = nodeDepth.get(node) ?? 0;
       const isLeaf = (node.children as BiNode[]).length === 0;
 
-      const x = derive(() => remapX(layout.value.get(node)?.x0 ?? 0));
-      const y = derive(() => remapY(layout.value.get(node)?.y0 ?? 0));
-      const w = derive(() => {
+      // Per-tile raw layout-position cells. Tweened on sort change so tiles
+      // slide to their new partition positions; snapped on value/resize changes
+      // so drag editing stays real-time. x/y/w/h below derive from these tweened
+      // cells + the viewport remap, so drill (viewport tween) and sort (layout
+      // tween) compose without conflict.
+      const lseed = untracked(() => layout.value.get(node)) ?? { x0: 0, y0: 0, x1: 0, y1: 0 };
+      const lx0 = num(lseed.x0), ly0 = num(lseed.y0), lx1 = num(lseed.x1), ly1 = num(lseed.y1);
+      const ltarget = derive(() => {
         const ln = layout.value.get(node);
-        if (!ln) return 0;
-        return Math.max(0, remapX(ln.x1) - remapX(ln.x0));
+        return ln ? { x0: ln.x0, y0: ln.y0, x1: ln.x1, y1: ln.y1 } : { x0: 0, y0: 0, x1: 0, y1: 0 };
       });
-      const h = derive(() => {
-        const ln = layout.value.get(node);
-        if (!ln) return 0;
-        return Math.max(0, remapY(ln.y1) - remapY(ln.y0));
+      let lcancel: (() => void) | null = null;
+      let lInited = false;
+      biEffect(() => {
+        const t = ltarget.value; // track layout (reacts to sort + value + size)
+        if (!lInited) { lInited = true; lx0.value = t.x0; ly0.value = t.y0; lx1.value = t.x1; ly1.value = t.y1; return; }
+        if (this.classList.contains(GESTURE_ACTIVE_CLASS)) {
+          lcancel?.(); lcancel = null;
+          lx0.value = t.x0; ly0.value = t.y0; lx1.value = t.x1; ly1.value = t.y1;
+        } else {
+          lcancel?.();
+          lcancel = this.anim.start(
+            tween(lx0, t.x0, SORT_SEC, easeOut),
+            tween(ly0, t.y0, SORT_SEC, easeOut),
+            tween(lx1, t.x1, SORT_SEC, easeOut),
+            tween(ly1, t.y1, SORT_SEC, easeOut),
+          );
+        }
       });
+
+      const x = derive(() => remapX(lx0.value));
+      const y = derive(() => remapY(ly0.value));
+      const w = derive(() => Math.max(0, remapX(lx1.value) - remapX(lx0.value)));
+      const h = derive(() => Math.max(0, remapY(ly1.value) - remapY(ly0.value)));
 
       const stroke = derive(() =>
         state.focused.value === node ? "#fff"
@@ -394,10 +426,10 @@ export class MdIcicleLC extends Diagram {
         // both siblings. The depth-axis band [rowA0, rowA1] comes from either
         // child's depth row. For vertical, sibling axis = x, depth axis = y;
         // for horizontal, sibling axis = y, depth axis = x.
-        const spanA0 = derive(() => isHoriz ? (layout.value.get(aNode)?.y0 ?? 0) : (layout.value.get(aNode)?.x0 ?? 0));
-        const spanA1 = derive(() => isHoriz ? (layout.value.get(bNode)?.y1 ?? 0) : (layout.value.get(bNode)?.x1 ?? 0));
-        const rowA0 = derive(() => isHoriz ? (layout.value.get(aNode)?.x0 ?? 0) : (layout.value.get(aNode)?.y0 ?? 0));
-        const rowA1 = derive(() => isHoriz ? (layout.value.get(aNode)?.x1 ?? 0) : (layout.value.get(aNode)?.y1 ?? 0));
+        const spanA0 = derive(() => isHoriz.value ? (layout.value.get(aNode)?.y0 ?? 0) : (layout.value.get(aNode)?.x0 ?? 0));
+        const spanA1 = derive(() => isHoriz.value ? (layout.value.get(bNode)?.y1 ?? 0) : (layout.value.get(bNode)?.x1 ?? 0));
+        const rowA0 = derive(() => isHoriz.value ? (layout.value.get(aNode)?.x0 ?? 0) : (layout.value.get(aNode)?.y0 ?? 0));
+        const rowA1 = derive(() => isHoriz.value ? (layout.value.get(aNode)?.x1 ?? 0) : (layout.value.get(aNode)?.y1 ?? 0));
 
         // Drag target: a Vec lens whose ONLY writable sources are the two
         // value cells (a, b). Span geometry is read-only layout output, so it's
@@ -412,8 +444,9 @@ export class MdIcicleLC extends Diagram {
             const frac = sum === 0 ? 0.5 : va / sum;
             const along = s0 + frac * (s1 - s0);
             const across = (rowA0.peek() + rowA1.peek()) / 2;
-            const lx = isHoriz ? across : along;
-            const ly = isHoriz ? along : across;
+            const h = isHoriz.peek();
+            const lx = h ? across : along;
+            const ly = h ? along : across;
             return { x: remapX(lx), y: remapY(ly) };
           },
           (target, vals) => {
@@ -422,11 +455,12 @@ export class MdIcicleLC extends Diagram {
             const s1 = spanA1.peek();
             const sum = va + vb;
             if (sum === 0 || s1 <= s0) return [va, vb];
+            const h = isHoriz.peek();
             // Convert layout-space span to canvas space to match drag target.
-            const cs0 = isHoriz ? remapY(s0) : remapX(s0);
-            const cs1 = isHoriz ? remapY(s1) : remapX(s1);
+            const cs0 = h ? remapY(s0) : remapX(s0);
+            const cs1 = h ? remapY(s1) : remapX(s1);
             if (cs1 <= cs0) return [va, vb];
-            const t = isHoriz ? target.y : target.x;
+            const t = h ? target.y : target.x;
             let frac = (t - cs0) / (cs1 - cs0);
             frac = Math.max(0, Math.min(1, frac));
             const newA = frac * sum;
@@ -441,8 +475,9 @@ export class MdIcicleLC extends Diagram {
           const frac = sum === 0 ? 0.5 : va / sum;
           const along = s0 + frac * (s1 - s0);
           const across = (rowA0.value + rowA1.value) / 2;
-          const lx = isHoriz ? across : along;
-          const ly = isHoriz ? along : across;
+          const h = isHoriz.value;
+          const lx = h ? across : along;
+          const ly = h ? along : across;
           return { x: remapX(lx), y: remapY(ly) };
         });
         const active = cell(false);
@@ -457,7 +492,7 @@ export class MdIcicleLC extends Diagram {
           onEnd: () => { active.value = false; dot.el.style.cursor = "grab"; },
         });
         dot.track(dispose);
-        dot.el.style.cursor = isHoriz ? "ns-resize" : "ew-resize";
+        biEffect(() => { dot.el.style.cursor = isHoriz.value ? "ns-resize" : "ew-resize"; });
         dot.el.addEventListener("pointerenter", () => { active.value = true; });
         dot.el.addEventListener("pointerleave", () => { active.value = false; });
 

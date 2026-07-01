@@ -30,6 +30,7 @@ const H = 480;
 const PAD = 2;
 const DRILL_DURATION = 800; // ms — leave-timer / CSS settle window
 const DRILL_SEC = DRILL_DURATION / 1000; // s — bireactive anim clock runs in seconds
+const SORT_SEC = 0.35; // s — sort/reorder tween duration
 
 export class MdPack extends Diagram {
   static styles = `:host { overflow: hidden; }text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}[data-focusable]:focus { outline: 2px solid #4a9eff; outline-offset: 2px; } [data-focusable]:focus:not(:focus-visible) { outline: none; }`
@@ -42,6 +43,10 @@ export class MdPack extends Diagram {
 
   get drillNodeId(): string | null { return this._drillIdCell.value }
   set drillNodeId(id: string | null) { this._drillIdCell.value = id ?? null }
+
+  private _sortByCell = cell<'index' | 'value'>('index')
+  get sortBy(): 'index' | 'value' { return this._sortByCell.value }
+  set sortBy(v: 'index' | 'value') { this._sortByCell.value = v }
 
   protected scene(s: Mount): void {
     const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
@@ -63,7 +68,7 @@ export class MdPack extends Diagram {
     state.hoverCell = hoverCell;
 
     const layout = derive(() => {
-      const h = buildHierarchy(root);
+      const h = buildHierarchy(root, this._sortByCell.value);
       d3pack<BiNode>().size([Wc.value, Hc.value]).padding(PAD)(h);
       const map = new Map<BiNode, HierarchyCircularNode<BiNode>>();
       h.each((d) => map.set(d.data, d as HierarchyCircularNode<BiNode>));
@@ -226,31 +231,59 @@ export class MdPack extends Diagram {
       const nd = nodeDepth.get(node) ?? 0;
       const isLeaf = (node.children as BiNode[]).length === 0;
 
+      // Per-circle raw layout-position cells. Tweened on sort change so circles
+      // slide to their new pack positions; snapped on value/resize changes so
+      // drag editing stays real-time. cx/cy/r below derive from these tweened
+      // cells + the viewport cells, so drill (viewport tween) and sort (layout
+      // tween) compose without conflict.
+      const lseed = untracked(() => layout.value.get(node)) ?? { x: 0, y: 0, r: 0 };
+      const lx = num(lseed.x), ly = num(lseed.y), lr = num(lseed.r);
+      const ltarget = derive(() => {
+        const ln = layout.value.get(node);
+        return ln ? { x: ln.x, y: ln.y, r: ln.r } : { x: 0, y: 0, r: 0 };
+      });
+      let lcancel: (() => void) | null = null;
+      let lInited = false;
+      biEffect(() => {
+        const t = ltarget.value; // track layout (reacts to sort + value + size)
+        if (!lInited) { lInited = true; lx.value = t.x; ly.value = t.y; lr.value = t.r; return; }
+        // During an active gesture (drag/wheel): snap for real-time response.
+        // Otherwise (sort, measure change, value-source swap, commit): tween.
+        if (this.classList.contains(GESTURE_ACTIVE_CLASS)) {
+          lcancel?.(); lcancel = null;
+          lx.value = t.x; ly.value = t.y; lr.value = t.r;
+        } else {
+          lcancel?.();
+          lcancel = this.anim.start(
+            tween(lx, t.x, SORT_SEC, easeOut),
+            tween(ly, t.y, SORT_SEC, easeOut),
+            tween(lr, t.r, SORT_SEC, easeOut),
+          );
+        }
+      });
+
       // Uniform scale — pack circles must stay circular or they overlap.
       // Use min(Wc/spanW, Hc/spanH) so the content fits and stays proportional.
       const cx = derive(() => {
-        const raw = layout.value.get(node)?.x ?? 0;
         const spanW = vx1.value - vx0.value;
         const spanH = vy1.value - vy0.value;
         if (spanW === 0 || spanH === 0) return 0;
         const scale = Math.min(Wc.value / spanW, Hc.value / spanH);
-        return (raw - vx0.value) * scale + (Wc.value - spanW * scale) / 2;
+        return (lx.value - vx0.value) * scale + (Wc.value - spanW * scale) / 2;
       });
       const cy = derive(() => {
-        const raw = layout.value.get(node)?.y ?? 0;
         const spanW = vx1.value - vx0.value;
         const spanH = vy1.value - vy0.value;
         if (spanW === 0 || spanH === 0) return 0;
         const scale = Math.min(Wc.value / spanW, Hc.value / spanH);
-        return (raw - vy0.value) * scale + (Hc.value - spanH * scale) / 2;
+        return (ly.value - vy0.value) * scale + (Hc.value - spanH * scale) / 2;
       });
       const r = derive(() => {
-        const raw = layout.value.get(node)?.r ?? 0;
         const spanW = vx1.value - vx0.value;
         const spanH = vy1.value - vy0.value;
         if (spanW === 0 || spanH === 0) return 0;
         const scale = Math.min(Wc.value / spanW, Hc.value / spanH);
-        return raw * scale;
+        return lr.value * scale;
       });
       const stroke = derive(() =>
         state.focused.value === node ? "#fff"

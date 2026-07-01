@@ -54,6 +54,10 @@ export class MdTreemapLC extends Diagram {
   get drillNodeId(): string | null { return this._drillIdCell.value }
   set drillNodeId(id: string | null) { this._drillIdCell.value = id ?? null }
 
+  private _sortByCell = cell<'index' | 'value'>('index')
+  get sortBy(): 'index' | 'value' { return this._sortByCell.value }
+  set sortBy(v: 'index' | 'value') { this._sortByCell.value = v }
+
   protected scene(s: Mount): void {
     const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
     const view = this.view(Wc, Hc);
@@ -74,7 +78,7 @@ export class MdTreemapLC extends Diagram {
     state.hoverCell = hoverCell;
 
     const layout = derive(() => {
-      const h = buildHierarchy(root);
+      const h = buildHierarchy(root, this._sortByCell.value);
       treemap<BiNode>()
         .tile(treemapSquarify)
         .size([Wc.value, Hc.value])
@@ -214,6 +218,25 @@ export class MdTreemapLC extends Diagram {
         drillClassTimer = null;
         this.classList.remove(GESTURE_ACTIVE_CLASS);
       }, DRILL_DURATION + 60);
+    });
+
+    // Layout-change effect: whenever the layout re-derives (sort, measure swap,
+    // value-source change, value edit commit), re-target every live tile's
+    // geometry cells toward the new layout. Animate (tween) when no gesture is
+    // active; snap during gestures for real-time drag response. Skips when a
+    // drill tween is in flight (the drill effect owns that retarget).
+    let layoutInited = false;
+    biEffect(() => {
+      void layout.value; // track layout (reacts to sort + value + size)
+      if (!layoutInited) { layoutInited = true; return; }
+      if (drillCancel) return; // drill tween in flight — it will retarget
+      const animate = !this.classList.contains(GESTURE_ACTIVE_CLASS);
+      // Defer past the forEach commit so tileGeo is fresh.
+      requestAnimationFrame(() => {
+        if (tileGeo.size > 0) {
+          retargetTiles(untracked(() => this._drillIdCell.value), animate);
+        }
+      });
     });
 
     // Window: when drilled (fd > 0) include focus node as context header + descendants.

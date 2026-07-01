@@ -14,8 +14,6 @@ export const TRANSITION_DURATION = {
   settle: 2.5 * TRANSITION_BASE_MS,        // 250ms
   /** Reorder slide (Part 3): item moves to new slot position. */
   reorder: 2.5 * TRANSITION_BASE_MS,       // 250ms
-  /** Stagger offset between successive reorder items. */
-  reorderStagger: 0.3 * TRANSITION_BASE_MS, // 30ms
   /** Hover/select micro-feedback (was inline 0.1s / 0.12s — kept identical). */
   hover: 1.0 * TRANSITION_BASE_MS,          // 100ms
   /** Highlight rect sliding between columns/rows. */

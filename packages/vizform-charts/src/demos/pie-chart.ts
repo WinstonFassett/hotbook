@@ -1,4 +1,4 @@
-import { Anchor, annularSector, cell, circle, derive, Diagram, effect as biEffect, label, type Mount, Num, num, Vec, type Writable } from "bireactive";
+import { Anchor, annularSector, cell, circle, derive, Diagram, easeInOut, effect as biEffect, label, type Mount, Num, num, tween, Vec, type Writable } from "bireactive";
 import { pie } from "d3-shape";
 import { wheelController, dynamicWheelStep } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
@@ -82,18 +82,40 @@ export class MdPieChartLC extends Diagram {
       return layout(data.value as Slice[]);
     });
 
-    // Draw slices.
-    const sliceElements = new Map<Slice, SVGElement>(); // Track elements by datum identity
+    // Draw slices — identity-keyed: each element owns a specific datum, so on
+    // reorder the slice's own angles tween to the new position rather than
+    // swapping in place.
+    const sliceElements = new Map<Slice, SVGElement>();
     const focusDatum = (d: Slice | null) => {
       if (d) sliceElements.get(d)?.focus();
     };
-    for (let i = 0; i < (data.value as Slice[]).length; i++) {
-      const d = (data.value as Slice[])[i]!;
+    const rows0 = data.value as Slice[];
+    for (let i = 0; i < rows0.length; i++) {
+      const d = rows0[i]!;
       const color = PALETTE[i % PALETTE.length]!;
 
-      const arcDatum = derive(() => arcs.value[i]);
-      const a0 = derive(() => arcDatum.value?.startAngle ?? 0);
-      const a1 = derive(() => arcDatum.value?.endAngle ?? 0);
+      // Find this datum's current index in the (possibly reordered) array.
+      const cur = derive(() => (data.value as Slice[]).indexOf(d));
+      const arcDatum = derive(() => {
+        const k = cur.value;
+        return k >= 0 ? arcs.value[k] : undefined;
+      });
+      const a0Target = derive(() => arcDatum.value?.startAngle ?? 0);
+      const a1Target = derive(() => arcDatum.value?.endAngle ?? 0);
+      const a0 = num(a0Target.value);
+      const a1 = num(a1Target.value);
+      let a0Cancel: (() => void) | null = null;
+      let a1Cancel: (() => void) | null = null;
+      biEffect(() => {
+        const t = a0Target.value;
+        a0Cancel?.();
+        a0Cancel = this.anim.start(tween(a0, t, 0.25, easeInOut) as any);
+      });
+      biEffect(() => {
+        const t = a1Target.value;
+        a1Cancel?.();
+        a1Cancel = this.anim.start(tween(a1, t, 0.25, easeInOut) as any);
+      });
       const r = derive(() =>
         selected.value === d ? rOuter.value + 8 : hover.value === d ? rOuter.value + 4 : rOuter.value
       );
@@ -117,15 +139,13 @@ export class MdPieChartLC extends Diagram {
       sector.el.addEventListener("blur", () => { if (selected.value === d) selected.value = null; });
 
       const labelPos = Vec.derive(() => {
-        const arc = arcDatum.value;
-        if (!arc) return { x: -100, y: -100 };
-        const mid = (arc.startAngle + arc.endAngle) / 2;
+        if (cur.value < 0) return { x: -100, y: -100 };
+        const mid = (a0.value + a1.value) / 2;
         const r = rOuter.value * 0.65;
         return { x: cx.value + Math.cos(mid) * r, y: cy.value + Math.sin(mid) * r };
       });
       const sliceLabel = derive(() => {
-        const arc = arcDatum.value;
-        if (!arc || (arc.endAngle - arc.startAngle) < 0.25) return "";
+        if ((a1.value - a0.value) < 0.25) return "";
         const total = (data.value as Slice[]).reduce((a, b) => a + b.value.value, 0);
         return `${d.label}\n${((d.value.value / total) * 100).toFixed(0)}%`;
       });

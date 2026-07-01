@@ -132,9 +132,15 @@ export function flatOrder(root: BiNode): BiNode[] {
   return out;
 }
 
-export function buildHierarchy(root: BiNode) {
-  return hierarchy<BiNode>(root, (n) => n.children as BiNode[])
+export function buildHierarchy(root: BiNode, sortBy?: 'index' | 'value') {
+  const h = hierarchy<BiNode>(root, (n) => n.children as BiNode[])
     .sum((n) => (n.children.length > 0 ? 0 : n.value.total.value));
+  if (sortBy === 'value') {
+    // Sort by descending value so the largest children draw first in every
+    // layout (pack, treemap, icicle, sunburst all respect hierarchy order).
+    h.sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
+  }
+  return h;
 }
 
 export function subscribeAllLeaves(root: BiNode, onChange: () => void): () => void {

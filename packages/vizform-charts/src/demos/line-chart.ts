@@ -1,10 +1,10 @@
 // LineChart — vanilla-TS port of LayerChart's LineChart wrapper.
 
-import { Anchor, cell, circle, derive, Diagram, label, line, type Mount, Vec, vec } from "bireactive";
+import { Anchor, cell, circle, derive, Diagram, easeInOut, effect as biEffect, label, line, type Mount, num, pathD, tween, Vec, vec } from "bireactive";
+import { line as d3Line } from "d3-shape";
 import { axis } from "../lib/axis";
 import { chartContext } from "../lib/chart-context";
 import { attachCartesianGestures, makeBisectFinder } from "../lib/cartesian-gestures";
-import { spline } from "../lib/spline";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 
 const W = 720;
@@ -64,7 +64,42 @@ export class MdLineChartLC extends Diagram {
 
     axis(s, ctx, { placement: "bottom" });
     axis(s, ctx, { placement: "left" });
-    s(spline(ctx, { stroke: "#7aaae8", strokeWidth: 2 }));
+
+    // Per-point x-pixel tween cells. On sort change, reindex updates d.date,
+    // which changes ctx.xGet(pt) — the tween slides each point to its new x.
+    // y doesn't change on sort (values are invariant), so y stays derived from ctx.
+    const xPxCells = new Map<Point, ReturnType<typeof num>>();
+    for (const pt of data.value as Point[]) {
+      const xTarget = derive(() => ctx.xGet.value(pt));
+      const xPx = num(xTarget.value);
+      xPxCells.set(pt, xPx);
+      let xCancel: (() => void) | null = null;
+      let xInited = false;
+      biEffect(() => {
+        const target = xTarget.value;
+        if (!xInited) { xInited = true; xPx.value = target; return; }
+        if ((this as any).gestureActive) {
+          xCancel?.(); xCancel = null;
+          xPx.value = target;
+        } else {
+          xCancel?.();
+          xCancel = this.anim.start(tween(xPx, target, 0.25, easeInOut) as any);
+        }
+      });
+    }
+
+    // Custom spline path that reads from tweened x cells + ctx.yGet.
+    // Sorts by tweened x so the path stays x-monotonic during the animation.
+    const linePath = derive(() => {
+      const rows = data.value as Point[];
+      const gy = ctx.yGet.value;
+      const ordered = [...rows].sort((a, b) => (xPxCells.get(a)?.value ?? 0) - (xPxCells.get(b)?.value ?? 0));
+      const gen = d3Line<Point>()
+        .x((dp) => xPxCells.get(dp)?.value ?? 0)
+        .y((dp) => gy(dp));
+      return gen(ordered) ?? "";
+    });
+    s(pathD(linePath, { stroke: "#7aaae8", strokeWidth: 2, fill: "none" }));
 
     const hover = cell<Point | null>(null);
     const selected = cell<Point | null>(null);
@@ -77,11 +112,11 @@ export class MdLineChartLC extends Diagram {
       data.value = [...data.value];
     };
 
-    // Create focusable invisible circles for each point
+    // Create focusable invisible circles for each point — positions from tweened x
     const pointElements = new Map<Point, SVGCircleElement>();
     for (let i = 0; i < (data.value as Point[]).length; i++) {
       const pt = (data.value as Point[])[i]!;
-      const pos = Vec.derive(() => ({ x: ctx.xGet.value(pt), y: ctx.yGet.value(pt) }));
+      const pos = Vec.derive(() => ({ x: xPxCells.get(pt)?.value ?? 0, y: ctx.yGet.value(pt) }));
       const focusCircle = s(circle(pos, 8, { fill: "transparent", stroke: "none" }));
       pointElements.set(pt, focusCircle.el as SVGCircleElement);
       focusCircle.el.setAttribute('tabindex', '0');
@@ -104,21 +139,21 @@ export class MdLineChartLC extends Diagram {
       focusDatum: (d) => { if (d) pointElements.get(d)?.focus(); },
     });
 
-    // Hover crosshair.
+    // Hover crosshair — uses tweened x so it follows the animated point.
     const hoverX = Vec.derive(() => {
       const p = hover.value;
       if (!p) return { x: -10, y: -10 };
-      return { x: ctx.xGet.value(p), y: ctx.plotY };
+      return { x: xPxCells.get(p)?.value ?? -10, y: ctx.plotY };
     });
     const hoverBottom = Vec.derive(() => {
       const p = hover.value;
       if (!p) return { x: -10, y: -10 };
-      return { x: ctx.xGet.value(p), y: ctx.plotY + ctx.plotHeight };
+      return { x: xPxCells.get(p)?.value ?? -10, y: ctx.plotY + ctx.plotHeight };
     });
     const hoverPoint = Vec.derive(() => {
       const p = hover.value;
       if (!p) return { x: -10, y: -10 };
-      return { x: ctx.xGet.value(p), y: ctx.yGet.value(p) };
+      return { x: xPxCells.get(p)?.value ?? -10, y: ctx.yGet.value(p) };
     });
     const hoverOpacity = derive(() => (hover.value ? 1 : 0));
 
@@ -127,11 +162,11 @@ export class MdLineChartLC extends Diagram {
       circle(hoverPoint, 4, { fill: "#7aaae8", stroke: "#fff", strokeWidth: 2, opacity: hoverOpacity }),
     );
 
-    // Selection marker.
+    // Selection marker — uses tweened x.
     const selPoint = Vec.derive(() => {
       const p = selected.value;
       if (!p) return { x: -10, y: -10 };
-      return { x: ctx.xGet.value(p), y: ctx.yGet.value(p) };
+      return { x: xPxCells.get(p)?.value ?? -10, y: ctx.yGet.value(p) };
     });
     const selOpacity = derive(() => (selected.value ? 1 : 0));
 

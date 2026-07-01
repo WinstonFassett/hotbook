@@ -24,13 +24,14 @@ import { portfolio, walkWithDepth } from "../lib/portfolio";
 import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { dragCancelable } from "../lib/esc-contract";
-import { GESTURE_SUPPRESSION_CSS, settleTransition } from "../lib/transitions";
+import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, settleTransition } from "../lib/transitions";
 import type { ElementWithBridge } from "../lib/hud-bridge";
 
 const W = 480;
 const H = 480;
 const DRILL_DURATION = 800; // ms — leave-timer / CSS settle window
 const DRILL_SEC = DRILL_DURATION / 1000; // s — bireactive anim clock runs in seconds
+const SORT_SEC = 0.35; // s — sort/reorder tween duration
 
 export class MdSunburstLC extends Diagram {
   static styles = `:host { overflow: hidden; }text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}:host(.vf-gesture-active) circle[r="5"] { opacity: 0; } circle[r="5"] { transition: opacity 0.3s ease; }[data-focusable]:focus { outline: 2px solid #4a9eff; outline-offset: 2px; } [data-focusable]:focus:not(:focus-visible) { outline: none; }`
@@ -41,6 +42,10 @@ export class MdSunburstLC extends Diagram {
   private _drillIdCell = cell<string | null>(null)
   get drillNodeId(): string | null { return this._drillIdCell.value }
   set drillNodeId(id: string | null) { this._drillIdCell.value = id ?? null }
+
+  private _sortByCell = cell<'index' | 'value'>('index')
+  get sortBy(): 'index' | 'value' { return this._sortByCell.value }
+  set sortBy(v: 'index' | 'value') { this._sortByCell.value = v }
 
   protected scene(s: Mount): void {
     const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
@@ -78,7 +83,7 @@ export class MdSunburstLC extends Diagram {
     // Natural partition layout — no pre-scaling. Viewport does all fitting.
     const layout = derive(() => {
       const rfull = Rfull.value;
-      const h = buildHierarchy(root);
+      const h = buildHierarchy(root, this._sortByCell.value);
       partition<BiNode>().size([2 * Math.PI, rfull])(h);
       const map = new Map<BiNode, HierarchyRectangularNode<BiNode>>();
       h.each((d) => map.set(d.data, d as HierarchyRectangularNode<BiNode>));
@@ -241,10 +246,40 @@ export class MdSunburstLC extends Diagram {
     forEach(arcLayer, renderedSet, (node) => {
       const depth = nodeDepth.get(node) ?? 1;
 
-      const a0 = derive(() => remapAngle(layout.value.get(node)?.x0 ?? 0));
-      const a1 = derive(() => remapAngle(layout.value.get(node)?.x1 ?? 0));
-      const rIn = derive(() => Math.max(0, remapRadius(layout.value.get(node)?.y0 ?? 0)));
-      const rOut = derive(() => Math.max(0, remapRadius(layout.value.get(node)?.y1 ?? 0)));
+      // Per-arc raw layout-position cells. Tweened on sort change so arcs sweep
+      // to their new angular positions; snapped on value/resize changes so drag
+      // editing stays real-time. a0/a1/rIn/rOut below derive from these tweened
+      // cells + the viewport remap, so drill (viewport tween) and sort (layout
+      // tween) compose without conflict.
+      const lseed = untracked(() => layout.value.get(node)) ?? { x0: 0, x1: 0, y0: 0, y1: 0 };
+      const la0 = num(lseed.x0), la1 = num(lseed.x1), lr0 = num(lseed.y0), lr1 = num(lseed.y1);
+      const ltarget = derive(() => {
+        const ln = layout.value.get(node);
+        return ln ? { x0: ln.x0, x1: ln.x1, y0: ln.y0, y1: ln.y1 } : { x0: 0, x1: 0, y0: 0, y1: 0 };
+      });
+      let lcancel: (() => void) | null = null;
+      let lInited = false;
+      biEffect(() => {
+        const t = ltarget.value; // track layout (reacts to sort + value + size)
+        if (!lInited) { lInited = true; la0.value = t.x0; la1.value = t.x1; lr0.value = t.y0; lr1.value = t.y1; return; }
+        if (this.classList.contains(GESTURE_ACTIVE_CLASS)) {
+          lcancel?.(); lcancel = null;
+          la0.value = t.x0; la1.value = t.x1; lr0.value = t.y0; lr1.value = t.y1;
+        } else {
+          lcancel?.();
+          lcancel = this.anim.start(
+            tween(la0, t.x0, SORT_SEC, easeOut),
+            tween(la1, t.x1, SORT_SEC, easeOut),
+            tween(lr0, t.y0, SORT_SEC, easeOut),
+            tween(lr1, t.y1, SORT_SEC, easeOut),
+          );
+        }
+      });
+
+      const a0 = derive(() => remapAngle(la0.value));
+      const a1 = derive(() => remapAngle(la1.value));
+      const rIn = derive(() => Math.max(0, remapRadius(lr0.value)));
+      const rOut = derive(() => Math.max(0, remapRadius(lr1.value)));
       const stroke = derive(() =>
         state.focused.value === node ? "#fff"
         : hoverCell.value === node ? "#c8cdd6"
