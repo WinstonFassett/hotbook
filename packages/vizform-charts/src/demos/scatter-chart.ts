@@ -1,6 +1,6 @@
 // ScatterChart — vanilla-TS port of LayerChart's ScatterChart wrapper.
 
-import { Anchor, cell, circle, derive, Diagram, label, type Mount, Vec, vec } from "bireactive";
+import { Anchor, cell, circle, derive, Diagram, easeInOut, effect as biEffect, label, type Mount, num, tween, Vec, vec } from "bireactive";
 import { axis } from "../lib/axis";
 import { chartContext } from "../lib/chart-context";
 import { attachCartesianGestures, makeBisectFinder } from "../lib/cartesian-gestures";
@@ -61,6 +61,27 @@ export class MdScatterChartLC extends Diagram {
     axis(s, ctx, { placement: "bottom" });
     axis(s, ctx, { placement: "left" });
 
+    // Per-point x-pixel tween cells — on sort, reindex updates d.x, tween slides.
+    const xPxCells = new Map<Point, ReturnType<typeof num>>();
+    for (const pt of data.value as Point[]) {
+      const xTarget = derive(() => ctx.xGet.value(pt));
+      const xPx = num(xTarget.value);
+      xPxCells.set(pt, xPx);
+      let xCancel: (() => void) | null = null;
+      let xInited = false;
+      biEffect(() => {
+        const target = xTarget.value;
+        if (!xInited) { xInited = true; xPx.value = target; return; }
+        if ((this as any).gestureActive) {
+          xCancel?.(); xCancel = null;
+          xPx.value = target;
+        } else {
+          xCancel?.();
+          xCancel = this.anim.start(tween(xPx, target, 0.25, easeInOut) as any);
+        }
+      });
+    }
+
     const hover = cell<Point | null>(null);
     const selected = cell<Point | null>(null);
 
@@ -72,10 +93,10 @@ export class MdScatterChartLC extends Diagram {
       data.value = [...data.value];
     };
 
-    // Draw dots with focusable support.
+    // Draw dots with focusable support — positions from tweened x.
     const dotElements = new Map<Point, SVGCircleElement>();
     for (const d of data.value as Point[]) {
-      const pos = Vec.derive(() => ({ x: ctx.xGet.value(d), y: ctx.yGet.value(d) }));
+      const pos = Vec.derive(() => ({ x: xPxCells.get(d)?.value ?? 0, y: ctx.yGet.value(d) }));
       const fill = derive(() =>
         selected.value === d ? "#fff" : hover.value === d ? "#a4c0f0" : COLOR
       );
@@ -101,11 +122,11 @@ export class MdScatterChartLC extends Diagram {
       focusDatum: (d) => { if (d) dotElements.get(d)?.focus(); },
     });
 
-    // Selection ring.
+    // Selection ring — uses tweened x.
     const selPos = Vec.derive(() => {
       const p = selected.value;
       if (!p) return { x: -10, y: -10 };
-      return { x: ctx.xGet.value(p), y: ctx.yGet.value(p) };
+      return { x: xPxCells.get(p)?.value ?? -10, y: ctx.yGet.value(p) };
     });
     const selOpacity = derive(() => (selected.value ? 1 : 0));
     s(

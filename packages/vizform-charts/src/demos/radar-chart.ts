@@ -2,7 +2,7 @@
 // Mirrors LC's radial Chart + scaleBand for x (angle per category).
 // Grid: polygon rings at radius ticks + spoke lines. Points on polygon are clickable/editable.
 
-import { Anchor, cell, circle, derive, Diagram, effect as biEffect, label, type Mount, pathD, Vec } from "bireactive";
+import { Anchor, cell, circle, derive, Diagram, easeInOut, effect as biEffect, label, type Mount, num, pathD, tween, Vec } from "bireactive";
 import { scaleLinear } from "d3-scale";
 import { extent, ticks as d3Ticks } from "d3-array";
 import { wheelController, dragController, dynamicWheelStep } from "../lib/interaction";
@@ -167,14 +167,39 @@ export class MdRadarChartLC extends Diagram {
       s(label(lblPos, lblText, { size: 11, align: Anchor.Center, fill: "#aaa" }));
     }
 
-    // Filled polygon (value area).
+    // Per-slot radius tween cells. On sort, the datum at slot i changes — the
+    // tween morphs the polygon from old value to new value along each spoke.
+    const rPxCells: ReturnType<typeof num>[] = [];
+    for (let i = 0; i < MAX_SPOKES; i++) {
+      const rTarget = derive(() => {
+        const rows = data.value as Spoke[];
+        if (i >= rows.length) return 0;
+        return yScale.value(rows[i]!.value);
+      });
+      const rPx = num(rTarget.value);
+      rPxCells.push(rPx);
+      let rCancel: (() => void) | null = null;
+      let rInited = false;
+      biEffect(() => {
+        const target = rTarget.value;
+        if (!rInited) { rInited = true; rPx.value = target; return; }
+        if ((this as any).gestureActive) {
+          rCancel?.(); rCancel = null;
+          rPx.value = target;
+        } else {
+          rCancel?.();
+          rCancel = this.anim.start(tween(rPx, target, 0.25, easeInOut) as any);
+        }
+      });
+    }
+
+    // Filled polygon (value area) — reads from tweened radius cells.
     const polyD = derive(() => {
       const rows = data.value as Spoke[];
-      const ys = yScale.value;
       const cxv = cx.value, cyv = cy.value;
       const pts = rows.map((d, i) => {
         const a = angle(i);
-        const r = ys(d.value);
+        const r = rPxCells[i]?.value ?? 0;
         const x = (cxv + Math.cos(a) * r).toFixed(1);
         const y = (cyv + Math.sin(a) * r).toFixed(1);
         return `${i === 0 ? "M" : "L"}${x},${y}`;
@@ -198,7 +223,7 @@ export class MdRadarChartLC extends Diagram {
         const rows = data.value as Spoke[];
         if (i >= rows.length) return { x: -1000, y: -1000 }; // hide off-screen
         const a = angle(i);
-        const r = yScale.value(rows[i]!.value);
+        const r = rPxCells[i]?.value ?? 0;
         return { x: cx.value + Math.cos(a) * r, y: cy.value + Math.sin(a) * r };
       });
       const dotR = derive(() => {
