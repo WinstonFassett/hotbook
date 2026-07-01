@@ -67,6 +67,7 @@ export type TileKind =
   | 'br-lc-sankey'
   | 'br-lc-sankey-flow'
   | 'br-lc-tree'
+  | 'br-lc-gantt'
   | RetiredTileKind
 
 export interface Tile {
@@ -509,10 +510,53 @@ function buildSupplyChainDataset(): Dataset {
     id: 'ds-supply',
     name: 'Supply chain (sankey)',
     createdAt: NOW,
+    shape: 'graph',
     rows: [],
     edges,
     measureDefs: [],
     dimDefs: [],
+  }
+}
+
+// ─── Dataset 5: Project Schedule (tasks with dependencies for Gantt) ──────────
+
+function buildGanttDataset(): Dataset {
+  _idc = 0
+  // Tasks with start/end dates (day-offsets from 2026-01-01), duration, and slack
+  // Slack = buffer days before successor starts (shows scheduling flexibility)
+  const rows: PNode[] = [
+    row('Discovery',  { start: 0,  end: 7,  duration: 7,  slack: 0  }, { phase: 'research' }, null, '#e08888'),
+    row('Design',     { start: 9,  end: 18, duration: 9,  slack: 0  }, { phase: 'planning' }, null, '#d4a86c'),
+    row('Frontend',   { start: 20, end: 35, duration: 15, slack: 5  }, { phase: 'build' },    null, '#7ec87e'),
+    row('Backend',    { start: 20, end: 38, duration: 18, slack: 2  }, { phase: 'build' },    null, '#6fb0d2'),
+    row('QA',         { start: 40, end: 49, duration: 9,  slack: 0  }, { phase: 'verify' },   null, '#7aaae8'),
+    row('Deploy',     { start: 51, end: 54, duration: 3,  slack: 0  }, { phase: 'launch' },   null, '#b090e0'),
+  ]
+  // Dependencies with lag (positive = required gap, negative = allowed overlap)
+  const edges: PEdge[] = [
+    { source: rows[0]!.id, target: rows[1]!.id, value: 0, lag: 2  },  // Discovery → Design (2 day gap)
+    { source: rows[1]!.id, target: rows[2]!.id, value: 0, lag: 2  },  // Design → Frontend (2 day gap)
+    { source: rows[1]!.id, target: rows[3]!.id, value: 0, lag: 2  },  // Design → Backend (2 day gap)
+    { source: rows[2]!.id, target: rows[4]!.id, value: 0, lag: 5  },  // Frontend → QA (5 day gap, has slack)
+    { source: rows[3]!.id, target: rows[4]!.id, value: 0, lag: 2  },  // Backend → QA (2 day gap)
+    { source: rows[4]!.id, target: rows[5]!.id, value: 0, lag: 2  },  // QA → Deploy (2 day gap)
+  ]
+  return {
+    id: 'ds-gantt',
+    name: 'Project schedule (gantt)',
+    createdAt: NOW,
+    shape: 'graph',
+    rows,
+    edges,
+    measureDefs: [
+      { key: 'start', label: 'Start (days from 2026-01-01)' },
+      { key: 'end', label: 'End (days from 2026-01-01)' },
+      { key: 'duration', label: 'Duration (days)' },
+      { key: 'slack', label: 'Slack (buffer days)' },
+    ],
+    dimDefs: [
+      { key: 'phase', label: 'Phase', values: ['research', 'planning', 'build', 'verify', 'launch'] },
+    ],
   }
 }
 
@@ -558,14 +602,18 @@ function buildSeedWorkspace(): Workspace {
   const supply   = buildSupplyChainDataset()
   const supplyTiles: Tile[] = [{ id: 'sp-0', kind: 'br-lc-sankey', title: 'Supply chain' }]
   const supplyLayout: LayoutItem[] = [{ i: 'sp-0', x: 0, y: 0, w: 12, h: 8 }]
+  const gantt    = buildGanttDataset()
+  const ganttTiles: Tile[] = [{ id: 'gt-0', kind: 'br-lc-gantt', title: 'Project schedule' }]
+  const ganttLayout: LayoutItem[] = [{ i: 'gt-0', x: 0, y: 0, w: 12, h: 8 }]
 
   return {
-    datasets: [life, fruit, team, supply],
+    datasets: [life, fruit, team, supply, gantt],
     dashboards: [
-      { id: 'dash-life',   datasetId: life.id,   name: 'Life',          createdAt: NOW, layout: lifeViz.layout,   tiles: lifeViz.tiles,   measureKey: 'est' },
-      { id: 'dash-fruit',  datasetId: fruit.id,  name: 'Fruit',         createdAt: NOW, layout: fruitViz.layout,  tiles: fruitViz.tiles,  measureKey: 'value' },
-      { id: 'dash-team',   datasetId: team.id,   name: 'Team',          createdAt: NOW, layout: teamViz.layout,   tiles: teamViz.tiles,   measureKey: 'budget' },
-      { id: 'dash-supply', datasetId: supply.id, name: 'Supply chain',  createdAt: NOW, layout: supplyLayout,     tiles: supplyTiles,     measureKey: 'value' },
+      { id: 'dash-life',    datasetId: life.id,    name: 'Life',             createdAt: NOW, layout: lifeViz.layout,   tiles: lifeViz.tiles,    measureKey: 'est' },
+      { id: 'dash-fruit',   datasetId: fruit.id,   name: 'Fruit',            createdAt: NOW, layout: fruitViz.layout,  tiles: fruitViz.tiles,   measureKey: 'value' },
+      { id: 'dash-team',    datasetId: team.id,    name: 'Team',             createdAt: NOW, layout: teamViz.layout,   tiles: teamViz.tiles,    measureKey: 'budget' },
+      { id: 'dash-supply',  datasetId: supply.id,  name: 'Supply chain',     createdAt: NOW, layout: supplyLayout,     tiles: supplyTiles,      measureKey: 'value' },
+      { id: 'dash-gantt',   datasetId: gantt.id,   name: 'Project schedule', createdAt: NOW, layout: ganttLayout,      tiles: ganttTiles,       measureKey: 'start' },
     ],
     activeDatasetId: life.id,
     activeDashboardId: 'dash-life',

@@ -9,18 +9,22 @@ import { HTreetable } from '@winstonfassett/vizform-react-d3'
 import {
   BrLcBar, BrLcLine, BrLcArea, BrLcScatter, BrLcPie, BrLcRadar, BrLcConcentricArc,
   BrLcPack, BrLcTreemap, BrLcIcicle, BrLcSunburst, BrLcSankey, BrLcSankeyFlow, BrLcTree,
+  BrLcGantt,
 } from '../viz/br/BrLcCharts'
 import type { PNode, PEdge } from '../persistence'
 import { DemoFrame } from './DemoFrame'
 import fruitFlat from './fixtures/fruit-flat.json'
 import teamHier from './fixtures/team-hier.json'
 import supplyEdges from './fixtures/supply-edges.json'
+import ganttTasks from './fixtures/gantt-tasks.json'
 
 interface FlatFixture { name: string; description: string; rows: PNode[] }
 interface EdgeFixture { name: string; description: string; edges: PEdge[] }
+interface GanttFixture { name: string; description: string; rows: PNode[]; deps: Array<{ from: string; to: string }> }
 const FRUIT: FlatFixture = fruitFlat as FlatFixture
 const TEAM:  FlatFixture = teamHier  as FlatFixture
 const SUPPLY: EdgeFixture = supplyEdges as EdgeFixture
+const GANTT: GanttFixture = ganttTasks as GanttFixture
 
 type OnNodeUpdate = (nodeId: string, measures: PNode['measures']) => void
 type OnNodesUpdate = (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
@@ -109,6 +113,16 @@ const DEMOS: DemoDef[] = [
   {
     slug: 'br-lc-sankey-flow', label: 'Sankey Flow', fixtureName: '(built-in)', fixture: { note: 'conservation-flow demo uses element internal data' },
     render: () => <BrLcSankeyFlow />,
+  },
+  {
+    slug: 'br-lc-gantt', label: 'Gantt', fixtureName: 'gantt-tasks', fixture: GANTT,
+    initRows: GANTT.rows,
+    render: (rows) => <BrLcGantt nodes={rows} startKey="start" endKey="end" deps={GANTT.deps} />,
+  },
+  {
+    slug: 'br-lc-gantt-enforced', label: 'Gantt (enforce deps)', fixtureName: 'gantt-tasks', fixture: GANTT,
+    initRows: GANTT.rows,
+    render: (rows) => <BrLcGantt nodes={rows} startKey="start" endKey="end" deps={GANTT.deps} enforceDeps />,
   },
 ]
 

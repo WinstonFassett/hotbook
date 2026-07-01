@@ -1,0 +1,18 @@
+{
+  "name": "gantt-tasks",
+  "description": "5 tasks with finish-to-start dependencies and lag support. 'start' and 'end' measures are day-offsets from 2026-01-01. 'deps' supports both string IDs (backward compatible) and {from, to, lag?} objects where lag is in days (positive = gap, negative = lead/overlap).",
+  "rows": [
+    { "id": "g1", "parentId": null, "index": 1, "name": "Discovery",  "measures": { "start": 0,  "end": 7  }, "dims": {}, "color": "#e08888" },
+    { "id": "g2", "parentId": null, "index": 2, "name": "Design",     "measures": { "start": 5,  "end": 14 }, "dims": {}, "color": "#d4a86c" },
+    { "id": "g3", "parentId": null, "index": 3, "name": "Build core", "measures": { "start": 12, "end": 28 }, "dims": {}, "color": "#7ec87e" },
+    { "id": "g4", "parentId": null, "index": 4, "name": "QA",         "measures": { "start": 25, "end": 34 }, "dims": {}, "color": "#7aaae8" },
+    { "id": "g5", "parentId": null, "index": 5, "name": "Launch",     "measures": { "start": 33, "end": 36 }, "dims": {}, "color": "#b090e0" }
+  ],
+  "deps": [
+    { "from": "g1", "to": "g2", "lag": 2 },
+    { "from": "g2", "to": "g3", "lag": -2 },
+    { "from": "g3", "to": "g4", "lag": 0 },
+    { "from": "g3", "to": "g5", "lag": 3 },
+    { "from": "g4", "to": "g5" }
+  ]
+}

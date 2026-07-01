@@ -32,6 +32,8 @@ import {
   MdSankeySimple,
   MdSankeyFlow,
   MdTreeChart,
+  MdGanttChartLC,
+  type GanttTask,
 } from '@winstonfassett/vizform-charts'
 
 // Register custom elements once
@@ -52,6 +54,7 @@ const TAGS = [
   ['v-br-sankey',         MdSankeySimple],
   ['v-br-sankey-flow',    MdSankeyFlow],
   ['v-br-tree',           MdTreeChart],
+  ['v-br-gantt',          MdGanttChartLC],
 ] as const
 
 for (const [tag, cls] of TAGS) {
@@ -360,6 +363,53 @@ export function BrLcSankey({ edges }: SankeyProps) {
   const ref = useBrElement<MdSankeySimple>('v-br-sankey', el => { el.externalData = data }, [JSON.stringify(data)])
   if (edges.length === 0) return <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.4, fontSize: 12 }}>No edge data — dataset needs a flat edge list</div>
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
+}
+
+// ─── Gantt ──────────────────────────────────────────────────────────────────
+
+interface GanttProps {
+  nodes: PNode[]
+  /** Measure keys carrying day-offsets from `epoch`. */
+  startKey?: string
+  endKey?: string
+  /** Day-offset epoch (default 2026-01-01). */
+  epoch?: Date
+  /** Finish-to-start dependency edges (successorId ← predecessorId). */
+  deps?: Array<{ from: string; to: string }>
+  /** Push/pull dependents so each successor.start == max(pred.end). */
+  enforceDeps?: boolean
+}
+
+export function BrLcGantt({
+  nodes,
+  startKey = 'start',
+  endKey = 'end',
+  epoch = new Date(2026, 0, 1),
+  deps = [],
+  enforceDeps = false,
+}: GanttProps) {
+  const epochMs = epoch.getTime()
+  const depsByTo = new Map<string, string[]>()
+  for (const e of deps) {
+    const arr = depsByTo.get(e.to) ?? []
+    arr.push(e.from)
+    depsByTo.set(e.to, arr)
+  }
+  const tasks: GanttTask[] = nodes.map(n => ({
+    id: n.id,
+    label: n.name,
+    start: new Date(epochMs + (n.measures[startKey] ?? 0) * 86400000),
+    end:   new Date(epochMs + (n.measures[endKey]   ?? 1) * 86400000),
+    color: n.color,
+    deps: depsByTo.get(n.id),
+  }))
+  const key = JSON.stringify([enforceDeps, tasks.map(t => [t.id, t.label, +t.start, +t.end, t.color, t.deps ?? []])])
+  const ref = useBrElement<MdGanttChartLC>(
+    'v-br-gantt',
+    (el) => { el.enforceDeps = enforceDeps; el.externalData = tasks },
+    [key],
+  )
+  return <div ref={ref} style={{ width: '100%', height: '100%', overflow: 'auto' }} />
 }
 
 // ─── Sankey (conservation flow) ─────────────────────────────────────────────────
