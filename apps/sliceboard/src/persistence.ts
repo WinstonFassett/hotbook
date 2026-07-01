@@ -1,5 +1,6 @@
 import type { PNode, PEdge, ScalingMode } from '@winstonfassett/vizform-core'
 import { colorFor } from '@winstonfassett/vizform-core'
+import type { DockNode } from './dock'
 
 export type { PNode, PEdge }
 
@@ -118,6 +119,10 @@ export interface Dashboard {
   drills?: Record<string, string | null>
   /** Legacy single drill scope - migrated to drills['default'] on load. */
   drillNodeId?: string | null
+  /** Persisted dock tree for the Splits layout. If absent, synthesized from tiles. */
+  dockTree?: DockNode | null
+  /** Named saved dock tree presets for this dashboard. */
+  dockPresets?: Array<{ name: string; tree: DockNode }>
 }
 
 // ─── Workspace ────────────────────────────────────────────────────────────────
@@ -131,7 +136,7 @@ export interface Workspace {
 
 // ─── Storage ──────────────────────────────────────────────────────────────────
 
-const LS_KEY = 'sb:workspace:v10'
+const LS_KEY = 'sb:workspace:v11'
 
 function genId(): string {
   return Math.random().toString(36).slice(2, 10)
@@ -590,8 +595,19 @@ function buildSeedWorkspace(): Workspace {
 function load(): Workspace | null {
   try {
     const raw = localStorage.getItem(LS_KEY)
-    if (!raw) return null
-    return JSON.parse(raw) as Workspace
+    if (raw) return JSON.parse(raw) as Workspace
+
+    // One-shot migration from v10
+    const legacy = localStorage.getItem('sb:workspace:v10')
+    if (!legacy) return null
+    const ws = JSON.parse(legacy) as Workspace
+    ws.dashboards.forEach(dash => {
+      if (dash.drillNodeId != null && dash.drills == null) {
+        dash.drills = { default: dash.drillNodeId }
+      }
+      delete dash.drillNodeId
+    })
+    return ws
   } catch {
     return null
   }
@@ -771,6 +787,34 @@ export function removeTile(ws: Workspace, dashId: string, tileId: string): Works
     tiles: dash.tiles.filter(t => t.id !== tileId),
     layout: dash.layout.filter(l => l.i !== tileId),
   })
+}
+
+// ─── Dock presets ─────────────────────────────────────────────────────────────
+
+export function saveDockPreset(ws: Workspace, dashId: string, name: string, tree: DockNode | null): Workspace {
+  const dash = ws.dashboards.find(d => d.id === dashId)
+  if (!dash || !tree) return ws
+  const presets = dash.dockPresets?.slice() ?? []
+  const existing = presets.findIndex(p => p.name === name)
+  const entry = { name, tree }
+  if (existing >= 0) presets[existing] = entry
+  else presets.push(entry)
+  return updateDashboard(ws, { ...dash, dockPresets: presets })
+}
+
+export function applyDockPreset(ws: Workspace, dashId: string, name: string): Workspace {
+  const dash = ws.dashboards.find(d => d.id === dashId)
+  if (!dash) return ws
+  const preset = dash.dockPresets?.find(p => p.name === name)
+  if (!preset) return ws
+  return updateDashboard(ws, { ...dash, dockTree: preset.tree })
+}
+
+export function deleteDockPreset(ws: Workspace, dashId: string, name: string): Workspace {
+  const dash = ws.dashboards.find(d => d.id === dashId)
+  if (!dash) return ws
+  const presets = dash.dockPresets?.filter(p => p.name !== name) ?? []
+  return updateDashboard(ws, { ...dash, dockPresets: presets })
 }
 
 export function deleteDashboard(ws: Workspace, dashId: string): Workspace {

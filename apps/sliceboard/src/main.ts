@@ -12,9 +12,10 @@ import {
   addTile, removeTile, deleteDashboard, deleteDataset,
   activeDataset, activeDashboard, dashboardsForDataset,
   updateRow, updateRows, reorderLeaves,
-  drillPath,
+  drillPath, saveDockPreset, applyDockPreset, deleteDockPreset,
 } from './persistence'
 import type { Workspace, Dataset, Dashboard, Tile, TileKind } from './persistence'
+import type { DockNode } from './dock'
 import { hudStore, resetHudForDataset } from './store'
 import type { TileRecord } from './DockView'
 import './DockView'
@@ -140,24 +141,12 @@ function buildTileRecords(dash: Dashboard, ds: Dataset): TileRecord[] {
 
 // ─── Dock tree per dashboard ──────────────────────────────────────────────────
 
-// Dashboard doesn't have a dockTree field yet — we synthesize from tiles
-// on first load and persist changes via dockchange events. We stash the
-// current dock tree in a per-dashboard map, keyed by dashId.
-const dockTrees = new Map<string, ReturnType<typeof defaultDockTree>>()
-
 function getDockTree(dash: Dashboard) {
-  const existing = dockTrees.get(dash.id)
-  if (existing !== undefined) {
-    // Reconcile against current tile set
-    const tileIds = dash.tiles.map(t => t.id)
-    const reconciled = reconcile(existing, tileIds)
-    dockTrees.set(dash.id, reconciled)
-    return reconciled
-  }
+  // Use persisted dock tree if available, otherwise synthesize from tiles.
   const tileIds = dash.tiles.map(t => t.id)
-  const tree = defaultDockTree(tileIds)
-  dockTrees.set(dash.id, tree)
-  return tree
+  const existing = dash.dockTree ?? null
+  const reconciled = reconcile(existing, tileIds)
+  return reconciled
 }
 
 // ─── Render ───────────────────────────────────────────────────────────────────
@@ -238,6 +227,14 @@ function renderTopbar(ws: Workspace) {
     dashes.length > 1 ? () => deleteDash(ws.activeDashboardId) : undefined,
     'dashboard',
   ))
+
+  const sep3 = document.createElement('span')
+  sep3.className = 'sb-topbar-sep'
+  sep3.textContent = '·'
+  topbar.appendChild(sep3)
+
+  // Layout presets menu
+  topbar.appendChild(buildPresetsMenu())
 
   const right = document.createElement('div')
   right.className = 'sb-topbar-right'
@@ -367,6 +364,90 @@ function buildAddTileMenu(): HTMLElement {
   return wrap
 }
 
+function buildPresetsMenu(): HTMLElement {
+  const wrap = document.createElement('div')
+  wrap.className = 'sb-menu-wrap'
+
+  const btn = document.createElement('button')
+  btn.className = 'sb-btn'
+  btn.textContent = 'Layouts'
+
+  let dropdown: HTMLElement | null = null
+  const dash = activeDashboard(ws)
+  const presets = dash?.dockPresets ?? []
+
+  const close = () => {
+    if (dropdown) {
+      document.removeEventListener('mousedown', (dropdown as any)._handler)
+      dropdown.remove()
+      dropdown = null
+    }
+  }
+
+  const open = () => {
+    if (dropdown) return
+    dropdown = document.createElement('div')
+    dropdown.className = 'sb-menu-dropdown'
+
+    const list = document.createElement('div')
+    list.className = 'sb-menu-boards'
+
+    if (presets.length === 0) {
+      const empty = document.createElement('div')
+      empty.className = 'sb-menu-board-btn'
+      empty.style.opacity = '0.6'
+      empty.textContent = 'No saved layouts'
+      list.appendChild(empty)
+    } else {
+      presets.forEach(p => {
+        const row = document.createElement('div')
+        row.className = 'sb-menu-board-btn'
+        row.style.display = 'flex'
+        row.style.justifyContent = 'space-between'
+        row.style.alignItems = 'center'
+        row.style.gap = '8px'
+
+        const name = document.createElement('span')
+        name.textContent = p.name
+        name.style.flex = '1'
+        name.addEventListener('click', () => { close(); handleApplyPreset(p.name) })
+        row.appendChild(name)
+
+        const del = document.createElement('button')
+        del.className = 'sb-menu-action-btn danger'
+        del.textContent = '×'
+        del.title = 'Delete layout'
+        del.addEventListener('click', (e) => { e.stopPropagation(); close(); handleDeletePreset(p.name) })
+        row.appendChild(del)
+
+        list.appendChild(row)
+      })
+    }
+
+    dropdown.appendChild(list)
+
+    const actions = document.createElement('div')
+    actions.className = 'sb-menu-actions'
+
+    const saveBtn = document.createElement('button')
+    saveBtn.className = 'sb-menu-action-btn'
+    saveBtn.textContent = 'Save current layout'
+    saveBtn.addEventListener('click', () => { close(); handleSavePreset() })
+    actions.appendChild(saveBtn)
+
+    dropdown.appendChild(actions)
+
+    wrap.appendChild(dropdown)
+    const handler = (e: MouseEvent) => { if (!wrap.contains(e.target as Node)) close() }
+    document.addEventListener('mousedown', handler)
+    ;(dropdown as any)._handler = handler
+  }
+
+  btn.addEventListener('click', () => dropdown ? close() : open())
+  wrap.appendChild(btn)
+  return wrap
+}
+
 // ─── Actions ──────────────────────────────────────────────────────────────────
 
 function switchDataset(id: string) {
@@ -418,8 +499,30 @@ function handleAddTile(kind: TileKind) {
   const newTile = next.dashboards.find(d => d.id === dash.id)!.tiles.at(-1)!
   const currentTree = getDockTree(dash)
   const newTree = addTileToDock(currentTree, newTile.id)
-  dockTrees.set(dash.id, newTree)
-  commit(next)
+  const nextDash = next.dashboards.find(d => d.id === dash.id)!
+  commit(updateDashboard(next, { ...nextDash, dockTree: newTree }))
+}
+
+function handleSavePreset() {
+  const dash = activeDashboard(ws)
+  if (!dash) return
+  const name = prompt('Save current layout as:')
+  if (!name) return
+  const tree = dash.dockTree ?? getDockTree(dash)
+  commit(saveDockPreset(ws, dash.id, name.trim(), tree))
+}
+
+function handleApplyPreset(name: string) {
+  const dash = activeDashboard(ws)
+  if (!dash) return
+  commit(applyDockPreset(ws, dash.id, name))
+}
+
+function handleDeletePreset(name: string) {
+  const dash = activeDashboard(ws)
+  if (!dash) return
+  if (!confirm(`Delete layout "${name}"?`)) return
+  commit(deleteDockPreset(ws, dash.id, name))
 }
 
 // ─── Esc handler ─────────────────────────────────────────────────────────────
@@ -450,13 +553,10 @@ window.addEventListener('keydown', (e: KeyboardEvent) => {
 // ─── dockchange handler ───────────────────────────────────────────────────────
 
 dockView.addEventListener('dockchange', (e: Event) => {
-  const detail = (e as CustomEvent).detail
+  const detail = (e as CustomEvent).detail as DockNode | null
   const dash = activeDashboard(ws)
   if (!dash) return
-  dockTrees.set(dash.id, detail)
-  // Persist dock tree alongside workspace. For now dock tree is in-memory
-  // (Dashboard doesn't yet have a dockTree field). Persistence migration
-  // is a follow-up once the shape is stable.
+  commit(updateDashboard(ws, { ...dash, dockTree: detail }))
 })
 
 // ─── Mount ────────────────────────────────────────────────────────────────────
