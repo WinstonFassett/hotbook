@@ -11,7 +11,7 @@
 import { useEffect, useRef } from 'react'
 import type { Num, Writable } from 'bireactive'
 import type { PNode, PEdge } from '../../persistence'
-import { makeFlatSource, makeHierSource, hierShapeKey, hierValueKey } from './bindTile'
+import { makeFlatSource, makeHierSource, makeGroupedBarSource, hierShapeKey, hierValueKey } from './bindTile'
 import { BrLcTile } from './BrLcTile'
 
 import {
@@ -334,55 +334,24 @@ interface GroupedBarProps extends FlatProps {
 export function BrLcGroupedBar({
   nodes, measureKey, groupBy, seriesBy, mode, orientation = 'vertical', onUpdate
 }: GroupedBarProps) {
-  // TEMPORARY: if no groupBy/seriesBy, fall back to single-series bars (just show
-  // the flat bar chart behavior as placeholder). Full impl needs pickers.
   if (!groupBy || !seriesBy) {
     console.warn('BrLcGroupedBar requires groupBy and seriesBy dimensions — falling back to placeholder')
-    // For now, just render a message. Proper fallback would be a settings panel.
     return <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.4, fontSize: 12 }}>
       Grouped/stacked bars require groupBy and seriesBy dimensions — configure in tile settings
     </div>
   }
 
-  const leaves = leavesOfNodes(nodes)
+  const source = makeGroupedBarSource({
+    nodes,
+    measureKey,
+    groupBy,
+    seriesBy,
+    mode,
+    orientation,
+    onUpdate,
+  })
 
-  // Build GroupedBar[] from flat nodes.
-  // Group by the groupBy dimension, then within each group, create series entries
-  // keyed by seriesBy dimension.
-  const categoryMap = new Map<string, Map<string, number>>()
-  for (const node of leaves) {
-    const categoryValue = (node as any).dims?.[groupBy] ?? node.name
-    const seriesValue = (node as any).dims?.[seriesBy] ?? 'default'
-    const measure = node.measures[measureKey] ?? 0
-
-    if (!categoryMap.has(categoryValue)) {
-      categoryMap.set(categoryValue, new Map())
-    }
-    const seriesMap = categoryMap.get(categoryValue)!
-    seriesMap.set(seriesValue, (seriesMap.get(seriesValue) ?? 0) + measure)
-  }
-
-  const groupedData: Array<{ id: string; label: string; series: Array<{ name: string; value: number }> }> = []
-  for (const [cat, seriesMap] of categoryMap.entries()) {
-    const series = Array.from(seriesMap.entries()).map(([name, value]) => ({ name, value }))
-    groupedData.push({ id: cat, label: cat, series })
-  }
-
-  // For now, use the simple useBrElement pattern (read-only, no gestures wired to
-  // sliceboard's onUpdate). Full integration requires a TileSource that maps segment
-  // edits back to the original PNode measures — non-trivial because one segment may
-  // represent multiple nodes (if seriesBy splits them).
-  const ref = useBrElement<MdGroupedBarChartLC>(
-    'v-br-grouped-bar',
-    (el) => {
-      el.externalData = groupedData
-      el.mode = mode
-      el.orientation = orientation
-    },
-    [JSON.stringify(groupedData), mode, orientation],
-  )
-
-  return <div ref={ref} style={{ width: '100%', height: '100%' }} />
+  return <BrLcTile source={source} />
 }
 
 // ─── Hierarchical charts (BiNode) ─────────────────────────────────────────────

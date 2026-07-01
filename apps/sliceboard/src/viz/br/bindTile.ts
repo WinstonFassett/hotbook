@@ -437,3 +437,208 @@ export function hierValueKey(nodes: PNode[], measureKey: string): string {
 export function hierShapeKey(tag: string, nodes: PNode[], measureKey: string, depth?: number, sortBy?: string): string {
   return `${tag}|${measureKey}|${depth ?? 'all'}|${sortBy ?? 'index'}|${nodes.map(n => `${n.id}:${n.parentId ?? ''}`).sort().join(',')}`
 }
+
+// ─── makeGroupedBarSource ─────────────────────────────────────────────────────
+
+type GroupedBar = { id: string; label: string; series: Array<{ name: string; value: number }> }
+
+interface ElWithGroupedData extends HTMLElement {
+  dataCell: Writable<Cell<readonly GroupedBar[]>>
+  externalData?: unknown
+  mode?: 'grouped' | 'stacked'
+  orientation?: 'vertical' | 'horizontal'
+  gestureActive?: boolean
+}
+
+export interface GroupedBarSpec {
+  nodes: PNode[]
+  measureKey: string
+  groupBy: string
+  seriesBy: string
+  mode: 'grouped' | 'stacked'
+  orientation?: 'vertical' | 'horizontal'
+  onUpdate?: (nodeId: string, measures: PNode['measures']) => void
+}
+
+export function makeGroupedBarSource(spec: GroupedBarSpec): TileSource {
+  const specRef = { current: spec }
+  const nodesRef = { current: spec.nodes }
+  const onUpdateRef = { current: spec.onUpdate }
+
+  // Build reverse mapping: (categoryValue, seriesName) → PNode[]
+  function buildMapping(nodes: PNode[]) {
+    const leaves = leavesOf(nodes)
+    const map = new Map<string, Map<string, PNode[]>>()
+    for (const node of leaves) {
+      const categoryValue = (node as any).dims?.[spec.groupBy] ?? node.name
+      const seriesValue = (node as any).dims?.[spec.seriesBy] ?? 'default'
+      if (!map.has(categoryValue)) map.set(categoryValue, new Map())
+      const seriesMap = map.get(categoryValue)!
+      if (!seriesMap.has(seriesValue)) seriesMap.set(seriesValue, [])
+      seriesMap.get(seriesValue)!.push(node)
+    }
+    return map
+  }
+
+  // Build GroupedBar[] from nodes
+  function buildData(nodes: PNode[]): GroupedBar[] {
+    const leaves = leavesOf(nodes)
+    const categoryMap = new Map<string, Map<string, number>>()
+    for (const node of leaves) {
+      const categoryValue = (node as any).dims?.[spec.groupBy] ?? node.name
+      const seriesValue = (node as any).dims?.[spec.seriesBy] ?? 'default'
+      const measure = node.measures[spec.measureKey] ?? 0
+      if (!categoryMap.has(categoryValue)) categoryMap.set(categoryValue, new Map())
+      const seriesMap = categoryMap.get(categoryValue)!
+      seriesMap.set(seriesValue, (seriesMap.get(seriesValue) ?? 0) + measure)
+    }
+    const grouped: GroupedBar[] = []
+    for (const [cat, seriesMap] of categoryMap.entries()) {
+      const series = Array.from(seriesMap.entries()).map(([name, value]) => ({ name, value }))
+      grouped.push({ id: cat, label: cat, series })
+    }
+    return grouped
+  }
+
+  const shapeKey = `grouped-bar|${spec.measureKey}|${spec.groupBy}|${spec.seriesBy}|${spec.mode}|${spec.orientation}|${spec.nodes.map(n => n.id).sort().join(',')}`
+
+  const source: TileSource = {
+    tag: 'v-br-grouped-bar',
+    shapeKey,
+    hudStore,
+
+    mountProps(el: HTMLElement) {
+      const typedEl = el as ElWithGroupedData
+      typedEl.externalData = buildData(specRef.current.nodes)
+      typedEl.mode = specRef.current.mode
+      typedEl.orientation = specRef.current.orientation
+    },
+
+    initialLast(el: HTMLElement): Map<string, number> {
+      const typedEl = el as ElWithGroupedData
+      const arr = typedEl.dataCell?.value as GroupedBar[] ?? []
+      const last = new Map<string, number>()
+      for (const cat of arr) {
+        for (const seg of cat.series) {
+          last.set(`${cat.id}:${seg.name}`, seg.value)
+        }
+      }
+      return last
+    },
+
+    applyData(el: HTMLElement, { gestureActive, lastRef }) {
+      const typedEl = el as ElWithGroupedData
+      if (!typedEl.dataCell) return
+      const s = specRef.current
+      const currentData = buildData(s.nodes)
+
+      // Build value map from current nodes
+      const valueMap = new Map<string, number>()
+      for (const cat of currentData) {
+        for (const seg of cat.series) {
+          valueMap.set(`${cat.id}:${seg.name}`, seg.value)
+        }
+      }
+
+      const arr = typedEl.dataCell.value as GroupedBar[]
+
+      if (gestureActive) {
+        // Frozen: update values in place
+        let touched = false
+        for (const cat of arr) {
+          for (const seg of cat.series) {
+            const key = `${cat.id}:${seg.name}`
+            const target = valueMap.get(key)
+            if (target !== undefined && !near(seg.value, target)) {
+              seg.value = target
+              lastRef.set(key, target)
+              touched = true
+            }
+          }
+        }
+        if (touched) typedEl.dataCell.value = [...arr]
+        return
+      }
+
+      // Idle/commit: rebuild data
+      typedEl.dataCell.value = currentData
+      for (const cat of currentData) {
+        for (const seg of cat.series) {
+          lastRef.set(`${cat.id}:${seg.name}`, seg.value)
+        }
+      }
+    },
+
+    bindEditOut(el: HTMLElement, lastRef: Map<string, number>): () => void {
+      const typedEl = el as ElWithGroupedData
+      const dispose = biEffect(() => {
+        const arr = typedEl.dataCell?.value as GroupedBar[]
+        if (!arr) return
+        const s = specRef.current
+        const cb = onUpdateRef.current
+        if (!cb) {
+          for (const cat of arr) {
+            for (const seg of cat.series) {
+              lastRef.set(`${cat.id}:${seg.name}`, seg.value)
+            }
+          }
+          return
+        }
+
+        const mapping = buildMapping(nodesRef.current)
+        const pending: Array<{ id: string; measures: PNode['measures'] }> = []
+
+        for (const cat of arr) {
+          for (const seg of cat.series) {
+            const key = `${cat.id}:${seg.name}`
+            const newValue = seg.value
+            const oldValue = lastRef.get(key)
+            if (oldValue === undefined || near(newValue, oldValue)) continue
+
+            lastRef.set(key, newValue)
+            const delta = newValue - oldValue
+            const contributingNodes = mapping.get(cat.id)?.get(seg.name) ?? []
+
+            if (contributingNodes.length === 0) continue
+
+            // Distribute delta proportionally by current values
+            const total = contributingNodes.reduce((sum, n) => sum + (n.measures[s.measureKey] ?? 0), 0)
+            if (total === 0) {
+              // Equal distribution if all are zero
+              const perNode = newValue / contributingNodes.length
+              for (const node of contributingNodes) {
+                pending.push({ id: node.id, measures: { ...node.measures, [s.measureKey]: perNode } })
+              }
+            } else {
+              // Proportional distribution
+              for (const node of contributingNodes) {
+                const oldNodeValue = node.measures[s.measureKey] ?? 0
+                const proportion = oldNodeValue / total
+                const nodeNewValue = oldNodeValue + (delta * proportion)
+                pending.push({ id: node.id, measures: { ...node.measures, [s.measureKey]: nodeNewValue } })
+              }
+            }
+          }
+        }
+
+        if (pending.length) {
+          queueMicrotask(() => {
+            for (const p of pending) cb(p.id, p.measures)
+          })
+        }
+      })
+      return dispose
+    },
+
+    syncFrom(next: TileSource) {
+      const nextSpec = (next as any)._spec as GroupedBarSpec | undefined
+      if (!nextSpec) return
+      specRef.current = nextSpec
+      nodesRef.current = nextSpec.nodes
+      onUpdateRef.current = nextSpec.onUpdate
+    },
+  }
+
+  ;(source as any)._spec = spec
+  return source
+}
