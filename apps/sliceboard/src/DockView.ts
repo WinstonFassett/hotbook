@@ -246,9 +246,16 @@ export class DockView extends HTMLElement {
   }
 
   private _patchGroup(el: HTMLElement, group: DockGroup, tiles: TileRecord[], tilesChanged: boolean) {
-    // Tab strip: toggle active class only — no rebuild
+    // Tab strip: toggle active class + update close button disabled state
+    const singlePanel = group.panels.length <= 1
     el.querySelectorAll<HTMLElement>('.dv-tab').forEach(tab => {
       tab.classList.toggle('dv-tab--active', tab.dataset.panelId === group.activeId)
+      const closeBtn = tab.querySelector<HTMLElement>('.dv-tab-close')
+      if (closeBtn) {
+        closeBtn.toggleAttribute('disabled', singlePanel)
+        closeBtn.style.opacity = singlePanel ? '0.3' : ''
+        closeBtn.style.cursor = singlePanel ? 'default' : ''
+      }
     })
 
     const body = el.querySelector<HTMLElement>('.dv-body')
