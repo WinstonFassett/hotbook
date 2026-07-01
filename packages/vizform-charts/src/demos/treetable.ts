@@ -1,281 +1,175 @@
-import {
-  Anchor,
-  Diagram,
-  derive,
-  forEach,
-  group,
-  label,
-  type Mount,
-  cell,
-  rect,
-  vec,
-  effect as biEffect,
-} from "bireactive";
-import { depthFill, labelInk } from "../lib/depth-color";
-import { buildParentIndex, type BiNode } from "../lib/tree";
-import { portfolio, walkWithDepth } from "../lib/portfolio";
-import { attachChartGestures, type SelectionState } from "../lib/gestures";
-import { useHostSize, FILL_STYLE } from "../lib/host-size";
+import { leavesOf } from "bireactive";
+import type { BiNode } from "../lib/tree";
+import { portfolio } from "../lib/portfolio";
 
-const W = 720;
-const H = 480;
-const ROW_HEIGHT = 24; // Reduced from 28 to match existing implementation
-const INDENT_WIDTH = 14; // Reduced from 20 to match existing
-const NAME_COL_WIDTH = 300;
-const VALUE_COL_WIDTH = 60;
-const HEADER_HEIGHT = 24;
+const ROW_HEIGHT = 24;
+const INDENT_WIDTH = 14;
 
-export class MdTreetableLC extends Diagram {
-  static styles = `
-    :host {
-      overflow-y: auto;
-      overflow-x: hidden;
-      font-size: 12px;
-      font-family: inherit;
-      background: oklch(0.14 0 0);
-    }
-    text {
-      pointer-events: none;
-      user-select: none;
-    }
-    ${FILL_STYLE}
-    [data-focusable]:focus {
-      outline: 2px solid oklch(0.45 0.15 240);
-      outline-offset: 2px;
-    }
-    [data-focusable]:focus:not(:focus-visible) {
-      outline: none;
-    }
-    .expand-btn {
-      cursor: pointer;
-      user-select: none;
-    }
-  `
-  externalRoot?: BiNode
-  maxDepth?: number
-  drillKey?: string
+interface VisibleRow {
+  node: BiNode;
+  depth: number;
+  hasKids: boolean;
+}
 
-  // Track collapsed state per node ID
-  private _collapsedNodes = new Set<string>()
+function fmtNum(v: number): string {
+  if (v === 0) return '';
+  if (v < 10) return v.toFixed(1);
+  return Math.round(v).toString();
+}
 
-  protected scene(s: Mount): void {
-    const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
-    const view = this.view(Wc, Hc);
-    this.tabIndex = -1;
-    this.style.outline = "none";
+function computeVisible(root: BiNode, collapsed: Set<string>): VisibleRow[] {
+  const out: VisibleRow[] = [];
 
-    const root = this.externalRoot ?? portfolio();
-    const parentIdx = buildParentIndex(root);
-    const parentOf = (n: BiNode) => parentIdx.get(n);
+  function walk(node: BiNode, depth: number) {
+    const children = node.children as BiNode[];
+    const hasKids = children.length > 0;
 
-    const state: SelectionState = {
-      focused: cell<BiNode | null>(null),
-      hovered: { current: null },
-      wheelLocked: { current: null },
-    };
-    const hoverCell = cell<BiNode | null>(null);
-    state.hoverCell = hoverCell;
-
-    // Pre-build static maps (tree structure is immutable).
-    const nodeById = new Map<string, BiNode>();
-    const nodeDepth = new Map<BiNode, number>();
-    let totalDepth = 0;
-    for (const { node, depth } of walkWithDepth(root)) {
-      if (node.value.id) nodeById.set(node.value.id, node);
-      nodeDepth.set(node, depth);
-      if (depth > totalDepth) totalDepth = depth;
+    // Add node (skip root at depth 0)
+    if (depth > 0) {
+      out.push({ node, depth, hasKids });
     }
 
-    // Trigger for re-render when collapse state changes
-    const collapsedStateVersion = cell(0);
-
-    // Compute visible rows based on collapsed state
-    const visibleRows = derive((): Array<{ node: BiNode; depth: number; index: number }> => {
-      // Read collapsedStateVersion to track changes
-      void collapsedStateVersion.value;
-
-      const result: Array<{ node: BiNode; depth: number; index: number }> = [];
-      let index = 0;
-
-      const walk = (node: BiNode, depth: number): void => {
-        // Add current node (skip root at depth 0)
-        if (depth > 0) {
-          result.push({ node, depth, index: index++ });
-        }
-
-        // Add children if not collapsed
-        const nodeId = node.value.id ?? "";
-        const isCollapsed = this._collapsedNodes.has(nodeId);
-
-        if (!isCollapsed) {
-          const children = node.children as BiNode[];
-          for (const child of children) {
-            walk(child, depth + 1);
-          }
-        }
-      };
-
-      walk(root, 0);
-      return result;
-    });
-
-    // Toggle collapse state
-    const toggleCollapse = (node: BiNode) => {
-      const nodeId = node.value.id ?? "";
-      if (this._collapsedNodes.has(nodeId)) {
-        this._collapsedNodes.delete(nodeId);
-      } else {
-        this._collapsedNodes.add(nodeId);
+    // Add children if not collapsed
+    if (hasKids && !collapsed.has(node.value.id ?? '')) {
+      for (const child of children) {
+        walk(child, depth + 1);
       }
-      collapsedStateVersion.value++;
-    };
-
-    // Header row - sticky at top
-    const headerY = 4;
-    const headerBg = rect(0, 0, Wc, HEADER_HEIGHT, {
-      fill: "oklch(0.14 0 0)",
-      stroke: "oklch(0.25 0 0)",
-      strokeWidth: 1,
-    });
-    headerBg.el.style.position = "sticky";
-    headerBg.el.style.top = "0";
-    headerBg.el.style.zIndex = "1";
-
-    s(
-      headerBg,
-      label(
-        vec(16, headerY + HEADER_HEIGHT / 2),
-        "Name",
-        { size: 10, bold: true, align: Anchor.Left, fill: "oklch(0.5 0 0)" }
-      ),
-      label(
-        vec(Wc.value - VALUE_COL_WIDTH / 2, headerY + HEADER_HEIGHT / 2),
-        "Value",
-        { size: 10, bold: true, align: Anchor.Center, fill: "oklch(0.5 0 0)" }
-      )
-    );
-
-    // Table rows
-    const rowsLayer = s(group());
-    const startY = HEADER_HEIGHT + 4;
-
-    forEach(rowsLayer, visibleRows, (rowData) => {
-      const { node, depth, index } = rowData;
-      const y = startY + index * ROW_HEIGHT;
-      const indent = (depth - 1) * INDENT_WIDTH;
-      const hasChildren = (node.children as BiNode[]).length > 0;
-      const nodeId = node.value.id ?? "";
-      const isCollapsed = this._collapsedNodes.has(nodeId);
-
-      const nd = depth;
-      const color = node.value.color;
-
-      // Row background with hover
-      const rowBg = rect(0, y, Wc, ROW_HEIGHT, {
-        fill: "transparent",
-        stroke: "transparent",
-        strokeWidth: 0,
-      });
-      rowBg.el.dataset.id = nodeId;
-      rowBg.el.style.cursor = "default";
-      rowBg.el.style.transition = "background 80ms";
-
-      biEffect(() => {
-        const isHovered = hoverCell.value === node;
-        const isFocused = state.focused.value === node;
-        if (isHovered) {
-          rowBg.el.setAttribute('fill', 'oklch(0.22 0 0)');
-        } else if (isFocused) {
-          rowBg.el.setAttribute('fill', 'oklch(0.20 0 0)');
-        } else {
-          rowBg.el.setAttribute('fill', 'transparent');
-        }
-      });
-
-      rowBg.el.addEventListener("click", () => { state.focused.value = node; });
-      rowBg.el.addEventListener("pointerenter", () => { state.hovered.current = node; hoverCell.value = node; });
-      rowBg.el.addEventListener("pointerleave", () => {
-        if (state.hovered.current === node) {
-          state.hovered.current = null;
-          hoverCell.value = null;
-        }
-      });
-
-      const elements: any[] = [rowBg];
-
-      // Base X position for content
-      const baseX = 8 + indent;
-
-      // Expand/collapse button
-      if (hasChildren) {
-        const btnX = baseX;
-        const btnText = isCollapsed ? "▸" : "▾";
-        const btn = label(
-          vec(btnX, y + ROW_HEIGHT / 2),
-          btnText,
-          { size: 10, align: Anchor.Left, fill: "oklch(0.5 0 0)" }
-        );
-        btn.el.style.cursor = "pointer";
-        btn.el.style.pointerEvents = "auto";
-        btn.el.style.userSelect = "none";
-        btn.el.dataset.twist = nodeId;
-        btn.el.addEventListener("click", (e) => {
-          e.stopPropagation();
-          toggleCollapse(node);
-        });
-        elements.push(btn);
-      }
-
-      // Color dot
-      const dotX = baseX + (hasChildren ? 18 : 14);
-      const dot = rect(dotX - 4, y + ROW_HEIGHT / 2 - 4, 8, 8, {
-        fill: color,
-        corner: 4,
-      });
-      elements.push(dot);
-
-      // Name label
-      const nameX = dotX + 8;
-      const nameLbl = label(
-        vec(nameX, y + ROW_HEIGHT / 2),
-        node.value.label,
-        { size: 12, align: Anchor.Left, fill: "oklch(0.88 0 0)" }
-      );
-      elements.push(nameLbl);
-
-      // Value label
-      const valueX = Wc.value - VALUE_COL_WIDTH / 2;
-      const valueLbl = label(
-        vec(valueX, y + ROW_HEIGHT / 2),
-        derive(() => {
-          const val = node.value.total.value;
-          if (val === 0) return "";
-          if (val < 10) return val.toFixed(1);
-          return Math.round(val).toString();
-        }),
-        {
-          size: 12,
-          align: Anchor.Center,
-          fill: "oklch(0.7 0 0)"
-        }
-      );
-      // Add cursor for leaf nodes to indicate draggable
-      if (!hasChildren) {
-        valueLbl.el.style.cursor = "ew-resize";
-        valueLbl.el.dataset.leafValue = nodeId;
-      }
-      elements.push(valueLbl);
-
-      return elements;
-    }, { key: (row) => row.node.value.id ?? "" });
-
-    // Footer info
-    if (!this.hasAttribute('no-source')) {
-      s(label(view.bottom.up(10), derive(() => {
-        const f = state.focused.value;
-        const visibleCount = visibleRows.value.length;
-        return `${visibleCount} visible rows · focused: ${f?.value.label ?? "(none)"} · click ▸/▾ to expand/collapse`;
-      }), { size: 10, align: Anchor.Center, fill: "oklch(0.5 0 0)" }));
     }
   }
+
+  walk(root, 0);
+  return out;
+}
+
+/**
+ * MdTreetableLC - HTML-based hierarchical treetable for BiNode data.
+ * Does NOT extend Diagram because tables need HTML DOM for proper scrolling
+ * and text layout. Registers as a custom element for integration with sliceboard.
+ */
+export class MdTreetableLC extends HTMLElement {
+  externalRoot?: BiNode;
+  maxDepth?: number;
+  drillKey?: string;
+  drillNodeId?: string | null;
+  showBreadcrumb?: boolean;
+
+  private root!: HTMLDivElement;
+  private body!: HTMLDivElement;
+  private collapsed = new Set<string>();
+  private renderListeners = new Set<(leafIds: string[]) => void>();
+
+  connectedCallback() {
+    this.render();
+  }
+
+  private render() {
+    const rootNode = this.externalRoot ?? portfolio();
+
+    // Create root container if needed
+    if (!this.root) {
+      this.root = document.createElement('div');
+      this.root.style.cssText = 'width:100%;height:100%;overflow-y:auto;font-size:12px;font-family:inherit;background:oklch(0.14 0 0);';
+
+      // Header
+      const head = document.createElement('div');
+      head.style.cssText = 'display:flex;align-items:center;padding:4px 8px;border-bottom:1px solid oklch(0.25 0 0);position:sticky;top:0;background:oklch(0.14 0 0);z-index:1;';
+      head.innerHTML = `
+        <div style="flex:1;font-size:10px;font-weight:600;letter-spacing:0.06em;color:oklch(0.5 0 0);text-transform:uppercase;">Name</div>
+        <div style="width:60px;text-align:right;font-size:10px;font-weight:600;letter-spacing:0.06em;color:oklch(0.5 0 0);text-transform:uppercase;">Value</div>
+      `;
+      this.root.appendChild(head);
+
+      // Body
+      this.body = document.createElement('div');
+      this.root.appendChild(this.body);
+
+      this.appendChild(this.root);
+    }
+
+    const visible = computeVisible(rootNode, this.collapsed);
+    const leafIds: string[] = [];
+
+    // Keyed update
+    const existing = new Map<string, HTMLElement>();
+    for (const el of Array.from(this.body.children) as HTMLElement[]) {
+      const id = el.dataset.id;
+      if (id) existing.set(id, el);
+    }
+
+    const fragment = document.createDocumentFragment();
+    for (const { node, depth, hasKids } of visible) {
+      const nodeId = node.value.id ?? '';
+      let row = existing.get(nodeId);
+      existing.delete(nodeId);
+
+      if (!row) {
+        row = document.createElement('div');
+        row.dataset.id = nodeId;
+        row.style.cssText = 'display:flex;align-items:center;padding:3px 8px;cursor:default;transition:background 80ms;';
+        row.addEventListener('mouseenter', () => { row!.style.background = 'oklch(0.22 0 0)'; });
+        row.addEventListener('mouseleave', () => { row!.style.background = ''; });
+      }
+
+      const indent = (depth - 1) * INDENT_WIDTH;
+      const isCollapsed = this.collapsed.has(nodeId);
+      const color = node.value.color;
+      const value = node.value.total.value;
+
+      row.innerHTML = `
+        <div style="flex:1;display:flex;align-items:center;gap:4px;padding-left:${indent}px;min-width:0;">
+          ${hasKids
+            ? `<button data-twist="${nodeId}" style="all:unset;cursor:pointer;width:14px;text-align:center;color:oklch(0.5 0 0);font-size:10px;flex-shrink:0;">${isCollapsed ? '▸' : '▾'}</button>`
+            : `<span style="width:14px;flex-shrink:0;"></span>`
+          }
+          <span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;"></span>
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:oklch(0.88 0 0);">${node.value.label}</span>
+        </div>
+        <div data-value-cell="${nodeId}" ${!hasKids ? `data-leaf-value="${nodeId}"` : ''} style="width:60px;text-align:right;color:oklch(0.7 0 0);font-variant-numeric:tabular-nums;${!hasKids ? 'cursor:ew-resize;touch-action:none;' : ''}">${fmtNum(value)}</div>
+      `;
+
+      // Attach expand/collapse handler
+      if (hasKids) {
+        const btn = row.querySelector<HTMLElement>(`[data-twist="${nodeId}"]`);
+        btn?.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (this.collapsed.has(nodeId)) {
+            this.collapsed.delete(nodeId);
+          } else {
+            this.collapsed.add(nodeId);
+          }
+          this.render();
+        });
+      }
+
+      if (!hasKids) leafIds.push(nodeId);
+      fragment.appendChild(row);
+    }
+
+    // Remove stale rows
+    for (const el of existing.values()) {
+      el.remove();
+    }
+
+    this.body.appendChild(fragment);
+
+    // Notify render listeners (for number-drag attachment)
+    for (const listener of this.renderListeners) {
+      listener(leafIds);
+    }
+  }
+
+  // API for React wrapper
+  onRender(listener: (leafIds: string[]) => void): () => void {
+    this.renderListeners.add(listener);
+    return () => { this.renderListeners.delete(listener); };
+  }
+
+  getRoot(): HTMLElement {
+    return this.root;
+  }
+}
+
+// Register custom element
+if (!customElements.get('md-treetable-lc')) {
+  customElements.define('md-treetable-lc', MdTreetableLC);
 }
