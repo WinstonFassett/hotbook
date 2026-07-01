@@ -534,15 +534,32 @@ function buildSeedWorkspace(): Workspace {
     'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree',
   ])
 
-  function makeAllVizDash(prefix: string, flatGroupBy?: string): { tiles: Tile[]; layout: LayoutItem[] } {
-    const tiles: Tile[] = ALL_KINDS.map((kind, i) => ({
+  // Grouped/stacked bars need explicit groupBy + seriesBy, so we add them manually
+  // per dataset rather than in ALL_KINDS (which only gets groupBy).
+  const SERIES_BAR_KINDS: TileKind[] = ['br-lc-grouped-bar', 'br-lc-stacked-bar']
+
+  function makeAllVizDash(prefix: string, flatGroupBy?: string, seriesBy?: string): { tiles: Tile[]; layout: LayoutItem[] } {
+    const baseTiles: Tile[] = ALL_KINDS.map((kind, i) => ({
       id: `${prefix}-${i}`,
       kind,
       title: kind,
       ...(flatGroupBy && GROUPBY_KINDS.has(kind) ? { groupBy: flatGroupBy } : {}),
     }))
-    const layout: LayoutItem[] = ALL_KINDS.map((_, i) => ({
-      i: `${prefix}-${i}`,
+
+    // Add grouped/stacked bar tiles if both groupBy and seriesBy are provided
+    const seriesTiles: Tile[] = (flatGroupBy && seriesBy)
+      ? SERIES_BAR_KINDS.map((kind, i) => ({
+          id: `${prefix}-series-${i}`,
+          kind,
+          title: kind,
+          groupBy: flatGroupBy,
+          seriesBy,
+        }))
+      : []
+
+    const tiles = [...baseTiles, ...seriesTiles]
+    const layout: LayoutItem[] = tiles.map((t, i) => ({
+      i: t.id,
       x: (i % 4) * 3,
       y: Math.floor(i / 4) * 5,
       w: 3,
@@ -551,9 +568,9 @@ function buildSeedWorkspace(): Workspace {
     return { tiles, layout }
   }
 
-  const lifeViz  = makeAllVizDash('lf', 'level')
-  const fruitViz = makeAllVizDash('fr', 'group')
-  const teamViz  = makeAllVizDash('tm', 'role')
+  const lifeViz  = makeAllVizDash('lf', 'level', 'status')
+  const fruitViz = makeAllVizDash('fr', 'group', 'season')
+  const teamViz  = makeAllVizDash('tm', 'role', 'team')
   const supply   = buildSupplyChainDataset()
   const supplyTiles: Tile[] = [{ id: 'sp-0', kind: 'br-lc-sankey', title: 'Supply chain' }]
   const supplyLayout: LayoutItem[] = [{ i: 'sp-0', x: 0, y: 0, w: 12, h: 8 }]

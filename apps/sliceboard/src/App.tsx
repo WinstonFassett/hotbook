@@ -12,6 +12,7 @@ import {
   BrLcBar, BrLcLine, BrLcArea, BrLcScatter, BrLcPie, BrLcRadar, BrLcConcentricArc,
   BrLcGauge, BrLcGaugeSegmented,
   BrLcPack, BrLcTreemap, BrLcIcicle, BrLcSunburst, BrLcSankey, BrLcSankeyFlow, BrLcTree,
+  BrLcGroupedBar,
 } from './viz/br/BrLcCharts'
 import {
   SvelteLcSunburst, SvelteLcIcicle, SvelteLcPack, SvelteLcTreemap, SvelteTreemapDemo,
@@ -52,13 +53,15 @@ function colorByGroup(nodes: PNode[]): PNode[] {
 // Canon picker — retired gen-0/Svelte kinds excluded
 const TILE_KINDS: TileKind[] = [
   'treetable',
-  'br-lc-bar', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie',
+  'br-lc-bar', 'br-lc-grouped-bar', 'br-lc-stacked-bar', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie',
   'br-lc-radar', 'br-lc-concentric-arc', 'br-lc-gauge', 'br-lc-gauge-segmented',
   'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-sankey-flow', 'br-lc-tree',
 ]
 const TILE_LABELS: Record<TileKind, string> = {
   'treetable':            'Table',
   'br-lc-bar':            'Bar',
+  'br-lc-grouped-bar':    'Grouped Bar',
+  'br-lc-stacked-bar':    'Stacked Bar',
   'br-lc-bands':          'Bands',
   'br-lc-line':           'Line',
   'br-lc-area':           'Area',
@@ -146,6 +149,8 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
   if (tile.kind === 'br-lc-concentric-arc') return <BrLcConcentricArc nodes={sortedNodes} measureKey={mk} onUpdate={onNodeUpdate} />
   if (tile.kind === 'br-lc-gauge')          return <BrLcGauge nodes={sortedNodes} measureKey={mk} label={tile.title ?? mk} />
   if (tile.kind === 'br-lc-gauge-segmented')return <BrLcGaugeSegmented nodes={sortedNodes} measureKey={mk} label={tile.title ?? mk} />
+  if (tile.kind === 'br-lc-grouped-bar')    return <BrLcGroupedBar nodes={sortedNodes} measureKey={mk} groupBy={tile.groupBy} seriesBy={tile.seriesBy} mode="grouped" orientation={tile.orientation} onUpdate={onNodeUpdate} />
+  if (tile.kind === 'br-lc-stacked-bar')    return <BrLcGroupedBar nodes={sortedNodes} measureKey={mk} groupBy={tile.groupBy} seriesBy={tile.seriesBy} mode="stacked" orientation={tile.orientation} onUpdate={onNodeUpdate} />
 
   // ── BR-LC hierarchical charts ────────────────────────────────────────────
   if (tile.kind === 'br-lc-pack')           return <BrLcPack nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
