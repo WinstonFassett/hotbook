@@ -1,9 +1,24 @@
-import type { PNode } from '@winstonfassett/vizform-react-d3'
-import type { PEdge, ScalingMode } from '@winstonfassett/vizform-core'
+import type { PNode, PEdge, ScalingMode } from '@winstonfassett/vizform-core'
 import { colorFor } from '@winstonfassett/vizform-core'
-import type { LayoutItem } from 'react-grid-layout'
+import type { DockNode } from './dock'
+import { removeTileFromDock } from './dock'
 
 export type { PNode, PEdge }
+
+// Minimal shape of the legacy grid layout items — kept for persistence compatibility
+// with stored dashboards. The dock model replaces the grid in the new shell.
+export interface LayoutItem {
+  i: string
+  x: number
+  y: number
+  w: number
+  h: number
+  minW?: number
+  maxW?: number
+  minH?: number
+  maxH?: number
+  static?: boolean
+}
 
 // ─── Schema defs ──────────────────────────────────────────────────────────────
 
@@ -107,6 +122,8 @@ export interface Dashboard {
   drills?: Record<string, string | null>
   /** Legacy single drill scope - migrated to drills['default'] on load. */
   drillNodeId?: string | null
+  /** Persisted dock tree. If absent, synthesized from tiles. */
+  dockTree?: DockNode | null
 }
 
 // ─── Workspace ────────────────────────────────────────────────────────────────
@@ -120,7 +137,7 @@ export interface Workspace {
 
 // ─── Storage ──────────────────────────────────────────────────────────────────
 
-const LS_KEY = 'sb:workspace:v10'
+const LS_KEY = 'sb:workspace:v11'
 
 function genId(): string {
   return Math.random().toString(36).slice(2, 10)
@@ -626,8 +643,19 @@ function buildSeedWorkspace(): Workspace {
 function load(): Workspace | null {
   try {
     const raw = localStorage.getItem(LS_KEY)
-    if (!raw) return null
-    return JSON.parse(raw) as Workspace
+    if (raw) return JSON.parse(raw) as Workspace
+
+    // One-shot migration from v10
+    const legacy = localStorage.getItem('sb:workspace:v10')
+    if (!legacy) return null
+    const ws = JSON.parse(legacy) as Workspace
+    ws.dashboards.forEach(dash => {
+      if (dash.drillNodeId != null && dash.drills == null) {
+        dash.drills = { default: dash.drillNodeId }
+      }
+      delete dash.drillNodeId
+    })
+    return ws
   } catch {
     return null
   }
@@ -806,6 +834,7 @@ export function removeTile(ws: Workspace, dashId: string, tileId: string): Works
     ...dash,
     tiles: dash.tiles.filter(t => t.id !== tileId),
     layout: dash.layout.filter(l => l.i !== tileId),
+    dockTree: removeTileFromDock(dash.dockTree ?? null, tileId),
   })
 }
 

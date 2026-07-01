@@ -1,10 +1,12 @@
 // AreaChart — vanilla-TS port of LayerChart's AreaChart wrapper.
 
-import { Anchor, cell, circle, derive, Diagram, easeInOut, effect as biEffect, label, line, type Mount, num, pathD, tween, Vec, vec } from "bireactive";
-import { area as d3Area, curveMonotoneX, line as d3Line } from "d3-shape";
+import { Anchor, cell, circle, derive, Diagram, label, line, type Mount, Vec, vec } from "bireactive";
+import { curveMonotoneX } from "d3-shape";
+import { area } from "../lib/area";
 import { axis } from "../lib/axis";
 import { chartContext } from "../lib/chart-context";
 import { attachCartesianGestures, makeBisectFinder } from "../lib/cartesian-gestures";
+import { spline } from "../lib/spline";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 
 const W = 720;
@@ -64,59 +66,8 @@ export class MdAreaChartLC extends Diagram {
 
     axis(s, ctx, { placement: "bottom" });
     axis(s, ctx, { placement: "left" });
-
-    // Per-point x-pixel tween cells — same pattern as line-chart.
-    const xPxCells = new Map<Point, ReturnType<typeof num>>();
-    for (const pt of data.value as Point[]) {
-      const xTarget = derive(() => ctx.xGet.value(pt));
-      const xPx = num(xTarget.value);
-      xPxCells.set(pt, xPx);
-      let xCancel: (() => void) | null = null;
-      let xInited = false;
-      biEffect(() => {
-        const target = xTarget.value;
-        if (!xInited) { xInited = true; xPx.value = target; return; }
-        if ((this as any).gestureActive) {
-          xCancel?.(); xCancel = null;
-          xPx.value = target;
-        } else {
-          xCancel?.();
-          xCancel = this.anim.start(tween(xPx, target, 0.25, easeInOut) as any);
-        }
-      });
-    }
-
-    // Custom area + line paths that read from tweened x cells + ctx.yGet.
-    const ys = ctx.yScale;
-    const areaPath = derive(() => {
-      const rows = data.value as Point[];
-      const gy = ctx.yGet.value;
-      const scale = ys.value as any;
-      const yRange = scale.range?.() ?? [0, 0];
-      const baseline = scale(0);
-      const y0Default = Math.max(...yRange);
-      const y0 = Number.isFinite(baseline) ? Math.min(baseline, y0Default) : y0Default;
-      const ordered = [...rows].sort((a, b) => (xPxCells.get(a)?.value ?? 0) - (xPxCells.get(b)?.value ?? 0));
-      const gen = d3Area<Point>()
-        .x((dp) => xPxCells.get(dp)?.value ?? 0)
-        .y1((dp) => gy(dp))
-        .y0(() => y0);
-      gen.curve(curveMonotoneX);
-      return gen(ordered) ?? "";
-    });
-    s(pathD(areaPath, { fill: "#7aaae8", fillOpacity: 0.25, stroke: "none" }));
-
-    const linePath = derive(() => {
-      const rows = data.value as Point[];
-      const gy = ctx.yGet.value;
-      const ordered = [...rows].sort((a, b) => (xPxCells.get(a)?.value ?? 0) - (xPxCells.get(b)?.value ?? 0));
-      const gen = d3Line<Point>()
-        .x((dp) => xPxCells.get(dp)?.value ?? 0)
-        .y((dp) => gy(dp));
-      gen.curve(curveMonotoneX);
-      return gen(ordered) ?? "";
-    });
-    s(pathD(linePath, { stroke: "#7aaae8", strokeWidth: 2, fill: "none" }));
+    s(area(ctx, { fill: "#7aaae8", fillOpacity: 0.25, curve: curveMonotoneX }));
+    s(spline(ctx, { stroke: "#7aaae8", strokeWidth: 2, curve: curveMonotoneX }));
 
     const hover = cell<Point | null>(null);
     const selected = cell<Point | null>(null);
@@ -129,11 +80,12 @@ export class MdAreaChartLC extends Diagram {
       data.value = [...data.value];
     };
 
-    // Create focusable invisible circles for each point — positions from tweened x
+    // Create focusable invisible circles for each point
     const pointElements = new Map<Point, SVGCircleElement>();
-    for (let i = 0; i < (data.value as Point[]).length; i++) {
-      const pt = (data.value as Point[])[i]!;
-      const pos = Vec.derive(() => ({ x: xPxCells.get(pt)?.value ?? 0, y: ctx.yGet.value(pt) }));
+    const points0 = data.peek() as Point[]
+    for (let i = 0; i < points0.length; i++) {
+      const pt = points0[i]!;
+      const pos = Vec.derive(() => ({ x: ctx.xGet.value(pt), y: ctx.yGet.value(pt) }));
       const focusCircle = s(circle(pos, 8, { fill: "transparent", stroke: "none" }));
       pointElements.set(pt, focusCircle.el as SVGCircleElement);
       focusCircle.el.setAttribute('tabindex', '0');
@@ -156,21 +108,21 @@ export class MdAreaChartLC extends Diagram {
       focusDatum: (d) => { if (d) pointElements.get(d)?.focus(); },
     });
 
-    // Hover crosshair — uses tweened x.
+    // Hover crosshair.
     const hoverX = Vec.derive(() => {
       const p = hover.value;
       if (!p) return { x: -10, y: -10 };
-      return { x: xPxCells.get(p)?.value ?? -10, y: ctx.plotY };
+      return { x: ctx.xGet.value(p), y: ctx.plotY };
     });
     const hoverBottom = Vec.derive(() => {
       const p = hover.value;
       if (!p) return { x: -10, y: -10 };
-      return { x: xPxCells.get(p)?.value ?? -10, y: ctx.plotY + ctx.plotHeight };
+      return { x: ctx.xGet.value(p), y: ctx.plotY + ctx.plotHeight };
     });
     const hoverPoint = Vec.derive(() => {
       const p = hover.value;
       if (!p) return { x: -10, y: -10 };
-      return { x: xPxCells.get(p)?.value ?? -10, y: ctx.yGet.value(p) };
+      return { x: ctx.xGet.value(p), y: ctx.yGet.value(p) };
     });
     const hoverOpacity = derive(() => (hover.value ? 1 : 0));
 
@@ -179,11 +131,11 @@ export class MdAreaChartLC extends Diagram {
       circle(hoverPoint, 4, { fill: "#7aaae8", stroke: "#fff", strokeWidth: 2, opacity: hoverOpacity }),
     );
 
-    // Selection marker — uses tweened x.
+    // Selection marker.
     const selPoint = Vec.derive(() => {
       const p = selected.value;
       if (!p) return { x: -10, y: -10 };
-      return { x: xPxCells.get(p)?.value ?? -10, y: ctx.yGet.value(p) };
+      return { x: ctx.xGet.value(p), y: ctx.yGet.value(p) };
     });
     const selOpacity = derive(() => (selected.value ? 1 : 0));
 
