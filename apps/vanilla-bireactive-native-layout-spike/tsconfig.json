@@ -14,7 +14,6 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "paths": {
       "@bireactive": ["../../inspo/bireactive/src/index.ts"],
-      "@bireactive/coll": ["../../inspo/bireactive/src/coll.ts"],
       "@bireactive/tree": ["../../inspo/bireactive/src/tree.ts"],
       "@bireactive/*": ["../../inspo/bireactive/src/*/index.ts"]
     }

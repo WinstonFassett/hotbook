@@ -8,9 +8,9 @@
 // paints. If renderer chrome (chip dimensions, hull padding) changes,
 // update it here too — that's the whole point of consolidating.
 
-import type { Coll } from "@bireactive/coll";
+import type { Arr } from "@bireactive";
 import type { Edge, Row } from "./data";
-import { rowsById, leafIds } from "./data";
+import { rowsById, leafIds, items } from "./data";
 import { CHIP_HEIGHT_TOTAL, nodeSize, type NodeSize } from "./render";
 
 // Chip glyph metrics — duplicated here so we can compute the chip's own
@@ -66,7 +66,7 @@ function sidePad(depth: number): number {
 
 /** Build a complete `Measured` from the live tables. Called once per
  *  layout pass (engine-agnostic). */
-export function measure(rows: Coll<Row>, edges: Coll<Edge>): Measured {
+export function measure(rows: Arr<Row>, edges: Arr<Edge>): Measured {
   const byId = rowsById(rows);
   const leaves = new Set(leafIds(rows));
 
@@ -79,7 +79,7 @@ export function measure(rows: Coll<Row>, edges: Coll<Edge>): Measured {
     depthOf.set(id, d);
     return d;
   };
-  for (const r of rows.items) computeDepth(r.id);
+  for (const r of items(rows)) computeDepth(r.id);
 
   const out: Measured = {
     leaves: new Map(),
@@ -87,7 +87,7 @@ export function measure(rows: Coll<Row>, edges: Coll<Edge>): Measured {
     edges: new Map(),
   };
 
-  for (const r of rows.items) {
+  for (const r of items(rows)) {
     const name = r.name.value;
     if (leaves.has(r.id)) {
       const sz: NodeSize = nodeSize(name);
@@ -119,7 +119,7 @@ export function measure(rows: Coll<Row>, edges: Coll<Edge>): Measured {
     }
   }
 
-  for (const e of edges.items) {
+  for (const e of items(edges)) {
     out.edges.set(e.id, { kind: "edge" });
   }
 

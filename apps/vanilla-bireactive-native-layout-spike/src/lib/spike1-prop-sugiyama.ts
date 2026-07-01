@@ -33,6 +33,7 @@ import {
   rowsById,
   sharedEdges,
   sharedRows,
+  items,
   type TreeNode,
 } from "./data";
 import { hullOf, type Size } from "./hull";
@@ -91,13 +92,13 @@ export class MdPropSugiyama extends Diagram {
     this.#gfx.add(this.#hullsGfx, this.#edgesGfx, this.#nodesGfx);
 
     // Rebuild whenever the shared Colls change. effect() tracks
-    // sharedRows.items / sharedEdges.items reads inside #buildAll +
+    // items(sharedRows) / items(sharedEdges) reads inside #buildAll +
     // #applyLayout — any mutation from the shared toolbar fires here.
     this.#persist.push(
       effect(() => {
         // touch both so the effect tracks both
-        void sharedRows.items;
-        void sharedEdges.items;
+        void sharedRows.cells;
+        void sharedEdges.cells;
         this.#buildAll();
         this.#applyLayout();
       }),
@@ -217,7 +218,7 @@ export class MdPropSugiyama extends Diagram {
       const ds = [...descendantsOf(sharedRows, id)].filter((d) => leafSet.has(d));
       return ds[0] ?? null;
     };
-    for (const e of sharedEdges.items) {
+    for (const e of items(sharedEdges)) {
       const f = projectTo(e.from.value);
       const t = projectTo(e.to.value);
       if (f && t && f !== t) projectedEdges.push([f, t]);
