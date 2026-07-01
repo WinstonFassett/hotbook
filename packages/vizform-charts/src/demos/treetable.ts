@@ -8,6 +8,7 @@ import {
   type Mount,
   cell,
   rect,
+  vec,
   Vec,
   effect as biEffect,
 } from "bireactive";
@@ -128,7 +129,7 @@ export class MdTreetableLC extends Diagram {
         strokeWidth: 1,
       }),
       label(
-        Vec.of(20, headerY + ROW_HEIGHT / 2),
+        vec(20, headerY + ROW_HEIGHT / 2),
         "Name",
         { size: 11, bold: true, align: Anchor.Left, fill: "#e0e0e0" }
       ),
@@ -138,7 +139,7 @@ export class MdTreetableLC extends Diagram {
         strokeWidth: 1,
       }),
       label(
-        Vec.of(10 + NAME_COL_WIDTH + VALUE_COL_WIDTH / 2, headerY + ROW_HEIGHT / 2),
+        vec(10 + NAME_COL_WIDTH + VALUE_COL_WIDTH / 2, headerY + ROW_HEIGHT / 2),
         "Value",
         { size: 11, bold: true, align: Anchor.Center, fill: "#e0e0e0" }
       )
@@ -195,7 +196,7 @@ export class MdTreetableLC extends Diagram {
         const iconX = 15 + indent;
         const iconText = isCollapsed ? "▶" : "▼";
         const iconLbl = label(
-          Vec.of(iconX, y + ROW_HEIGHT / 2),
+          vec(iconX, y + ROW_HEIGHT / 2),
           iconText,
           { size: 10, align: Anchor.Left, fill: "#9aa0a8" }
         );
@@ -211,7 +212,7 @@ export class MdTreetableLC extends Diagram {
       // Name label with indent
       const nameX = 20 + indent + (hasChildren ? 15 : 0);
       const nameLbl = label(
-        Vec.of(nameX, y + ROW_HEIGHT / 2),
+        vec(nameX, y + ROW_HEIGHT / 2),
         node.value.label,
         { size: 10, align: Anchor.Left, fill: labelInk(nodeFill) }
       );
@@ -219,7 +220,7 @@ export class MdTreetableLC extends Diagram {
 
       // Value label
       const valueLbl = label(
-        Vec.of(10 + NAME_COL_WIDTH + VALUE_COL_WIDTH / 2, y + ROW_HEIGHT / 2),
+        vec(10 + NAME_COL_WIDTH + VALUE_COL_WIDTH / 2, y + ROW_HEIGHT / 2),
         derive(() => node.value.total.value.toFixed(0)),
         { size: 10, align: Anchor.Center, fill: "#9aa0a8" }
       );
