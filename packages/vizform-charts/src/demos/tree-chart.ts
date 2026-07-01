@@ -43,6 +43,7 @@ export class MdTreeChart extends Diagram {
     }
   `
   externalRoot?: BiNode;
+  maxDepth?: number;
 
   private _sortByCell = cell<'index' | 'value'>('index')
   get sortBy(): 'index' | 'value' { return this._sortByCell.value }
@@ -159,6 +160,7 @@ export class MdTreeChart extends Diagram {
     // Draw edges first (under nodes)
     for (const { node, depth } of walkWithDepth(root)) {
       if (depth === 0) continue;
+      if (this.maxDepth !== undefined && depth > this.maxDepth) continue;
       const parent = parentOf(node);
       if (!parent) continue;
 
@@ -171,6 +173,7 @@ export class MdTreeChart extends Diagram {
     // Draw nodes (circles + labels)
     const nodeElements = new Map<BiNode, SVGCircleElement>();
     for (const { node, depth, isLeaf } of walkWithDepth(root)) {
+      if (this.maxDepth !== undefined && depth > this.maxDepth) continue;
       const cx = Vec.derive(() => posOf(node));
 
       const r = isLeaf ? 6 : 5;
