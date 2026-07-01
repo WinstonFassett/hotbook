@@ -520,19 +520,24 @@ function buildSupplyChainDataset(): Dataset {
 
 function buildGanttDataset(): Dataset {
   _idc = 0
+  // Tasks with start/end dates (day-offsets from 2026-01-01), duration, and slack
+  // Slack = buffer days before successor starts (shows scheduling flexibility)
   const rows: PNode[] = [
-    row('Discovery',  { start: 0,  end: 7  }, {}, null, '#e08888'),
-    row('Design',     { start: 5,  end: 14 }, {}, null, '#d4a86c'),
-    row('Build core', { start: 12, end: 28 }, {}, null, '#7ec87e'),
-    row('QA',         { start: 25, end: 34 }, {}, null, '#7aaae8'),
-    row('Launch',     { start: 33, end: 36 }, {}, null, '#b090e0'),
+    row('Discovery',  { start: 0,  end: 7,  duration: 7,  slack: 0  }, { phase: 'research' }, null, '#e08888'),
+    row('Design',     { start: 9,  end: 18, duration: 9,  slack: 0  }, { phase: 'planning' }, null, '#d4a86c'),
+    row('Frontend',   { start: 20, end: 35, duration: 15, slack: 5  }, { phase: 'build' },    null, '#7ec87e'),
+    row('Backend',    { start: 20, end: 38, duration: 18, slack: 2  }, { phase: 'build' },    null, '#6fb0d2'),
+    row('QA',         { start: 40, end: 49, duration: 9,  slack: 0  }, { phase: 'verify' },   null, '#7aaae8'),
+    row('Deploy',     { start: 51, end: 54, duration: 3,  slack: 0  }, { phase: 'launch' },   null, '#b090e0'),
   ]
+  // Dependencies with lag (positive = required gap, negative = allowed overlap)
   const edges: PEdge[] = [
-    { source: rows[0]!.id, target: rows[1]!.id, value: 0 },  // Discovery → Design
-    { source: rows[1]!.id, target: rows[2]!.id, value: 0 },  // Design → Build core
-    { source: rows[2]!.id, target: rows[3]!.id, value: 0 },  // Build core → QA
-    { source: rows[2]!.id, target: rows[4]!.id, value: 0 },  // Build core → Launch
-    { source: rows[3]!.id, target: rows[4]!.id, value: 0 },  // QA → Launch
+    { source: rows[0]!.id, target: rows[1]!.id, value: 0, lag: 2  },  // Discovery → Design (2 day gap)
+    { source: rows[1]!.id, target: rows[2]!.id, value: 0, lag: 2  },  // Design → Frontend (2 day gap)
+    { source: rows[1]!.id, target: rows[3]!.id, value: 0, lag: 2  },  // Design → Backend (2 day gap)
+    { source: rows[2]!.id, target: rows[4]!.id, value: 0, lag: 5  },  // Frontend → QA (5 day gap, has slack)
+    { source: rows[3]!.id, target: rows[4]!.id, value: 0, lag: 2  },  // Backend → QA (2 day gap)
+    { source: rows[4]!.id, target: rows[5]!.id, value: 0, lag: 2  },  // QA → Deploy (2 day gap)
   ]
   return {
     id: 'ds-gantt',
@@ -544,8 +549,12 @@ function buildGanttDataset(): Dataset {
     measureDefs: [
       { key: 'start', label: 'Start (days from 2026-01-01)' },
       { key: 'end', label: 'End (days from 2026-01-01)' },
+      { key: 'duration', label: 'Duration (days)' },
+      { key: 'slack', label: 'Slack (buffer days)' },
     ],
-    dimDefs: [],
+    dimDefs: [
+      { key: 'phase', label: 'Phase', values: ['research', 'planning', 'build', 'verify', 'launch'] },
+    ],
   }
 }
 
