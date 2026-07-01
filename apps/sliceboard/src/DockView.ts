@@ -75,6 +75,8 @@ interface PanelCtrl {
   simpleEl: HTMLElement | null
   simpleDataKey: string
   tileId: string
+  /** Cached .dv-panel wrap so re-parenting doesn't disconnect the chart element. */
+  wrap: HTMLElement | null
   dispose: () => void
 }
 
@@ -108,6 +110,7 @@ export class DockView extends HTMLElement {
     root.className = 'dv-root'
     root.style.cssText = 'flex:1;min-height:0;position:relative;overflow:hidden'
     this.appendChild(root)
+
 
     let lastTiles: TileRecord[] | null = null
     const stopEffect = biEffect(() => {
@@ -254,17 +257,32 @@ export class DockView extends HTMLElement {
     const active = group.panels.find(p => p.id === group.activeId) ?? group.panels[0]
     if (!active) { body.innerHTML = ''; return }
 
-    const existingPanelEl = body.querySelector<HTMLElement>('.dv-panel')
+    // Find the currently visible (non-hidden) panel to know what's shown right now.
+    const existingPanelEl = Array.from(body.querySelectorAll<HTMLElement>('.dv-panel'))
+      .find(p => p.style.display !== 'none')
     const existingPanelId = existingPanelEl?.dataset.panelId
 
     // Remove stale drop indicators
     body.querySelectorAll('.dv-drop-indicator').forEach(e => e.remove())
 
     if (existingPanelId !== active.id) {
-      // Active panel changed — swap panel content, chart containers stay alive in _panelCtrls
-      body.querySelectorAll('.dv-panel').forEach(p => p.remove())
-      const wrap = this._getPanelContent(active.id, active.tileId, tiles)
-      if (wrap) body.appendChild(wrap)
+      // Active panel changed — hide inactive panels (keeps chart elements connected
+      // so connectedCallback/scene() don't re-run on tab switch) and show active panel.
+      body.querySelectorAll<HTMLElement>('.dv-panel').forEach(p => { p.style.display = 'none' })
+      // Get or create the active panel wrap.
+      const existingActive = this._panelCtrls.get(active.id)
+      if (existingActive?.wrap && body.contains(existingActive.wrap)) {
+        // Wrap already in body (just hidden) — show it.
+        existingActive.wrap.style.display = ''
+        if (tilesChanged) {
+          const tileRec = tiles.find(t => t.tile.id === active.tileId)
+          if (tileRec) this._syncChart(active.id, tileRec)
+        }
+      } else {
+        // First time showing this panel — create and append its wrap.
+        const wrap = this._getPanelContent(active.id, active.tileId, tiles)
+        if (wrap) body.appendChild(wrap)
+      }
     } else if (tilesChanged) {
       // Same panel, tiles data changed — sync source data (syncFrom/applyData).
       // Skip when only dock changed (gutter drag) to avoid overwriting in-flight gesture edits.
@@ -441,13 +459,13 @@ export class DockView extends HTMLElement {
     const tileRec = tiles.find(t => t.tile.id === tileId)
     if (!tileRec) return null
 
+    const schema = schemaFor(tileRec.tile.kind)
+    const { tile, ds } = tileRec
+
     const wrap = document.createElement('div')
     wrap.className = 'dv-panel'
     wrap.dataset.panelId = panelId
     wrap.style.cssText = 'width:100%;height:100%;display:flex;flex-direction:column;overflow:hidden'
-
-    const schema = schemaFor(tileRec.tile.kind)
-    const { tile, ds, measureKey } = tileRec
 
     // Tile header
     const header = this._buildTileHeader(tileRec, tiles)
@@ -464,7 +482,7 @@ export class DockView extends HTMLElement {
     body.className = `tile-body${schema.scrollBody ? ' tile-body--scroll' : ''}${schema.drillKey ? ' tile-body--drill' : ''}`
     body.style.cssText = 'flex:1;min-height:0;overflow:hidden;position:relative'
 
-    this._mountChart(body, panelId, tileRec)
+    this._mountChart(body, panelId, tileRec, wrap)
     wrap.appendChild(body)
 
     return wrap
@@ -680,7 +698,7 @@ export class DockView extends HTMLElement {
 
   // ─── Chart mounting ───────────────────────────────────────────────────────
 
-  private _mountChart(body: HTMLElement, panelId: string, tileRec: TileRecord) {
+  private _mountChart(body: HTMLElement, panelId: string, tileRec: TileRecord, wrap?: HTMLElement) {
     const { tile, ds, measureKey } = tileRec
     const drillNodeId = hudStore.getSnapshot().drills[tile.id] ?? null
     const ctx: TileRenderContext = {
@@ -706,11 +724,15 @@ export class DockView extends HTMLElement {
           simpleEl: null,
           simpleDataKey: '',
           tileId: tile.id,
+          wrap: wrap ?? null,
           dispose: () => { tileCtrl.dispose(); container.remove() },
         }
         this._panelCtrls.set(panelId, ctrl)
       } else {
+        // Re-parent without moving the chart element — keep it in its container.
+        // (We get here only on first show after initial mount if wrap wasn't cached.)
         body.appendChild(existing.container)
+        if (wrap) existing.wrap = wrap
         existing.tileCtrl?.update(source)
       }
     } else {
@@ -734,6 +756,7 @@ export class DockView extends HTMLElement {
             simpleEl: el,
             simpleDataKey: dk,
             tileId: tile.id,
+            wrap: wrap ?? null,
             dispose: () => { if (body.contains(el)) body.removeChild(el) },
           }
           this._panelCtrls.set(panelId, ctrl)
