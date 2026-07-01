@@ -43,19 +43,32 @@ export class MdTreeChart extends Diagram {
     }
   `
   externalRoot?: BiNode;
+  maxDepth?: number;
 
   private _sortByCell = cell<'index' | 'value'>('index')
   get sortBy(): 'index' | 'value' { return this._sortByCell.value }
   set sortBy(v: 'index' | 'value') { this._sortByCell.value = v }
+
+  private _orientationCell = cell<'vertical' | 'horizontal'>('vertical')
+  get orientation(): 'vertical' | 'horizontal' { return this._orientationCell.value }
+  set orientation(v: 'vertical' | 'horizontal') { this._orientationCell.value = v }
   protected scene(s: Mount): void {
     const root = this.externalRoot ?? portfolio();
 
-    // Scale canvas to data size
+    // Scale canvas to data size — calculate for both orientations and use max
+    // so the canvas can accommodate switching between vertical and horizontal
     const allNodes = [...walkWithDepth(root)];
     const leafCount = allNodes.filter(n => n.isLeaf).length;
     const maxDepth = allNodes.reduce((m, n) => Math.max(m, n.depth), 0);
-    const cW = Math.max(W, leafCount * 20 + PAD_LEFT + PAD_RIGHT);
-    const cH = Math.max(H, maxDepth * 80 + PAD_TOP + PAD_BOTTOM);
+    // Vertical: width for siblings, height for depth
+    const vertW = Math.max(W, leafCount * 20 + PAD_LEFT + PAD_RIGHT);
+    const vertH = Math.max(H, maxDepth * 80 + PAD_TOP + PAD_BOTTOM);
+    // Horizontal: width for depth, height for siblings
+    const horizW = Math.max(W, maxDepth * 80 + PAD_LEFT + PAD_RIGHT);
+    const horizH = Math.max(H, leafCount * 20 + PAD_TOP + PAD_BOTTOM);
+    // Use max to accommodate both orientations without clipping
+    const cW = Math.max(vertW, horizW);
+    const cH = Math.max(vertH, horizH);
 
     const view = this.view(cW, cH);
     this.tabIndex = -1;
@@ -73,33 +86,50 @@ export class MdTreeChart extends Diagram {
     const hoverCell = cell<BiNode | null>(null);
     state.hoverCell = hoverCell;
 
+    // Derived cell for orientation (must be separate derived cell for reactive tracking)
+    const isHoriz = derive(() => this._orientationCell.value === 'horizontal');
+
+    // Tweened swap amount for smooth orientation transitions (0 = vertical, 1 = horizontal)
+    const swapAmount = num(isHoriz.value ? 1 : 0);
+    let swapCancel: (() => void) | null = null;
+    let swapInited = false;
+    biEffect(() => {
+      const target = isHoriz.value ? 1 : 0;
+      if (!swapInited) { swapInited = true; swapAmount.value = target; return; }
+      swapCancel?.();
+      swapCancel = this.anim.start(tween(swapAmount, target, SORT_SEC, easeOut));
+    });
+
     // tree() layout: assigns .x (0..1) and .y (depth) per node
     const layout = derive(() => {
       const h = buildHierarchy(root, this._sortByCell.value);
-      tree<BiNode>().size([
-        cW - PAD_LEFT - PAD_RIGHT,
-        cH - PAD_TOP - PAD_BOTTOM,
-      ])(h);
+      const isHorizontal = isHoriz.value;
+      // For horizontal orientation, swap width/height so depth goes horizontally
+      tree<BiNode>().size(
+        isHorizontal
+          ? [cH - PAD_TOP - PAD_BOTTOM, cW - PAD_LEFT - PAD_RIGHT]
+          : [cW - PAD_LEFT - PAD_RIGHT, cH - PAD_TOP - PAD_BOTTOM]
+      )(h);
       const map = new Map<BiNode, HierarchyPointNode<BiNode>>();
       h.each((d) => map.set(d.data, d as HierarchyPointNode<BiNode>));
-      return map;
+      return { map, isHorizontal };
     });
 
     // Per-node layout-position cells (tweened on sort). Pre-built so both edges
     // and nodes can read from the same tweened positions.
     const posCells = new Map<BiNode, { lx: ReturnType<typeof num>; ly: ReturnType<typeof num> }>();
     for (const { node } of walkWithDepth(root)) {
-      const lseed = untracked(() => layout.value.get(node)) ?? { x: 0, y: 0 };
+      const lseed = untracked(() => layout.value.map.get(node)) ?? { x: 0, y: 0 };
       const lx = num(lseed.x), ly = num(lseed.y);
       posCells.set(node, { lx, ly });
       const ltarget = derive(() => {
-        const nd = layout.value.get(node);
+        const nd = layout.value.map.get(node);
         return { x: nd?.x ?? 0, y: nd?.y ?? 0 };
       });
       let lcancel: (() => void) | null = null;
       let lInited = false;
       biEffect(() => {
-        const t = ltarget.value; // track layout (reacts to sort + value + size)
+        const t = ltarget.value; // track layout (reacts to sort + value + size + orientation)
         if (!lInited) { lInited = true; lx.value = t.x; ly.value = t.y; return; }
         if (this.classList.contains(GESTURE_ACTIVE_CLASS)) {
           lcancel?.(); lcancel = null;
@@ -115,12 +145,22 @@ export class MdTreeChart extends Diagram {
     }
     const posOf = (n: BiNode) => {
       const c = posCells.get(n);
-      return { x: PAD_LEFT + (c?.lx.value ?? 0), y: PAD_TOP + (c?.ly.value ?? 0) };
+      const lxVal = c?.lx.value ?? 0;
+      const lyVal = c?.ly.value ?? 0;
+      const swap = swapAmount.value; // 0 = vertical, 1 = horizontal
+      // Interpolate between vertical and horizontal coordinate systems
+      // Vertical: x uses lx, y uses ly
+      // Horizontal: x uses ly, y uses lx
+      // Lerp: vertical + (horizontal - vertical) * swap
+      const x = PAD_LEFT + (lxVal + (lyVal - lxVal) * swap);
+      const y = PAD_TOP + (lyVal + (lxVal - lyVal) * swap);
+      return { x, y };
     };
 
     // Draw edges first (under nodes)
     for (const { node, depth } of walkWithDepth(root)) {
       if (depth === 0) continue;
+      if (this.maxDepth !== undefined && depth > this.maxDepth) continue;
       const parent = parentOf(node);
       if (!parent) continue;
 
@@ -133,6 +173,7 @@ export class MdTreeChart extends Diagram {
     // Draw nodes (circles + labels)
     const nodeElements = new Map<BiNode, SVGCircleElement>();
     for (const { node, depth, isLeaf } of walkWithDepth(root)) {
+      if (this.maxDepth !== undefined && depth > this.maxDepth) continue;
       const cx = Vec.derive(() => posOf(node));
 
       const r = isLeaf ? 6 : 5;
