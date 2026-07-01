@@ -33,6 +33,7 @@ import {
   MdSankeySimple,
   MdSankeyFlow,
   MdTreeChart,
+  numberDrag,
 } from '@winstonfassett/vizform-charts'
 
 // Register custom elements once
@@ -350,8 +351,73 @@ export function BrLcTree(props: HierProps) {
 }
 
 export function BrLcTreetable(props: HierProps) {
+  const { nodes, measureKey, onUpdate } = props
   const drillNodeId = useDrillNodeId(props.drillKey ?? 'default')
-  return <BrLcTile source={makeHier('v-br-treetable', { ...props, drillNodeId })} />
+  const source = makeHier('v-br-treetable', { ...props, drillNodeId })
+
+  // Extend source to add numberDrag to leaf cells after render
+  const originalMountProps = source.mountProps
+  const extendedSource = {
+    ...source,
+    mountProps(el: HTMLElement) {
+      originalMountProps?.(el)
+
+      // numberDrag integration (similar to HTreetable)
+      const disposers: Array<() => void> = []
+      const typedEl = el as any // MdTreetableLC
+
+      const unsubRender = typedEl.onRender?.((leafIds: string[]) => {
+        // Clean up previous drag handlers
+        for (const d of disposers.splice(0)) d()
+
+        const root = typedEl.getRoot?.()
+        if (!root) return
+
+        // Get the externalRoot (BiNode tree)
+        const biRoot = typedEl.externalRoot
+        if (!biRoot) return
+
+        // Build a map of leaf BiNodes by id
+        const leavesOf = (node: any): any[] => {
+          const children = node.children as any[]
+          if (children.length === 0) return [node]
+          return children.flatMap(leavesOf)
+        }
+        const leaves = leavesOf(biRoot)
+        const leafMap = new Map(leaves.map(l => [l.value.id, l]))
+
+        // Attach numberDrag to each visible leaf cell
+        for (const id of leafIds) {
+          const cell = root.querySelector<HTMLElement>(`[data-leaf-value="${id}"]`)
+          if (!cell) continue
+
+          const leaf = leafMap.get(id)
+          if (!leaf) continue
+
+          const get = () => leaf.value.total.value
+          const set = (v: number) => {
+            leaf.value.total.value = v
+            const node = nodes.find(n => n.id === id)
+            if (node && onUpdate) {
+              onUpdate(id, { ...node.measures, [measureKey]: v })
+            }
+          }
+
+          disposers.push(numberDrag(cell, { get, set, pxPerUnit: 4 }))
+        }
+      })
+
+      // Store cleanup function
+      const originalDispose = (el as any).__dispose
+      ;(el as any).__dispose = () => {
+        unsubRender?.()
+        for (const d of disposers) d()
+        originalDispose?.()
+      }
+    }
+  }
+
+  return <BrLcTile source={extendedSource} />
 }
 
 // ─── Sankey (flat edge-list) ────────────────────────────────────────────────────
