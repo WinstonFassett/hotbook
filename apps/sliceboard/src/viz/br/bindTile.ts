@@ -354,6 +354,7 @@ interface ElWithRoot extends HTMLElement {
   drillNodeId?: string | null
   drillKey?: string
   showBreadcrumb?: boolean
+  sortBy?: 'index' | 'value'
 }
 
 export interface HierSpec {
@@ -379,6 +380,7 @@ export function makeHierSource(spec: HierSpec): TileSource {
   const measureKeyRef = { current: spec.measureKey }
   const drillKeyRef = { current: spec.drillKey }
   const showBreadcrumbRef = { current: spec.showBreadcrumb }
+  const sortByRef = { current: spec.sortBy ?? 'index' }
 
   const source: TileSource = {
     tag: spec.tag,
@@ -396,6 +398,7 @@ export function makeHierSource(spec: HierSpec): TileSource {
       if (spec.drillNodeId !== undefined) typedEl.drillNodeId = spec.drillNodeId
       if (spec.drillKey !== undefined) typedEl.drillKey = spec.drillKey
       if (spec.showBreadcrumb !== undefined) typedEl.showBreadcrumb = spec.showBreadcrumb
+      typedEl.sortBy = sortByRef.current
     },
 
     initialLast(_el: HTMLElement): Map<string, number> {
@@ -419,6 +422,9 @@ export function makeHierSource(spec: HierSpec): TileSource {
       const typedEl = el as ElWithRoot
       if (drillKeyRef.current !== undefined) typedEl.drillKey = drillKeyRef.current
       if (showBreadcrumbRef.current !== undefined) typedEl.showBreadcrumb = showBreadcrumbRef.current
+      // Sync sortBy reactively — the chart's setter writes a reactive cell so
+      // the layout re-derives and tweens to the new order (no remount).
+      typedEl.sortBy = sortByRef.current
     },
 
     bindEditOut(_el: HTMLElement, lastRef: Map<string, number>): () => void {
@@ -456,6 +462,7 @@ export function makeHierSource(spec: HierSpec): TileSource {
       measureKeyRef.current = nextSpec.measureKey
       drillKeyRef.current = nextSpec.drillKey
       showBreadcrumbRef.current = nextSpec.showBreadcrumb
+      sortByRef.current = nextSpec.sortBy ?? 'index'
     },
   }
 
@@ -470,6 +477,9 @@ export function hierValueKey(nodes: PNode[], measureKey: string): string {
   return nodes.map(n => `${n.id}:${vkey(n.measures[measureKey] ?? 0)}`).sort().join(',')
 }
 
-export function hierShapeKey(tag: string, nodes: PNode[], measureKey: string, depth?: number, sortBy?: string): string {
-  return `${tag}|${measureKey}|${depth ?? 'all'}|${sortBy ?? 'index'}|${nodes.map(n => `${n.id}:${n.parentId ?? ''}`).sort().join(',')}`
+export function hierShapeKey(tag: string, nodes: PNode[], _measureKey: string, depth?: number): string {
+  // NOTE: sortBy and measureKey are intentionally excluded — sort and measure
+  // changes flow through the same-shape syncFrom/applyData path so the chart
+  // can animate the reorder/value-swap instead of remounting and snapping.
+  return `${tag}|${depth ?? 'all'}|${nodes.map(n => `${n.id}:${n.parentId ?? ''}`).sort().join(',')}`
 }

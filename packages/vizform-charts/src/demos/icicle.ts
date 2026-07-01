@@ -31,6 +31,7 @@ const W = 720;
 const H = 360;
 const DRILL_DURATION = 800; // ms — leave-timer / CSS settle window
 const DRILL_SEC = DRILL_DURATION / 1000; // s — bireactive anim clock runs in seconds
+const SORT_SEC = 0.35; // s — sort/reorder tween duration
 
 export class MdIcicleLC extends Diagram {
   static styles = `
@@ -56,6 +57,10 @@ export class MdIcicleLC extends Diagram {
   private _drillIdCell = cell<string | null>(null)
   get drillNodeId(): string | null { return this._drillIdCell.value }
   set drillNodeId(id: string | null) { this._drillIdCell.value = id ?? null }
+
+  private _sortByCell = cell<'index' | 'value'>('index')
+  get sortBy(): 'index' | 'value' { return this._sortByCell.value }
+  set sortBy(v: 'index' | 'value') { this._sortByCell.value = v }
 
   protected scene(s: Mount): void {
     const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
@@ -95,7 +100,7 @@ export class MdIcicleLC extends Diagram {
     // tiles start at 0. For horizontal, partition's x (sibling) → canvas y and
     // partition's y (depth) → canvas x; for vertical, no swap needed.
     const layout = derive(() => {
-      const h = buildHierarchy(root);
+      const h = buildHierarchy(root, this._sortByCell.value);
       const td = h.height; // levels below root
       const visibleDepth = maxD !== undefined ? Math.min(maxD, td) : td;
       const sibAxis = isHoriz ? Hc.value : Wc.value;
@@ -286,18 +291,40 @@ export class MdIcicleLC extends Diagram {
       const depth = nodeDepth.get(node) ?? 0;
       const isLeaf = (node.children as BiNode[]).length === 0;
 
-      const x = derive(() => remapX(layout.value.get(node)?.x0 ?? 0));
-      const y = derive(() => remapY(layout.value.get(node)?.y0 ?? 0));
-      const w = derive(() => {
+      // Per-tile raw layout-position cells. Tweened on sort change so tiles
+      // slide to their new partition positions; snapped on value/resize changes
+      // so drag editing stays real-time. x/y/w/h below derive from these tweened
+      // cells + the viewport remap, so drill (viewport tween) and sort (layout
+      // tween) compose without conflict.
+      const lseed = untracked(() => layout.value.get(node)) ?? { x0: 0, y0: 0, x1: 0, y1: 0 };
+      const lx0 = num(lseed.x0), ly0 = num(lseed.y0), lx1 = num(lseed.x1), ly1 = num(lseed.y1);
+      const ltarget = derive(() => {
         const ln = layout.value.get(node);
-        if (!ln) return 0;
-        return Math.max(0, remapX(ln.x1) - remapX(ln.x0));
+        return ln ? { x0: ln.x0, y0: ln.y0, x1: ln.x1, y1: ln.y1 } : { x0: 0, y0: 0, x1: 0, y1: 0 };
       });
-      const h = derive(() => {
-        const ln = layout.value.get(node);
-        if (!ln) return 0;
-        return Math.max(0, remapY(ln.y1) - remapY(ln.y0));
+      let lcancel: (() => void) | null = null;
+      let lInited = false;
+      biEffect(() => {
+        const t = ltarget.value; // track layout (reacts to sort + value + size)
+        if (!lInited) { lInited = true; lx0.value = t.x0; ly0.value = t.y0; lx1.value = t.x1; ly1.value = t.y1; return; }
+        if (this.classList.contains(GESTURE_ACTIVE_CLASS)) {
+          lcancel?.(); lcancel = null;
+          lx0.value = t.x0; ly0.value = t.y0; lx1.value = t.x1; ly1.value = t.y1;
+        } else {
+          lcancel?.();
+          lcancel = this.anim.start(
+            tween(lx0, t.x0, SORT_SEC, easeOut),
+            tween(ly0, t.y0, SORT_SEC, easeOut),
+            tween(lx1, t.x1, SORT_SEC, easeOut),
+            tween(ly1, t.y1, SORT_SEC, easeOut),
+          );
+        }
       });
+
+      const x = derive(() => remapX(lx0.value));
+      const y = derive(() => remapY(ly0.value));
+      const w = derive(() => Math.max(0, remapX(lx1.value) - remapX(lx0.value)));
+      const h = derive(() => Math.max(0, remapY(ly1.value) - remapY(ly0.value)));
 
       const stroke = derive(() =>
         state.focused.value === node ? "#fff"

@@ -315,7 +315,7 @@ interface HierProps {
 }
 
 function makeHier(tag: string, { nodes, measureKey, depth, sortBy, drillKey = 'default', drillNodeId, showBreadcrumb = true, onUpdate, onUpdateMany }: HierProps) {
-  const shapeKey = hierShapeKey(tag, nodes, measureKey, depth, sortBy)
+  const shapeKey = hierShapeKey(tag, nodes, measureKey, depth)
   const valueKey = hierValueKey(nodes, measureKey)
   return makeHierSource({
     tag, nodes, measureKey, depth, sortBy, shapeKey, valueKey, drillKey, drillNodeId, showBreadcrumb, onUpdate, onUpdateMany,

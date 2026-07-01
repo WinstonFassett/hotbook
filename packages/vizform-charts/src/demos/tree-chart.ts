@@ -9,6 +9,10 @@ import {
   circle,
   line,
   Vec,
+  num,
+  tween,
+  easeOut,
+  untracked,
 } from "bireactive";
 import { tree, type HierarchyPointNode } from "d3-hierarchy";
 import { buildHierarchy } from "../lib/interaction";
@@ -16,6 +20,7 @@ import { buildParentIndex, type BiNode } from "../lib/tree";
 import { portfolio, walkWithDepth } from "../lib/portfolio";
 import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { FILL_STYLE } from "../lib/host-size";
+import { GESTURE_ACTIVE_CLASS } from "../lib/transitions";
 
 const W = 560;
 const H = 400;
@@ -23,6 +28,7 @@ const PAD_TOP = 40;
 const PAD_BOTTOM = 40;
 const PAD_LEFT = 60;
 const PAD_RIGHT = 60;
+const SORT_SEC = 0.35; // s — sort/reorder tween duration
 
 export class MdTreeChart extends Diagram {
   static styles = `
@@ -37,6 +43,10 @@ export class MdTreeChart extends Diagram {
     }
   `
   externalRoot?: BiNode;
+
+  private _sortByCell = cell<'index' | 'value'>('index')
+  get sortBy(): 'index' | 'value' { return this._sortByCell.value }
+  set sortBy(v: 'index' | 'value') { this._sortByCell.value = v }
   protected scene(s: Mount): void {
     const root = this.externalRoot ?? portfolio();
 
@@ -65,7 +75,7 @@ export class MdTreeChart extends Diagram {
 
     // tree() layout: assigns .x (0..1) and .y (depth) per node
     const layout = derive(() => {
-      const h = buildHierarchy(root);
+      const h = buildHierarchy(root, this._sortByCell.value);
       tree<BiNode>().size([
         cW - PAD_LEFT - PAD_RIGHT,
         cH - PAD_TOP - PAD_BOTTOM,
@@ -75,20 +85,47 @@ export class MdTreeChart extends Diagram {
       return map;
     });
 
+    // Per-node layout-position cells (tweened on sort). Pre-built so both edges
+    // and nodes can read from the same tweened positions.
+    const posCells = new Map<BiNode, { lx: ReturnType<typeof num>; ly: ReturnType<typeof num> }>();
+    for (const { node } of walkWithDepth(root)) {
+      const lseed = untracked(() => layout.value.get(node)) ?? { x: 0, y: 0 };
+      const lx = num(lseed.x), ly = num(lseed.y);
+      posCells.set(node, { lx, ly });
+      const ltarget = derive(() => {
+        const nd = layout.value.get(node);
+        return { x: nd?.x ?? 0, y: nd?.y ?? 0 };
+      });
+      let lcancel: (() => void) | null = null;
+      let lInited = false;
+      biEffect(() => {
+        const t = ltarget.value; // track layout (reacts to sort + value + size)
+        if (!lInited) { lInited = true; lx.value = t.x; ly.value = t.y; return; }
+        if (this.classList.contains(GESTURE_ACTIVE_CLASS)) {
+          lcancel?.(); lcancel = null;
+          lx.value = t.x; ly.value = t.y;
+        } else {
+          lcancel?.();
+          lcancel = this.anim.start(
+            tween(lx, t.x, SORT_SEC, easeOut),
+            tween(ly, t.y, SORT_SEC, easeOut),
+          );
+        }
+      });
+    }
+    const posOf = (n: BiNode) => {
+      const c = posCells.get(n);
+      return { x: PAD_LEFT + (c?.lx.value ?? 0), y: PAD_TOP + (c?.ly.value ?? 0) };
+    };
+
     // Draw edges first (under nodes)
     for (const { node, depth } of walkWithDepth(root)) {
       if (depth === 0) continue;
       const parent = parentOf(node);
       if (!parent) continue;
 
-      const from = Vec.derive(() => {
-        const p = layout.value.get(parent);
-        return { x: PAD_LEFT + (p?.x ?? 0), y: PAD_TOP + (p?.y ?? 0) };
-      });
-      const to = Vec.derive(() => {
-        const nd = layout.value.get(node);
-        return { x: PAD_LEFT + (nd?.x ?? 0), y: PAD_TOP + (nd?.y ?? 0) };
-      });
+      const from = Vec.derive(() => posOf(parent));
+      const to = Vec.derive(() => posOf(node));
 
       s(line(from, to, { stroke: "#3a3f4a", thin: true }));
     }
@@ -96,10 +133,7 @@ export class MdTreeChart extends Diagram {
     // Draw nodes (circles + labels)
     const nodeElements = new Map<BiNode, SVGCircleElement>();
     for (const { node, depth, isLeaf } of walkWithDepth(root)) {
-      const cx = Vec.derive(() => {
-        const nd = layout.value.get(node);
-        return { x: PAD_LEFT + (nd?.x ?? 0), y: PAD_TOP + (nd?.y ?? 0) };
-      });
+      const cx = Vec.derive(() => posOf(node));
 
       const r = isLeaf ? 6 : 5;
       const stroke = derive(() =>
@@ -142,12 +176,10 @@ export class MdTreeChart extends Diagram {
 
       // Alternate label placement: leaves to the right, inner nodes above
       const labelPos = Vec.derive(() => {
-        const nd = layout.value.get(node);
-        const nx = PAD_LEFT + (nd?.x ?? 0);
-        const ny = PAD_TOP + (nd?.y ?? 0);
+        const p = posOf(node);
         return isLeaf
-          ? { x: nx, y: ny + 16 }
-          : { x: nx, y: ny - 12 };
+          ? { x: p.x, y: p.y + 16 }
+          : { x: p.x, y: p.y - 12 };
       });
 
       s(
