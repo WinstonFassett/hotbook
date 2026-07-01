@@ -284,6 +284,27 @@ export class MdGanttChartLC extends Diagram {
             }
           }
         }
+
+        // After pushing predecessors, enforce anchor's predecessor constraints
+        // If predecessors can't move left anymore, anchor can't move past them
+        if (anchor) {
+          let minStart = -Infinity;
+          for (const dep of anchor.deps ?? []) {
+            const predId = getDepId(dep);
+            const lag = getDepLag(dep);
+            const pred = byId.get(predId);
+            if (!pred) continue;
+
+            const constraint = pred.end.getTime() + lag * DAY_MS;
+            minStart = Math.max(minStart, constraint);
+          }
+
+          if (minStart > anchor.start.getTime()) {
+            const duration = anchor.end.getTime() - anchor.start.getTime();
+            anchor.start = new Date(minStart);
+            anchor.end = new Date(minStart + duration);
+          }
+        }
       }
 
       // Space conservation: try to return tasks toward origin if no constraints prevent it
