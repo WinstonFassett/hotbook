@@ -54,12 +54,20 @@ export class MdTreeChart extends Diagram {
   protected scene(s: Mount): void {
     const root = this.externalRoot ?? portfolio();
 
-    // Scale canvas to data size
+    // Scale canvas to data size — calculate for both orientations and use max
+    // so the canvas can accommodate switching between vertical and horizontal
     const allNodes = [...walkWithDepth(root)];
     const leafCount = allNodes.filter(n => n.isLeaf).length;
     const maxDepth = allNodes.reduce((m, n) => Math.max(m, n.depth), 0);
-    const cW = Math.max(W, leafCount * 20 + PAD_LEFT + PAD_RIGHT);
-    const cH = Math.max(H, maxDepth * 80 + PAD_TOP + PAD_BOTTOM);
+    // Vertical: width for siblings, height for depth
+    const vertW = Math.max(W, leafCount * 20 + PAD_LEFT + PAD_RIGHT);
+    const vertH = Math.max(H, maxDepth * 80 + PAD_TOP + PAD_BOTTOM);
+    // Horizontal: width for depth, height for siblings
+    const horizW = Math.max(W, maxDepth * 80 + PAD_LEFT + PAD_RIGHT);
+    const horizH = Math.max(H, leafCount * 20 + PAD_TOP + PAD_BOTTOM);
+    // Use max to accommodate both orientations without clipping
+    const cW = Math.max(vertW, horizW);
+    const cH = Math.max(vertH, horizH);
 
     const view = this.view(cW, cH);
     this.tabIndex = -1;
