@@ -67,6 +67,7 @@ export type TileKind =
   | 'br-lc-sankey'
   | 'br-lc-sankey-flow'
   | 'br-lc-tree'
+  | 'br-lc-gantt'
   | RetiredTileKind
 
 export interface Tile {
@@ -507,9 +508,43 @@ function buildSupplyChainDataset(): Dataset {
     id: 'ds-supply',
     name: 'Supply chain (sankey)',
     createdAt: NOW,
+    shape: 'graph',
     rows: [],
     edges,
     measureDefs: [],
+    dimDefs: [],
+  }
+}
+
+// ─── Dataset 5: Project Schedule (tasks with dependencies for Gantt) ──────────
+
+function buildGanttDataset(): Dataset {
+  _idc = 0
+  const rows: PNode[] = [
+    row('Discovery',  { start: 0,  end: 7  }, {}, null, '#e08888'),
+    row('Design',     { start: 5,  end: 14 }, {}, null, '#d4a86c'),
+    row('Build core', { start: 12, end: 28 }, {}, null, '#7ec87e'),
+    row('QA',         { start: 25, end: 34 }, {}, null, '#7aaae8'),
+    row('Launch',     { start: 33, end: 36 }, {}, null, '#b090e0'),
+  ]
+  const edges: PEdge[] = [
+    { source: rows[0]!.id, target: rows[1]!.id, value: 0 },  // Discovery → Design
+    { source: rows[1]!.id, target: rows[2]!.id, value: 0 },  // Design → Build core
+    { source: rows[2]!.id, target: rows[3]!.id, value: 0 },  // Build core → QA
+    { source: rows[2]!.id, target: rows[4]!.id, value: 0 },  // Build core → Launch
+    { source: rows[3]!.id, target: rows[4]!.id, value: 0 },  // QA → Launch
+  ]
+  return {
+    id: 'ds-gantt',
+    name: 'Project schedule (gantt)',
+    createdAt: NOW,
+    shape: 'graph',
+    rows,
+    edges,
+    measureDefs: [
+      { key: 'start', label: 'Start (days from 2026-01-01)' },
+      { key: 'end', label: 'End (days from 2026-01-01)' },
+    ],
     dimDefs: [],
   }
 }
@@ -554,14 +589,18 @@ function buildSeedWorkspace(): Workspace {
   const supply   = buildSupplyChainDataset()
   const supplyTiles: Tile[] = [{ id: 'sp-0', kind: 'br-lc-sankey', title: 'Supply chain' }]
   const supplyLayout: LayoutItem[] = [{ i: 'sp-0', x: 0, y: 0, w: 12, h: 8 }]
+  const gantt    = buildGanttDataset()
+  const ganttTiles: Tile[] = [{ id: 'gt-0', kind: 'br-lc-gantt', title: 'Project schedule' }]
+  const ganttLayout: LayoutItem[] = [{ i: 'gt-0', x: 0, y: 0, w: 12, h: 8 }]
 
   return {
-    datasets: [life, fruit, team, supply],
+    datasets: [life, fruit, team, supply, gantt],
     dashboards: [
-      { id: 'dash-life',   datasetId: life.id,   name: 'Life',          createdAt: NOW, layout: lifeViz.layout,   tiles: lifeViz.tiles,   measureKey: 'est' },
-      { id: 'dash-fruit',  datasetId: fruit.id,  name: 'Fruit',         createdAt: NOW, layout: fruitViz.layout,  tiles: fruitViz.tiles,  measureKey: 'value' },
-      { id: 'dash-team',   datasetId: team.id,   name: 'Team',          createdAt: NOW, layout: teamViz.layout,   tiles: teamViz.tiles,   measureKey: 'budget' },
-      { id: 'dash-supply', datasetId: supply.id, name: 'Supply chain',  createdAt: NOW, layout: supplyLayout,     tiles: supplyTiles,     measureKey: 'value' },
+      { id: 'dash-life',    datasetId: life.id,    name: 'Life',             createdAt: NOW, layout: lifeViz.layout,   tiles: lifeViz.tiles,    measureKey: 'est' },
+      { id: 'dash-fruit',   datasetId: fruit.id,   name: 'Fruit',            createdAt: NOW, layout: fruitViz.layout,  tiles: fruitViz.tiles,   measureKey: 'value' },
+      { id: 'dash-team',    datasetId: team.id,    name: 'Team',             createdAt: NOW, layout: teamViz.layout,   tiles: teamViz.tiles,    measureKey: 'budget' },
+      { id: 'dash-supply',  datasetId: supply.id,  name: 'Supply chain',     createdAt: NOW, layout: supplyLayout,     tiles: supplyTiles,      measureKey: 'value' },
+      { id: 'dash-gantt',   datasetId: gantt.id,   name: 'Project schedule', createdAt: NOW, layout: ganttLayout,      tiles: ganttTiles,       measureKey: 'start' },
     ],
     activeDatasetId: life.id,
     activeDashboardId: 'dash-life',
