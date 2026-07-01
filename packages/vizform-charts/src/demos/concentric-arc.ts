@@ -2,7 +2,7 @@
 // Full-360° track per ring, rounded ends, value arc on top.
 // Click ring to select · Tab/←/→ nav · ↑/↓ edit · cmd+wheel.
 
-import { Anchor, cell, circle, derive, Diagram, effect as biEffect, group, label, mount, type Mount, pathD, vec, Vec } from "bireactive";
+import { Anchor, cell, circle, derive, Diagram, easeInOut, effect as biEffect, group, label, mount, type Mount, num, pathD, tween, Vec } from "bireactive";
 import { arc as d3Arc } from "d3-shape";
 import { wheelController, dragController } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
@@ -166,32 +166,46 @@ export class MdConcentricArcLC extends Diagram {
     const g = s(group({ translate: Vec.derive(() => ({ x: cx.value, y: cy.value })) }));
     const gs = mount(g);
 
-    // Always mount maxRings slots; slots past nCell.value are hidden.
-    // di() reads the live datum at slot i so external data replacements are picked up.
-    const ringElements: SVGElement[] = [];
-    // ID-based focus helper (matches selection/gesture pattern)
+    // Identity-keyed rings: each ring owns a specific datum (by id), tracked
+    // from the mount-time snapshot. When the array is reordered, each ring
+    // tweens its outer radius to its new rank instead of the slot's contents
+    // swapping in place.
+    const rows0 = data.value as Ring[];
+    const ringElementsById = new Map<string, SVGElement>();
     const focusDatum = (d: Ring | null) => {
       if (!d?.id) return;
-      const idx = (data.value as Ring[]).findIndex(item => item.id === d.id);
-      if (idx >= 0) ringElements[idx]?.focus();
+      ringElementsById.get(d.id)?.focus();
     };
-    for (let i = 0; i < maxRings; i++) {
-      const di = (): Ring | null => (data.value as Ring[])[i] ?? null;
-      // Radius from the slot's array position. Sliceboard already hands data in
-      // display order, so position IS the rank — the chart owns no sort.
-      const rOuter = derive(() => rOuterStart.value - i * ringStep.value);
+    for (let oi = 0; oi < rows0.length; oi++) {
+      const datumId = rows0[oi]!.id ?? rows0[oi]!.label;
+      const cur = derive(() => {
+        const arr = data.value as Ring[];
+        return arr.findIndex(item => (item.id ?? item.label) === datumId);
+      });
+      const di = (): Ring | null => (data.value as Ring[])[cur.value] ?? null;
+      // Radius derived from the datum's CURRENT rank in data.value. Sliceboard
+      // hands data in display order; rank = index. Tween to the new rank so
+      // reorder animates rather than snapping to new positions.
+      const rOuterTarget = derive(() => rOuterStart.value - Math.max(0, cur.value) * ringStep.value);
+      const rOuter = num(rOuterTarget.value);
+      let rOuterCancel: (() => void) | null = null;
+      biEffect(() => {
+        const target = rOuterTarget.value;
+        rOuterCancel?.();
+        rOuterCancel = this.anim.start(tween(rOuter, target, 0.25, easeInOut) as any);
+      });
       const rInner = derive(() => rOuter.value - ringThickness.value);
       const corner = derive(() => Math.min(ringThickness.value / 2, 14));
 
-      // Hidden when this slot is beyond current data length.
-      const visible = derive(() => i < nCell.value && di() != null);
+      // Hidden when this datum is missing or beyond the current cap.
+      const visible = derive(() => cur.value >= 0 && cur.value < nCell.value && di() != null);
       const slotColor = derive(() => di()?.color ?? '#888');
 
       const trackEl = gs(pathD(
         derive(() => visible.value && rInner.value >= 1 ? arcD(rOuter.value, rInner.value, START, START + TWO_PI, corner.value) : ""),
         { fill: slotColor, opacity: derive(() => { const d = di(); return hover.value === d || selected.value === d ? 0.25 : 0.18; }) }
       ));
-      ringElements[i] = trackEl.el;
+      ringElementsById.set(datumId, trackEl.el);
       // Make each ring individually focusable
       trackEl.el.setAttribute('tabindex', '0');
       trackEl.el.setAttribute('data-focusable', 'ring');
@@ -271,7 +285,7 @@ export class MdConcentricArcLC extends Diagram {
       // Ring label near end-cap — d3Arc angle 0=top, clockwise; SVG: angle 0=right, y-down.
       // Sit the label just outside the ring's outer edge (rOuter + 8) so labels stay
       // clean at all ring counts; `void data.value` re-positions on value/rank change.
-      const slotDef = RING_DEFS[i]!;
+      const slotDef = RING_DEFS[oi % RING_DEFS.length]!;
       const lblPos = Vec.derive(() => {
         void data.value; // subscribe to re-position when value or rank changes
         const d = di();
