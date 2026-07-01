@@ -12,6 +12,7 @@ import {
   BrLcBar, BrLcLine, BrLcArea, BrLcScatter, BrLcPie, BrLcRadar, BrLcConcentricArc,
   BrLcGauge, BrLcGaugeSegmented,
   BrLcPack, BrLcTreemap, BrLcTreetable, BrLcIcicle, BrLcSunburst, BrLcSankey, BrLcSankeyFlow, BrLcTree,
+  BrLcGantt,
 } from './viz/br/BrLcCharts'
 import {
   SvelteLcSunburst, SvelteLcIcicle, SvelteLcPack, SvelteLcTreemap, SvelteTreemapDemo,
@@ -54,6 +55,7 @@ const TILE_KINDS: TileKind[] = [
   'br-lc-bar', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie',
   'br-lc-radar', 'br-lc-concentric-arc', 'br-lc-gauge', 'br-lc-gauge-segmented',
   'br-lc-pack', 'br-lc-treemap', 'br-lc-treetable', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-sankey-flow', 'br-lc-tree',
+  'br-lc-gantt',
 ]
 const TILE_LABELS: Record<TileKind, string> = {
   'br-lc-bar':            'Bar',
@@ -74,6 +76,7 @@ const TILE_LABELS: Record<TileKind, string> = {
   'br-lc-sankey':         'Sankey',
   'br-lc-sankey-flow':    'Sankey Flow',
   'br-lc-tree':           'Tree',
+  'br-lc-gantt':          'Gantt',
   // retired — still rendered if encountered in stored dashboards
   'treetable':            'Table (retired)',
   'h-treemap':            'H-Treemap (retired)',
@@ -153,6 +156,7 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
   if (tile.kind === 'br-lc-sankey')         return <BrLcSankey edges={ds.edges ?? []} />
   if (tile.kind === 'br-lc-sankey-flow')    return <BrLcSankeyFlow />
   if (tile.kind === 'br-lc-tree')           return <BrLcTree nodes={nodes} measureKey={mk} sortBy={sortBy} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
+  if (tile.kind === 'br-lc-gantt')          return <BrLcGantt nodes={nodes} deps={(ds.edges ?? []).map(e => ({ from: e.source, to: e.target }))} />
 
   // ── Svelte LayerChart charts (real Svelte+LayerChart, live data + sync) ────
   if (tile.kind === 'svelte-br-lc-sunburst') return <SvelteLcSunburst nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
