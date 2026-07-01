@@ -60,7 +60,7 @@ export const TILE_CONFIG_SCHEMAS: Map<TileKind, VizConfigSchema> = new Map([
     scrollBody: true,
   }],
   ['br-lc-sankey-flow', { pickers: { measure: true, sort: true } }],
-  ['br-lc-tree', SORT_ONLY],
+  ['br-lc-tree', HIER_FULL_ORIENT],
 
   // ─── Retired kinds: no pickers, no scroll — entries exist so a lookup
   //     never returns undefined for a legacy persisted tile.
