@@ -1,6 +1,7 @@
 import type { PNode, PEdge, ScalingMode } from '@winstonfassett/vizform-core'
 import { colorFor } from '@winstonfassett/vizform-core'
 import type { DockNode } from './dock'
+import { removeTileFromDock } from './dock'
 
 export type { PNode, PEdge }
 
@@ -833,6 +834,7 @@ export function removeTile(ws: Workspace, dashId: string, tileId: string): Works
     ...dash,
     tiles: dash.tiles.filter(t => t.id !== tileId),
     layout: dash.layout.filter(l => l.i !== tileId),
+    dockTree: removeTileFromDock(dash.dockTree ?? null, tileId),
   })
 }
 

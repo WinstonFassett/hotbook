@@ -192,8 +192,29 @@ export class DockView extends HTMLElement {
     const target = maximized ?? dock
 
     if (!target) {
-      if (root.firstElementChild?.classList.contains('dv-empty')) return
-      root.innerHTML = '<div class="dv-empty">No panels — click "+ Tile" to add one</div>'
+      if (root.firstElementChild?.classList.contains('dv-empty')) {
+        // Already showing empty state — don't rebuild
+        return
+      }
+      root.innerHTML = ''
+      const empty = document.createElement('div')
+      empty.className = 'dv-empty'
+      empty.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:12px;color:#555;font-size:13px'
+      const label = document.createElement('span')
+      label.textContent = 'No panels'
+      const addBtn = document.createElement('button')
+      addBtn.textContent = '+ Add tile'
+      addBtn.style.cssText = 'background:#222;border:1px solid #333;color:#ccc;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px'
+      addBtn.addEventListener('click', () => {
+        const rect = addBtn.getBoundingClientRect()
+        this.dispatchEvent(new CustomEvent('dockaddtile', {
+          detail: { groupId: null, x: rect.left, y: rect.bottom },
+          bubbles: true, composed: true,
+        }))
+      })
+      empty.appendChild(label)
+      empty.appendChild(addBtn)
+      root.appendChild(empty)
       return
     }
 
