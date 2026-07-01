@@ -56,7 +56,17 @@ const START = 0; // d3Arc: 0 = top (12 o'clock), clockwise
 const MIN_VALUE = 3;
 
 export class MdConcentricArcLC extends Diagram {
-  static styles = `text { pointer-events: none; }${FILL_STYLE}`
+  static styles = `
+    text { pointer-events: none; }
+    ${FILL_STYLE}
+    [data-focusable]:focus {
+      outline: 2px solid #4a9eff;
+      outline-offset: 2px;
+    }
+    [data-focusable]:focus:not(:focus-visible) {
+      outline: none;
+    }
+  `
   readonly dataCell = cell<readonly Ring[]>(makeData());
   maxRings: number = DEFAULT_MAX_RINGS;
   set externalData(v: { label: string; value: number }[] | undefined) {
@@ -68,7 +78,7 @@ export class MdConcentricArcLC extends Diagram {
   protected scene(s: Mount): void {
     const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
     this.view(Wc, Hc);
-    this.tabIndex = 0;
+    this.tabIndex = -1; // Container not directly focusable, items are
     this.style.outline = "none";
 
     const cx = derive(() => Wc.value / 2);
@@ -129,6 +139,7 @@ export class MdConcentricArcLC extends Diagram {
     // Drag a ring's end-cap handle angularly to set its value; Esc reverts.
     // Config handed to the SHARED drag controller (one pointer, one live drag).
     let dragPointerId = -1;
+    let activeHandle: HTMLElement | null = null;
     const onDragMove = (pe: PointerEvent) => {
       const t = dragController.target as Ring | null;
       if (!t) return;
@@ -145,6 +156,8 @@ export class MdConcentricArcLC extends Diagram {
         }
         dragPointerId = -1;
         (this as any).gestureActive = false;
+        if (activeHandle) activeHandle.style.cursor = "grab";
+        activeHandle = null;
         this.dispatchEvent(new CustomEvent("gesturecommit"));
       },
     };
@@ -155,6 +168,13 @@ export class MdConcentricArcLC extends Diagram {
 
     // Always mount maxRings slots; slots past nCell.value are hidden.
     // di() reads the live datum at slot i so external data replacements are picked up.
+    const ringElements: SVGElement[] = [];
+    // ID-based focus helper (matches selection/gesture pattern)
+    const focusDatum = (d: Ring | null) => {
+      if (!d?.id) return;
+      const idx = (data.value as Ring[]).findIndex(item => item.id === d.id);
+      if (idx >= 0) ringElements[idx]?.focus();
+    };
     for (let i = 0; i < maxRings; i++) {
       const di = (): Ring | null => (data.value as Ring[])[i] ?? null;
       // Radius from the slot's array position. Sliceboard already hands data in
@@ -171,10 +191,19 @@ export class MdConcentricArcLC extends Diagram {
         derive(() => visible.value && rInner.value >= 1 ? arcD(rOuter.value, rInner.value, START, START + TWO_PI, corner.value) : ""),
         { fill: slotColor, opacity: derive(() => { const d = di(); return hover.value === d || selected.value === d ? 0.25 : 0.18; }) }
       ));
-      trackEl.el.style.cursor = "pointer";
+      ringElements[i] = trackEl.el;
+      // Make each ring individually focusable
+      trackEl.el.setAttribute('tabindex', '0');
+      trackEl.el.setAttribute('data-focusable', 'ring');
+      biEffect(() => {
+        const d = di();
+        if (d) trackEl.el.setAttribute('aria-label', `${d.label}: ${Math.round(d.value)}`);
+      });
       trackEl.el.addEventListener("pointerenter", () => { const d = di(); if (d && !wheelController.active && !dragController.active) hover.value = d; });
       trackEl.el.addEventListener("pointerleave", () => { const d = di(); if (d && !wheelController.active && !dragController.active && hover.value === d) hover.value = null; });
       trackEl.el.addEventListener("click", () => { const d = di(); if (!d) return; selected.value = selected.value === d ? null : d; this.focus(); });
+      trackEl.el.addEventListener("focus", () => { const d = di(); if (d) selected.value = d; });
+      trackEl.el.addEventListener("blur", () => { const d = di(); if (d && selected.value === d) selected.value = null; });
 
       // Value arc.
       const valueD = derive(() => {
@@ -193,7 +222,6 @@ export class MdConcentricArcLC extends Diagram {
       const valueStroke = derive(() => { const d = di(); return selected.value === d ? "#fff" : hover.value === d ? (d?.color ?? "none") : "none"; });
       const valueStrokeW = derive(() => { const d = di(); return selected.value === d ? 1.5 : hover.value === d ? 3 : 0; });
       const valueEl = gs(pathD(valueD, { fill: slotColor, stroke: valueStroke, strokeWidth: valueStrokeW }));
-      valueEl.el.style.cursor = "pointer";
       valueEl.el.style.transition = "d 0.1s";
       valueEl.el.addEventListener("pointerenter", () => { const d = di(); if (d && !wheelController.active && !dragController.active) hover.value = d; });
       valueEl.el.addEventListener("pointerleave", () => { const d = di(); if (d && !wheelController.active && !dragController.active && hover.value === d) hover.value = null; });
@@ -232,6 +260,8 @@ export class MdConcentricArcLC extends Diagram {
         dragPointerId = pe.pointerId;
         (this as any).gestureActive = true;
         selected.value = d;
+        activeHandle = handleEl.el;
+        handleEl.el.style.cursor = "grabbing";
         try { (this as any).setPointerCapture(pe.pointerId); } catch { /* ok */ }
         dragController.begin(d, dragConfig);
         pe.preventDefault();
@@ -308,11 +338,12 @@ export class MdConcentricArcLC extends Diagram {
       const rows = data.value as Ring[];
       const cur = selected.value;
       const i = cur ? rows.indexOf(cur) : -1;
-      if (ke.key === "Tab" || ke.key === "ArrowRight" || ke.key === "ArrowLeft") {
-        const next = (ke.key === "ArrowLeft" || (ke.key === "Tab" && ke.shiftKey))
-          ? rows[(i <= 0 ? rows.length : i) - 1] ?? null
-          : rows[(i + 1) % rows.length] ?? null;
-        selected.value = next;
+      if (ke.key === "ArrowRight" || ke.key === "ArrowLeft") {
+        const nextIdx = ke.key === "ArrowLeft"
+          ? (i <= 0 ? rows.length : i) - 1
+          : (i + 1) % rows.length;
+        selected.value = rows[nextIdx] ?? null;
+        focusDatum(selected.value);
         ke.preventDefault(); return;
       }
       const target = cur ?? hover.value;

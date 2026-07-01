@@ -113,4 +113,6 @@ export interface VizConfigSchema {
   cascadeSupported?: boolean
   fixedTotalSupported?: boolean
   scrollBody?: boolean    // replaces SCROLL_KINDS
+  drillKey?: string       // default "default" — tiles with same drillKey share drill context
+  showBreadcrumb?: boolean // default true for hier charts when drilled
 }

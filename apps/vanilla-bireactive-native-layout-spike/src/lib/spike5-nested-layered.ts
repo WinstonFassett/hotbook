@@ -44,6 +44,7 @@ import {
   rowsById,
   sharedEdges,
   sharedRows,
+  items,
   type TreeNode,
 } from "./data";
 import { direction } from "./diagram-settings";
@@ -131,8 +132,8 @@ export class MdNestedLayered extends Diagram {
 
     this.#persist.push(
       effect(() => {
-        const rows = sharedRows.items;
-        void sharedEdges.items;
+        const rows = items(sharedRows);
+        void sharedEdges.cells;
         void sharedSelection.value;
         void direction.value;
         // Subscribe to per-row direction so layout reflows when the
@@ -190,7 +191,7 @@ export class MdNestedLayered extends Diagram {
     }
 
     const allGroups = new Set<string>();
-    for (const r of sharedRows.items) {
+    for (const r of items(sharedRows)) {
       const pid = r.parentId.value;
       if (pid != null) allGroups.add(pid);
     }
@@ -299,7 +300,7 @@ export class MdNestedLayered extends Diagram {
       const ds = [...descendantsOf(sharedRows, id)].filter((d) => shapeOf.has(d));
       return ds[0] ? shapeOf.get(ds[0])! : null;
     };
-    for (const e of sharedEdges.items) {
+    for (const e of items(sharedEdges)) {
       const u = e.from.value;
       const v = e.to.value;
       const su = resolveAnchor(u);
@@ -320,7 +321,7 @@ export class MdNestedLayered extends Diagram {
 
     // Build child-id index from sharedRows.
     const childrenOf = new Map<string | null, string[]>();
-    for (const r of sharedRows.items) {
+    for (const r of items(sharedRows)) {
       const pid = r.parentId.value;
       if (!childrenOf.has(pid)) childrenOf.set(pid, []);
       childrenOf.get(pid)!.push(r.id);
@@ -360,7 +361,7 @@ export class MdNestedLayered extends Diagram {
     };
 
     const edgesAtLevel = new Map<string | null, Array<[string, string]>>();
-    for (const e of sharedEdges.items) {
+    for (const e of items(sharedEdges)) {
       const u = e.from.value;
       const v = e.to.value;
       const L = lca(u, v); // null = root

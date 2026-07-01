@@ -53,4 +53,4 @@ export const GESTURE_ACTIVE_CLASS = "vf-gesture-active";
 
 /** CSS that disables `transition` on every descendant while a gesture is live.
  *  Inject once per chart `static styles`. */
-export const GESTURE_SUPPRESSION_CSS = `.${GESTURE_ACTIVE_CLASS} * { transition: none !important; }`;
+export const GESTURE_SUPPRESSION_CSS = `:host(.${GESTURE_ACTIVE_CLASS}) * { transition: none !important; }`;

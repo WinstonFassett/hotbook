@@ -5,13 +5,14 @@
   HierarchyCircularNode (x, y, r) per node — note x/y are circle centers,
   not the [0,0]-anchored rect coords the other layouts use.
 
-  Same shared bireactive tree; same gesture model.
+  Supports drill-down via internal scale remap (not data re-root).
 -->
 
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
   import { type HierarchyCircularNode } from "d3-hierarchy";
-  import { Chart, Svg, Pack, Circle } from "layerchart";
+  import { Chart, Svg, Pack, Circle, Bounds } from "layerchart";
+  import { cubicOut } from "svelte/easing";
   import { sharedTree, buildParentIndex, type BiNode } from "./tree";
   import {
     applyDelta,
@@ -27,7 +28,17 @@
     width = 480,
     height = 480,
     externalRoot = undefined,
-  }: { width?: number; height?: number; externalRoot?: BiNode } = $props();
+    drillNodeId = undefined,
+    drillKey = 'default',
+    showBreadcrumb = true,
+  }: {
+    width?: number;
+    height?: number;
+    externalRoot?: BiNode;
+    drillNodeId?: string | null;
+    drillKey?: string;
+    showBreadcrumb?: boolean;
+  } = $props();
 
   // Effective size: fixed props standalone; tracks the tile when mounted as a
   // sliceboard custom element (see onMount → observeHostSize).
@@ -52,6 +63,29 @@
   let wheelLocked = $state.raw<BiNode | null>(null);
 
   $effect(() => installGestureRelease(() => (wheelLocked = null)));
+
+  // ── Drill support ────────────────────────────────────────────────────────────
+
+  // Find drilled node in hierarchy by id
+  function findNodeById(node: any, id: string): any | null {
+    if (node.data?.value?.id === id) return node;
+    for (const child of node.children ?? []) {
+      const found = findNodeById(child, id);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  const drilledNode = $derived.by(() => {
+    if (!drillNodeId || !hData) return null;
+    return findNodeById(hData, drillNodeId);
+  });
+
+  // Breadcrumb path (ancestors of drilled node)
+  const breadcrumbPath = $derived.by(() => {
+    if (!drilledNode) return [];
+    return drilledNode.ancestors().reverse();
+  });
 
   // ── Cross-tile hover/select bridge ──────────────────────────────────────────
   let hostEl = $state.raw<ElementWithBridge | null>(null);
@@ -127,7 +161,13 @@
       e.preventDefault();
     } else if (e.key === "ArrowDown" || e.key === "ArrowLeft") {
       applyDelta(focusedNode, -step, parentOf);
-      e.preventDefault();
+    }
+  }
+
+  function handleDrill(nodeId: string) {
+    // Emit drill event through bridge
+    if (bridge.emitDrill) {
+      bridge.emitDrill(drillKey, nodeId);
     }
   }
 
@@ -138,53 +178,88 @@
 </script>
 
 <div
-  style="width: {w}px; height: {h}px; outline: none;"
+  style="width: {w}px; height: {h}px; outline: none; position: relative;"
   tabindex="0"
   role="application"
   aria-label="pack-lc"
   onwheel={onWheel}
   onkeydown={onKeydown}
 >
+  {#if showBreadcrumb && drilledNode}
+    <div class="drill-breadcrumb">
+      <button
+        class="drill-crumb"
+        onclick={() => handleDrill('')}
+      >
+        Root
+      </button>
+      {#each breadcrumbPath.slice(1) as ancestor, i}
+        <span class="drill-sep">›</span>
+        <button
+          class="drill-crumb"
+          class:current={i === breadcrumbPath.length - 2}
+          onclick={() => handleDrill(ancestor.data.value.id)}
+        >
+          {ancestor.data.value.label}
+        </button>
+      {/each}
+    </div>
+  {/if}
+
   <Chart data={hData} width={w} height={h}>
     <Svg>
-      <Pack padding={2} let:nodes>
-        {#each nodes as node (node.data)}
-          {@const n = node as HierarchyCircularNode<BiNode>}
-          {@const isLeaf = n.data.children.length === 0}
-          {@const isFocused = focusedNode === n.data}
-          {@const isHovered = hoveredNode === n.data}
-          <Circle
-            cx={n.x}
-            cy={n.y}
-            r={n.r}
-            fill={n.data.value.color}
-            fillOpacity={n.depth === 0 ? 0.12 : isLeaf ? 0.95 : 0.4}
-            stroke={isFocused ? "#fff" : isHovered ? "#c8cdd6" : n.depth === 0 ? "#444" : "#0b0d12"}
-            strokeWidth={isFocused || isHovered ? 2 : 1}
-            onclick={() => (focusedNode = n.data)}
-            onpointerenter={() => (hoveredNode = n.data)}
-            onpointerleave={() => { if (hoveredNode === n.data) hoveredNode = null; }}
-          />
-          {#if isLeaf && n.r > 14}
-            <text
-              x={n.x}
-              y={n.y}
-              text-anchor="middle"
-              dominant-baseline="middle"
-              font-size="11"
-              fill="#fff"
-              pointer-events="none"
-            >
-              {n.data.value.label}<tspan x={n.x} dy="1.2em" font-size="9">{n.data.value.total.value.toFixed(0)}</tspan>
-            </text>
-          {/if}
-        {/each}
-      </Pack>
+      <Bounds
+        domain={drilledNode ? {
+          x0: drilledNode.x - drilledNode.r,
+          y0: drilledNode.y - drilledNode.r,
+          x1: drilledNode.x + drilledNode.r,
+          y1: drilledNode.y + drilledNode.r
+        } : undefined}
+        tweened={{ duration: 800, easing: cubicOut }}
+        let:xScale
+        let:yScale
+      >
+        <Pack padding={2} let:nodes>
+          {#each nodes as node (node.data)}
+            {@const n = node as HierarchyCircularNode<BiNode>}
+            {@const isLeaf = n.data.children.length === 0}
+            {@const isFocused = focusedNode === n.data}
+            {@const isHovered = hoveredNode === n.data}
+            {@const hasChildren = n.children && n.children.length > 0}
+            <Circle
+              cx={xScale(n.x)}
+              cy={yScale(n.y)}
+              r={Math.abs(xScale(n.x + n.r) - xScale(n.x))}
+              fill={n.data.value.color}
+              fillOpacity={n.depth === 0 ? 0.12 : isLeaf ? 0.95 : 0.4}
+              stroke={isFocused ? "#fff" : isHovered ? "#c8cdd6" : n.depth === 0 ? "#444" : "#0b0d12"}
+              strokeWidth={isFocused || isHovered ? 2 : 1}
+              onclick={() => (focusedNode = n.data)}
+              ondblclick={() => { if (hasChildren) handleDrill(n.data.value.id); }}
+              onpointerenter={() => (hoveredNode = n.data)}
+              onpointerleave={() => { if (hoveredNode === n.data) hoveredNode = null; }}
+            />
+            {#if isLeaf && Math.abs(xScale(n.x + n.r) - xScale(n.x)) > 14}
+              <text
+                x={xScale(n.x)}
+                y={yScale(n.y)}
+                text-anchor="middle"
+                dominant-baseline="middle"
+                font-size="11"
+                fill="#fff"
+                pointer-events="none"
+              >
+                {n.data.value.label}<tspan x={xScale(n.x)} dy="1.2em" font-size="9">{n.data.value.total.value.toFixed(0)}</tspan>
+              </text>
+            {/if}
+          {/each}
+        </Pack>
+      </Bounds>
     </Svg>
   </Chart>
   {#if !noSource}
     <div style="font-size: 10px; color: #9aa0a8; text-align: center; margin-top: -18px; pointer-events: none;">
-      total: {total.toFixed(0)} · focused: {focusedNode?.value.label ?? "(none)"} · hover + cmd/ctrl+wheel · click + arrows/Tab
+      total: {total.toFixed(0)} · focused: {focusedNode?.value.label ?? "(none)"} · hover + cmd/ctrl+wheel · click + arrows/Tab{drilledNode ? ` · drilled: ${drilledNode.data.value.label}` : ''}
     </div>
   {/if}
 </div>
@@ -192,4 +267,43 @@
 <style>
   /* Fill the tile WIDTH; height follows aspect (see SunburstLC for why not 100%). */
   :host { display: block; width: 100%; overflow: hidden; }
+
+  .drill-breadcrumb {
+    position: absolute;
+    top: 4px;
+    left: 8px;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    background: rgba(0, 0, 0, 0.6);
+    padding: 4px 8px;
+    border-radius: 4px;
+  }
+
+  .drill-crumb {
+    background: none;
+    border: none;
+    color: #9aa0a8;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 2px;
+    transition: all 0.15s;
+  }
+
+  .drill-crumb:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+  }
+
+  .drill-crumb.current {
+    color: #fff;
+    font-weight: 500;
+  }
+
+  .drill-sep {
+    color: #555;
+    pointer-events: none;
+  }
 </style>

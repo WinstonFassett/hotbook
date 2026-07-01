@@ -9,7 +9,7 @@
 
 import { effect } from "@bireactive";
 
-import { descendantsOf, sharedEdges, sharedRows, type Edge, type Row } from "./data";
+import { descendantsOf, sharedEdges, sharedRows, items, removeRow, removeEdge, type Edge, type Row } from "./data";
 import { clearSelection, sharedSelection, type Selection } from "./selection";
 
 export function mountSidebar(host: HTMLElement): () => void {
@@ -45,8 +45,8 @@ export function mountSidebar(host: HTMLElement): () => void {
 
   const dispose = effect(() => {
     const sel = sharedSelection.value;
-    const rows = sharedRows.items;
-    const edges = sharedEdges.items;
+    const rows = items(sharedRows);
+    const edges = items(sharedEdges);
 
     // Key changes only when the selected entity (kind+id) changes —
     // OR when an entity is added/removed (the find below might newly
@@ -114,7 +114,7 @@ function renderEdgePanel(wrap: HTMLElement, e: Edge, disposers: Array<() => void
   `;
   bindInput(wrap, "label", e.label, disposers);
   bindBtn(wrap, "delete", () => {
-    sharedEdges.remove(e);
+    removeEdge(e);
     clearSelection();
   });
 }
@@ -160,31 +160,31 @@ function renderRowPanel(
   if (isGroup) {
     bindSelect(wrap, "direction", row.direction, disposers);
     bindBtn(wrap, "delete-promote", () => {
-      for (const e of [...sharedEdges.items]) {
-        if (e.from.value === row.id || e.to.value === row.id) sharedEdges.remove(e);
+      for (const e of [...items(sharedEdges)]) {
+        if (e.from.value === row.id || e.to.value === row.id) removeEdge(e);
       }
-      for (const r of [...sharedRows.items]) {
+      for (const r of [...items(sharedRows)]) {
         if (r.parentId.value === row.id) r.parentId.value = parent;
       }
-      sharedRows.remove(row);
+      removeRow(row);
       clearSelection();
     });
     bindBtn(wrap, "delete-cascade", () => {
       const doomed = new Set<string>([row.id, ...descendantsOf(sharedRows, row.id)]);
-      for (const e of [...sharedEdges.items]) {
-        if (doomed.has(e.from.value) || doomed.has(e.to.value)) sharedEdges.remove(e);
+      for (const e of [...items(sharedEdges)]) {
+        if (doomed.has(e.from.value) || doomed.has(e.to.value)) removeEdge(e);
       }
-      for (const r of [...sharedRows.items]) {
-        if (doomed.has(r.id)) sharedRows.remove(r);
+      for (const r of [...items(sharedRows)]) {
+        if (doomed.has(r.id)) removeRow(r);
       }
       clearSelection();
     });
   } else {
     bindBtn(wrap, "delete", () => {
-      for (const e of [...sharedEdges.items]) {
-        if (e.from.value === row.id || e.to.value === row.id) sharedEdges.remove(e);
+      for (const e of [...items(sharedEdges)]) {
+        if (e.from.value === row.id || e.to.value === row.id) removeEdge(e);
       }
-      sharedRows.remove(row);
+      removeRow(row);
       clearSelection();
     });
   }

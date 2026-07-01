@@ -30,6 +30,7 @@ interface BrSyncBridge {
   setExternalSelect(id: string | null): void
   onHover(cb: (id: string | null) => void): () => void
   onSelect(cb: (id: string | null) => void): () => void
+  onDrill?(cb: (drillKey: string, id: string | null) => void): () => void
 }
 interface ElWithBrSync extends HTMLElement { brSync?: BrSyncBridge }
 
@@ -43,22 +44,39 @@ export function bindHudSync(el: ElWithBrSync): () => void {
   if (!bridge) return () => {}
   let lastInHover: string | null = null
   let lastInSelect: string | null = null
+  let lastInDrill: string | null = null
 
   const offHover = bridge.onHover(id => { if (id !== lastInHover) hudStore.setHover(id) })
   const offSelect = bridge.onSelect(id => { if (id !== lastInSelect) hudStore.setSelection(id) })
+  const offDrill = bridge.onDrill ? bridge.onDrill((drillKey, id) => {
+    const resolved = id === '' ? null : id
+    lastInDrill = resolved
+    hudStore.setDrill(drillKey, resolved)
+  }) : () => {}
 
   const unsub = hudStore.subscribe(() => {
     const s = hudStore.getSnapshot()
     if (s.hoverId !== lastInHover) { lastInHover = s.hoverId; bridge.setExternalHover(s.hoverId) }
     if (s.selectionId !== lastInSelect) { lastInSelect = s.selectionId; bridge.setExternalSelect(s.selectionId) }
+    // Sync drill directly — bypasses React round-trip that was losing tiles on pop-out.
+    const drillKey = (el as any).drillKey
+    if (drillKey && bridge.setExternalDrill) {
+      const drillId = s.drills[drillKey] ?? null
+      if (drillId !== lastInDrill) { lastInDrill = drillId; bridge.setExternalDrill(drillId) }
+    }
   })
   // Seed current store state into the freshly mounted element.
   const s0 = hudStore.getSnapshot()
   lastInHover = s0.hoverId; lastInSelect = s0.selectionId
   bridge.setExternalHover(s0.hoverId)
   bridge.setExternalSelect(s0.selectionId)
+  const drillKey0 = (el as any).drillKey
+  if (drillKey0 && bridge.setExternalDrill) {
+    lastInDrill = s0.drills[drillKey0] ?? null
+    bridge.setExternalDrill(lastInDrill)
+  }
 
-  return () => { offHover(); offSelect(); unsub() }
+  return () => { offHover(); offSelect(); offDrill(); unsub() }
 }
 
 // ─── TileSource contract ──────────────────────────────────────────────────────
@@ -333,6 +351,9 @@ export function makeFlatSource<D>(spec: FlatSpec<D>): TileSource {
 interface ElWithRoot extends HTMLElement {
   externalRoot?: BiNode
   maxDepth?: number
+  drillNodeId?: string | null
+  drillKey?: string
+  showBreadcrumb?: boolean
 }
 
 export interface HierSpec {
@@ -343,6 +364,9 @@ export interface HierSpec {
   sortBy?: 'index' | 'value'
   shapeKey: string
   valueKey: string
+  drillNodeId?: string | null
+  drillKey?: string
+  showBreadcrumb?: boolean
   onUpdate?: (nodeId: string, measures: PNode['measures']) => void
   onUpdateMany?: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
 }
@@ -353,6 +377,8 @@ export function makeHierSource(spec: HierSpec): TileSource {
   const onUpdateManyRef = { current: spec.onUpdateMany }
   const leavesRef = { current: [] as BiNode[] }
   const measureKeyRef = { current: spec.measureKey }
+  const drillKeyRef = { current: spec.drillKey }
+  const showBreadcrumbRef = { current: spec.showBreadcrumb }
 
   const source: TileSource = {
     tag: spec.tag,
@@ -367,13 +393,16 @@ export function makeHierSource(spec: HierSpec): TileSource {
       const typedEl = el as ElWithRoot
       typedEl.externalRoot = root
       if (spec.depth !== undefined) typedEl.maxDepth = spec.depth
+      if (spec.drillNodeId !== undefined) typedEl.drillNodeId = spec.drillNodeId
+      if (spec.drillKey !== undefined) typedEl.drillKey = spec.drillKey
+      if (spec.showBreadcrumb !== undefined) typedEl.showBreadcrumb = spec.showBreadcrumb
     },
 
     initialLast(_el: HTMLElement): Map<string, number> {
       return new Map(leavesRef.current.map(l => [l.value.id, l.value.total.value]))
     },
 
-    applyData(_el: HTMLElement, { lastRef }) {
+    applyData(el: HTMLElement, { lastRef }) {
       // Apply external store changes into the live leaf cells, in place.
       const byId = new Map(nodesRef.current.map(n => [n.id, n]))
       for (const leaf of leavesRef.current) {
@@ -385,6 +414,11 @@ export function makeHierSource(spec: HierSpec): TileSource {
           lastRef.set(leaf.value.id, target)
         }
       }
+      // Update drill key reactively (drillNodeId is synced directly by bindHudSync,
+      // bypassing the React round-trip that was losing tiles on pop-out).
+      const typedEl = el as ElWithRoot
+      if (drillKeyRef.current !== undefined) typedEl.drillKey = drillKeyRef.current
+      if (showBreadcrumbRef.current !== undefined) typedEl.showBreadcrumb = showBreadcrumbRef.current
     },
 
     bindEditOut(_el: HTMLElement, lastRef: Map<string, number>): () => void {
@@ -420,6 +454,8 @@ export function makeHierSource(spec: HierSpec): TileSource {
       onUpdateRef.current = nextSpec.onUpdate
       onUpdateManyRef.current = nextSpec.onUpdateMany
       measureKeyRef.current = nextSpec.measureKey
+      drillKeyRef.current = nextSpec.drillKey
+      showBreadcrumbRef.current = nextSpec.showBreadcrumb
     },
   }
 

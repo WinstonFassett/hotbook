@@ -9,6 +9,7 @@ import { walkTree, effect as biEffect, batch } from "bireactive";
 import type { BiNode } from "./tree";
 import type { Writable, Cell } from "bireactive";
 import { makeBridge, type ElementWithBridge } from "./hud-bridge";
+import { GESTURE_ACTIVE_CLASS } from "./transitions";
 
 export interface SelectionState {
   focused: Writable<Cell<BiNode | null>>;
@@ -40,8 +41,10 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
   // applyDelta redistributes a node's change across its siblings, so a revert
   // must restore the target AND every sibling — snapshot all their totals.
   // Per-gesture value-mapping handed to the SHARED wheel controller.
+  const setGestureActive = (on: boolean) => (host as HTMLElement).classList?.toggle(GESTURE_ACTIVE_CLASS, on);
   const wheelConfig = {
     snapshot: (node: BiNode) => {
+      setGestureActive(true);
       const parent = parentOf(node);
       const group = parent ? (parent.children as BiNode[]) : [node];
       return group.map((n) => ({ node: n, value: n.value.total.value }));
@@ -49,7 +52,7 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
     restore: (_node: BiNode, snap: Array<{ node: BiNode; value: number }>) => {
       batch(() => { for (const s of snap) s.node.value.total.value = s.value; });
     },
-    onEnd: () => { state.wheelLocked.current = null; },
+    onEnd: () => { setGestureActive(false); state.wheelLocked.current = null; },
   };
 
   const onWheel = (e: WheelEvent) => {
@@ -74,17 +77,6 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
     if (e.key === "Escape") {
       // Drag-Esc is owned by the gesture (dragCancelable). Here: clear focus.
       if (state.focused.value != null) { state.focused.value = null; e.preventDefault(); }
-      return;
-    }
-    if (e.key === "Tab") {
-      const order = flatOrder(root);
-      if (order.length === 0) return;
-      const cur = state.focused.value;
-      const i = cur ? order.indexOf(cur) : -1;
-      state.focused.value = e.shiftKey
-        ? order[(i <= 0 ? order.length : i) - 1]!
-        : order[(i + 1) % order.length]!;
-      e.preventDefault();
       return;
     }
     const f = state.focused.value;
@@ -125,8 +117,28 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
       state.focused.value = id ? byId.get(id) ?? null : null;
       applyingExternal = false;
     },
+    setDrill: (id) => {
+      (host as any).drillNodeId = id;
+    },
   });
   (host as ElementWithBridge).brSync = bridge;
+
+  const onDblClick = () => {
+    const node = state.hovered.current ?? state.focused.value;
+    if (!node || node === root) return;
+    if ((node.children as BiNode[]).length === 0) return;
+    // Drill directly — the chart owns its drill state. Emit for sliceboard's
+    // benefit (breadcrumb, persistence, sibling-tile propagation) but don't
+    // wait for a round-trip to actually drill.
+    const host2 = host as any;
+    if (host2.drillNodeId !== undefined) host2.drillNodeId = node.value.id;
+    const drillKey = host2.drillKey ?? 'default';
+    bridge.emitDrill(drillKey, node.value.id);
+    // Keep focus on the chart host so Escape can drill out. The dblclick
+    // target (a tile) may be torn down by the re-render, losing focus.
+    host.focus({ preventScroll: true });
+  };
+  host.addEventListener("dblclick", onDblClick);
 
   // Demos call this from their pointer handlers; emit out unless it's an echo.
   state.emitHover = (node) => {
@@ -144,6 +156,7 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
   return () => {
     host.removeEventListener("wheel", onWheel as EventListener);
     host.removeEventListener("keydown", onKeydown as EventListener);
+    host.removeEventListener("dblclick", onDblClick);
     focusDispose();
     state.emitHover = undefined;
     (host as ElementWithBridge).brSync = undefined;
