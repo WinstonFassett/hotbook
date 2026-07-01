@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { GridLayout, useContainerWidth } from 'react-grid-layout'
 import type { LayoutItem } from 'react-grid-layout'
-import { Viz, HTreetable } from '@winstonfassett/vizform-react-d3'
+import { Viz } from '@winstonfassett/vizform-react-d3'
 import { colorFor } from '@winstonfassett/vizform-core'
 import type { Goal } from '@winstonfassett/vizform-react-d3'
 import { leavesOf } from '@winstonfassett/vizform-vanilla-d3'
@@ -128,9 +128,6 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
   }
   if (tile.kind === 'h-radial') {
     return <Sunburst nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} onUpdate={onNodeUpdate} />
-  }
-  if (tile.kind === 'treetable') {
-    return <HTreetable nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} />
   }
 
   // ── BR-LC flat charts ────────────────────────────────────────────────────
