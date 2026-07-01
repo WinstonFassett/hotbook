@@ -415,16 +415,25 @@ export class DockView extends HTMLElement {
       closeBtn.title = 'Close panel'
       closeBtn.setAttribute('aria-label', 'Close panel')
       closeBtn.textContent = '×'
-      closeBtn.addEventListener('click', (e) => {
-        e.stopPropagation()
-        this._closePanel(group.id, p.id)
-      })
+      // Don't allow closing the last panel in a group
+      if (group.panels.length <= 1) {
+        closeBtn.disabled = true
+        closeBtn.style.opacity = '0.3'
+        closeBtn.style.cursor = 'default'
+      } else {
+        closeBtn.addEventListener('click', (e) => {
+          e.stopPropagation()
+          this._closePanel(group.id, p.id)
+        })
+      }
       tab.appendChild(closeBtn)
 
-      // Middle-click to close
-      tab.addEventListener('mousedown', (e) => {
-        if (e.button === 1) { e.preventDefault(); this._closePanel(group.id, p.id) }
-      })
+      // Middle-click to close (only if more than 1 panel)
+      if (group.panels.length > 1) {
+        tab.addEventListener('mousedown', (e) => {
+          if (e.button === 1) { e.preventDefault(); this._closePanel(group.id, p.id) }
+        })
+      }
 
       tab.addEventListener('pointerdown', (e) => {
         if (e.button !== 0) return
@@ -444,6 +453,18 @@ export class DockView extends HTMLElement {
     // Actions
     const actions = document.createElement('div')
     actions.className = 'dv-tabstrip-actions'
+
+    // + button to add a tile to this group
+    const addBtn = document.createElement('button')
+    addBtn.className = 'dv-tab-add'
+    addBtn.title = 'Add tile'
+    addBtn.setAttribute('aria-label', 'Add tile')
+    addBtn.textContent = '+'
+    addBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      this.dispatchEvent(new CustomEvent('dockaddtile', { detail: { groupId: group.id }, bubbles: true, composed: true }))
+    })
+    actions.appendChild(addBtn)
 
     const maxBtn = document.createElement('button')
     maxBtn.className = 'dv-tab-maximize'
@@ -1058,7 +1079,8 @@ export class DockView extends HTMLElement {
       e.preventDefault()
       const dock = this._dockCell?.value ?? null
       const activeGroup = allGroups(dock).find(g => g.activeId)
-      if (activeGroup && activeGroup.activeId) this._closePanel(activeGroup.id, activeGroup.activeId)
+      // Don't close the last panel in a group
+      if (activeGroup && activeGroup.activeId && activeGroup.panels.length > 1) this._closePanel(activeGroup.id, activeGroup.activeId)
       return
     }
     if (this._awaitingKChord) this._awaitingKChord = false

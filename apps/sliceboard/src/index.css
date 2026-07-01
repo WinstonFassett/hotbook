@@ -360,6 +360,17 @@ sb-dock-view {
 }
 .dv-tab-maximize:hover { color: #888; }
 
+.dv-tab-add {
+  background: none;
+  border: none;
+  color: #555;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 6px;
+  line-height: 1;
+}
+.dv-tab-add:hover { color: #ccc; }
+
 .dv-body {
   flex: 1;
   min-height: 0;

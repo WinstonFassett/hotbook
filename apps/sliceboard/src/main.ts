@@ -235,11 +235,6 @@ function renderTopbar(ws: Workspace) {
     dashes.length > 1 ? () => deleteDash(ws.activeDashboardId) : undefined,
     'dashboard',
   ))
-
-  const right = document.createElement('div')
-  right.className = 'sb-topbar-right'
-  right.appendChild(buildAddTileMenu())
-  topbar.appendChild(right)
 }
 
 function buildDropdown(
@@ -322,48 +317,6 @@ function buildDropdown(
   return wrap
 }
 
-function buildAddTileMenu(): HTMLElement {
-  const wrap = document.createElement('div')
-  wrap.className = 'sb-menu-wrap'
-
-  const btn = document.createElement('button')
-  btn.className = 'sb-btn'
-  btn.textContent = '+ Tile'
-
-  let dropdown: HTMLElement | null = null
-
-  const open = () => {
-    if (dropdown) return
-    dropdown = document.createElement('div')
-    dropdown.className = 'sb-menu-dropdown'
-    TILE_KINDS.forEach(k => {
-      const b = document.createElement('button')
-      b.className = 'sb-menu-board-btn'
-      b.textContent = TILE_LABELS[k]
-      b.addEventListener('click', () => { close(); handleAddTile(k) })
-      dropdown!.appendChild(b)
-    })
-    wrap.appendChild(dropdown)
-    const handler = (e: MouseEvent) => {
-      if (!wrap.contains(e.target as Node)) close()
-    }
-    document.addEventListener('mousedown', handler)
-    ;(dropdown as any)._handler = handler
-  }
-
-  const close = () => {
-    if (dropdown) {
-      document.removeEventListener('mousedown', (dropdown as any)._handler)
-      dropdown.remove()
-      dropdown = null
-    }
-  }
-
-  btn.addEventListener('click', () => dropdown ? close() : open())
-  wrap.appendChild(btn)
-  return wrap
-}
-
 // ─── Actions ──────────────────────────────────────────────────────────────────
 
 function switchDataset(id: string) {
@@ -407,19 +360,6 @@ function deleteDash(id: string) {
   commit(deleteDashboard(ws, id))
 }
 
-function handleAddTile(kind: TileKind) {
-  const dash = activeDashboard(ws)
-  if (!dash) return
-  const next = addTile(ws, dash.id, kind)
-  // Add the new tile to the dock tree before committing
-  const newTile = next.dashboards.find(d => d.id === dash.id)!.tiles.at(-1)!
-  const currentTree = getDockTree(dash)
-  const newTree = addTileToDock(currentTree, newTile.id)
-  const updatedDash = next.dashboards.find(d => d.id === dash.id)!
-  ws = updateDashboard(next, { ...updatedDash, dockTree: newTree })
-  commit(ws)
-}
-
 // ─── Esc handler ─────────────────────────────────────────────────────────────
 
 window.addEventListener('keydown', (e: KeyboardEvent) => {
@@ -452,6 +392,24 @@ dockView.addEventListener('dockchange', (e: Event) => {
   const dash = activeDashboard(ws)
   if (!dash) return
   ws = updateDashboard(ws, { ...dash, dockTree: detail })
+  commit(ws)
+})
+
+// ─── dockaddtile handler ──────────────────────────────────────────────────────
+
+dockView.addEventListener('dockaddtile', (e: Event) => {
+  const { groupId } = (e as CustomEvent).detail
+  const dash = activeDashboard(ws)
+  if (!dash) return
+  // Default to first tile kind — user can change via tile config
+  const kind = TILE_KINDS[0]!
+  const next = addTile(ws, dash.id, kind)
+  const newTile = next.dashboards.find(d => d.id === dash.id)!.tiles.at(-1)!
+  // Add the new tile as a panel in the specified group
+  const currentTree = getDockTree(dash)
+  const newTree = addTileToDock(currentTree, newTile.id, groupId)
+  const updatedDash = next.dashboards.find(d => d.id === dash.id)!
+  ws = updateDashboard(next, { ...updatedDash, dockTree: newTree })
   commit(ws)
 })
 
