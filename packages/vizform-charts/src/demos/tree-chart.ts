@@ -85,10 +85,13 @@ export class MdTreeChart extends Diagram {
     const hoverCell = cell<BiNode | null>(null);
     state.hoverCell = hoverCell;
 
+    // Derived cell for orientation (must be separate derived cell for reactive tracking)
+    const isHoriz = derive(() => this._orientationCell.value === 'horizontal');
+
     // tree() layout: assigns .x (0..1) and .y (depth) per node
     const layout = derive(() => {
       const h = buildHierarchy(root, this._sortByCell.value);
-      const isHorizontal = this._orientationCell.value === 'horizontal';
+      const isHorizontal = isHoriz.value;
       // For horizontal orientation, swap width/height so depth goes horizontally
       tree<BiNode>().size(
         isHorizontal
