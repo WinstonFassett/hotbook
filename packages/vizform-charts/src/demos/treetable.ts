@@ -9,7 +9,6 @@ import {
   cell,
   rect,
   vec,
-  Vec,
   effect as biEffect,
 } from "bireactive";
 import { depthFill, labelInk } from "../lib/depth-color";
@@ -20,25 +19,36 @@ import { useHostSize, FILL_STYLE } from "../lib/host-size";
 
 const W = 720;
 const H = 480;
-const ROW_HEIGHT = 28; // Compatible with gantt
-const INDENT_WIDTH = 20;
+const ROW_HEIGHT = 24; // Reduced from 28 to match existing implementation
+const INDENT_WIDTH = 14; // Reduced from 20 to match existing
 const NAME_COL_WIDTH = 300;
-const VALUE_COL_WIDTH = 120;
+const VALUE_COL_WIDTH = 60;
+const HEADER_HEIGHT = 24;
 
 export class MdTreetableLC extends Diagram {
   static styles = `
     :host {
       overflow-y: auto;
       overflow-x: hidden;
+      font-size: 12px;
+      font-family: inherit;
+      background: oklch(0.14 0 0);
     }
-    text { pointer-events: none; user-select: none; }
+    text {
+      pointer-events: none;
+      user-select: none;
+    }
     ${FILL_STYLE}
     [data-focusable]:focus {
-      outline: 2px solid #4a9eff;
+      outline: 2px solid oklch(0.45 0.15 240);
       outline-offset: 2px;
     }
     [data-focusable]:focus:not(:focus-visible) {
       outline: none;
+    }
+    .expand-btn {
+      cursor: pointer;
+      user-select: none;
     }
   `
   externalRoot?: BiNode
@@ -120,34 +130,34 @@ export class MdTreetableLC extends Diagram {
       collapsedStateVersion.value++;
     };
 
-    // Header row
-    const headerY = 20;
+    // Header row - sticky at top
+    const headerY = 4;
+    const headerBg = rect(0, 0, Wc, HEADER_HEIGHT, {
+      fill: "oklch(0.14 0 0)",
+      stroke: "oklch(0.25 0 0)",
+      strokeWidth: 1,
+    });
+    headerBg.el.style.position = "sticky";
+    headerBg.el.style.top = "0";
+    headerBg.el.style.zIndex = "1";
+
     s(
-      rect(10, headerY, NAME_COL_WIDTH, ROW_HEIGHT, {
-        fill: "#1a1f2a",
-        stroke: "#444",
-        strokeWidth: 1,
-      }),
+      headerBg,
       label(
-        vec(20, headerY + ROW_HEIGHT / 2),
+        vec(16, headerY + HEADER_HEIGHT / 2),
         "Name",
-        { size: 11, bold: true, align: Anchor.Left, fill: "#e0e0e0" }
+        { size: 10, bold: true, align: Anchor.Left, fill: "oklch(0.5 0 0)" }
       ),
-      rect(10 + NAME_COL_WIDTH, headerY, VALUE_COL_WIDTH, ROW_HEIGHT, {
-        fill: "#1a1f2a",
-        stroke: "#444",
-        strokeWidth: 1,
-      }),
       label(
-        vec(10 + NAME_COL_WIDTH + VALUE_COL_WIDTH / 2, headerY + ROW_HEIGHT / 2),
+        vec(Wc.value - VALUE_COL_WIDTH / 2, headerY + HEADER_HEIGHT / 2),
         "Value",
-        { size: 11, bold: true, align: Anchor.Center, fill: "#e0e0e0" }
+        { size: 10, bold: true, align: Anchor.Center, fill: "oklch(0.5 0 0)" }
       )
     );
 
     // Table rows
     const rowsLayer = s(group());
-    const startY = headerY + ROW_HEIGHT + 2;
+    const startY = HEADER_HEIGHT + 4;
 
     forEach(rowsLayer, visibleRows, (rowData) => {
       const { node, depth, index } = rowData;
@@ -158,80 +168,103 @@ export class MdTreetableLC extends Diagram {
       const isCollapsed = this._collapsedNodes.has(nodeId);
 
       const nd = depth;
-      const nodeFill = depthFill(node.value.color, nd);
+      const color = node.value.color;
 
-      // Row background
-      const rowBg = rect(10, y, NAME_COL_WIDTH + VALUE_COL_WIDTH, ROW_HEIGHT, {
-        fill: index % 2 === 0 ? "#0b0d12" : "#13151a",
-        stroke: "#444",
-        strokeWidth: 0.5,
+      // Row background with hover
+      const rowBg = rect(0, y, Wc, ROW_HEIGHT, {
+        fill: "transparent",
+        stroke: "transparent",
+        strokeWidth: 0,
       });
       rowBg.el.dataset.id = nodeId;
-      rowBg.el.style.cursor = "pointer";
-      rowBg.el.setAttribute('tabindex', '0');
-      rowBg.el.setAttribute('data-focusable', 'row');
-
-      const stroke = derive(() =>
-        state.focused.value === node ? "#4a9eff"
-        : hoverCell.value === node ? "#c8cdd6"
-        : "transparent"
-      );
-      const strokeWidth = derive(() => (state.focused.value === node || hoverCell.value === node ? 2 : 0));
+      rowBg.el.style.cursor = "default";
+      rowBg.el.style.transition = "background 80ms";
 
       biEffect(() => {
-        rowBg.el.setAttribute('stroke', stroke.value);
-        rowBg.el.setAttribute('stroke-width', strokeWidth.value.toString());
+        const isHovered = hoverCell.value === node;
+        const isFocused = state.focused.value === node;
+        if (isHovered) {
+          rowBg.el.setAttribute('fill', 'oklch(0.22 0 0)');
+        } else if (isFocused) {
+          rowBg.el.setAttribute('fill', 'oklch(0.20 0 0)');
+        } else {
+          rowBg.el.setAttribute('fill', 'transparent');
+        }
       });
 
       rowBg.el.addEventListener("click", () => { state.focused.value = node; });
-      rowBg.el.addEventListener("focus", () => { state.focused.value = node; });
-      rowBg.el.addEventListener("blur", () => { if (state.focused.value === node) state.focused.value = null; });
       rowBg.el.addEventListener("pointerenter", () => { state.hovered.current = node; hoverCell.value = node; });
-      rowBg.el.addEventListener("pointerleave", () => { if (state.hovered.current === node) { state.hovered.current = null; hoverCell.value = null; } });
+      rowBg.el.addEventListener("pointerleave", () => {
+        if (state.hovered.current === node) {
+          state.hovered.current = null;
+          hoverCell.value = null;
+        }
+      });
 
       const elements: any[] = [rowBg];
 
-      // Expand/collapse icon using text
+      // Base X position for content
+      const baseX = 8 + indent;
+
+      // Expand/collapse button
       if (hasChildren) {
-        const iconX = 15 + indent;
-        const iconText = isCollapsed ? "▶" : "▼";
-        const iconLbl = label(
-          vec(iconX, y + ROW_HEIGHT / 2),
-          iconText,
-          { size: 10, align: Anchor.Left, fill: "#9aa0a8" }
+        const btnX = baseX;
+        const btnText = isCollapsed ? "▸" : "▾";
+        const btn = label(
+          vec(btnX, y + ROW_HEIGHT / 2),
+          btnText,
+          { size: 10, align: Anchor.Left, fill: "oklch(0.5 0 0)" }
         );
-        iconLbl.el.style.cursor = "pointer";
-        iconLbl.el.style.pointerEvents = "auto";
-        iconLbl.el.addEventListener("click", (e) => {
+        btn.el.style.cursor = "pointer";
+        btn.el.style.pointerEvents = "auto";
+        btn.el.style.userSelect = "none";
+        btn.el.dataset.twist = nodeId;
+        btn.el.addEventListener("click", (e) => {
           e.stopPropagation();
           toggleCollapse(node);
         });
-        elements.push(iconLbl);
+        elements.push(btn);
       }
 
-      // Name label with indent
-      const nameX = 20 + indent + (hasChildren ? 15 : 0);
+      // Color dot
+      const dotX = baseX + (hasChildren ? 18 : 14);
+      const dot = rect(dotX - 4, y + ROW_HEIGHT / 2 - 4, 8, 8, {
+        fill: color,
+        corner: 4,
+      });
+      elements.push(dot);
+
+      // Name label
+      const nameX = dotX + 8;
       const nameLbl = label(
         vec(nameX, y + ROW_HEIGHT / 2),
         node.value.label,
-        { size: 10, align: Anchor.Left, fill: labelInk(nodeFill) }
+        { size: 12, align: Anchor.Left, fill: "oklch(0.88 0 0)" }
       );
       elements.push(nameLbl);
 
       // Value label
+      const valueX = Wc.value - VALUE_COL_WIDTH / 2;
       const valueLbl = label(
-        vec(10 + NAME_COL_WIDTH + VALUE_COL_WIDTH / 2, y + ROW_HEIGHT / 2),
-        derive(() => node.value.total.value.toFixed(0)),
-        { size: 10, align: Anchor.Center, fill: "#9aa0a8" }
+        vec(valueX, y + ROW_HEIGHT / 2),
+        derive(() => {
+          const val = node.value.total.value;
+          if (val === 0) return "";
+          if (val < 10) return val.toFixed(1);
+          return Math.round(val).toString();
+        }),
+        {
+          size: 12,
+          align: Anchor.Center,
+          fill: "oklch(0.7 0 0)"
+        }
       );
+      // Add cursor for leaf nodes to indicate draggable
+      if (!hasChildren) {
+        valueLbl.el.style.cursor = "ew-resize";
+        valueLbl.el.dataset.leafValue = nodeId;
+      }
       elements.push(valueLbl);
-
-      // Vertical separator
-      const separator = rect(10 + NAME_COL_WIDTH, y, 1, ROW_HEIGHT, {
-        fill: "#444",
-        thin: true,
-      });
-      elements.push(separator);
 
       return elements;
     }, { key: (row) => row.node.value.id ?? "" });
@@ -241,8 +274,8 @@ export class MdTreetableLC extends Diagram {
       s(label(view.bottom.up(10), derive(() => {
         const f = state.focused.value;
         const visibleCount = visibleRows.value.length;
-        return `${visibleCount} visible rows · focused: ${f?.value.label ?? "(none)"} · click ▶/▼ to expand/collapse`;
-      }), { size: 10, align: Anchor.Center, fill: "#9aa0a8" }));
+        return `${visibleCount} visible rows · focused: ${f?.value.label ?? "(none)"} · click ▸/▾ to expand/collapse`;
+      }), { size: 10, align: Anchor.Center, fill: "oklch(0.5 0 0)" }));
     }
   }
 }
