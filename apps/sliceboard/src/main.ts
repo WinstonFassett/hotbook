@@ -140,14 +140,21 @@ function buildTileRecords(dash: Dashboard, ds: Dataset): TileRecord[] {
 
 // ─── Dock tree per dashboard ──────────────────────────────────────────────────
 
+let lastDashId = ''
+let lastTileIds: string[] = []
+
 function getDockTree(dash: Dashboard) {
-  if (dash.dockTree) {
-    // Reconcile persisted tree against current tile set
-    const tileIds = dash.tiles.map(t => t.id)
-    return reconcile(dash.dockTree, tileIds)
-  }
   const tileIds = dash.tiles.map(t => t.id)
-  return defaultDockTree(tileIds)
+  // Only reconcile when tiles change — not on every render.
+  // Reconciling on every render prunes empty groups created by splitGroupRight/Down.
+  const tilesChanged = dash.id !== lastDashId || JSON.stringify(tileIds) !== JSON.stringify(lastTileIds)
+  if (tilesChanged) {
+    lastDashId = dash.id
+    lastTileIds = tileIds
+    if (dash.dockTree) return reconcile(dash.dockTree, tileIds)
+    return defaultDockTree(tileIds)
+  }
+  return dash.dockTree ?? defaultDockTree(tileIds)
 }
 
 // ─── Render ───────────────────────────────────────────────────────────────────
