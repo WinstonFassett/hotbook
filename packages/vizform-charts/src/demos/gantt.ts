@@ -481,18 +481,16 @@ export class MdGanttChartLC extends Diagram {
           t.end = new Date(newStart + dur);
         } else if (snap.kind === 'start') {
           const newStart = snapDay(snap.start + dms);
-          t.start = new Date(newStart);
-          // Enforce minimum duration: if start crosses or meets end, push end forward
-          if (t.start.getTime() >= t.end.getTime()) {
-            t.end = new Date(t.start.getTime() + DAY_MS);
-          }
+          // Clamp start to not exceed (end - MIN_DURATION)
+          // Handle should stop, not push the other handle
+          const maxStart = t.end.getTime() - DAY_MS;
+          t.start = new Date(Math.min(newStart, maxStart));
         } else {
           const newEnd = snapDay(snap.end + dms);
-          t.end = new Date(newEnd);
-          // Enforce minimum duration: if end crosses or meets start, push start backward
-          if (t.end.getTime() <= t.start.getTime()) {
-            t.start = new Date(t.end.getTime() - DAY_MS);
-          }
+          // Clamp end to not go below (start + MIN_DURATION)
+          // Handle should stop, not push the other handle
+          const minEnd = t.start.getTime() + DAY_MS;
+          t.end = new Date(Math.max(newEnd, minEnd));
         }
 
         // Real-time bidirectional constraint solving during drag
