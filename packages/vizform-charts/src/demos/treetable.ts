@@ -168,8 +168,3 @@ export class MdTreetableLC extends HTMLElement {
     return this.root;
   }
 }
-
-// Register custom element
-if (!customElements.get('md-treetable-lc')) {
-  customElements.define('md-treetable-lc', MdTreetableLC);
-}
