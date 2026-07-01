@@ -14,8 +14,6 @@ export const TRANSITION_DURATION = {
   settle: 2.5 * TRANSITION_BASE_MS,        // 250ms
   /** Reorder slide (Part 3): item moves to new slot position. */
   reorder: 2.5 * TRANSITION_BASE_MS,       // 250ms
-  /** Stagger offset between successive reorder items. */
-  reorderStagger: 0.3 * TRANSITION_BASE_MS, // 30ms
   /** Hover/select micro-feedback (was inline 0.1s / 0.12s — kept identical). */
   hover: 1.0 * TRANSITION_BASE_MS,          // 100ms
   /** Highlight rect sliding between columns/rows. */
@@ -50,23 +48,6 @@ export function hoverTransition(properties: string | readonly string[]): string 
  *  a gesture is active. Apply via `el.classList.toggle(GESTURE_ACTIVE_CLASS, ...)`
  *  on the chart host; pair with the CSS rule emitted by `gestureSuppressionCss`. */
 export const GESTURE_ACTIVE_CLASS = "vf-gesture-active";
-
-/** Compose a staggered settle + reorder transition for a single element.
- *  `staggerProp` is the axis that slides on sort ("x" for vertical bars, "y" for horizontal).
- *  `index` is the element's current sorted position (used for delay).
- *  Returns "none" under reduced motion. */
-export function staggeredSettleTransition(
-  settleProps: readonly string[],
-  staggerProp: string,
-  index: number
-): string {
-  if (prefersReducedMotion()) return "none";
-  const settle = settleProps.map(
-    p => `${p} ${TRANSITION_DURATION.settle}ms ${TRANSITION_EASING}`
-  );
-  const stagger = `${staggerProp} ${TRANSITION_DURATION.reorder}ms ${TRANSITION_EASING} ${index * TRANSITION_DURATION.reorderStagger}ms`;
-  return [...settle, stagger].join(", ");
-}
 
 /** CSS that disables `transition` on every descendant while a gesture is live.
  *  Inject once per chart `static styles`. */
