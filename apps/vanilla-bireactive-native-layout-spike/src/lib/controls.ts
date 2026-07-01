@@ -4,7 +4,7 @@
 // together — the same intent (add/reparent/remove) lands as a different
 // layout on each tab.
 
-import { descendantsOf, makeEdge, makeRow, sharedEdges, sharedRows, leafIds, containerIds, flatGraph } from "./data";
+import { descendantsOf, makeEdge, makeRow, sharedEdges, sharedRows, leafIds, containerIds, flatGraph, items, insertRow, insertEdge, removeRow, removeEdge } from "./data";
 import { direction, edgeStyle, type Direction, type EdgeStyle } from "./diagram-settings";
 
 let counter = 100; // start above the seed ids so we don't collide
@@ -25,7 +25,7 @@ const ACTIONS: Action[] = [
       const parent = containers.length > 0
         ? containers[Math.floor(Math.random() * containers.length)]!
         : null;
-      sharedRows.insert(makeRow(id, parent, sharedRows.items.length));
+      sharedRows.insert(makeRow(id, parent, items(sharedRows).length));
     },
   },
   {
@@ -33,11 +33,11 @@ const ACTIONS: Action[] = [
     label: "+ container",
     run: () => {
       const gid = `g${++counter}`;
-      const tops = sharedRows.items.filter((r) => r.parentId.value === null);
+      const tops = items(sharedRows).filter((r) => r.parentId.value === null);
       const parent = tops.length > 1
         ? tops[Math.floor(Math.random() * tops.length)]!.id
         : null;
-      sharedRows.insert(makeRow(gid, parent, sharedRows.items.length));
+      sharedRows.insert(makeRow(gid, parent, items(sharedRows).length));
       // Seed one child so the new container has shape immediately.
       const childId = `n${++counter}`;
       sharedRows.insert(makeRow(childId, gid, 0));
@@ -47,17 +47,17 @@ const ACTIONS: Action[] = [
     id: "add-edge",
     label: "+ edge",
     run: () => {
-      const items = sharedRows.items;
-      if (items.length < 2) return;
-      const a = items[Math.floor(Math.random() * items.length)]!;
-      let b = items[Math.floor(Math.random() * items.length)]!;
+      const rows = items(sharedRows);
+      if (rows.length < 2) return;
+      const a = rows[Math.floor(Math.random() * rows.length)]!;
+      let b = rows[Math.floor(Math.random() * rows.length)]!;
       let guard = 8;
       while (
         guard-- > 0 &&
         (b.id === a.id ||
-          sharedEdges.items.some((e) => e.from.value === a.id && e.to.value === b.id))
+          items(sharedEdges).some((e) => e.from.value === a.id && e.to.value === b.id))
       ) {
-        b = items[Math.floor(Math.random() * items.length)]!;
+        b = rows[Math.floor(Math.random() * rows.length)]!;
       }
       if (b.id !== a.id) sharedEdges.insert(makeEdge(a.id, b.id));
     },
@@ -66,11 +66,11 @@ const ACTIONS: Action[] = [
     id: "reparent",
     label: "reparent",
     run: () => {
-      const items = sharedRows.items;
-      if (items.length === 0) return;
-      const row = items[Math.floor(Math.random() * items.length)]!;
+      const rows = items(sharedRows);
+      if (rows.length === 0) return;
+      const row = rows[Math.floor(Math.random() * rows.length)]!;
       const desc = descendantsOf(sharedRows, row.id);
-      const candidates = items.filter(
+      const candidates = rows.filter(
         (r) => r.id !== row.id && !desc.has(r.id) && r.parentId.value !== row.id,
       );
       if (candidates.length === 0) return;
@@ -85,13 +85,13 @@ const ACTIONS: Action[] = [
       // Find a container (row with children). Removing it re-parents its
       // direct children to the container's own parent so we don't orphan
       // subtrees.
-      const items = sharedRows.items;
+      const rows = items(sharedRows);
       const hasChild = new Set<string>();
-      for (const r of items) {
+      for (const r of rows) {
         const pid = r.parentId.value;
         if (pid != null) hasChild.add(pid);
       }
-      const containers = items.filter((r) => hasChild.has(r.id));
+      const containers = rows.filter((r) => hasChild.has(r.id));
       if (containers.length === 0) return;
       // Prefer a non-root container so we keep at least one nesting
       // level around; fall back to any container.
@@ -101,38 +101,38 @@ const ACTIONS: Action[] = [
       ]!;
       const grandparent = victim.parentId.value;
       // Re-parent direct children to the victim's parent.
-      for (const r of items) {
+      for (const r of rows) {
         if (r.parentId.value === victim.id) r.parentId.value = grandparent;
       }
       // Drop edges that touch the container itself.
-      for (const e of [...sharedEdges.items]) {
-        if (e.from.value === victim.id || e.to.value === victim.id) sharedEdges.remove(e);
+      for (const e of [...items(sharedEdges)]) {
+        if (e.from.value === victim.id || e.to.value === victim.id) removeEdge(e);
       }
-      sharedRows.remove(victim);
+      removeRow(victim);
     },
   },
   {
     id: "rm-edge",
     label: "− edge",
     run: () => {
-      const items = sharedEdges.items;
-      if (items.length === 0) return;
-      sharedEdges.remove(items[items.length - 1]!);
+      const edges = items(sharedEdges);
+      if (edges.length === 0) return;
+      removeEdge(edges[edges.length - 1]!);
     },
   },
   {
     id: "rm-node",
     label: "− node",
     run: () => {
-      const items = sharedRows.items;
-      if (items.length <= 1) return;
-      const hasChild = new Set(items.map((r) => r.parentId.value).filter(Boolean) as string[]);
+      const rows = items(sharedRows);
+      if (rows.length <= 1) return;
+      const hasChild = new Set(rows.map((r) => r.parentId.value).filter(Boolean) as string[]);
       const victim =
-        [...items].reverse().find((r) => !hasChild.has(r.id)) ?? items[items.length - 1]!;
-      for (const e of [...sharedEdges.items]) {
-        if (e.from.value === victim.id || e.to.value === victim.id) sharedEdges.remove(e);
+        [...rows].reverse().find((r) => !hasChild.has(r.id)) ?? rows[rows.length - 1]!;
+      for (const e of [...items(sharedEdges)]) {
+        if (e.from.value === victim.id || e.to.value === victim.id) removeEdge(e);
       }
-      sharedRows.remove(victim);
+      removeRow(victim);
     },
   },
   {
@@ -141,11 +141,11 @@ const ACTIONS: Action[] = [
     run: () => {
       const fmt = (s: string | null): string =>
         s === null ? "null" : JSON.stringify(s);
-      const rowLines = sharedRows.items.map(
+      const rowLines = items(sharedRows).map(
         (r) =>
           `  makeRow(${JSON.stringify(r.id)}, ${fmt(r.parentId.value)}, ${r.index.value}, ${JSON.stringify(r.name.value)}),`,
       );
-      const edgeLines = sharedEdges.items.map((e) => {
+      const edgeLines = items(sharedEdges).map((e) => {
         const lbl = e.label.value;
         return lbl
           ? `  makeEdge(${JSON.stringify(e.from.value)}, ${JSON.stringify(e.to.value)}, ${JSON.stringify(lbl)}),`

@@ -36,6 +36,7 @@ import {
   rowsById,
   sharedEdges,
   sharedRows,
+  items,
   type TreeNode,
 } from "./data";
 import { boxInside, clampInside, pinAxis, rectMinimize, rectNonOverlap, rectsNonOverlap, separation, type SidePad } from "./cola-factories";
@@ -79,8 +80,8 @@ export class MdColaAdapt extends Diagram {
 
     this.#persist.push(
       effect(() => {
-        void sharedRows.items;
-        void sharedEdges.items;
+        void sharedRows.cells;
+        void sharedEdges.cells;
         this.#buildAll();
       }),
     );
@@ -128,7 +129,7 @@ export class MdColaAdapt extends Diagram {
       return ds[0] ?? null;
     };
     const edges: Array<[string, string]> = [];
-    for (const e of sharedEdges.items) {
+    for (const e of items(sharedEdges)) {
       const f = projectTo(e.from.value);
       const t = projectTo(e.to.value);
       if (f && t && f !== t) edges.push([f, t]);

@@ -17,8 +17,7 @@
 // Adapters for specific domains (state machines, flow charts, org
 // charts) live on top of this generic model.
 
-import { cell, type Cell, type Writable } from "@bireactive";
-import { coll, type Coll } from "@bireactive/coll";
+import { arr, Arr, cell, type Cell, type Writable } from "@bireactive";
 
 // ── nodes (the containment table) ────────────────────────────────────
 
@@ -102,11 +101,21 @@ const SEED_EDGES: Edge[] = [
   makeEdge("web", "redis"),
 ];
 
-/** Shared by every spike. Mutate either Coll → every view re-renders. */
-export const sharedRows: Coll<Row> = coll<Row>(SEED_ROWS, (r) => r.id);
-export const sharedEdges: Coll<Edge> = coll<Edge>(SEED_EDGES, (e) => e.id);
+/** Shared by every spike. Mutate either Arr → every view re-renders. */
+export const sharedRows: Arr<Row> = arr<Row>(SEED_ROWS);
+export const sharedEdges: Arr<Edge> = arr<Edge>(SEED_EDGES);
 
-// ── derive: Colls → compound-graph projection ───────────────────────
+export const items = <T>(a: Arr<T>): readonly T[] => a.cells.map((c) => c.value);
+
+const findCell = <T>(a: Arr<T>, v: T): import("@bireactive").Cell<T> | undefined =>
+  a.cells.find((c) => c.value === v);
+
+export const insertRow = (row: Row): void => { sharedRows.insert(row); };
+export const insertEdge = (edge: Edge): void => { sharedEdges.insert(edge); };
+export const removeRow = (row: Row): void => { const c = findCell(sharedRows, row); if (c) sharedRows.remove(c); };
+export const removeEdge = (edge: Edge): void => { const c = findCell(sharedEdges, edge); if (c) sharedEdges.remove(c); };
+
+// ── derive: Arr → compound-graph projection ──────────────────────────
 
 /** A containment-tree node carrying its row id, its children, and its
  *  full ancestor chain. Computed from the parentId column. */
@@ -117,8 +126,8 @@ export interface TreeNode {
 }
 
 /** Build the containment forest. Top-level nodes are roots. */
-export function containmentForest(rowColl: Coll<Row>): TreeNode[] {
-  const rows = rowColl.items;
+export function containmentForest(rowColl: Arr<Row>): TreeNode[] {
+  const rows = items(rowColl);
   const byParent = new Map<string | null, Row[]>();
   for (const r of rows) {
     const pid = r.parentId.value;
@@ -141,19 +150,20 @@ export function containmentForest(rowColl: Coll<Row>): TreeNode[] {
 
 /** All leaf node ids (rows with no children). For layouts that only
  *  position leaves; containers are derived as hulls around them. */
-export function leafIds(rowColl: Coll<Row>): string[] {
+export function leafIds(rowColl: Arr<Row>): string[] {
+  const rows = items(rowColl);
   const hasChild = new Set<string>();
-  for (const r of rowColl.items) {
+  for (const r of rows) {
     const pid = r.parentId.value;
     if (pid != null) hasChild.add(pid);
   }
-  return rowColl.items.filter((r) => !hasChild.has(r.id)).map((r) => r.id);
+  return rows.filter((r) => !hasChild.has(r.id)).map((r) => r.id);
 }
 
 /** All container node ids (rows with at least one child). */
-export function containerIds(rowColl: Coll<Row>): string[] {
+export function containerIds(rowColl: Arr<Row>): string[] {
   const hasChild = new Set<string>();
-  for (const r of rowColl.items) {
+  for (const r of items(rowColl)) {
     const pid = r.parentId.value;
     if (pid != null) hasChild.add(pid);
   }
@@ -161,12 +171,13 @@ export function containerIds(rowColl: Coll<Row>): string[] {
 }
 
 /** All descendant ids of a given node (transitive). */
-export function descendantsOf(rowColl: Coll<Row>, rootId: string): Set<string> {
+export function descendantsOf(rowColl: Arr<Row>, rootId: string): Set<string> {
+  const rows = items(rowColl);
   const out = new Set<string>();
   const queue = [rootId];
   while (queue.length) {
     const id = queue.shift()!;
-    for (const r of rowColl.items) {
+    for (const r of rows) {
       if (r.parentId.value === id && !out.has(r.id)) {
         out.add(r.id);
         queue.push(r.id);
@@ -183,11 +194,11 @@ export interface FlatGraph {
   edges: Array<[string, string]>;
 }
 
-export function flatGraph(rowColl: Coll<Row>, edgeColl: Coll<Edge>): FlatGraph {
-  const nodes = rowColl.items.map((r) => r.id);
+export function flatGraph(rowColl: Arr<Row>, edgeColl: Arr<Edge>): FlatGraph {
+  const nodes = items(rowColl).map((r) => r.id);
   const ids = new Set(nodes);
   const edges: Array<[string, string]> = [];
-  for (const e of edgeColl.items) {
+  for (const e of items(edgeColl)) {
     const f = e.from.value;
     const t = e.to.value;
     if (ids.has(f) && ids.has(t)) edges.push([f, t]);
@@ -196,6 +207,6 @@ export function flatGraph(rowColl: Coll<Row>, edgeColl: Coll<Edge>): FlatGraph {
 }
 
 /** rowsById helper (used by several spikes). */
-export function rowsById(rowColl: Coll<Row>): Map<string, Row> {
-  return new Map(rowColl.items.map((r) => [r.id, r]));
+export function rowsById(rowColl: Arr<Row>): Map<string, Row> {
+  return new Map(items(rowColl).map((r) => [r.id, r]));
 }

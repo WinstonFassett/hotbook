@@ -33,6 +33,7 @@ import {
   rowsById,
   sharedEdges,
   sharedRows,
+  items,
   type TreeNode,
 } from "./data";
 import { renderEdge, renderHull, renderNode } from "./render";
@@ -87,8 +88,8 @@ export class MdDagreWrap extends Diagram {
 
     this.#persist.push(
       effect(() => {
-        void sharedRows.items;
-        void sharedEdges.items;
+        void sharedRows.cells;
+        void sharedEdges.cells;
         this.#buildAll();
         this.#applyLayout();
       }),
@@ -132,7 +133,7 @@ export class MdDagreWrap extends Diagram {
     // compound-subgraph rects, so they don't overlap by construction).
     // Drop any hull boxes for containers that no longer exist.
     const allContainers = new Set<string>();
-    for (const r of sharedRows.items) {
+    for (const r of items(sharedRows)) {
       const pid = r.parentId.value;
       if (pid != null) allContainers.add(pid);
     }
@@ -230,7 +231,7 @@ export class MdDagreWrap extends Diagram {
     // Register containers — dagre allocates subgraph rect for these.
     // We give them a small placeholder size; dagre expands to fit kids.
     const containers = new Set<string>();
-    for (const r of sharedRows.items) {
+    for (const r of items(sharedRows)) {
       const pid = r.parentId.value;
       if (pid != null) containers.add(pid);
     }
@@ -238,12 +239,12 @@ export class MdDagreWrap extends Diagram {
       g.setNode(cid, {});
     }
     // Parent relationships drive subgraph nesting.
-    for (const r of sharedRows.items) {
+    for (const r of items(sharedRows)) {
       const pid = r.parentId.value;
       if (pid != null) g.setParent(r.id, pid);
     }
     // Edges (projected onto leaves so endpoints have layout coords).
-    for (const e of sharedEdges.items) {
+    for (const e of items(sharedEdges)) {
       const f = projectTo(e.from.value);
       const t = projectTo(e.to.value);
       if (f && t && f !== t) g.setEdge(f, t);
@@ -267,7 +268,7 @@ export class MdDagreWrap extends Diagram {
 
     // Child-id index from sharedRows, passed to project phase.
     const childrenOf = new Map<string, string[]>();
-    for (const r of sharedRows.items) {
+    for (const r of items(sharedRows)) {
       const pid = r.parentId.value;
       if (pid == null) continue;
       if (!childrenOf.has(pid)) childrenOf.set(pid, []);
