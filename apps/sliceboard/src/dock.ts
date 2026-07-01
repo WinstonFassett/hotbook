@@ -199,6 +199,20 @@ export function setActive(node: DockNode | null, groupId: string, panelId: strin
   return mapGroups(node, g => g.id === groupId ? { ...g, activeId: panelId } : g)
 }
 
+/** Remove a single panel from its group (dock-only — does not delete the tile
+ *  from the workspace). Empty groups collapse via mapGroups. */
+export function removePanel(node: DockNode | null, panelId: string): DockNode | null {
+  return mapGroups(node, g => {
+    if (!g.panels.some(p => p.id === panelId)) return g
+    const panels = g.panels.filter(p => p.id !== panelId)
+    if (panels.length === 0) return null
+    const activeId = g.activeId === panelId
+      ? (panels[0]?.id ?? null)
+      : g.activeId
+    return { ...g, panels, activeId }
+  })
+}
+
 /** Move a panel to a target group at a specific index. Source group is
  *  collapsed if it becomes empty. If panelId already belongs to targetGroup,
  *  this is a reorder. */

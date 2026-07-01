@@ -21,7 +21,7 @@ import {
   allGroups, findPanel, findMaximizedGroup,
   setSizes, setActive, movePanel, dropOnEdge, dropGroupOnEdge, mergeGroups,
   toggleMaximize, splitGroupRight, splitGroupDown,
-  reconcile, defaultDockTree,
+  reconcile, defaultDockTree, removePanel,
 } from './dock'
 import type { Tile, Dataset } from './persistence'
 import { schemaFor } from './tile-config-schemas'
@@ -267,17 +267,34 @@ export class DockView extends HTMLElement {
   }
 
   private _patchGroup(el: HTMLElement, group: DockGroup, tiles: TileRecord[], tilesChanged: boolean) {
-    // Tab strip: toggle active class + update close button disabled state
-    const singlePanel = group.panels.length <= 1
-    el.querySelectorAll<HTMLElement>('.dv-tab').forEach(tab => {
-      tab.classList.toggle('dv-tab--active', tab.dataset.panelId === group.activeId)
-      const closeBtn = tab.querySelector<HTMLElement>('.dv-tab-close')
-      if (closeBtn) {
-        closeBtn.toggleAttribute('disabled', singlePanel)
-        closeBtn.style.opacity = singlePanel ? '0.3' : ''
-        closeBtn.style.cursor = singlePanel ? 'default' : ''
+    // Reconcile tab strip: rebuild if the panel list (count, ids, or order) changed.
+    const strip = el.querySelector<HTMLElement>('.dv-tabstrip')
+    if (strip) {
+      const tabsWrap = strip.querySelector<HTMLElement>('.dv-tabs')
+      const domPanelIds = tabsWrap
+        ? Array.from(tabsWrap.querySelectorAll<HTMLElement>('.dv-tab')).map(t => t.dataset.panelId ?? '')
+        : []
+      const treePanelIds = group.panels.map(p => p.id)
+      const panelsChanged = domPanelIds.length !== treePanelIds.length || domPanelIds.some((id, i) => id !== treePanelIds[i])
+      if (panelsChanged) {
+        // Panel list changed — rebuild entire tab strip to get correct tabs,
+        // labels, close handlers, and drag listeners.
+        const newStrip = this._renderTabStrip(group, tiles)
+        strip.replaceWith(newStrip)
+      } else {
+        // Panel list unchanged — just update active class and close button state.
+        const singlePanel = group.panels.length <= 1
+        tabsWrap?.querySelectorAll<HTMLElement>('.dv-tab').forEach(tab => {
+          tab.classList.toggle('dv-tab--active', tab.dataset.panelId === group.activeId)
+          const closeBtn = tab.querySelector<HTMLElement>('.dv-tab-close')
+          if (closeBtn) {
+            closeBtn.toggleAttribute('disabled', singlePanel)
+            closeBtn.style.opacity = singlePanel ? '0.3' : ''
+            closeBtn.style.cursor = singlePanel ? 'default' : ''
+          }
+        })
       }
-    })
+    }
 
     const body = el.querySelector<HTMLElement>('.dv-body')
     if (!body) return
@@ -843,20 +860,13 @@ export class DockView extends HTMLElement {
     this._mutateDock(setActive(dock, groupId, panelId))
   }
 
-  private _closePanel(groupId: string, panelId: string) {
+  private _closePanel(_groupId: string, panelId: string) {
     const dock = this._dockCell?.value ?? null
-    // Remove from dock tree
-    const found = dock ? findPanel(dock, panelId) : null
-    if (!found) return
-    // Close via tileRec.onRemove for the tile, then reconcile dock
-    // For now: remove panel from dock only — tile removal goes through topbar
-    // (same as before — the × in tile header calls onRemove which fires through
-    // the workspace update path). Closing from the tab strip removes JUST the
-    // panel from this group; the tile still exists and can be dragged back.
-    // TODO: call tileRec.onRemove() if the tile is the last panel referencing it
-    const tiles = this._tilesCell?.value ?? []
-    const tileRec = tiles.find(t => t.tile.id === found.panel.tileId)
-    tileRec?.onRemove()
+    if (!dock) return
+    // Remove panel from dock tree only — the tile stays in the workspace and
+    // can be dragged back or re-added. tileRec.onRemove() (workspace delete)
+    // is only appropriate when the user explicitly removes a tile from the topbar.
+    this._mutateDock(removePanel(dock, panelId))
   }
 
   private _toggleMaximize(groupId: string) {
