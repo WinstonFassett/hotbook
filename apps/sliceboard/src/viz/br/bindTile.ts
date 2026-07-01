@@ -42,7 +42,18 @@ interface ElWithBrSync extends HTMLElement { brSync?: BrSyncBridge }
  */
 export function bindHudSync(el: ElWithBrSync): () => void {
   const bridge = el.brSync
-  if (!bridge) return () => {}
+  if (!bridge) {
+    // Element is not yet connected to the document (connectedCallback hasn't run),
+    // so scene() hasn't set brSync yet. Defer one microtask so connectedCallback
+    // fires first, then re-run.
+    let disposed = false
+    let inner: (() => void) | null = null
+    setTimeout(() => {
+      if (disposed) return
+      inner = bindHudSync(el)
+    }, 0)
+    return () => { disposed = true; inner?.() }
+  }
   let lastInHover: string | null = null
   let lastInSelect: string | null = null
   let lastInDrill: string | null = null
