@@ -466,8 +466,10 @@ export class DockView extends HTMLElement {
       tab.addEventListener('pointerdown', (e) => {
         if (e.button !== 0) return
         if ((e.target as HTMLElement).closest('.dv-tab-close')) return
-        // Alt+drag on a tab = group drag (useful when tabs fill the strip)
-        if (e.altKey) { this._startGroupDrag(e, group); return }
+        // Alt+drag on a tab = group drag (useful when tabs fill the strip).
+        // Stop propagation so the strip's pointerdown listener doesn't also
+        // call _startGroupDrag and create a duplicate drag session.
+        if (e.altKey) { e.stopPropagation(); this._startGroupDrag(e, group); return }
         // Don't activate on mousedown — wait to see if this becomes a drag.
         // _startTabDrag will activate on pointerup if no drag threshold was crossed.
         this._startTabDrag(e, group, p.id, p.tileId, label)
@@ -949,6 +951,7 @@ export class DockView extends HTMLElement {
   }
 
   private _beginDrag(init: DragState) {
+    if (this._dragState) return   // already dragging — ignore duplicate _beginDrag
     this._dragState = init
     this._showGhost(init.x, init.y, init.label)
 
