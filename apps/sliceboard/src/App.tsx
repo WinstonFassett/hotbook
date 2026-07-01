@@ -51,13 +51,11 @@ function colorByGroup(nodes: PNode[]): PNode[] {
 
 // Canon picker — retired gen-0/Svelte kinds excluded
 const TILE_KINDS: TileKind[] = [
-  'treetable',
   'br-lc-bar', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie',
   'br-lc-radar', 'br-lc-concentric-arc', 'br-lc-gauge', 'br-lc-gauge-segmented',
-  'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-sankey-flow', 'br-lc-tree',
+  'br-lc-pack', 'br-lc-treemap', 'br-lc-treetable', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-sankey-flow', 'br-lc-tree',
 ]
 const TILE_LABELS: Record<TileKind, string> = {
-  'treetable':            'Table',
   'br-lc-bar':            'Bar',
   'br-lc-bands':          'Bands',
   'br-lc-line':           'Line',
@@ -70,12 +68,14 @@ const TILE_LABELS: Record<TileKind, string> = {
   'br-lc-gauge-segmented':'Gauge (segmented)',
   'br-lc-pack':           'Pack',
   'br-lc-treemap':        'Treemap',
+  'br-lc-treetable':      'Table',
   'br-lc-icicle':         'Icicle',
   'br-lc-sunburst':       'Sunburst',
   'br-lc-sankey':         'Sankey',
   'br-lc-sankey-flow':    'Sankey Flow',
   'br-lc-tree':           'Tree',
   // retired — still rendered if encountered in stored dashboards
+  'treetable':            'Table (retired)',
   'h-treemap':            'H-Treemap (retired)',
   'h-icicle':             'Icicle (retired)',
   'h-radial':             'Sunburst (retired)',

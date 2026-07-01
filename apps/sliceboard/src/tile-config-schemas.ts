@@ -33,9 +33,6 @@ const HIER_FULL_ORIENT: VizConfigSchema = {
 }
 
 export const TILE_CONFIG_SCHEMAS: Map<TileKind, VizConfigSchema> = new Map([
-  // ─── treetable ────────────────────────────────────────────────────────────
-  ['treetable', { pickers: { measure: true } }],
-
   // ─── bireactive LC-port flat charts ───────────────────────────────────────
   ['br-lc-bar',             SORT_ORIENT],
   ['br-lc-bands',           SORT_ORIENT],

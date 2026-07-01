@@ -45,10 +45,10 @@ export interface Dataset {
 export type RetiredTileKind =
   | 'treemap' | 'radial' | 'bands'           // gen-0 flat morph trio
   | 'h-treemap' | 'h-icicle' | 'h-radial'   // gen-0 hier D3
+  | 'treetable'                              // replaced by br-lc-treetable
   | 'svelte-br-lc-sunburst' | 'svelte-br-lc-icicle' | 'svelte-br-lc-pack' | 'svelte-br-lc-treemap' | 'svelte-treemap-demo'
 
 export type TileKind =
-  | 'treetable'
   // bireactive LC-port charts (canon)
   | 'br-lc-bar'
   | 'br-lc-bands'
