@@ -33,9 +33,6 @@ const HIER_FULL_ORIENT: VizConfigSchema = {
 }
 
 export const TILE_CONFIG_SCHEMAS: Map<TileKind, VizConfigSchema> = new Map([
-  // ─── treetable ────────────────────────────────────────────────────────────
-  ['treetable', { pickers: { measure: true } }],
-
   // ─── bireactive LC-port flat charts ───────────────────────────────────────
   ['br-lc-bar',             SORT_ORIENT],
   ['br-lc-bands',           SORT_ORIENT],
@@ -51,10 +48,11 @@ export const TILE_CONFIG_SCHEMAS: Map<TileKind, VizConfigSchema> = new Map([
   }],
 
   // ─── bireactive LC-port hier charts ───────────────────────────────────────
-  ['br-lc-pack',     HIER_FULL],
-  ['br-lc-treemap',  HIER_FULL],
-  ['br-lc-icicle',   HIER_FULL_ORIENT],
-  ['br-lc-sunburst', HIER_FULL],
+  ['br-lc-pack',      HIER_FULL],
+  ['br-lc-treemap',   HIER_FULL],
+  ['br-lc-treetable', HIER_FULL],
+  ['br-lc-icicle',    HIER_FULL_ORIENT],
+  ['br-lc-sunburst',  HIER_FULL],
 
   // ─── bireactive LC-port graph charts ──────────────────────────────────────
   ['br-lc-sankey', {

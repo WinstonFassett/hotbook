@@ -45,10 +45,10 @@ export interface Dataset {
 export type RetiredTileKind =
   | 'treemap' | 'radial' | 'bands'           // gen-0 flat morph trio
   | 'h-treemap' | 'h-icicle' | 'h-radial'   // gen-0 hier D3
+  | 'treetable'                              // replaced by br-lc-treetable
   | 'svelte-br-lc-sunburst' | 'svelte-br-lc-icicle' | 'svelte-br-lc-pack' | 'svelte-br-lc-treemap' | 'svelte-treemap-demo'
 
 export type TileKind =
-  | 'treetable'
   // bireactive LC-port charts (canon)
   | 'br-lc-bar'
   | 'br-lc-bands'
@@ -62,6 +62,7 @@ export type TileKind =
   | 'br-lc-gauge-segmented'
   | 'br-lc-pack'
   | 'br-lc-treemap'
+  | 'br-lc-treetable'
   | 'br-lc-icicle'
   | 'br-lc-sunburst'
   | 'br-lc-sankey'
@@ -568,7 +569,7 @@ function buildSeedWorkspace(): Workspace {
   // Canon viz kinds for seed dashboard (retired gen-0/Svelte kinds excluded).
   // Hierarchical charts first (top row) for drill dogfooding.
   const ALL_KINDS: TileKind[] = [
-    'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst',
+    'br-lc-pack', 'br-lc-treemap', 'br-lc-treetable', 'br-lc-icicle', 'br-lc-sunburst',
     'treetable',
     'br-lc-bar', 'br-lc-bands', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie',
     'br-lc-radar', 'br-lc-concentric-arc',
@@ -576,7 +577,7 @@ function buildSeedWorkspace(): Workspace {
   ]
 
   const GROUPBY_KINDS = new Set<TileKind>([
-    'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree',
+    'br-lc-pack', 'br-lc-treemap', 'br-lc-treetable', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree',
   ])
 
   function makeAllVizDash(prefix: string, flatGroupBy?: string): { tiles: Tile[]; layout: LayoutItem[] } {

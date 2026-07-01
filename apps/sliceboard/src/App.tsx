@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { GridLayout, useContainerWidth } from 'react-grid-layout'
 import type { LayoutItem } from 'react-grid-layout'
-import { Viz, HTreetable } from '@winstonfassett/vizform-react-d3'
+import { Viz } from '@winstonfassett/vizform-react-d3'
 import { colorFor } from '@winstonfassett/vizform-core'
 import type { Goal } from '@winstonfassett/vizform-react-d3'
 import { leavesOf } from '@winstonfassett/vizform-vanilla-d3'
@@ -11,7 +11,7 @@ import { Sunburst } from './viz/Sunburst'
 import {
   BrLcBar, BrLcLine, BrLcArea, BrLcScatter, BrLcPie, BrLcRadar, BrLcConcentricArc,
   BrLcGauge, BrLcGaugeSegmented,
-  BrLcPack, BrLcTreemap, BrLcIcicle, BrLcSunburst, BrLcSankey, BrLcSankeyFlow, BrLcTree,
+  BrLcPack, BrLcTreemap, BrLcTreetable, BrLcIcicle, BrLcSunburst, BrLcSankey, BrLcSankeyFlow, BrLcTree,
   BrLcGantt,
 } from './viz/br/BrLcCharts'
 import {
@@ -52,14 +52,12 @@ function colorByGroup(nodes: PNode[]): PNode[] {
 
 // Canon picker — retired gen-0/Svelte kinds excluded
 const TILE_KINDS: TileKind[] = [
-  'treetable',
   'br-lc-bar', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie',
   'br-lc-radar', 'br-lc-concentric-arc', 'br-lc-gauge', 'br-lc-gauge-segmented',
-  'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-sankey-flow', 'br-lc-tree',
+  'br-lc-pack', 'br-lc-treemap', 'br-lc-treetable', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-sankey-flow', 'br-lc-tree',
   'br-lc-gantt',
 ]
 const TILE_LABELS: Record<TileKind, string> = {
-  'treetable':            'Table',
   'br-lc-bar':            'Bar',
   'br-lc-bands':          'Bands',
   'br-lc-line':           'Line',
@@ -72,6 +70,7 @@ const TILE_LABELS: Record<TileKind, string> = {
   'br-lc-gauge-segmented':'Gauge (segmented)',
   'br-lc-pack':           'Pack',
   'br-lc-treemap':        'Treemap',
+  'br-lc-treetable':      'Table',
   'br-lc-icicle':         'Icicle',
   'br-lc-sunburst':       'Sunburst',
   'br-lc-sankey':         'Sankey',
@@ -79,6 +78,7 @@ const TILE_LABELS: Record<TileKind, string> = {
   'br-lc-tree':           'Tree',
   'br-lc-gantt':          'Gantt',
   // retired — still rendered if encountered in stored dashboards
+  'treetable':            'Table (retired)',
   'h-treemap':            'H-Treemap (retired)',
   'h-icicle':             'Icicle (retired)',
   'h-radial':             'Sunburst (retired)',
@@ -132,9 +132,6 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
   if (tile.kind === 'h-radial') {
     return <Sunburst nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} hoverId={hoverId} selectionId={selectionId} focusId={focusId} onHover={onHover} onSelect={onSelect} onFocus={onFocus} onUpdate={onNodeUpdate} />
   }
-  if (tile.kind === 'treetable') {
-    return <HTreetable nodes={nodes} measureKey={mk} onUpdate={onNodeUpdate} />
-  }
 
   // ── BR-LC flat charts ────────────────────────────────────────────────────
   // All BR-LC flat charts get the same value-ordered nodes (natural order when
@@ -153,6 +150,7 @@ function TileContent({ tile, ds, measureKey, onNodeUpdate, onNodesUpdate, onNode
   // ── BR-LC hierarchical charts ────────────────────────────────────────────
   if (tile.kind === 'br-lc-pack')           return <BrLcPack nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} drillKey={drillKey} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
   if (tile.kind === 'br-lc-treemap')        return <BrLcTreemap nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} drillKey={drillKey} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
+  if (tile.kind === 'br-lc-treetable')      return <BrLcTreetable nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} drillKey={drillKey} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
   if (tile.kind === 'br-lc-icicle')         return <BrLcIcicle nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} drillKey={drillKey} orientation={tile.orientation} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
   if (tile.kind === 'br-lc-sunburst')       return <BrLcSunburst nodes={nodes} measureKey={mk} depth={depth} sortBy={sortBy} drillKey={drillKey} onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />
   if (tile.kind === 'br-lc-sankey')         return <BrLcSankey edges={ds.edges ?? []} />

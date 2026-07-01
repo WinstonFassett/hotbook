@@ -27,11 +27,13 @@ import {
   MdGaugeSegmentedLC,
   MdPack,
   MdTreemapLC,
+  MdTreetableLC,
   MdIcicleLC,
   MdSunburstLC,
   MdSankeySimple,
   MdSankeyFlow,
   MdTreeChart,
+  numberDrag,
   MdGanttChartLC,
   type GanttTask,
 } from '@winstonfassett/vizform-charts'
@@ -49,6 +51,7 @@ const TAGS = [
   ['v-br-gauge-segmented', MdGaugeSegmentedLC],
   ['v-br-pack',           MdPack],
   ['v-br-treemap',        MdTreemapLC],
+  ['v-br-treetable',      MdTreetableLC],
   ['v-br-icicle',         MdIcicleLC],
   ['v-br-sunburst',       MdSunburstLC],
   ['v-br-sankey',         MdSankeySimple],
@@ -348,6 +351,77 @@ export function BrLcSunburst(props: HierProps) {
 export function BrLcTree(props: HierProps) {
   const drillNodeId = useDrillNodeId(props.drillKey ?? 'default')
   return <BrLcTile source={makeHier('v-br-tree', { ...props, drillNodeId })} />
+}
+
+export function BrLcTreetable(props: HierProps) {
+  const { nodes, measureKey, onUpdate } = props
+  const drillNodeId = useDrillNodeId(props.drillKey ?? 'default')
+  const source = makeHier('v-br-treetable', { ...props, drillNodeId })
+
+  // Extend source to add numberDrag to ALL value cells (parents and leaves)
+  const originalMountProps = source.mountProps
+  const extendedSource = {
+    ...source,
+    mountProps(el: HTMLElement) {
+      originalMountProps?.(el)
+
+      // numberDrag integration - attach to ALL nodes for sum-redistribute editing
+      const disposers: Array<() => void> = []
+      const typedEl = el as any // MdTreetableLC
+
+      const unsubRender = typedEl.onRender?.((allNodeIds: string[]) => {
+        // Clean up previous drag handlers
+        for (const d of disposers.splice(0)) d()
+
+        const root = typedEl.getRoot?.()
+        if (!root) return
+
+        // Get the externalRoot (BiNode tree)
+        const biRoot = typedEl.externalRoot
+        if (!biRoot) return
+
+        // Build a map of ALL BiNodes by id (including parents)
+        const allNodes: any[] = []
+        const walk = (node: any) => {
+          allNodes.push(node)
+          for (const child of node.children as any[]) walk(child)
+        }
+        walk(biRoot)
+        const nodeMap = new Map(allNodes.map(n => [n.value.id, n]))
+
+        // Attach numberDrag to ALL visible value cells
+        for (const id of allNodeIds) {
+          const cell = root.querySelector<HTMLElement>(`[data-editable-value="${id}"]`)
+          if (!cell) continue
+
+          const biNode = nodeMap.get(id)
+          if (!biNode) continue
+
+          const get = () => biNode.value.total.value
+          const set = (v: number) => {
+            // Write to the BiNode - lens will handle redistribution for parents
+            biNode.value.total.value = v
+            const pnode = nodes.find(n => n.id === id)
+            if (pnode && onUpdate) {
+              onUpdate(id, { ...pnode.measures, [measureKey]: v })
+            }
+          }
+
+          disposers.push(numberDrag(cell, { get, set, pxPerUnit: 4 }))
+        }
+      })
+
+      // Store cleanup function
+      const originalDispose = (el as any).__dispose
+      ;(el as any).__dispose = () => {
+        unsubRender?.()
+        for (const d of disposers) d()
+        originalDispose?.()
+      }
+    }
+  }
+
+  return <BrLcTile source={extendedSource} />
 }
 
 // ─── Sankey (flat edge-list) ────────────────────────────────────────────────────

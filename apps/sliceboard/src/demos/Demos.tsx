@@ -5,10 +5,9 @@
  * no persistence). Spike harness for developing chart features in isolation.
  */
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
-import { HTreetable } from '@winstonfassett/vizform-react-d3'
 import {
   BrLcBar, BrLcLine, BrLcArea, BrLcScatter, BrLcPie, BrLcRadar, BrLcConcentricArc,
-  BrLcPack, BrLcTreemap, BrLcIcicle, BrLcSunburst, BrLcSankey, BrLcSankeyFlow, BrLcTree,
+  BrLcPack, BrLcTreemap, BrLcTreetable, BrLcIcicle, BrLcSunburst, BrLcSankey, BrLcSankeyFlow, BrLcTree,
   BrLcGantt,
 } from '../viz/br/BrLcCharts'
 import type { PNode, PEdge } from '../persistence'
@@ -43,7 +42,7 @@ const DEMOS: DemoDef[] = [
   {
     slug: 'treetable', label: 'Treetable', fixtureName: 'team-hier', fixture: TEAM,
     initRows: TEAM.rows,
-    render: (rows) => <HTreetable nodes={rows} measureKey="budget" />,
+    render: (rows, _edges, onNodeUpdate, onNodesUpdate) => <BrLcTreetable nodes={rows} measureKey="budget" onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />,
   },
   {
     slug: 'br-lc-bar', label: 'Bar', fixtureName: 'fruit-flat', fixture: FRUIT,
@@ -89,6 +88,11 @@ const DEMOS: DemoDef[] = [
     slug: 'br-lc-treemap', label: 'Treemap', fixtureName: 'team-hier', fixture: TEAM,
     initRows: TEAM.rows,
     render: (rows, _edges, onNodeUpdate, onNodesUpdate) => <BrLcTreemap nodes={rows} measureKey="budget" onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />,
+  },
+  {
+    slug: 'br-lc-treetable', label: 'Treetable (BR)', fixtureName: 'team-hier', fixture: TEAM,
+    initRows: TEAM.rows,
+    render: (rows, _edges, onNodeUpdate, onNodesUpdate) => <BrLcTreetable nodes={rows} measureKey="budget" onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />,
   },
   {
     slug: 'br-lc-icicle', label: 'Icicle', fixtureName: 'team-hier', fixture: TEAM,
