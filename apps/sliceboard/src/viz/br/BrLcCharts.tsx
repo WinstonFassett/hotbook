@@ -400,7 +400,7 @@ export function BrLcGantt({
     (el) => { el.enforceDeps = enforceDeps; el.externalData = tasks },
     [key],
   )
-  return <div ref={ref} style={{ width: '100%', height: '100%' }} />
+  return <div ref={ref} style={{ width: '100%', height: '100%', overflow: 'auto' }} />
 }
 
 // ─── Sankey (conservation flow) ─────────────────────────────────────────────────
