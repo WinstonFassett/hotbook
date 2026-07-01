@@ -391,6 +391,21 @@ export class DockView extends HTMLElement {
     el.dataset.groupId = group.id
     el.style.cssText = 'display:flex;flex-direction:column;width:100%;height:100%;overflow:hidden'
 
+    // Clicking anywhere inside a group (body, tab strip, chart) makes it the
+    // active group so keyboard shortcuts target it. Use capture so it fires
+    // before any child handler (e.g. drag initiators) consumes the event.
+    // Read the live dock tree at click time so we get the current activeId, not
+    // the one that was set when this element was built.
+    el.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return
+      const dock = this._dockCell?.value ?? null
+      if (!dock) return
+      const liveGroup = allGroups(dock).find(g => g.id === group.id)
+      if (!liveGroup) return
+      const activePanel = liveGroup.panels.find(p => p.id === liveGroup.activeId) ?? liveGroup.panels[0]
+      if (activePanel) this._activatePanel(liveGroup.id, activePanel.id)
+    }, { capture: true })
+
     const strip = this._renderTabStrip(group, tiles)
     el.appendChild(strip)
 
