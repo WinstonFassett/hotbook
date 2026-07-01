@@ -17,7 +17,7 @@ function fmtNum(v: number): string {
   return Math.round(v).toString();
 }
 
-function computeVisible(root: BiNode, collapsed: Set<string>): VisibleRow[] {
+function computeVisible(root: BiNode, collapsed: Set<string>, maxDepth?: number): VisibleRow[] {
   const out: VisibleRow[] = [];
 
   function walk(node: BiNode, depth: number) {
@@ -29,8 +29,9 @@ function computeVisible(root: BiNode, collapsed: Set<string>): VisibleRow[] {
       out.push({ node, depth, hasKids });
     }
 
-    // Add children if not collapsed
-    if (hasKids && !collapsed.has(node.value.id ?? '')) {
+    // Add children if not collapsed and within maxDepth
+    const withinDepth = maxDepth === undefined || depth < maxDepth;
+    if (hasKids && !collapsed.has(node.value.id ?? '') && withinDepth) {
       for (const child of children) {
         walk(child, depth + 1);
       }
@@ -90,7 +91,7 @@ export class MdTreetableLC extends HTMLElement {
       this.appendChild(this.root);
     }
 
-    const visible = computeVisible(rootNode, this.collapsed);
+    const visible = computeVisible(rootNode, this.collapsed, this.maxDepth);
     const allNodeIds: string[] = [];
 
     // Keyed update
