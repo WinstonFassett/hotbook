@@ -51,6 +51,23 @@ export function hoverTransition(properties: string | readonly string[]): string 
  *  on the chart host; pair with the CSS rule emitted by `gestureSuppressionCss`. */
 export const GESTURE_ACTIVE_CLASS = "vf-gesture-active";
 
+/** Compose a staggered settle + reorder transition for a single element.
+ *  `staggerProp` is the axis that slides on sort ("x" for vertical bars, "y" for horizontal).
+ *  `index` is the element's current sorted position (used for delay).
+ *  Returns "none" under reduced motion. */
+export function staggeredSettleTransition(
+  settleProps: readonly string[],
+  staggerProp: string,
+  index: number
+): string {
+  if (prefersReducedMotion()) return "none";
+  const settle = settleProps.map(
+    p => `${p} ${TRANSITION_DURATION.settle}ms ${TRANSITION_EASING}`
+  );
+  const stagger = `${staggerProp} ${TRANSITION_DURATION.reorder}ms ${TRANSITION_EASING} ${index * TRANSITION_DURATION.reorderStagger}ms`;
+  return [...settle, stagger].join(", ");
+}
+
 /** CSS that disables `transition` on every descendant while a gesture is live.
  *  Inject once per chart `static styles`. */
 export const GESTURE_SUPPRESSION_CSS = `:host(.${GESTURE_ACTIVE_CLASS}) * { transition: none !important; }`;
