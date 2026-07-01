@@ -158,12 +158,20 @@ export class MdBarChartLC extends Diagram {
       });
       const tickLine = s(line(Vec.derive(() => ({ x: tx.value, y: ay1.value })), Vec.derive(() => ({ x: tx.value, y: ay1.value + 4 })), { thin: true, stroke: "#888", opacity: 0.6 }));
       const axisLabel = s(label(Vec.derive(() => ({ x: tx.value, y: ay1.value + 16 })), derive(() => di()?.label ?? ""), { size: 10, align: Anchor.Center, fill: "#888", opacity: 0.8 }));
-      // Apply staggered transition on x.
+      // Apply staggered transition on x — SVG geometry attributes are only
+      // CSS-transitionable on the element that owns them (the intrinsic),
+      // not on the wrapping <g>.
       biEffect(() => {
         const idx = cur.value;
-        if (idx >= 0) {
-          tickLine.el.style.transition = staggeredSettleTransition([], "x", idx);
-          axisLabel.el.style.transition = staggeredSettleTransition([], "x", idx);
+        if (idx < 0) return;
+        const delayMs = idx * 30;
+        const ease = "cubic-bezier(0.4,0,0.2,1)";
+        if (tickLine.intrinsic) {
+          (tickLine.intrinsic as SVGElement).style.transition =
+            `x1 250ms ${ease} ${delayMs}ms, x2 250ms ${ease} ${delayMs}ms`;
+        }
+        if (axisLabel.intrinsic) {
+          (axisLabel.intrinsic as SVGElement).style.transition = staggeredSettleTransition([], "x", idx);
         }
       });
     }
@@ -335,8 +343,11 @@ export class MdBarChartLC extends Diagram {
 
       const barCX = derive(() => barX.value + barW.value / 2);
 
-      // Collect slide targets for staggered transition.
-      const slideTargets: SVGElement[] = [tile.el];
+      // Slide targets: intrinsic SVG element + which attribute carries the slide.
+      // CSS transitions on SVG geometry attributes must be set on the element
+      // that owns the attribute (the intrinsic), not the wrapping <g>.
+      const slideTargets: Array<{ el: SVGElement; slideProp: string; settleProps: readonly string[] }> = [];
+      if (tile.intrinsic) slideTargets.push({ el: tile.intrinsic as SVGElement, slideProp: "x", settleProps: ["y", "height", "fill"] });
 
       // Inside label (labelMode: inside | both).
       let insideLabel: ReturnType<typeof label> | null = null;
@@ -345,7 +356,7 @@ export class MdBarChartLC extends Diagram {
         const labelFill = derive(() => { const d = di(); return selected.value === d ? base : "#fff"; });
         insideLabel = s(label(Vec.derive(() => ({ x: barCX.value, y: barY.value + 14 })), derive(() => di()?.label ?? ""),
           { size: 10, align: Anchor.Center, fill: labelFill, opacity: insideOpacity }));
-        slideTargets.push(insideLabel.el);
+        if (insideLabel.intrinsic) slideTargets.push({ el: insideLabel.intrinsic as SVGElement, slideProp: "x", settleProps: ["y", "fill"] });
       }
 
       // Value label.
@@ -357,13 +368,12 @@ export class MdBarChartLC extends Diagram {
           valueLabel = s(label(Vec.derive(() => ({ x: barCX.value, y: barY.value + (this.labelMode !== 'axis' ? 28 : 14) })),
             derive(() => { const d = di(); return d ? `${Math.round(d.value)}` : ""; }),
             { size: 10, align: Anchor.Center, fill: labelFill, opacity: insideOpacity }));
-          slideTargets.push(valueLabel.el);
         } else {
           valueLabel = s(label(Vec.derive(() => ({ x: barCX.value, y: barY.value - 6 })),
             derive(() => { const d = di(); return d ? `${Math.round(d.value)}` : ""; }),
             { size: 10, align: Anchor.Center, fill: "#888", opacity: derive(() => barH.value >= 8 ? 1 : 0) }));
-          slideTargets.push(valueLabel.el);
         }
+        if (valueLabel.intrinsic) slideTargets.push({ el: valueLabel.intrinsic as SVGElement, slideProp: "x", settleProps: ["y", "fill"] });
       }
 
       // Drag handle at bar top.
@@ -377,16 +387,15 @@ export class MdBarChartLC extends Diagram {
       handle.el.style.transition = hoverTransition("opacity");
       handle.el.addEventListener("pointerenter", () => { const d = di(); if (!wheelController.active && d) hover.value = d; });
       handle.el.addEventListener("pointerleave", () => { const d = di(); if (!wheelController.active && d && hover.value === d) hover.value = null; });
-      slideTargets.push(handle.el);
+      if (handle.intrinsic) slideTargets.push({ el: handle.intrinsic as SVGElement, slideProp: "cx", settleProps: ["cy", "fill"] });
 
-      // Apply staggered settle+reorder transition to all slide targets.
+      // Apply staggered settle+reorder transition to all slide targets — on the
+      // INTRINSIC element (rect/text/circle) so the SVG attribute changes actually transition.
       biEffect(() => {
         const idx = cur.value;
-        if (idx >= 0) {
-          const trans = staggeredSettleTransition(["y", "height", "fill"], "x", idx);
-          for (const el of slideTargets) {
-            el.style.transition = trans;
-          }
+        if (idx < 0) return;
+        for (const t of slideTargets) {
+          t.el.style.transition = staggeredSettleTransition(t.settleProps, t.slideProp, idx);
         }
       });
     }
@@ -580,11 +589,12 @@ export class MdBarChartLC extends Diagram {
         });
         const axisLabel = s(label(Vec.derive(() => ({ x: plotX - 6, y: barCY.value })), derive(() => di()?.label ?? ""),
           { size: 11, align: Anchor.Right, fill: "#888", opacity: 0.8 }));
-        // Apply staggered transition on y.
+        // Apply staggered transition on y — on the <text> intrinsic.
         biEffect(() => {
           const idx = cur.value;
-          if (idx >= 0) {
-            axisLabel.el.style.transition = staggeredSettleTransition([], "y", idx);
+          if (idx < 0) return;
+          if (axisLabel.intrinsic) {
+            (axisLabel.intrinsic as SVGElement).style.transition = staggeredSettleTransition([], "y", idx);
           }
         });
       }
@@ -636,8 +646,9 @@ export class MdBarChartLC extends Diagram {
       const barCY = derive(() => barY.value + barH.value / 2);
       const minBand = this.minBandSize || 60;
 
-      // Collect slide targets for staggered transition.
-      const slideTargets: SVGElement[] = [tile.el];
+      // Slide targets: intrinsic SVG element + which attribute carries the slide.
+      const slideTargets: Array<{ el: SVGElement; slideProp: string; settleProps: readonly string[] }> = [];
+      if (tile.intrinsic) slideTargets.push({ el: tile.intrinsic as SVGElement, slideProp: "y", settleProps: ["x", "width", "height", "fill"] });
 
       // Inside label (labelMode: inside | both).
       let insideLabel: ReturnType<typeof label> | null = null;
@@ -645,7 +656,7 @@ export class MdBarChartLC extends Diagram {
         const insideOpacity = derive(() => barW.value >= minBand ? 1 : 0);
         insideLabel = s(label(Vec.derive(() => ({ x: plotX + 8, y: barCY.value })), derive(() => di()?.label ?? ""),
           { size: 11, align: Anchor.Left, fill: labelFill, opacity: insideOpacity }));
-        slideTargets.push(insideLabel.el);
+        if (insideLabel.intrinsic) slideTargets.push({ el: insideLabel.intrinsic as SVGElement, slideProp: "y", settleProps: ["fill"] });
       }
 
       // Value label.
@@ -657,18 +668,18 @@ export class MdBarChartLC extends Diagram {
           valueLabel = s(label(Vec.derive(() => ({ x: plotX + barW.value - 8, y: barCY.value })),
             derive(() => { const d = di(); return d ? `${Math.round(d.value)}` : ""; }),
             { size: 11, align: Anchor.Right, fill: labelFill, opacity: insideOpacity }));
-          slideTargets.push(valueLabel.el);
+          if (valueLabel.intrinsic) slideTargets.push({ el: valueLabel.intrinsic as SVGElement, slideProp: "y", settleProps: ["x", "fill"] });
           // Fallback value outside when bar too short.
           const outsideOpacity = derive(() => barW.value < minBand ? 1 : 0);
           valueLabelOutside = s(label(Vec.derive(() => ({ x: plotX + barW.value + 6, y: barCY.value })),
             derive(() => { const d = di(); return d ? `${Math.round(d.value)}` : ""; }),
             { size: 11, align: Anchor.Left, fill: "#aaa", opacity: outsideOpacity }));
-          slideTargets.push(valueLabelOutside.el);
+          if (valueLabelOutside.intrinsic) slideTargets.push({ el: valueLabelOutside.intrinsic as SVGElement, slideProp: "y", settleProps: ["x", "fill"] });
         } else {
           valueLabel = s(label(Vec.derive(() => ({ x: plotX + barW.value + 6, y: barCY.value })),
             derive(() => { const d = di(); return d ? `${Math.round(d.value)}` : ""; }),
             { size: 11, align: Anchor.Left, fill: "#888", opacity: derive(() => barW.value > 0 ? 1 : 0) }));
-          slideTargets.push(valueLabel.el);
+          if (valueLabel.intrinsic) slideTargets.push({ el: valueLabel.intrinsic as SVGElement, slideProp: "y", settleProps: ["x", "fill"] });
         }
       }
 
@@ -683,16 +694,14 @@ export class MdBarChartLC extends Diagram {
       handle.el.style.transition = hoverTransition("opacity");
       handle.el.addEventListener("pointerenter", () => { const d = di(); if (!wheelController.active && d) hover.value = d; });
       handle.el.addEventListener("pointerleave", () => { const d = di(); if (!wheelController.active && d && hover.value === d) hover.value = null; });
-      slideTargets.push(handle.el);
+      if (handle.intrinsic) slideTargets.push({ el: handle.intrinsic as SVGElement, slideProp: "cy", settleProps: ["cx", "fill"] });
 
-      // Apply staggered settle+reorder transition to all slide targets.
+      // Apply staggered settle+reorder transition to intrinsic elements.
       biEffect(() => {
         const idx = cur.value;
-        if (idx >= 0) {
-          const trans = staggeredSettleTransition(["width", "fill"], "y", idx);
-          for (const el of slideTargets) {
-            el.style.transition = trans;
-          }
+        if (idx < 0) return;
+        for (const t of slideTargets) {
+          t.el.style.transition = staggeredSettleTransition(t.settleProps, t.slideProp, idx);
         }
       });
     }
