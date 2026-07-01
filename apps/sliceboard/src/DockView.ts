@@ -429,6 +429,8 @@ export class DockView extends HTMLElement {
       tab.addEventListener('pointerdown', (e) => {
         if (e.button !== 0) return
         if ((e.target as HTMLElement).closest('.dv-tab-close')) return
+        // Alt+drag on a tab = group drag (useful when tabs fill the strip)
+        if (e.altKey) { this._startGroupDrag(e, group); return }
         // Don't activate on mousedown — wait to see if this becomes a drag.
         // _startTabDrag will activate on pointerup if no drag threshold was crossed.
         this._startTabDrag(e, group, p.id, p.tileId, label)
@@ -871,7 +873,9 @@ export class DockView extends HTMLElement {
   private _startGroupDrag(e: PointerEvent, group: DockGroup) {
     if (e.button !== 0) return
     const target = e.target as HTMLElement
-    if (target.closest('.dv-tab') || target.closest('button')) return
+    // Allow Alt+drag from anywhere (including tabs) to initiate group drag.
+    // Without Alt, only start from empty tabstrip space (not on tabs or buttons).
+    if (!e.altKey && (target.closest('.dv-tab') || target.closest('button'))) return
 
     const startX = e.clientX
     const startY = e.clientY
