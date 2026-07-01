@@ -469,7 +469,11 @@ export class DockView extends HTMLElement {
     addBtn.textContent = '+'
     addBtn.addEventListener('click', (e) => {
       e.stopPropagation()
-      this.dispatchEvent(new CustomEvent('dockaddtile', { detail: { groupId: group.id }, bubbles: true, composed: true }))
+      const rect = addBtn.getBoundingClientRect()
+      this.dispatchEvent(new CustomEvent('dockaddtile', {
+        detail: { groupId: group.id, x: rect.left, y: rect.bottom },
+        bubbles: true, composed: true,
+      }))
     })
     actions.appendChild(addBtn)
 

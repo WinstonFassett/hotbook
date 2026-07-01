@@ -398,20 +398,52 @@ dockView.addEventListener('dockchange', (e: Event) => {
 // ─── dockaddtile handler ──────────────────────────────────────────────────────
 
 dockView.addEventListener('dockaddtile', (e: Event) => {
-  const { groupId } = (e as CustomEvent).detail
-  const dash = activeDashboard(ws)
-  if (!dash) return
-  // Default to first tile kind — user can change via tile config
-  const kind = TILE_KINDS[0]!
-  const next = addTile(ws, dash.id, kind)
-  const newTile = next.dashboards.find(d => d.id === dash.id)!.tiles.at(-1)!
-  // Add the new tile as a panel in the specified group
-  const currentTree = getDockTree(dash)
-  const newTree = addTileToDock(currentTree, newTile.id, groupId)
-  const updatedDash = next.dashboards.find(d => d.id === dash.id)!
-  ws = updateDashboard(next, { ...updatedDash, dockTree: newTree })
-  commit(ws)
+  const { groupId, x, y } = (e as CustomEvent).detail
+  showTilePicker(x, y, (kind) => {
+    const dash = activeDashboard(ws)
+    if (!dash) return
+    const next = addTile(ws, dash.id, kind)
+    const newTile = next.dashboards.find(d => d.id === dash.id)!.tiles.at(-1)!
+    const currentTree = getDockTree(dash)
+    const newTree = addTileToDock(currentTree, newTile.id, groupId)
+    const updatedDash = next.dashboards.find(d => d.id === dash.id)!
+    ws = updateDashboard(next, { ...updatedDash, dockTree: newTree })
+    commit(ws)
+  })
 })
+
+function showTilePicker(x: number, y: number, onPick: (kind: TileKind) => void) {
+  // Remove any existing picker
+  document.querySelectorAll('.sb-tile-picker').forEach(el => el.remove())
+
+  const menu = document.createElement('div')
+  menu.className = 'sb-tile-picker'
+  menu.style.cssText = `position:fixed;left:${x}px;top:${y}px;z-index:9999;background:#1a1a1a;border:1px solid #333;border-radius:6px;padding:4px;box-shadow:0 4px 12px rgba(0,0,0,0.4);display:flex;flex-direction:column;gap:2px;min-width:140px`
+
+  TILE_KINDS.forEach(k => {
+    const item = document.createElement('button')
+    item.textContent = TILE_LABELS[k]
+    item.style.cssText = 'background:none;border:none;color:#ccc;padding:6px 12px;text-align:left;cursor:pointer;border-radius:4px;font-size:12px'
+    item.addEventListener('mouseenter', () => { item.style.background = '#2a2a2a' })
+    item.addEventListener('mouseleave', () => { item.style.background = 'none' })
+    item.addEventListener('click', () => {
+      menu.remove()
+      document.removeEventListener('mousedown', outsideHandler)
+      onPick(k)
+    })
+    menu.appendChild(item)
+  })
+
+  document.body.appendChild(menu)
+
+  const outsideHandler = (ev: MouseEvent) => {
+    if (!menu.contains(ev.target as Node)) {
+      menu.remove()
+      document.removeEventListener('mousedown', outsideHandler)
+    }
+  }
+  setTimeout(() => document.addEventListener('mousedown', outsideHandler), 0)
+}
 
 // ─── Mount ────────────────────────────────────────────────────────────────────
 
