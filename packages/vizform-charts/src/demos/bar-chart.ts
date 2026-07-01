@@ -5,7 +5,7 @@
 // valueMode:   inside (inside bar) | outside (beyond bar end) | none
 // minBandSize: minimum px for a band before touch target is clamped (0 = scale freely)
 
-import { Anchor, cell, circle, derive, Diagram, effect as biEffect, label, line, type Mount, rect, Vec } from "bireactive";
+import { Anchor, cell, circle, derive, Diagram, easeInOut, effect as biEffect, label, line, type Mount, num, rect, tween, Vec } from "bireactive";
 import { scaleLinear, scaleBand } from "d3-scale";
 import { axis } from "../lib/axis";
 import { chartContext } from "../lib/chart-context";
@@ -16,7 +16,7 @@ import {
   GESTURE_ACTIVE_CLASS,
   GESTURE_SUPPRESSION_CSS,
   hoverTransition,
-  staggeredSettleTransition,
+  settleTransition,
 } from "../lib/transitions";
 
 const W = 720;
@@ -151,29 +151,20 @@ export class MdBarChartLC extends Diagram {
         return arr.findIndex(d => (d.id ?? d.label) === datumId);
       });
       const di = (): Bar | null => (data.value as Bar[])[cur.value] ?? null;
-      const tx = derive(() => {
+      const txTarget = derive(() => {
         const idx = cur.value;
         if (idx < 0) return -9999;
         return (xBand.value(String(idx)) ?? 0) + xBand.value.bandwidth() / 2;
       });
-      const tickLine = s(line(Vec.derive(() => ({ x: tx.value, y: ay1.value })), Vec.derive(() => ({ x: tx.value, y: ay1.value + 4 })), { thin: true, stroke: "#888", opacity: 0.6 }));
-      const axisLabel = s(label(Vec.derive(() => ({ x: tx.value, y: ay1.value + 16 })), derive(() => di()?.label ?? ""), { size: 10, align: Anchor.Center, fill: "#888", opacity: 0.8 }));
-      // Apply staggered transition on x — SVG geometry attributes are only
-      // CSS-transitionable on the element that owns them (the intrinsic),
-      // not on the wrapping <g>.
+      const tx = num(txTarget.value);
+      let txCancel: (() => void) | null = null;
       biEffect(() => {
-        const idx = cur.value;
-        if (idx < 0) return;
-        const delayMs = idx * 30;
-        const ease = "cubic-bezier(0.4,0,0.2,1)";
-        if (tickLine.intrinsic) {
-          (tickLine.intrinsic as SVGElement).style.transition =
-            `x1 250ms ${ease} ${delayMs}ms, x2 250ms ${ease} ${delayMs}ms`;
-        }
-        if (axisLabel.intrinsic) {
-          (axisLabel.intrinsic as SVGElement).style.transition = staggeredSettleTransition([], "x", idx);
-        }
+        const target = txTarget.value;
+        txCancel?.();
+        txCancel = this.anim.start(tween(tx, target, 0.25, easeInOut) as any);
       });
+      s(line(Vec.derive(() => ({ x: tx.value, y: ay1.value })), Vec.derive(() => ({ x: tx.value, y: ay1.value + 4 })), { thin: true, stroke: "#888", opacity: 0.6 }));
+      s(label(Vec.derive(() => ({ x: tx.value, y: ay1.value + 16 })), derive(() => di()?.label ?? ""), { size: 10, align: Anchor.Center, fill: "#888", opacity: 0.8 }));
     }
 
     const hover = cell<Bar | null>(null);
@@ -315,10 +306,22 @@ export class MdBarChartLC extends Diagram {
       const base = this.#barColor(oi);
       const hoverColor = this.#hoverColor(oi);
 
-      const barX = derive(() => {
+      const barXTarget = derive(() => {
         const idx = cur.value;
         if (idx < 0) return -9999;
         return xBand.value(String(idx)) ?? 0;
+      });
+      // Bireactive-driven tween for x — CSS transitions on the SVG `x`
+      // attribute proved unreliable under bireactive's reactive flush (the
+      // browser committed the target as the starting frame on the first
+      // change of the run). Tween drives the cell per-frame, so bireactive
+      // writes each intermediate x to the rect via setAttribute.
+      const barX = num(barXTarget.value);
+      let barXCancel: (() => void) | null = null;
+      biEffect(() => {
+        const target = barXTarget.value;
+        barXCancel?.();
+        barXCancel = this.anim.start(tween(barX, target, 0.25, easeInOut) as any);
       });
       const barW = derive(() => xBand.value.bandwidth());
       const barY = derive(() => { const d = di(); return d ? (ctx.yScale.value as any)(d.value) : plotY + plotH.value; });
@@ -343,11 +346,11 @@ export class MdBarChartLC extends Diagram {
 
       const barCX = derive(() => barX.value + barW.value / 2);
 
-      // Slide targets: intrinsic SVG element + which attribute carries the slide.
-      // CSS transitions on SVG geometry attributes must be set on the element
-      // that owns the attribute (the intrinsic), not the wrapping <g>.
-      const slideTargets: Array<{ el: SVGElement; slideProp: string; settleProps: readonly string[] }> = [];
-      if (tile.intrinsic) slideTargets.push({ el: tile.intrinsic as SVGElement, slideProp: "x", settleProps: ["y", "height", "fill"] });
+      // Settle transitions on the intrinsic (rect/text/circle). Reorder (x/cx)
+      // is driven by a bireactive tween on `barX`, not CSS — downstream label
+      // and handle positions derive from barX and follow per frame.
+      const settleTargets: Array<{ el: SVGElement; props: readonly string[] }> = [];
+      if (tile.intrinsic) settleTargets.push({ el: tile.intrinsic as SVGElement, props: ["y", "height", "fill"] });
 
       // Inside label (labelMode: inside | both).
       let insideLabel: ReturnType<typeof label> | null = null;
@@ -356,7 +359,7 @@ export class MdBarChartLC extends Diagram {
         const labelFill = derive(() => { const d = di(); return selected.value === d ? base : "#fff"; });
         insideLabel = s(label(Vec.derive(() => ({ x: barCX.value, y: barY.value + 14 })), derive(() => di()?.label ?? ""),
           { size: 10, align: Anchor.Center, fill: labelFill, opacity: insideOpacity }));
-        if (insideLabel.intrinsic) slideTargets.push({ el: insideLabel.intrinsic as SVGElement, slideProp: "x", settleProps: ["y", "fill"] });
+        if (insideLabel.intrinsic) settleTargets.push({ el: insideLabel.intrinsic as SVGElement, props: ["y", "fill"] });
       }
 
       // Value label.
@@ -373,7 +376,7 @@ export class MdBarChartLC extends Diagram {
             derive(() => { const d = di(); return d ? `${Math.round(d.value)}` : ""; }),
             { size: 10, align: Anchor.Center, fill: "#888", opacity: derive(() => barH.value >= 8 ? 1 : 0) }));
         }
-        if (valueLabel.intrinsic) slideTargets.push({ el: valueLabel.intrinsic as SVGElement, slideProp: "x", settleProps: ["y", "fill"] });
+        if (valueLabel.intrinsic) settleTargets.push({ el: valueLabel.intrinsic as SVGElement, props: ["y", "fill"] });
       }
 
       // Drag handle at bar top.
@@ -387,17 +390,14 @@ export class MdBarChartLC extends Diagram {
       handle.el.style.transition = hoverTransition("opacity");
       handle.el.addEventListener("pointerenter", () => { const d = di(); if (!wheelController.active && d) hover.value = d; });
       handle.el.addEventListener("pointerleave", () => { const d = di(); if (!wheelController.active && d && hover.value === d) hover.value = null; });
-      if (handle.intrinsic) slideTargets.push({ el: handle.intrinsic as SVGElement, slideProp: "cx", settleProps: ["cy", "fill"] });
+      if (handle.intrinsic) settleTargets.push({ el: handle.intrinsic as SVGElement, props: ["cy", "fill"] });
 
-      // Apply staggered settle+reorder transition to all slide targets — on the
-      // INTRINSIC element (rect/text/circle) so the SVG attribute changes actually transition.
-      biEffect(() => {
-        const idx = cur.value;
-        if (idx < 0) return;
-        for (const t of slideTargets) {
-          t.el.style.transition = staggeredSettleTransition(t.settleProps, t.slideProp, idx);
-        }
-      });
+      // Static settle transition on the intrinsic element (SVG attributes only
+      // transition when the style is on the element that owns them, not the
+      // wrapping <g>). x/cx are driven by bireactive tween, not CSS.
+      for (const t of settleTargets) {
+        t.el.style.transition = settleTransition(t.props);
+      }
     }
 
     s(label(Vec.derive(() => ({ x: Wc.value / 2, y: 12 })), derive(() => {
@@ -582,21 +582,20 @@ export class MdBarChartLC extends Diagram {
           return arr.findIndex(d => (d.id ?? d.label) === datumId);
         });
         const di = (): Bar | null => (data.value as Bar[])[cur.value] ?? null;
-        const barCY = derive(() => {
+        const barCYTarget = derive(() => {
           const idx = cur.value;
           if (idx < 0) return -9999;
           return (yBand.value(String(idx)) ?? 0) + yBand.value.bandwidth() / 2;
         });
-        const axisLabel = s(label(Vec.derive(() => ({ x: plotX - 6, y: barCY.value })), derive(() => di()?.label ?? ""),
-          { size: 11, align: Anchor.Right, fill: "#888", opacity: 0.8 }));
-        // Apply staggered transition on y — on the <text> intrinsic.
+        const barCY = num(barCYTarget.value);
+        let barCYCancel: (() => void) | null = null;
         biEffect(() => {
-          const idx = cur.value;
-          if (idx < 0) return;
-          if (axisLabel.intrinsic) {
-            (axisLabel.intrinsic as SVGElement).style.transition = staggeredSettleTransition([], "y", idx);
-          }
+          const target = barCYTarget.value;
+          barCYCancel?.();
+          barCYCancel = this.anim.start(tween(barCY, target, 0.25, easeInOut) as any);
         });
+        s(label(Vec.derive(() => ({ x: plotX - 6, y: barCY.value })), derive(() => di()?.label ?? ""),
+          { size: 11, align: Anchor.Right, fill: "#888", opacity: 0.8 }));
       }
     }
 
@@ -617,10 +616,17 @@ export class MdBarChartLC extends Diagram {
       const base = this.#barColor(oi);
       const hoverColor = this.#hoverColor(oi);
 
-      const barY = derive(() => {
+      const barYTarget = derive(() => {
         const idx = cur.value;
         if (idx < 0) return -9999;
         return yBand.value(String(idx)) ?? 0;
+      });
+      const barY = num(barYTarget.value);
+      let barYCancel: (() => void) | null = null;
+      biEffect(() => {
+        const target = barYTarget.value;
+        barYCancel?.();
+        barYCancel = this.anim.start(tween(barY, target, 0.25, easeInOut) as any);
       });
       const barH = derive(() => yBand.value.bandwidth());
       const barW = derive(() => { const d = di(); return d ? Math.max(0, (xLinear.value as any)(d.value) - plotX) : 0; });
@@ -646,9 +652,10 @@ export class MdBarChartLC extends Diagram {
       const barCY = derive(() => barY.value + barH.value / 2);
       const minBand = this.minBandSize || 60;
 
-      // Slide targets: intrinsic SVG element + which attribute carries the slide.
-      const slideTargets: Array<{ el: SVGElement; slideProp: string; settleProps: readonly string[] }> = [];
-      if (tile.intrinsic) slideTargets.push({ el: tile.intrinsic as SVGElement, slideProp: "y", settleProps: ["x", "width", "height", "fill"] });
+      // Settle transitions on the intrinsic. Reorder (y/cy) is driven by the
+      // bireactive tween on barY; label/handle positions follow via derive.
+      const settleTargets: Array<{ el: SVGElement; props: readonly string[] }> = [];
+      if (tile.intrinsic) settleTargets.push({ el: tile.intrinsic as SVGElement, props: ["width", "fill"] });
 
       // Inside label (labelMode: inside | both).
       let insideLabel: ReturnType<typeof label> | null = null;
@@ -656,7 +663,7 @@ export class MdBarChartLC extends Diagram {
         const insideOpacity = derive(() => barW.value >= minBand ? 1 : 0);
         insideLabel = s(label(Vec.derive(() => ({ x: plotX + 8, y: barCY.value })), derive(() => di()?.label ?? ""),
           { size: 11, align: Anchor.Left, fill: labelFill, opacity: insideOpacity }));
-        if (insideLabel.intrinsic) slideTargets.push({ el: insideLabel.intrinsic as SVGElement, slideProp: "y", settleProps: ["fill"] });
+        if (insideLabel.intrinsic) settleTargets.push({ el: insideLabel.intrinsic as SVGElement, props: ["fill"] });
       }
 
       // Value label.
@@ -668,18 +675,18 @@ export class MdBarChartLC extends Diagram {
           valueLabel = s(label(Vec.derive(() => ({ x: plotX + barW.value - 8, y: barCY.value })),
             derive(() => { const d = di(); return d ? `${Math.round(d.value)}` : ""; }),
             { size: 11, align: Anchor.Right, fill: labelFill, opacity: insideOpacity }));
-          if (valueLabel.intrinsic) slideTargets.push({ el: valueLabel.intrinsic as SVGElement, slideProp: "y", settleProps: ["x", "fill"] });
+          if (valueLabel.intrinsic) settleTargets.push({ el: valueLabel.intrinsic as SVGElement, props: ["x", "fill"] });
           // Fallback value outside when bar too short.
           const outsideOpacity = derive(() => barW.value < minBand ? 1 : 0);
           valueLabelOutside = s(label(Vec.derive(() => ({ x: plotX + barW.value + 6, y: barCY.value })),
             derive(() => { const d = di(); return d ? `${Math.round(d.value)}` : ""; }),
             { size: 11, align: Anchor.Left, fill: "#aaa", opacity: outsideOpacity }));
-          if (valueLabelOutside.intrinsic) slideTargets.push({ el: valueLabelOutside.intrinsic as SVGElement, slideProp: "y", settleProps: ["x", "fill"] });
+          if (valueLabelOutside.intrinsic) settleTargets.push({ el: valueLabelOutside.intrinsic as SVGElement, props: ["x", "fill"] });
         } else {
           valueLabel = s(label(Vec.derive(() => ({ x: plotX + barW.value + 6, y: barCY.value })),
             derive(() => { const d = di(); return d ? `${Math.round(d.value)}` : ""; }),
             { size: 11, align: Anchor.Left, fill: "#888", opacity: derive(() => barW.value > 0 ? 1 : 0) }));
-          if (valueLabel.intrinsic) slideTargets.push({ el: valueLabel.intrinsic as SVGElement, slideProp: "y", settleProps: ["x", "fill"] });
+          if (valueLabel.intrinsic) settleTargets.push({ el: valueLabel.intrinsic as SVGElement, props: ["x", "fill"] });
         }
       }
 
@@ -694,16 +701,11 @@ export class MdBarChartLC extends Diagram {
       handle.el.style.transition = hoverTransition("opacity");
       handle.el.addEventListener("pointerenter", () => { const d = di(); if (!wheelController.active && d) hover.value = d; });
       handle.el.addEventListener("pointerleave", () => { const d = di(); if (!wheelController.active && d && hover.value === d) hover.value = null; });
-      if (handle.intrinsic) slideTargets.push({ el: handle.intrinsic as SVGElement, slideProp: "cy", settleProps: ["cx", "fill"] });
+      if (handle.intrinsic) settleTargets.push({ el: handle.intrinsic as SVGElement, props: ["cx", "fill"] });
 
-      // Apply staggered settle+reorder transition to intrinsic elements.
-      biEffect(() => {
-        const idx = cur.value;
-        if (idx < 0) return;
-        for (const t of slideTargets) {
-          t.el.style.transition = staggeredSettleTransition(t.settleProps, t.slideProp, idx);
-        }
-      });
+      for (const t of settleTargets) {
+        t.el.style.transition = settleTransition(t.props);
+      }
     }
 
     s(label(Vec.derive(() => ({ x: Wc.value / 2, y: 8 })), derive(() => {
