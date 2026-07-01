@@ -27,6 +27,7 @@ import {
   MdGaugeSegmentedLC,
   MdPack,
   MdTreemapLC,
+  MdTreetableLC,
   MdIcicleLC,
   MdSunburstLC,
   MdSankeySimple,
@@ -47,6 +48,7 @@ const TAGS = [
   ['v-br-gauge-segmented', MdGaugeSegmentedLC],
   ['v-br-pack',           MdPack],
   ['v-br-treemap',        MdTreemapLC],
+  ['v-br-treetable',      MdTreetableLC],
   ['v-br-icicle',         MdIcicleLC],
   ['v-br-sunburst',       MdSunburstLC],
   ['v-br-sankey',         MdSankeySimple],
@@ -345,6 +347,11 @@ export function BrLcSunburst(props: HierProps) {
 export function BrLcTree(props: HierProps) {
   const drillNodeId = useDrillNodeId(props.drillKey ?? 'default')
   return <BrLcTile source={makeHier('v-br-tree', { ...props, drillNodeId })} />
+}
+
+export function BrLcTreetable(props: HierProps) {
+  const drillNodeId = useDrillNodeId(props.drillKey ?? 'default')
+  return <BrLcTile source={makeHier('v-br-treetable', { ...props, drillNodeId })} />
 }
 
 // ─── Sankey (flat edge-list) ────────────────────────────────────────────────────
