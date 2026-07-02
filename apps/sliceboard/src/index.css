@@ -441,6 +441,11 @@ sb-dock-view {
 .dv-tabstrip { touch-action: none; }
 .dv-gutter { touch-action: none; }
 .tile-header { touch-action: none; }
+/* Chart tile bodies are gesture surfaces — Rule 14: touch drag-edit must not
+   lose to page scroll. Scrollable tile bodies (e.g. the tree table) keep
+   their default behavior so vertical scroll still works. Individual scrubber
+   cells inside a scroll body claim their own gesture via touch-action:none. */
+.tile-body:not(.tile-body--scroll) > * { touch-action: none; }
 
 /* ─── Mobile (≤640px) ────────────────────────────────────────────────────────
    Sliceboard's DockView renders splits inline (flex-direction set via

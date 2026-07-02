@@ -94,6 +94,13 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
     }
   };
 
+  // Rule 14: touch is a first-class gesture surface. Claim the touch gesture
+  // from the browser so drag-edit on atoms doesn't lose to page scroll on
+  // mobile. Restored on dispose.
+  const hostStyle = (host as HTMLElement).style;
+  const prevTouchAction = hostStyle?.touchAction ?? "";
+  if (hostStyle) hostStyle.touchAction = "none";
+
   host.addEventListener("wheel", onWheel as EventListener, { passive: false });
   host.addEventListener("keydown", onKeydown as EventListener);
 
@@ -154,6 +161,7 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
   });
 
   return () => {
+    if (hostStyle) hostStyle.touchAction = prevTouchAction;
     host.removeEventListener("wheel", onWheel as EventListener);
     host.removeEventListener("keydown", onKeydown as EventListener);
     host.removeEventListener("dblclick", onDblClick);

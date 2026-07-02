@@ -187,6 +187,12 @@ export function attachCartesianGestures<TData>(
     host.style.cursor = pt && Math.abs(y - yPixel(pt)) <= 12 ? "ns-resize" : "";
   };
 
+  // Rule 14: touch is a first-class gesture surface. Claim the touch gesture
+  // from the browser so vertical drag-edit doesn't lose to page scroll on
+  // mobile. Restored on dispose.
+  const prevTouchAction = host.style.touchAction;
+  host.style.touchAction = "none";
+
   host.addEventListener("pointerleave", onPointerLeave);
   host.addEventListener("click", onClick);
   host.addEventListener("wheel", onWheel, { passive: false });
@@ -224,6 +230,7 @@ export function attachCartesianGestures<TData>(
   });
 
   return () => {
+    host.style.touchAction = prevTouchAction;
     host.removeEventListener("pointerleave", onPointerLeave);
     host.removeEventListener("click", onClick);
     host.removeEventListener("wheel", onWheel);
