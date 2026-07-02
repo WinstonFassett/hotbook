@@ -93,6 +93,10 @@ export class DockView extends HTMLElement {
   private _awaitingKChord = false
   private _unsubHud: (() => void) | null = null
   private _ro: ResizeObserver | null = null
+  /** ID of the group that keyboard shortcuts should target. Updated on pointerdown.
+   *  Separate from each group's activeId (tab selection) so clicking a group body
+   *  doesn't alter the visible tab of any other group. */
+  private _focusedGroupId: string | null = null
 
   // Set these before appending to DOM
   externalDock: DockNode | null = null
@@ -390,6 +394,21 @@ export class DockView extends HTMLElement {
     el.className = 'dv-group'
     el.dataset.groupId = group.id
     el.style.cssText = 'display:flex;flex-direction:column;width:100%;height:100%;overflow:hidden'
+
+    // Clicking anywhere inside a group (body, tab strip, chart) makes it the
+    // keyboard-focused group so shortcuts (Ctrl+\, Ctrl+W, etc.) target it.
+    // Use capture so it fires before any child handler (e.g. drag initiators).
+    // We only track focus here — we do NOT change the group's activeId (tab
+    // selection) on a body click, to avoid inadvertently switching visible tabs.
+    el.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return
+      const dock = this._dockCell?.value ?? null
+      if (!dock) return
+      const liveGroup = allGroups(dock).find(g => g.id === group.id)
+      if (!liveGroup) return
+      // Mark this group as the keyboard-focus target.
+      this._focusedGroupId = liveGroup.id
+    }, { capture: true })
 
     const strip = this._renderTabStrip(group, tiles)
     el.appendChild(strip)
@@ -1109,26 +1128,40 @@ export class DockView extends HTMLElement {
       e.preventDefault()
       this._awaitingKChord = false
       const dock = this._dockCell?.value ?? null
-      const activeGroup = allGroups(dock).find(g => g.activeId)
+      const activeGroup = this._getKeyboardGroup(dock)
       if (activeGroup) this._mutateDock(splitGroupDown(dock, activeGroup.id))
       return
     }
     if (!this._awaitingKChord && e.ctrlKey && e.key === '\\' && !e.shiftKey && !e.altKey && !e.metaKey) {
       e.preventDefault()
       const dock = this._dockCell?.value ?? null
-      const activeGroup = allGroups(dock).find(g => g.activeId)
+      const activeGroup = this._getKeyboardGroup(dock)
       if (activeGroup) this._mutateDock(splitGroupRight(dock, activeGroup.id))
       return
     }
     if (e.ctrlKey && e.key === 'w' && !e.shiftKey && !e.altKey && !e.metaKey) {
       e.preventDefault()
       const dock = this._dockCell?.value ?? null
-      const activeGroup = allGroups(dock).find(g => g.activeId)
+      const activeGroup = this._getKeyboardGroup(dock)
       // Don't close the last panel in a group
       if (activeGroup && activeGroup.activeId && activeGroup.panels.length > 1) this._closePanel(activeGroup.id, activeGroup.activeId)
       return
     }
     if (this._awaitingKChord) this._awaitingKChord = false
+  }
+
+  /** Return the group that keyboard shortcuts should act on.
+   *  Prefers the last-clicked (_focusedGroupId), falls back to the first group
+   *  in tree order that has panels (so shortcuts work without any click). */
+  private _getKeyboardGroup(dock: DockNode | null): DockGroup | null {
+    const groups = allGroups(dock)
+    if (groups.length === 0) return null
+    if (this._focusedGroupId) {
+      const focused = groups.find(g => g.id === this._focusedGroupId)
+      if (focused) return focused
+    }
+    // Fallback: first group with panels
+    return groups.find(g => g.panels.length > 0) ?? groups[0] ?? null
   }
 
   // ─── Drop overlay (root-level, not per-group) ─────────────────────────────
