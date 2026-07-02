@@ -194,14 +194,11 @@ export function reconcile(node: DockNode | null, tileIds: string[]): DockNode | 
   return next
 }
 
-/** Set the active panel of a group. Clears activeId on all other groups so
- *  only one group is "active" at a time (VS Code behavior). */
+/** Set the active panel of a group. Only touches the target group's activeId;
+ *  other groups keep their own tab selection unchanged. Keyboard focus tracking
+ *  (which group is "active" for shortcuts) lives in DockView._focusedGroupId. */
 export function setActive(node: DockNode | null, groupId: string, panelId: string): DockNode | null {
-  return mapGroups(node, g => {
-    if (g.id === groupId) return { ...g, activeId: panelId }
-    if (g.activeId) return { ...g, activeId: null }
-    return g
-  })
+  return mapGroups(node, g => g.id === groupId ? { ...g, activeId: panelId } : g)
 }
 
 /** Remove a single panel from its group (dock-only — does not delete the tile
