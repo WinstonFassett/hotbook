@@ -391,20 +391,30 @@ export function BrLcTreetable(props: HierProps) {
         const nodeMap = new Map(allNodes.map(n => [n.value.id, n]))
 
         // Attach numberDrag to ALL visible value cells
-        for (const id of allNodeIds) {
-          const cell = root.querySelector<HTMLElement>(`[data-editable-value="${id}"]`)
-          if (!cell) continue
+        // New format: cell ID is "${nodeId}:${measureKey}"
+        const valueCells = root.querySelectorAll<HTMLElement>('[data-editable-value]')
+        for (const cell of Array.from(valueCells)) {
+          const cellId = cell.dataset.editableValue
+          if (!cellId) continue
 
-          const biNode = nodeMap.get(id)
+          // Parse cell ID to extract nodeId and measureKey
+          const parts = cellId.split(':')
+          const nodeId = parts[0]
+          const cellMeasureKey = parts[1] ?? measureKey
+
+          const biNode = nodeMap.get(nodeId)
           if (!biNode) continue
 
-          const get = () => biNode.value.total.value
+          // Get the appropriate measure from the BiNode
+          const measureValue = biNode.value.measures?.[cellMeasureKey] ?? biNode.value.total
+
+          const get = () => measureValue.value
           const set = (v: number) => {
             // Write to the BiNode - lens will handle redistribution for parents
-            biNode.value.total.value = v
-            const pnode = nodes.find(n => n.id === id)
+            measureValue.value = v
+            const pnode = nodes.find(n => n.id === nodeId)
             if (pnode && onUpdate) {
-              onUpdate(id, { ...pnode.measures, [measureKey]: v })
+              onUpdate(nodeId, { ...pnode.measures, [cellMeasureKey]: v })
             }
           }
 
