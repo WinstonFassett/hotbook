@@ -6,8 +6,8 @@ import {
   label,
   type Mount,
   cell,
-  circle,
   line,
+  rect,
   Vec,
   num,
   tween,
@@ -29,6 +29,20 @@ const PAD_BOTTOM = 40;
 const PAD_LEFT = 60;
 const PAD_RIGHT = 60;
 const SORT_SEC = 0.35; // s — sort/reorder tween duration
+
+// Label-sized node metrics, matching the native graph-diagram renderer.
+const NODE_FONT_PX = 11;
+const NODE_CHAR_W = 0.62;
+const NODE_PAD_X = 12;
+const NODE_MIN_W = 48;
+const NODE_H = 28;
+const SIBLING_GAP = 20;
+const DEPTH_GAP = 20;
+
+/** Width a pill/rect node needs to contain its label. */
+function nodeWidth(text: string): number {
+  return Math.max(NODE_MIN_W, Math.ceil(text.length * NODE_FONT_PX * NODE_CHAR_W) + 2 * NODE_PAD_X);
+}
 
 /** Build a d3 hierarchy that excludes children of collapsed nodes.
  *  This makes the layout treat collapsed parents as leaves so visible
@@ -78,16 +92,25 @@ export class MdTreeChart extends Diagram {
     const root = this.externalRoot ?? portfolio();
 
     // Scale canvas to data size — calculate for both orientations and use max
-    // so the canvas can accommodate switching between vertical and horizontal
+    // so the canvas can accommodate switching between vertical and horizontal.
+    // Node widths are estimated from labels so the d3 tree layout has enough
+    // room for label-sized pills.
     const allNodes = [...walkWithDepth(root)];
     const leafCount = allNodes.filter(n => n.isLeaf).length;
     const maxDepth = allNodes.reduce((m, n) => Math.max(m, n.depth), 0);
+    const maxNodeW = Math.max(
+      NODE_MIN_W,
+      ...allNodes.map(({ node, depth, isLeaf }) => {
+        const suffix = isLeaf ? " 999999" : depth === 0 ? "" : " ▸";
+        return nodeWidth(node.value.label + suffix);
+      }),
+    );
     // Vertical: width for siblings, height for depth
-    const vertW = Math.max(W, leafCount * 20 + PAD_LEFT + PAD_RIGHT);
-    const vertH = Math.max(H, maxDepth * 80 + PAD_TOP + PAD_BOTTOM);
+    const vertW = Math.max(W, leafCount * (maxNodeW + SIBLING_GAP) + PAD_LEFT + PAD_RIGHT);
+    const vertH = Math.max(H, (maxDepth + 1) * (NODE_H + DEPTH_GAP) + PAD_TOP + PAD_BOTTOM);
     // Horizontal: width for depth, height for siblings
-    const horizW = Math.max(W, maxDepth * 80 + PAD_LEFT + PAD_RIGHT);
-    const horizH = Math.max(H, leafCount * 20 + PAD_TOP + PAD_BOTTOM);
+    const horizW = Math.max(W, (maxDepth + 1) * (maxNodeW + DEPTH_GAP) + PAD_LEFT + PAD_RIGHT);
+    const horizH = Math.max(H, leafCount * (NODE_H + SIBLING_GAP) + PAD_TOP + PAD_BOTTOM);
     // Use max to accommodate both orientations without clipping
     const cW = Math.max(vertW, horizW);
     const cH = Math.max(vertH, horizH);
@@ -246,14 +269,12 @@ export class MdTreeChart extends Diagram {
       s(line(from, to, { stroke: "#3a3f4a", thin: true, opacity: edgeOpacity }));
     }
 
-    // Draw nodes (circles + labels)
+    // Draw nodes as label-sized pills (rects + centered labels). The whole
+    // pill is a click/double-tap touch target for toggling.
     for (const { node, depth, isLeaf } of allNodes) {
       if (this.maxDepth !== undefined && depth > this.maxDepth) continue;
-      const cx = Vec.derive(() => posOf(node));
+      const nodePos = Vec.derive(() => posOf(node));
       const hasChildren = !isLeaf;
-
-      // Collapsed inner nodes get a larger radius to hint they contain children
-      const r = isLeaf ? 6 : 5;
 
       const isCollapsedNode = derive(() => this._collapsedCell.value.has(node));
       const stroke = derive(() =>
@@ -279,53 +300,57 @@ export class MdTreeChart extends Diagram {
       const visOp = opacityCells.get(node)!;
       const opacity = derive(() => aestheticOp * visOp.value);
 
-      const circ = s(
-        circle(cx, r, {
+      // Label text drives the pill width.
+      const text = derive(() => {
+        if (depth === 0) return node.value.label;
+        if (hasChildren && isCollapsedNode.value) return `${node.value.label} ▸`;
+        return isLeaf
+          ? `${node.value.label} ${node.value.total.value.toFixed(0)}`
+          : node.value.label;
+      });
+
+      const nodeW = derive(() => nodeWidth(text.value));
+      const nodeH = NODE_H;
+
+      const pill = s(
+        rect(nodePos, nodeW, nodeH, {
           fill,
           opacity,
           stroke,
           strokeWidth,
+          corner: 6,
         }),
       );
-      circ.el.style.cursor = "pointer";
-      circ.el.setAttribute('tabindex', '0');
-      circ.el.setAttribute('data-focusable', 'node');
+      pill.el.style.cursor = "pointer";
+      pill.el.setAttribute('tabindex', '0');
+      pill.el.setAttribute('data-focusable', 'node');
       biEffect(() => {
         const collapsedSuffix = isCollapsedNode.value && hasChildren ? ' (collapsed)' : '';
-        circ.el.setAttribute('aria-label', `${node.value.label}: ${node.value.total.value.toFixed(0)}${collapsedSuffix}`);
+        pill.el.setAttribute('aria-label', `${node.value.label}: ${node.value.total.value.toFixed(0)}${collapsedSuffix}`);
       });
-      circ.el.addEventListener("click", () => {
+      pill.el.addEventListener("click", () => {
         // Inner non-root nodes toggle their collapsed state on click.
         // Leaves and root only update focus.
         if (hasChildren && depth > 0) toggleCollapsed(node);
         state.focused.value = node;
       });
-      circ.el.addEventListener("focus", () => { state.focused.value = node; });
-      circ.el.addEventListener("blur", () => { if (state.focused.value === node) state.focused.value = null; });
-      circ.el.addEventListener("pointerenter", () => { state.hovered.current = node; hoverCell.value = node; state.emitHover?.(node); });
-      circ.el.addEventListener("pointerleave", () => { if (state.hovered.current === node) { state.hovered.current = null; hoverCell.value = null; state.emitHover?.(null); } });
-
-      // Label: leaves get value appended; inner nodes show collapse indicator
-      const text = derive(() => {
-        if (depth === 0) return node.value.label;
-        if (hasChildren && isCollapsedNode.value) return `${node.value.label} ▸`;
-        return isLeaf
-          ? `${node.value.label}\n${node.value.total.value.toFixed(0)}`
-          : node.value.label;
+      pill.el.addEventListener("dblclick", (e) => {
+        // Double-tap/click on a node toggles (rather than drilling via the
+        // shared chart host handler). Stop propagation so the host drill
+        // handler never fires.
+        e.stopPropagation();
+        if (hasChildren && depth > 0) toggleCollapsed(node);
       });
+      pill.el.addEventListener("focus", () => { state.focused.value = node; });
+      pill.el.addEventListener("blur", () => { if (state.focused.value === node) state.focused.value = null; });
+      pill.el.addEventListener("pointerenter", () => { state.hovered.current = node; hoverCell.value = node; state.emitHover?.(node); });
+      pill.el.addEventListener("pointerleave", () => { if (state.hovered.current === node) { state.hovered.current = null; hoverCell.value = null; state.emitHover?.(null); } });
 
-      // Alternate label placement: leaves below, inner nodes above
-      const labelPos = Vec.derive(() => {
-        const p = posOf(node);
-        return isLeaf
-          ? { x: p.x, y: p.y + 16 }
-          : { x: p.x, y: p.y - 12 };
-      });
       const labelOpacity = derive(() => visOp.value);
 
       s(
-        label(labelPos, text, {
-          size: isLeaf ? 10 : 9,
+        label(nodePos, text, {
+          size: NODE_FONT_PX,
           align: Anchor.Center,
           fill: "#c8cdd6",
           bold: !isLeaf,
@@ -339,7 +364,7 @@ export class MdTreeChart extends Diagram {
         view.bottom.up(10),
         derive(() => {
           const f = state.focused.value;
-          return `total: ${root.value.total.value.toFixed(0)} · focused: ${f?.value.label ?? "(none)"} · click inner nodes to collapse/expand · hover + cmd/ctrl+wheel`;
+          return `total: ${root.value.total.value.toFixed(0)} · focused: ${f?.value.label ?? "(none)"} · click/tap or double-tap inner nodes to collapse/expand · hover + cmd/ctrl+wheel`;
         }),
         { size: 10, align: Anchor.Center, fill: "#9aa0a8" },
       ),
