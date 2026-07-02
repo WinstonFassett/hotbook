@@ -44,6 +44,7 @@ import {
   hoverTransition,
   settleTransition,
 } from "../lib/transitions";
+import { trackGlobalGesture } from "../lib/global-gesture-state";
 
 const W = 720;
 const H = 360;
@@ -125,6 +126,7 @@ export class MdGanttChartLC extends Diagram {
     const size = useHostSize(this, { width: W, height: H });
     this.tabIndex = 0;
     this.style.outline = "none";
+    s(trackGlobalGesture(this));
     this.#draw(s, size);
   }
 

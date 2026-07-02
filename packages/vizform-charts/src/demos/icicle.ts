@@ -25,6 +25,7 @@ import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { dragCancelable } from "../lib/esc-contract";
 import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, settleTransition } from "../lib/transitions";
+import { trackGlobalGesture } from "../lib/global-gesture-state";
 import type { ElementWithBridge } from "../lib/hud-bridge";
 
 const W = 720;
@@ -71,6 +72,7 @@ export class MdIcicleLC extends Diagram {
     const view = this.view(Wc, Hc);
     this.tabIndex = -1;
     this.style.outline = "none";
+    s(trackGlobalGesture(this));
 
     const isHoriz = derive(() => this._orientationCell.value === 'horizontal');
 

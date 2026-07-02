@@ -18,6 +18,7 @@ import {
   hoverTransition,
   settleTransition,
 } from "../lib/transitions";
+import { trackGlobalGesture } from "../lib/global-gesture-state";
 
 const W = 720;
 const H = 360;
@@ -77,6 +78,9 @@ export class MdBarChartLC extends Diagram {
     this.tabIndex = -1; // Container not directly focusable, items are
     this.style.outline = "none";
     const data = this.dataCell;
+    // Register for global gesture-active class sync (suppresses settle transitions
+    // on ALL charts when ANY chart has an active gesture).
+    s(trackGlobalGesture(this));
     if (this.orientation === 'horizontal') {
       this.#horizontal(s, data, size);
     } else {

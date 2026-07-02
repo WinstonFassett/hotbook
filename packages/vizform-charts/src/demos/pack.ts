@@ -24,6 +24,7 @@ import { portfolio, walkWithDepth } from "../lib/portfolio";
 import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS } from "../lib/transitions";
+import { trackGlobalGesture } from "../lib/global-gesture-state";
 
 const W = 480;
 const H = 480;
@@ -53,6 +54,7 @@ export class MdPack extends Diagram {
     const view = this.view(Wc, Hc);
     this.tabIndex = -1;
     this.style.outline = "none";
+    s(trackGlobalGesture(this));
 
     const root = this.externalRoot ?? portfolio();
     const parentIdx = buildParentIndex(root);
