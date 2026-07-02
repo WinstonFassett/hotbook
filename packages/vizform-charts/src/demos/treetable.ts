@@ -1,6 +1,7 @@
 import { leavesOf, effect } from "bireactive";
 import type { BiNode } from "../lib/tree";
 import { portfolio } from "../lib/portfolio";
+import { prefersReducedMotion, settleTransition } from "../lib/transitions";
 
 const ROW_HEIGHT = 24;
 const INDENT_WIDTH = 14;
@@ -56,6 +57,7 @@ export class MdTreetableLC extends HTMLElement {
   drillKey?: string;
   drillNodeId?: string | null;
   showBreadcrumb?: boolean;
+  enableTransitions?: boolean;
 
   private root!: HTMLDivElement;
   private body!: HTMLDivElement;
@@ -102,25 +104,39 @@ export class MdTreetableLC extends HTMLElement {
     }
 
     const fragment = document.createDocumentFragment();
+    const newRows: HTMLElement[] = [];
+    const transitionsOn = this.enableTransitions !== false;
+
     for (const { node, depth, hasKids } of visible) {
       const nodeId = node.value.id ?? '';
       allNodeIds.push(nodeId);
 
       let row = existing.get(nodeId);
+      const isNewRow = !row;
       existing.delete(nodeId);
 
       if (!row) {
         row = document.createElement('div');
         row.dataset.id = nodeId;
-        row.style.cssText = 'display:flex;align-items:center;padding:3px 8px;cursor:default;transition:background 80ms;';
+        // Compose base transition with settle transition for opacity/transform
+        const baseTransition = transitionsOn ? `${settleTransition(['opacity', 'transform'])}, background 80ms` : 'background 80ms';
+        row.style.cssText = `display:flex;align-items:center;padding:3px 8px;cursor:default;transition:${baseTransition};`;
         row.addEventListener('mouseenter', () => { row!.style.background = 'oklch(0.22 0 0)'; });
         row.addEventListener('mouseleave', () => { row!.style.background = ''; });
+
+        // Start with collapsed state for enter animation
+        if (transitionsOn && !prefersReducedMotion()) {
+          row.style.opacity = '0';
+          row.style.transform = 'translateX(-8px)';
+          newRows.push(row);
+        }
       }
 
       const indent = (depth - 1) * INDENT_WIDTH;
       const isCollapsed = this.collapsed.has(nodeId);
       const color = node.value.color;
 
+      const valueTransition = transitionsOn ? settleTransition('color') : 'none';
       row.innerHTML = `
         <div style="flex:1;display:flex;align-items:center;gap:4px;padding-left:${indent}px;min-width:0;">
           ${hasKids
@@ -130,7 +146,7 @@ export class MdTreetableLC extends HTMLElement {
           <span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;"></span>
           <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:oklch(0.88 0 0);">${node.value.label}</span>
         </div>
-        <div data-value-cell="${nodeId}" data-editable-value="${nodeId}" style="width:60px;text-align:right;color:oklch(0.7 0 0);font-variant-numeric:tabular-nums;cursor:ew-resize;touch-action:none;"></div>
+        <div data-value-cell="${nodeId}" data-editable-value="${nodeId}" style="width:60px;text-align:right;color:oklch(0.7 0 0);font-variant-numeric:tabular-nums;transition:${valueTransition};cursor:ew-resize;touch-action:none;"></div>
       `;
 
       // Attach expand/collapse handler
@@ -167,14 +183,46 @@ export class MdTreetableLC extends HTMLElement {
     }
 
     // Remove stale rows and clean up their effects
-    for (const [id, el] of existing.entries()) {
-      el.remove();
-      const dispose = this.valueEffectDisposers.get(id);
-      dispose?.();
-      this.valueEffectDisposers.delete(id);
+    if (transitionsOn && !prefersReducedMotion() && existing.size > 0) {
+      // Animate out before removing
+      for (const [id, el] of existing.entries()) {
+        el.style.opacity = '0';
+        el.style.transform = 'translateX(-8px)';
+      }
+      // Wait for exit animation before cleanup
+      setTimeout(() => {
+        for (const [id, el] of existing.entries()) {
+          if (el.parentNode) el.remove();
+          const dispose = this.valueEffectDisposers.get(id);
+          dispose?.();
+          this.valueEffectDisposers.delete(id);
+        }
+      }, 250);
+    } else {
+      // Immediate removal if transitions disabled
+      for (const [id, el] of existing.entries()) {
+        el.remove();
+        const dispose = this.valueEffectDisposers.get(id);
+        dispose?.();
+        this.valueEffectDisposers.delete(id);
+      }
     }
 
     this.body.appendChild(fragment);
+
+    // Trigger enter animations for new rows
+    if (newRows.length > 0) {
+      // Force reflow to ensure the initial state is applied
+      newRows.forEach(row => row.offsetHeight);
+
+      // Use requestAnimationFrame to ensure the transition runs
+      requestAnimationFrame(() => {
+        newRows.forEach(row => {
+          row.style.opacity = '1';
+          row.style.transform = 'translateX(0)';
+        });
+      });
+    }
 
     // Notify render listeners (for number-drag attachment)
     // Pass ALL node ids (parents and leaves) for editing

@@ -1,6 +1,11 @@
 import type { PNode } from '../types'
 import { nodeColor, rollupMeasurement, childrenOf } from './pnodeUtils'
 
+export interface TreetableOptions {
+  /** Enable smooth transitions for expand/collapse and value changes. Default: true */
+  enableTransitions?: boolean
+}
+
 export interface TreetableMounted {
   update(nodes: PNode[], measureKey: string): void
   destroy(): void
@@ -16,6 +21,10 @@ export interface TreetableMounted {
    * the React wrapper to re-attach number-drag on each update.
    */
   onRender(listener: (leafIds: string[]) => void): () => void
+  /**
+   * Update transition settings at runtime
+   */
+  setTransitionsEnabled(enabled: boolean): void
 }
 
 interface VisibleRow {
@@ -24,6 +33,25 @@ interface VisibleRow {
   hasKids: boolean
 }
 
+/** Check if user prefers reduced motion */
+function prefersReducedMotion(): boolean {
+  if (typeof window === 'undefined' || !window.matchMedia) return false
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+
+/** Compose CSS transition string for treetable animations */
+function buildTransition(enabled: boolean): string {
+  if (!enabled || prefersReducedMotion()) return 'none'
+  // Smooth transitions for opacity and transform (expand/collapse)
+  // Duration: ~250ms matches vizform settle timing
+  return 'opacity 250ms cubic-bezier(0.4, 0.0, 0.2, 1), transform 250ms cubic-bezier(0.4, 0.0, 0.2, 1), background 80ms'
+}
+
+/** Compose CSS transition for value cells */
+function buildValueTransition(enabled: boolean): string {
+  if (!enabled || prefersReducedMotion()) return 'none'
+  return 'color 250ms cubic-bezier(0.4, 0.0, 0.2, 1)'
+}
 
 function fmtNum(v: number): string {
   if (v === 0) return ''
@@ -50,10 +78,12 @@ export function mountTreetable(
   containerEl: HTMLElement,
   nodes: PNode[],
   measureKey: string,
+  options: TreetableOptions = {},
 ): TreetableMounted {
   let currentNodes = nodes
   let currentMeasureKey = measureKey
   const collapsed = new Set<string>()
+  let transitionsEnabled = options.enableTransitions ?? true
 
   const root = document.createElement('div')
   root.className = 'htt-root'
@@ -87,16 +117,26 @@ export function mountTreetable(
     }
 
     const fragment = document.createDocumentFragment()
+    const newRows: HTMLElement[] = []
+
     for (const { node, depth, hasKids } of visible) {
       let row = existing.get(node.id)
+      const isNewRow = !row
       existing.delete(node.id)
 
       if (!row) {
         row = document.createElement('div')
         row.dataset.id = node.id
-        row.style.cssText = 'display:flex;align-items:center;padding:3px 8px;cursor:default;transition:background 80ms;'
+        const baseTransition = buildTransition(transitionsEnabled)
+        row.style.cssText = `display:flex;align-items:center;padding:3px 8px;cursor:default;transition:${baseTransition};`
         row.addEventListener('mouseenter', () => { row!.style.background = 'oklch(0.22 0 0)' })
         row.addEventListener('mouseleave', () => { row!.style.background = '' })
+
+        // Start with collapsed state for enter animation
+        if (transitionsEnabled && !prefersReducedMotion()) {
+          row.style.opacity = '0'
+          row.style.transform = 'translateX(-8px)'
+        }
       }
 
       const color = nodeColor(currentNodes, node.id)
@@ -113,7 +153,7 @@ export function mountTreetable(
           <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:oklch(0.88 0 0);">${node.name}</span>
           ${Object.entries(node.dims ?? {}).map(([, v]) => `<span style="font-size:10px;color:oklch(0.4 0 0);flex-shrink:0;">${v}</span>`).join('')}
         </div>
-        <div data-value-cell="${node.id}" ${!hasKids ? `data-leaf-value="${node.id}"` : ''} style="width:52px;text-align:right;color:oklch(0.7 0 0);font-variant-numeric:tabular-nums;${!hasKids ? 'cursor:ew-resize;touch-action:none;' : ''}">${fmtNum(value)}</div>
+        <div data-value-cell="${node.id}" ${!hasKids ? `data-leaf-value="${node.id}"` : ''} style="width:52px;text-align:right;color:oklch(0.7 0 0);font-variant-numeric:tabular-nums;transition:${buildValueTransition(transitionsEnabled)};${!hasKids ? 'cursor:ew-resize;touch-action:none;' : ''}">${fmtNum(value)}</div>
       `
 
       if (hasKids) {
@@ -127,13 +167,46 @@ export function mountTreetable(
       }
 
       if (!hasKids) leafIds.push(node.id)
+
+      if (isNewRow) {
+        newRows.push(row)
+      }
+
       fragment.appendChild(row)
     }
 
-    // Remove stale rows
-    for (const el of existing.values()) el.remove()
+    // Animate out stale rows before removing
+    if (transitionsEnabled && !prefersReducedMotion() && existing.size > 0) {
+      for (const el of existing.values()) {
+        el.style.opacity = '0'
+        el.style.transform = 'translateX(-8px)'
+      }
+      // Wait for exit animation to complete before removing
+      setTimeout(() => {
+        for (const el of existing.values()) {
+          if (el.parentNode) el.remove()
+        }
+      }, 250)
+    } else {
+      // Immediate removal if transitions disabled
+      for (const el of existing.values()) el.remove()
+    }
 
     body.appendChild(fragment)
+
+    // Trigger enter animations for new rows
+    if (transitionsEnabled && !prefersReducedMotion() && newRows.length > 0) {
+      // Force reflow to ensure the initial state is applied
+      newRows.forEach(row => row.offsetHeight)
+
+      // Use requestAnimationFrame to ensure the transition runs
+      requestAnimationFrame(() => {
+        newRows.forEach(row => {
+          row.style.opacity = '1'
+          row.style.transform = 'translateX(0)'
+        })
+      })
+    }
 
     for (const l of renderListeners) l(leafIds)
   }
@@ -155,6 +228,19 @@ export function mountTreetable(
     onRender(listener) {
       renderListeners.add(listener)
       return () => { renderListeners.delete(listener) }
+    },
+    setTransitionsEnabled(enabled: boolean) {
+      transitionsEnabled = enabled
+      // Update transition styles on existing rows
+      const rows = Array.from(body.children) as HTMLElement[]
+      const baseTransition = buildTransition(enabled)
+      for (const row of rows) {
+        row.style.transition = baseTransition
+        const valueCell = row.querySelector('[data-value-cell]') as HTMLElement | null
+        if (valueCell) {
+          valueCell.style.transition = buildValueTransition(enabled)
+        }
+      }
     },
   }
 }
