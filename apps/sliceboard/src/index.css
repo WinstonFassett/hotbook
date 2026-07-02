@@ -427,3 +427,53 @@ sb-dock-view {
   white-space: nowrap;
   box-shadow: 0 4px 12px rgba(0,0,0,0.5);
 }
+
+/* ─── Mobile (≤640px) ────────────────────────────────────────────────────────
+   Sliceboard's DockView renders splits inline (flex-direction set via
+   element.style), so overrides here need !important. On narrow viewports we:
+   - Collapse row splits to a vertical stack so each pane gets the full width.
+   - Hide split gutters (drag-resize is unusable at these sizes and its
+     pointer math assumes the DOM direction matches split.direction).
+   - Enlarge tab and close-button hit targets for touch.
+   - Let tile headers/toolbars wrap instead of clipping.
+   ────────────────────────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .dv-root,
+  .dv-branch--row {
+    flex-direction: column !important;
+  }
+  .dv-gutter--row,
+  .dv-gutter--col {
+    display: none !important;
+  }
+  .dv-tabstrip { min-height: 34px; }
+  .dv-tab {
+    min-width: 96px;
+    max-width: 180px;
+    padding: 0 10px 0 12px;
+    font-size: 12px;
+  }
+  .dv-tab-close,
+  .dv-tab-maximize,
+  .dv-tab-add { font-size: 16px; padding: 4px 8px; }
+  .dv-tab-close { opacity: 0.6; }
+  .tile-header {
+    padding: 6px 10px;
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+  .tile-title { font-size: 12px; }
+  .tile-measure-select { font-size: 12px; padding: 3px 6px; }
+  .tile-close-btn { font-size: 18px; padding: 2px 8px; }
+  .sb-topbar { padding: 6px 10px; gap: 10px; }
+  .sb-menu-trigger { max-width: 44vw; }
+  .sb-menu-dropdown {
+    min-width: min(260px, 90vw);
+    max-width: calc(100vw - 16px);
+  }
+  /* Right-most topbar menu opens toward the left edge so it stays in view. */
+  .sb-topbar .sb-menu-wrap:last-of-type .sb-menu-dropdown {
+    left: auto;
+    right: 0;
+  }
+}
