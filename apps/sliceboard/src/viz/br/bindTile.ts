@@ -470,8 +470,9 @@ export function makeGroupedBarSource(spec: GroupedBarSpec): TileSource {
     const leaves = leavesOf(nodes)
     const map = new Map<string, Map<string, PNode[]>>()
     for (const node of leaves) {
-      const categoryValue = (node as any).dims?.[spec.groupBy] ?? node.name
-      const seriesValue = (node as any).dims?.[spec.seriesBy] ?? 'default'
+      const dims = node.dims || {}
+      const categoryValue = dims[spec.groupBy] ?? node.name
+      const seriesValue = dims[spec.seriesBy] ?? 'default'
       if (!map.has(categoryValue)) map.set(categoryValue, new Map())
       const seriesMap = map.get(categoryValue)!
       if (!seriesMap.has(seriesValue)) seriesMap.set(seriesValue, [])
@@ -485,8 +486,9 @@ export function makeGroupedBarSource(spec: GroupedBarSpec): TileSource {
     const leaves = leavesOf(nodes)
     const categoryMap = new Map<string, Map<string, number>>()
     for (const node of leaves) {
-      const categoryValue = (node as any).dims?.[spec.groupBy] ?? node.name
-      const seriesValue = (node as any).dims?.[spec.seriesBy] ?? 'default'
+      const dims = node.dims || {}
+      const categoryValue = dims[spec.groupBy] ?? node.name
+      const seriesValue = dims[spec.seriesBy] ?? 'default'
       const measure = node.measures[spec.measureKey] ?? 0
       if (!categoryMap.has(categoryValue)) categoryMap.set(categoryValue, new Map())
       const seriesMap = categoryMap.get(categoryValue)!
