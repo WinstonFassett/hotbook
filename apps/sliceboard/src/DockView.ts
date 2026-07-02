@@ -897,10 +897,15 @@ export class DockView extends HTMLElement {
 
   private _startGutterDrag(e: PointerEvent, split: DockSplit, gutterIndex: number) {
     e.preventDefault()
-    const branchEl = (e.currentTarget as HTMLElement).parentElement
+    const gutterEl = e.currentTarget as HTMLElement
+    const branchEl = gutterEl.parentElement
     if (!branchEl) return
+    try { gutterEl.setPointerCapture(e.pointerId) } catch { /* ok */ }
     const rect = branchEl.getBoundingClientRect()
-    const horiz = split.direction === 'row'
+    // Derive axis from the DOM's current flex-direction, not split.direction,
+    // so the responsive CSS override (row → column at ≤640px) doesn't invert
+    // the drag axis. Touch on mobile drags vertically to resize stacked panes.
+    const horiz = getComputedStyle(branchEl).flexDirection === 'row'
     const totalPx = horiz ? rect.width : rect.height
     if (totalPx <= 0) return
 
@@ -933,6 +938,11 @@ export class DockView extends HTMLElement {
   // ─── Tab drag ────────────────────────────────────────────────────────────
 
   private _startTabDrag(e: PointerEvent, group: DockGroup, panelId: string, tileId: string, label: string) {
+    // Prevent the browser from claiming the gesture for page scroll on touch
+    // and keep pointermove flowing to us after the tabstrip re-renders.
+    e.preventDefault()
+    const tabEl = e.currentTarget as HTMLElement
+    try { tabEl.setPointerCapture(e.pointerId) } catch { /* ok */ }
     const startX = e.clientX
     const startY = e.clientY
     let dragging = false
@@ -960,6 +970,10 @@ export class DockView extends HTMLElement {
     // Allow Alt+drag from anywhere (including tabs) to initiate group drag.
     // Without Alt, only start from empty tabstrip space (not on tabs or buttons).
     if (!e.altKey && (target.closest('.dv-tab') || target.closest('button'))) return
+
+    // Reserve the gesture for us on touch so page scroll doesn't hijack it.
+    e.preventDefault()
+    try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId) } catch { /* ok */ }
 
     const startX = e.clientX
     const startY = e.clientY

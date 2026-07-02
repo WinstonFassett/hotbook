@@ -428,12 +428,27 @@ sb-dock-view {
   box-shadow: 0 4px 12px rgba(0,0,0,0.5);
 }
 
+/* ─── Touch drag surfaces ───────────────────────────────────────────────────
+   Rule 14 (interaction-principles.md): touch and mouse are equivalent gesture
+   surfaces. Elements that own a drag gesture (tabs, gutters, tile headers,
+   number-drag cells) must claim the touch gesture from the browser via
+   `touch-action: none`; otherwise iOS/Android start scrolling on the first
+   pointermove and never send us the drag events. Tabstrip and tabs area keep
+   `pan-x` so horizontal swipe still scrolls hidden overflow tabs.
+   ─────────────────────────────────────────────────────────────────────────── */
+.dv-tab { touch-action: none; }
+.dv-tabs { touch-action: pan-x; }
+.dv-tabstrip { touch-action: none; }
+.dv-gutter { touch-action: none; }
+.tile-header { touch-action: none; }
+
 /* ─── Mobile (≤640px) ────────────────────────────────────────────────────────
    Sliceboard's DockView renders splits inline (flex-direction set via
    element.style), so overrides here need !important. On narrow viewports we:
    - Collapse row splits to a vertical stack so each pane gets the full width.
-   - Hide split gutters (drag-resize is unusable at these sizes and its
-     pointer math assumes the DOM direction matches split.direction).
+   - Widen split gutters into a proper touch-sized hit area between panes;
+     _startGutterDrag derives the drag axis from the DOM so the horizontal
+     bar drags vertical size correctly.
    - Enlarge tab and close-button hit targets for touch.
    - Let tile headers/toolbars wrap instead of clipping.
    ────────────────────────────────────────────────────────────────────────── */
@@ -442,10 +457,14 @@ sb-dock-view {
   .dv-branch--row {
     flex-direction: column !important;
   }
-  .dv-gutter--row,
-  .dv-gutter--col {
-    display: none !important;
+  /* Row gutter now sits between vertically stacked panes — flip it to a
+     horizontal bar and give it a fat touch hit area. */
+  .dv-gutter--row {
+    width: 100% !important;
+    height: 14px !important;
+    cursor: row-resize !important;
   }
+  .dv-gutter--col { height: 14px; }
   .dv-tabstrip { min-height: 34px; }
   .dv-tab {
     min-width: 96px;
