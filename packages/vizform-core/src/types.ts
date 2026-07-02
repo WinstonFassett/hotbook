@@ -106,6 +106,7 @@ export interface VizConfigSchema {
     depth?: boolean       // 1–5 level selector
     sort?: boolean        // Order | Value
     groupBy?: boolean
+    seriesBy?: boolean    // grouped/stacked bars only
     xKey?: boolean        // scatter only
     yKey?: boolean        // scatter only
   }

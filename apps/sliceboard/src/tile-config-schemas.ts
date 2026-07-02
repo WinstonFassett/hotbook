@@ -51,6 +51,14 @@ export const TILE_CONFIG_SCHEMAS: Map<TileKind, VizConfigSchema> = new Map([
   ['br-lc-sankey-flow', { pickers: { measure: true, sort: true } }],
   ['br-lc-tree', SORT_ONLY],
 
+  // ─── grouped/stacked bars — require both groupBy and seriesBy ────────────
+  ['br-lc-grouped-bar', {
+    pickers: { measure: true, sort: true, groupBy: true, seriesBy: true },
+  }],
+  ['br-lc-stacked-bar', {
+    pickers: { measure: true, sort: true, groupBy: true, seriesBy: true },
+  }],
+
   // ─── Retired kinds: no pickers, no scroll — entries exist so a lookup
   //     never returns undefined for a legacy persisted tile.
   ['treemap',                  EMPTY],

@@ -212,7 +212,7 @@ const GROUPBY_KINDS = new Set<TileKind>(['br-lc-bar', 'br-lc-line', 'br-lc-area'
 const SCROLL_KINDS = new Set<TileKind>(['bands', 'br-lc-sankey'])
 
 function TileCard({
-  tile, ds, measureKey, onRemove, onMeasureChange, onXKeyChange, onYKeyChange, onDepthChange, onSortChange, onGroupByChange, onNodeUpdate, onNodesUpdate, onNodeReorder, availableMeasures,
+  tile, ds, measureKey, onRemove, onMeasureChange, onXKeyChange, onYKeyChange, onDepthChange, onSortChange, onGroupByChange, onSeriesByChange, onNodeUpdate, onNodesUpdate, onNodeReorder, availableMeasures,
 }: {
   tile: Tile
   ds: Dataset
@@ -224,6 +224,7 @@ function TileCard({
   onDepthChange: (depth: number) => void
   onSortChange: (sortBy: 'index' | 'value') => void
   onGroupByChange: (key: string | undefined) => void
+  onSeriesByChange: (key: string | undefined) => void
   onNodeUpdate: (rowId: string, measures: PNode['measures']) => void
   onNodesUpdate: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
   onNodeReorder: (orderedIds: string[]) => void
@@ -232,6 +233,7 @@ function TileCard({
   const schema = schemaFor(tile.kind)
   const pickers = schema.pickers
   const showGroupBy = pickers.groupBy && ds.dimDefs.length > 0
+  const showSeriesBy = pickers.seriesBy && ds.dimDefs.length > 0
   const depth = tile.depth ?? 0 // 0 = "All" (show full tree)
   const sortBy = tile.sortBy ?? 'index'
   return (
@@ -307,6 +309,20 @@ function TileCard({
               title="Group by"
             >
               <option value="">No group</option>
+              {ds.dimDefs.map(d => (
+                <option key={d.key} value={d.key}>{d.label}</option>
+              ))}
+            </select>
+          )}
+          {showSeriesBy && (
+            <select
+              className="tile-measure-select"
+              key={`${tile.id}-${tile.seriesBy ?? ''}`}
+              defaultValue={tile.seriesBy ?? ''}
+              onChange={e => onSeriesByChange(e.target.value || undefined)}
+              title="Series by"
+            >
+              <option value="">No series</option>
               {ds.dimDefs.map(d => (
                 <option key={d.key} value={d.key}>{d.label}</option>
               ))}
@@ -734,6 +750,11 @@ export function App() {
     commit(updateDashboard(ws, { ...dash, tiles: dash.tiles.map(t => t.id === tileId ? { ...t, groupBy } : t) }))
   }, [ws, dash])
 
+  const handleTileSeriesBy = useCallback((tileId: string, seriesBy: string | undefined) => {
+    if (!dash) return
+    commit(updateDashboard(ws, { ...dash, tiles: dash.tiles.map(t => t.id === tileId ? { ...t, seriesBy } : t) }))
+  }, [ws, dash])
+
   return (
     <div className="sb-root">
       <div className="sb-topbar">
@@ -773,6 +794,7 @@ export function App() {
             onTileDepth={handleTileDepth}
             onTileSort={handleTileSort}
             onTileGroupBy={handleTileGroupBy}
+            onTileSeriesBy={handleTileSeriesBy}
             onNodeUpdate={handleNodeUpdate}
             onNodesUpdate={handleNodesUpdate}
             onNodeReorder={handleNodeReorder}
@@ -783,7 +805,7 @@ export function App() {
   )
 }
 
-function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeasure, onTileXKey, onTileYKey, onTileDepth, onTileSort, onTileGroupBy, onNodeUpdate, onNodesUpdate, onNodeReorder }: {
+function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeasure, onTileXKey, onTileYKey, onTileDepth, onTileSort, onTileGroupBy, onTileSeriesBy, onNodeUpdate, onNodesUpdate, onNodeReorder }: {
   dash: Dashboard
   ds: Dataset
   measures: { key: string; label: string }[]
@@ -795,6 +817,7 @@ function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeas
   onTileDepth: (tileId: string, depth: number) => void
   onTileSort: (tileId: string, sortBy: 'index' | 'value') => void
   onTileGroupBy: (tileId: string, key: string | undefined) => void
+  onTileSeriesBy: (tileId: string, key: string | undefined) => void
   onNodeUpdate: (rowId: string, measures: PNode['measures']) => void
   onNodesUpdate: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
   onNodeReorder: (orderedIds: string[]) => void
@@ -825,6 +848,7 @@ function TileGrid({ dash, ds, measures, onLayoutChange, onRemoveTile, onTileMeas
                 onDepthChange={d => onTileDepth(tile.id, d)}
                 onSortChange={s => onTileSort(tile.id, s)}
                 onGroupByChange={k => onTileGroupBy(tile.id, k)}
+                onSeriesByChange={k => onTileSeriesBy(tile.id, k)}
                 onNodeUpdate={onNodeUpdate}
                 onNodesUpdate={onNodesUpdate}
                 onNodeReorder={onNodeReorder}
