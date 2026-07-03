@@ -339,6 +339,21 @@ export class DockView extends HTMLElement {
       if (tileRec) this._syncChart(active.id, tileRec)
     }
 
+    // Sync data on hidden (cached) panels in this group. Since 44654dc, inactive
+    // panels stay mounted but hidden across tab switches; without this, edits made
+    // on the active tab never reach them until the user switches back, so stale
+    // data appears on tab switch. Push through syncFrom/applyData on every panel
+    // that has a live tileCtrl when tiles changed.
+    if (tilesChanged) {
+      for (const panel of group.panels) {
+        if (panel.id === active.id) continue
+        const ctrl = this._panelCtrls.get(panel.id)
+        if (!ctrl?.tileCtrl) continue
+        const tileRec = tiles.find(t => t.tile.id === panel.tileId)
+        if (tileRec) this._syncChart(panel.id, tileRec)
+      }
+    }
+
     // Re-apply drop indicators for current drag state
     const drag = this._dragState
     if (drag?.over && drag.over.kind === 'edge' && drag.over.groupId === group.id) {
