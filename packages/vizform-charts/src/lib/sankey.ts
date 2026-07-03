@@ -432,16 +432,12 @@ export function sankeyScene(
     tile.el.addEventListener("pointermove", (e) => { tooltipAt.value = toSVG(e as PointerEvent); });
     tile.el.addEventListener("pointerleave", () => { nodeActive.value = false; tooltipVis.value = false; });
 
-    // Group grip: scale ALL the node's links proportionally (outgoing if any,
-    // else incoming) — the inspo `scaleHandle` move. It rides the node's BOTTOM
-    // edge; dragging it down grows the node, up shrinks it. The pivot is the
-    // node's TOP edge captured at gesture start (a fixed reference for the drag,
-    // so the grip doesn't chase the node's own recentering — Rule 2).
-    // Single (boundary) grips sit on the node's FLOW face (right for sources,
-    // left for sinks). Put the GROUP grip on the OPPOSITE face so the two never
-    // overlap or fight the hit-test — and at the node's vertical center, clear of
-    // the stacked ribbon boundaries.
-    const groupLinks = isSink ? topology.inc[n]! : topology.out[n]!;
+    // Group grip: scale ALL the node's links proportionally (BOTH incoming AND outgoing).
+    // Conservation requires in = out at every node, so scaling one side scales both.
+    // The grip rides the node's BOTTOM edge; dragging it down grows the node, up shrinks it.
+    // Single (boundary) grips sit on the node's FLOW face (right for sources, left for sinks).
+    // Put the GROUP grip on the OPPOSITE face so they never overlap.
+    const groupLinks = [...topology.inc[n]!, ...topology.out[n]!];
     if (groupLinks.length > 0) {
       const sources: Writable<Num>[] = groupLinks.map((li) => linkValues[li]!.value as unknown as Writable<Num>);
       // Group grip: horizontal bar handle at node's BOTTOM edge, centered.
@@ -541,12 +537,12 @@ export function sankeyScene(
       const aCell = linkValues[li]!.value as unknown as Writable<Num>;
       const active = cell(false);
 
-      // Position: TOP edge of link `li` on the source face = boundary with sibling.
+      // Position: BOTTOM edge of link `li` on the source face = boundary with sibling.
       // Ribbon grips offset 12px to the right (away from node) for better separation.
       const RIBBON_GRIP_OFFSET = 12;
       const boundaryPos = () => {
         const b = layout.value.links[li]!;
-        return { x: b.sx + RIBBON_GRIP_OFFSET, y: b.sy - b.width / 2 };
+        return { x: b.sx + RIBBON_GRIP_OFFSET, y: b.sy + b.width / 2 };
       };
       const gripVis = Vec.derive(boundaryPos);
 
