@@ -13,7 +13,7 @@ import type { PNode } from '../../persistence'
 import { buildBiTree } from './tree'
 import type { BiNode } from './tree'
 import { hudStore } from '../../store'
-import { wheelController, dragController, numberDrag } from '@winstonfassett/vizform-charts'
+import { numberDrag } from '@winstonfassett/vizform-charts'
 
 // ─── Epsilon + helpers ────────────────────────────────────────────────────────
 
@@ -221,10 +221,13 @@ export function bindTile(container: HTMLElement, source: TileSource): TileContro
         const mounted = currentSourceRef.current
         mounted.syncFrom?.(nextSource)
         if (el) {
-          // Treat any active gesture (drag OR wheel) as frozen — do not snap
-          // values back from the store while the user is actively editing.
-          const frozen = !!el.gestureActive || wheelController.active || dragController.active
-          mounted.applyData(el, { gestureActive: frozen, lastRef })
+          // Freeze only the chart being actively edited (per-element flag set by
+          // the chart's own gesture handlers). Other charts must update live —
+          // that's the bidirectional viz promise. The global controller check
+          // (0ffe125) froze ALL charts during ANY gesture, breaking cross-chart
+          // sync: edits on one visible chart never reached the chart next to it
+          // until the gesture ended and a tab switch forced a remount.
+          mounted.applyData(el, { gestureActive: !!el.gestureActive, lastRef })
         }
       }
     },

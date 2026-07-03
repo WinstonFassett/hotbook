@@ -61,9 +61,9 @@ export function attachCartesianGestures<TData>(
   // Per-gesture value-mapping handed to the SHARED wheel/drag controllers (app-
   // wide singletons; one pointer → one live gesture).
   const wheelConfig = {
-    snapshot: (d: TData) => ctx.yAcc(d) as number,
+    snapshot: (d: TData) => { (host as any).gestureActive = true; return ctx.yAcc(d) as number; },
     restore: (d: TData, v: number) => mutateDatum(d, v - (ctx.yAcc(d) as number)),
-    onEnd: () => { state.hover.value = null; gestureOrder = null; host.dispatchEvent(new CustomEvent("gesturecommit")); },
+    onEnd: () => { (host as any).gestureActive = false; state.hover.value = null; gestureOrder = null; host.dispatchEvent(new CustomEvent("gesturecommit")); },
   };
 
   // Captured at pointerdown, read by dragConfig.snapshot (called inside begin()).

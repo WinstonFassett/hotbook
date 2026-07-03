@@ -196,7 +196,7 @@ export class MdBarChartLC extends Diagram {
       data.value = [...data.value];
     };
 
-    const setGestureActive = (on: boolean) => this.classList.toggle(GESTURE_ACTIVE_CLASS, on);
+    const setGestureActive = (on: boolean) => { this.classList.toggle(GESTURE_ACTIVE_CLASS, on); (this as any).gestureActive = on; };
     const wheelConfig = {
       snapshot: (d: Bar) => { setGestureActive(true); return d.value; },
       restore: (d: Bar, v: number) => mutateDatum(d, v - d.value),
@@ -480,7 +480,7 @@ export class MdBarChartLC extends Diagram {
       data.value = [...data.value];
     };
 
-    const setGestureActive = (on: boolean) => this.classList.toggle(GESTURE_ACTIVE_CLASS, on);
+    const setGestureActive = (on: boolean) => { this.classList.toggle(GESTURE_ACTIVE_CLASS, on); (this as any).gestureActive = on; };
     const wheelConfig = {
       snapshot: (d: Bar) => { setGestureActive(true); return d.value; },
       restore: (d: Bar, v: number) => mutateDatum(d, v - d.value),

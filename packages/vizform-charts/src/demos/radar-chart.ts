@@ -69,9 +69,9 @@ export class MdRadarChartLC extends Diagram {
 
     // Config handed to the SHARED wheel controller (app-wide singleton).
     const wheelConfig = {
-      snapshot: (d: Spoke) => d.value,
+      snapshot: (d: Spoke) => { (this as any).gestureActive = true; return d.value; },
       restore: (d: Spoke, v: number) => mutateDatum(d, v - d.value),
-      onEnd: () => { hover.value = null; this.dispatchEvent(new CustomEvent("gesturecommit")); },
+      onEnd: () => { (this as any).gestureActive = false; hover.value = null; this.dispatchEvent(new CustomEvent("gesturecommit")); },
     };
 
     // y: scaleLinear 0–100 → radius 0–R_MAX
