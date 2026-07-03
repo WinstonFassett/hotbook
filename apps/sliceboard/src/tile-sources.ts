@@ -24,11 +24,13 @@ import {
   MdGaugeSegmentedLC,
   MdPack,
   MdTreemapLC,
+  MdTreetableLC,
   MdIcicleLC,
   MdSunburstLC,
   MdSankeySimple,
   MdSankeyFlow,
   MdTreeChart,
+  MdGanttChartLC,
 } from '@winstonfassett/vizform-charts'
 
 // Register custom elements once
@@ -44,11 +46,13 @@ const TAGS = [
   ['v-br-gauge-segmented', MdGaugeSegmentedLC],
   ['v-br-pack',           MdPack],
   ['v-br-treemap',        MdTreemapLC],
+  ['v-br-treetable',      MdTreetableLC],
   ['v-br-icicle',         MdIcicleLC],
   ['v-br-sunburst',       MdSunburstLC],
   ['v-br-sankey',         MdSankeySimple],
   ['v-br-sankey-flow',    MdSankeyFlow],
   ['v-br-tree',           MdTreeChart],
+  ['v-br-gantt',          MdGanttChartLC],
 ] as const
 
 for (const [tag, cls] of TAGS) {
@@ -281,6 +285,32 @@ export function buildSimpleMount(ctx: TileRenderContext): ((el: HTMLElement) => 
     }
   }
 
+  if (kind === 'br-lc-treetable') {
+    // br-lc-treetable expects a BiNode tree structure, but our data is already in PNode format.
+    // The vanilla treetable can handle it — use that for now.
+    const mk = tile.measureKey ?? measureKey
+    const nodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.rows, tile.groupBy) : ds.rows)
+    return (el: HTMLElement) => {
+      el.style.cssText = 'width:100%;height:100%;overflow:auto'
+      mountTreetable(el, nodes, mk)
+    }
+  }
+
+  if (kind === 'br-lc-gantt') {
+    // br-lc-gantt expects GanttTask[] with start/end dates
+    // For now, construct a simple timeline from the data rows
+    const tasks = leaves.map((n, i) => ({
+      id: n.id,
+      label: n.name,
+      start: new Date(SERIES_START + i * 7 * DAY_MS),
+      end: new Date(SERIES_START + (i * 7 + Math.max(1, Math.round((n.measures[mk] ?? 0) / 10))) * DAY_MS),
+      color: n.color,
+    }))
+    return (el: any) => {
+      el.externalData = tasks
+    }
+  }
+
   if (kind === 'br-lc-gauge') {
     const value = leaves.reduce((a, b) => a + (b.measures[mk] ?? 0), 0)
     const text = tile.title ?? mk
@@ -314,10 +344,12 @@ export function buildSimpleMount(ctx: TileRenderContext): ((el: HTMLElement) => 
 export function simpleTag(kind: string): string | null {
   const map: Record<string, string> = {
     'treetable': 'div',
+    'br-lc-treetable': 'div',
     'br-lc-gauge': 'v-br-gauge',
     'br-lc-gauge-segmented': 'v-br-gauge-segmented',
     'br-lc-sankey': 'v-br-sankey',
     'br-lc-sankey-flow': 'v-br-sankey-flow',
+    'br-lc-gantt': 'v-br-gantt',
   }
   return map[kind] ?? null
 }
@@ -329,7 +361,7 @@ export function simpleDataKey(ctx: TileRenderContext): string {
   const rawNodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.rows, tile.groupBy) : ds.rows)
   const leaves = rawNodes.filter(n => !rawNodes.some(m => m.parentId === n.id))
   const { kind } = tile
-  if (kind === 'treetable') {
+  if (kind === 'treetable' || kind === 'br-lc-treetable') {
     return `treetable|${mk}|${ds.rows.length}`
   }
   if (kind === 'br-lc-gauge' || kind === 'br-lc-gauge-segmented') {
@@ -337,6 +369,9 @@ export function simpleDataKey(ctx: TileRenderContext): string {
   }
   if (kind === 'br-lc-sankey') {
     return `sankey|${JSON.stringify(ds.edges ?? [])}`
+  }
+  if (kind === 'br-lc-gantt') {
+    return `gantt|${mk}|${ds.rows.length}`
   }
   return kind
 }
