@@ -13,7 +13,7 @@ import type { PNode } from '../../persistence'
 import { buildBiTree } from './tree'
 import type { BiNode } from './tree'
 import { hudStore } from '../../store'
-import { wheelController, dragController, numberDrag } from '@winstonfassett/vizform-charts'
+import { numberDrag } from '@winstonfassett/vizform-charts'
 
 // ─── Epsilon + helpers ────────────────────────────────────────────────────────
 
@@ -174,13 +174,15 @@ export function bindTile(container: HTMLElement, source: TileSource): TileContro
     // Edit-out subscription — uses src's internal refs (updated via _syncRefs on same-shapeKey update)
     unbindEditOut = src.bindEditOut(newEl, lastRef)
 
-    // gesturecommit → re-run applyData with gestureActive:false (the single commit re-sort).
-    // Reads currentSourceRef.current so it picks up the latest spec after same-shapeKey updates.
-    const onCommit = () => {
-      if (el) currentSourceRef.current.applyData(el, { gestureActive: false, lastRef })
-    }
-    newEl.addEventListener('gesturecommit', onCommit)
-    ;(newEl as any)._commitHandler = onCommit
+    // gesturecommit: charts dispatch this on gesture end (release or Esc-cancel).
+    // We do NOT call applyData here. The gesturecommit fires synchronously inside
+    // end(), before bindEditOut's microtask pushes the final/restored value to the
+    // store. Calling applyData here would read stale specRef.current.values (the
+    // pre-commit edited values), write them back to the datum (undoing an Esc
+    // restore), and update lastRef (so bindEditOut sees no change and never pushes
+    // the restore to the store). Instead, the store update path handles everything:
+    // bindEditOut → onUpdateMany → commit → setTiles → update → syncFrom →
+    // applyData({ gestureActive: false }) with fresh store values + sort reorder.
 
     // Initial data push (element is connected, dataCell is live)
     src.applyData(newEl, { gestureActive: false, lastRef })
@@ -188,7 +190,6 @@ export function bindTile(container: HTMLElement, source: TileSource): TileContro
 
   function dismount() {
     if (!el) return
-    el.removeEventListener('gesturecommit', (el as any)._commitHandler)
     unbindHud()
     unbindEditOut()
     if (container.contains(el)) container.removeChild(el)
@@ -221,10 +222,13 @@ export function bindTile(container: HTMLElement, source: TileSource): TileContro
         const mounted = currentSourceRef.current
         mounted.syncFrom?.(nextSource)
         if (el) {
-          // Treat any active gesture (drag OR wheel) as frozen — do not snap
-          // values back from the store while the user is actively editing.
-          const frozen = !!el.gestureActive || wheelController.active || dragController.active
-          mounted.applyData(el, { gestureActive: frozen, lastRef })
+          // Freeze only the chart being actively edited (per-element flag set by
+          // the chart's own gesture handlers). Other charts must update live —
+          // that's the bidirectional viz promise. The global controller check
+          // (0ffe125) froze ALL charts during ANY gesture, breaking cross-chart
+          // sync: edits on one visible chart never reached the chart next to it
+          // until the gesture ended and a tab switch forced a remount.
+          mounted.applyData(el, { gestureActive: !!el.gestureActive, lastRef })
         }
       }
     },

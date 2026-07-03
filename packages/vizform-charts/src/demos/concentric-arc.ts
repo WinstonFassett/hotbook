@@ -113,9 +113,9 @@ export class MdConcentricArcLC extends Diagram {
 
     // Config handed to the SHARED wheel controller (app-wide singleton).
     const wheelConfig = {
-      snapshot: (d: Ring) => d.value,
+      snapshot: (d: Ring) => { (this as any).gestureActive = true; return d.value; },
       restore: (d: Ring, v: number) => mutateDatum(d, v - d.value),
-      onEnd: () => { this.dispatchEvent(new CustomEvent("gesturecommit")); },
+      onEnd: () => { (this as any).gestureActive = false; this.dispatchEvent(new CustomEvent("gesturecommit")); },
     };
     // Last ring the pointer was over — kept past pointerleave so a wheel edit can
     // still target it for a moment after the cursor exits the ring band.

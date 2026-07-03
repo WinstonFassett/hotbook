@@ -212,9 +212,9 @@ export class MdGaugeSegmentedLC extends Diagram {
 
     // Wheel edit on the whole diagram (cmd/ctrl + wheel).
     const wheelConfig = {
-      snapshot: () => value.value,
+      snapshot: () => { (this as any).gestureActive = true; return value.value; },
       restore: (_t: unknown, snap: number) => { value.value = Math.max(minV, Math.min(maxV, snap)); },
-      onEnd: () => { this.dispatchEvent(new CustomEvent("gesturecommit")); },
+      onEnd: () => { (this as any).gestureActive = false; this.dispatchEvent(new CustomEvent("gesturecommit")); },
     };
     this.addEventListener("wheel", (e) => {
       const we = e as WheelEvent;
