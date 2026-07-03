@@ -23,3 +23,5 @@ export { wheelController, dragController } from './lib/interaction'
 export type { BiNode } from './lib/tree'
 export { group, leaf, leaves } from './lib/tree'
 export { numberDrag, type NumberDragOpts } from './lib/number-drag'
+// Chart metadata:
+export { CHART_METADATA, getChartMaturity, type ChartMaturity, type ChartMetadata } from './metadata'

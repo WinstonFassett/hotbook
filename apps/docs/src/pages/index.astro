@@ -1,0 +1,367 @@
+---
+import { getExamples } from '../examples';
+import { TableOfContents } from '../components/TableOfContents';
+import { ExampleSection } from '../components/ExampleSection';
+
+const examples = getExamples(['released', 'candidate']);
+const title = 'vizform - Bidirectional Data Visualization';
+---
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{title}</title>
+  <style is:global>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --surface-hover: #1c2128;
+      --border: #30363d;
+      --text: #c9d1d9;
+      --text-dim: #8b949e;
+      --accent: #58a6ff;
+      --accent-hover: #79b8ff;
+      --toc-width: 280px;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+
+    .layout {
+      display: flex;
+      min-height: 100vh;
+    }
+
+    /* TOC Sidebar */
+    .toc {
+      position: fixed;
+      left: 0;
+      top: 0;
+      width: var(--toc-width);
+      height: 100vh;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 2rem 1.5rem;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .toc-header h1 {
+      font-size: 1.5rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .tagline {
+      color: var(--text-dim);
+      font-size: 0.875rem;
+      margin-bottom: 2rem;
+    }
+
+    .toc-list {
+      list-style: none;
+      flex: 1;
+    }
+
+    .toc-list li {
+      margin-bottom: 0.5rem;
+    }
+
+    .toc-list a {
+      color: var(--text-dim);
+      text-decoration: none;
+      display: block;
+      padding: 0.5rem;
+      border-radius: 6px;
+      transition: all 0.2s;
+    }
+
+    .toc-list a:hover {
+      background: var(--surface-hover);
+      color: var(--text);
+    }
+
+    .toc-list a.active {
+      color: var(--accent);
+      background: var(--surface-hover);
+    }
+
+    .toc-footer {
+      margin-top: 2rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+      font-size: 0.875rem;
+      color: var(--text-dim);
+    }
+
+    .toc-footer a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .toc-footer a:hover {
+      text-decoration: underline;
+    }
+
+    .toc-footer span {
+      margin: 0 0.5rem;
+    }
+
+    /* Main Content */
+    .main-content {
+      margin-left: var(--toc-width);
+      flex: 1;
+      padding: 3rem;
+      max-width: 1200px;
+    }
+
+    /* Hero Section */
+    .hero {
+      padding: 4rem 0;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 4rem;
+    }
+
+    .hero h1 {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+    }
+
+    .hero p {
+      font-size: 1.25rem;
+      color: var(--text-dim);
+      max-width: 600px;
+    }
+
+    /* Example Sections */
+    .example-section {
+      margin-bottom: 4rem;
+      scroll-margin-top: 2rem;
+    }
+
+    .example-header {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .example-header h2 {
+      font-size: 2rem;
+    }
+
+    .maturity-badge {
+      padding: 0.25rem 0.75rem;
+      border-radius: 12px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .maturity-released {
+      background: #238636;
+      color: #fff;
+    }
+
+    .maturity-candidate {
+      background: #d29922;
+      color: #fff;
+    }
+
+    .maturity-experimental {
+      background: #8b949e;
+      color: #fff;
+    }
+
+    .example-description {
+      color: var(--text-dim);
+      margin-bottom: 2rem;
+    }
+
+    .example-content {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 2rem;
+      margin-bottom: 1rem;
+    }
+
+    /* Demo Layout */
+    .demo-container {
+      width: 100%;
+    }
+
+    .demo-layout {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+    }
+
+    @media (max-width: 1024px) {
+      .demo-layout {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .demo-chart {
+      min-height: 400px;
+    }
+
+    .demo-data h3 {
+      margin-bottom: 0.5rem;
+    }
+
+    .demo-data p {
+      font-size: 0.875rem;
+      color: var(--text-dim);
+      margin-bottom: 1rem;
+    }
+
+    /* Data Table */
+    .data-table table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .data-table th,
+    .data-table td {
+      padding: 0.75rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .data-table th {
+      font-weight: 600;
+      color: var(--text-dim);
+    }
+
+    .data-table input {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.5rem;
+      border-radius: 4px;
+      font-size: 1rem;
+    }
+
+    .data-table input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    /* Source Code */
+    .example-source {
+      margin-top: 1rem;
+    }
+
+    .source-toggle {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.875rem;
+      transition: all 0.2s;
+    }
+
+    .source-toggle:hover {
+      background: var(--surface-hover);
+    }
+
+    .source-code {
+      margin-top: 1rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 1rem;
+      overflow-x: auto;
+    }
+
+    .source-code code {
+      font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Courier New', monospace;
+      font-size: 0.875rem;
+      line-height: 1.5;
+    }
+
+    /* Getting Started */
+    .getting-started {
+      padding: 2rem 0;
+    }
+
+    .getting-started pre {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 1rem;
+      overflow-x: auto;
+      margin: 1rem 0;
+    }
+
+    .getting-started code {
+      font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Courier New', monospace;
+      font-size: 0.875rem;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .toc {
+        display: none;
+      }
+
+      .main-content {
+        margin-left: 0;
+        padding: 2rem 1rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <TableOfContents examples={examples} client:load />
+
+    <main class="main-content">
+      <section id="hero" class="hero">
+        <h1>vizform</h1>
+        <p>
+          Framework-agnostic data visualization with true bidirectional binding.
+          Drag a chart element to update data. Edit data to update the chart.
+          All powered by bireactive.
+        </p>
+      </section>
+
+      {examples.map((example) => (
+        <ExampleSection example={example} client:load />
+      ))}
+
+      <section id="getting-started" class="getting-started">
+        <h2>Getting Started</h2>
+        <p>Install the packages you need:</p>
+        <pre><code>npm install @winstonfassett/vizform-react-d3 @winstonfassett/vizform-core bireactive</code></pre>
+        <p>Check out the examples above to see how to use vizform in your project.</p>
+        <p>
+          <a href="https://github.com/WinstonFassett/vizform" style="color: var(--accent);">
+            View on GitHub
+          </a>
+          {' · '}
+          <a href="/playground" style="color: var(--accent);">
+            Try the Playground
+          </a>
+        </p>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
