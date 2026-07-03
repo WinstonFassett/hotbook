@@ -23,4 +23,13 @@ export default defineConfig({
       '@svelte-lc': path.resolve(__dirname, '../../apps/svelte-layerchart-spike/src'),
     },
   },
+  build: {
+    // bireactive's Diagram subclasses derive their custom element tag name from
+    // the class name at runtime via static get tagName(). Rollup minifies class
+    // names to single letters (e.g. "f0"), making define() throw. Keep them.
+    minify: 'terser',
+    terserOptions: {
+      keep_classnames: true,
+    },
+  },
 })
