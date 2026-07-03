@@ -13,7 +13,7 @@ import type { Num, Writable } from 'bireactive'
 import type { PNode, PEdge } from '../../persistence'
 import { makeFlatSource, makeHierSource, hierShapeKey, hierValueKey } from './bindTile'
 import { BrLcTile } from './BrLcTile'
-import { useDrillNodeId } from '../../store'
+import { useDrillNodeId } from '../../store-react'
 
 import {
   MdBarChartLC,
