@@ -124,8 +124,9 @@ export class MdTreetableLC extends HTMLElement {
         row.addEventListener('mouseenter', () => { row!.style.background = 'oklch(0.22 0 0)'; });
         row.addEventListener('mouseleave', () => { row!.style.background = ''; });
 
-        // Start with collapsed state for enter animation
-        if (transitionsOn && !prefersReducedMotion()) {
+        // Start with collapsed state for enter animation (only when transitions are actually enabled)
+        const shouldAnimate = transitionsOn && !prefersReducedMotion();
+        if (shouldAnimate) {
           row.style.opacity = '0';
           row.style.transform = 'translateX(-8px)';
           newRows.push(row);
@@ -210,8 +211,8 @@ export class MdTreetableLC extends HTMLElement {
 
     this.body.appendChild(fragment);
 
-    // Trigger enter animations for new rows
-    if (newRows.length > 0) {
+    // Trigger enter animations for new rows (only when transitions are actually enabled)
+    if (newRows.length > 0 && transitionsOn && !prefersReducedMotion()) {
       // Force reflow to ensure the initial state is applied
       newRows.forEach(row => row.offsetHeight);
 
