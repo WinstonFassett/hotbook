@@ -6,7 +6,9 @@
     "apps/*"
   ],
   "scripts": {
-    "build": "npm run build -w packages/vizform-vanilla-d3 && npm run build -w packages/vizform-react-d3 && npm run build -w apps/sliceboard && npm run build -w apps/vanilla-bireactive-native-layout-spike",
+    "build": "bash scripts/build-site.sh",
+    "build:sliceboard": "npm run build -w packages/vizform-vanilla-d3 && npm run build -w packages/vizform-react-d3 && npm run build -w apps/sliceboard",
+    "dev:docs": "npm run dev -w apps/docs",
     "dev:sliceboard": "npm run dev -w apps/sliceboard",
     "dev:vanilla-bireactive": "npm run dev -w apps/vanilla-bireactive-spike",
     "dev:vanilla-bireactive-layercharts": "npm run dev -w apps/vanilla-bireactive-layercharts-spike",

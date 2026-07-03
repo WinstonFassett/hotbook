@@ -1,7 +1,18 @@
 [build]
   base    = ""
   command = "npm run build"
-  publish = "apps/sliceboard/dist"
+  publish = "apps/docs/dist"
 
 [build.environment]
   NODE_VERSION = "20"
+
+# SPA fallback for docs root
+[[redirects]]
+  from   = "/sliceboard/*"
+  to     = "/sliceboard/:splat"
+  status = 200
+
+[[redirects]]
+  from   = "/demos/*"
+  to     = "/demos/:splat"
+  status = 200
