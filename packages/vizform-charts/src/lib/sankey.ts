@@ -444,18 +444,19 @@ export function sankeyScene(
     const groupLinks = isSink ? topology.inc[n]! : topology.out[n]!;
     if (groupLinks.length > 0) {
       const sources: Writable<Num>[] = groupLinks.map((li) => linkValues[li]!.value as unknown as Writable<Num>);
-      // Group grip: horizontal bar handle at node's TOP edge, centered.
-      // Drag down = grow, drag up = shrink. Matches sankey-flow reference pattern.
+      // Group grip: horizontal bar handle at node's BOTTOM edge, centered.
+      // Offset down slightly for better touch target separation from node.
       const BAR_WIDTH = 32;
       const BAR_HEIGHT = 4;
+      const GRIP_OFFSET = 6;
       const gripPos = () => {
         const b = layout.value.nodes[n]!;
-        return { x: (b.x0 + b.x1) / 2, y: b.y0 };
+        return { x: (b.x0 + b.x1) / 2, y: b.y1 + GRIP_OFFSET };
       };
       // Nodes are center-stacked, so BOTH edges move when a node resizes — no edge
       // is a stable absolute reference. frozenGripPos pins the lens getter to the
       // capture position for the duration of the drag so the grip tracks the cursor
-      // at 1:1 (without freezing, the top edge moves at half the drag rate
+      // at 1:1 (without freezing, the bottom edge moves at half the drag rate
       // because growth splits evenly between top and bottom).
       let frozenGripPos: { x: number; y: number } | null = null;
       let startY = 0, startTot = 0, startVals: number[] = [];
@@ -464,7 +465,7 @@ export function sankeyScene(
         () => frozenGripPos ?? gripPos(),
         (target, vals: readonly number[]) => {
           if (startTot <= 0) return vals.slice();
-          const wantTot = Math.max(LINK_MIN, startTot + (startY - target.y) / pxPerUnit);
+          const wantTot = Math.max(LINK_MIN, startTot + (target.y - startY) / pxPerUnit);
           const k = wantTot / startTot;
           // Scale from the gesture-START values (not the live ones) so repeated
           // moves don't compound. startVals aligns with `sources`/`vals` order.
