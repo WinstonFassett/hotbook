@@ -587,7 +587,6 @@ function buildSeedWorkspace(): Workspace {
   // Hierarchical charts first (top row) for drill dogfooding.
   const ALL_KINDS: TileKind[] = [
     'br-lc-pack', 'br-lc-treemap', 'br-lc-treetable', 'br-lc-icicle', 'br-lc-sunburst',
-    'treetable',
     'br-lc-bar', 'br-lc-bands', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie',
     'br-lc-radar', 'br-lc-concentric-arc',
     'br-lc-sankey', 'br-lc-sankey-flow', 'br-lc-tree', 'br-lc-gantt',

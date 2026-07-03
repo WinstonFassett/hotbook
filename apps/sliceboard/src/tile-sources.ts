@@ -253,9 +253,14 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
     const shapeKey = hierShapeKey(tag, sortedWithIndex, mk, depth, sortBy)
       + (orientationProp ? `|${orientationProp}` : '')
     const valueKey = hierValueKey(sortedWithIndex, mk)
+    // Enable numberDrag for treetable
+    const enableNumberDrag = kind === 'br-lc-treetable'
+      ? { selector: '[data-editable-value', pxPerUnit: 4 }
+      : undefined
     const src = makeHierSource({
       tag, nodes: sortedWithIndex, measureKey: mk, depth, sortBy, shapeKey, valueKey,
       drillKey, drillNodeId, showBreadcrumb: true, onUpdate, onUpdateMany,
+      enableNumberDrag,
     })
     // Stash orientationProp so DockView can set it on the element after mount
     if (orientationProp) (src as any)._orientation = orientationProp
