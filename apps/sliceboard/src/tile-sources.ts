@@ -242,6 +242,7 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
   const hierTags: Record<string, string> = {
     'br-lc-pack': 'v-br-pack',
     'br-lc-treemap': 'v-br-treemap',
+    'br-lc-treetable': 'v-br-treetable',
     'br-lc-icicle': 'v-br-icicle',
     'br-lc-sunburst': 'v-br-sunburst',
     'br-lc-tree': 'v-br-tree',
@@ -277,17 +278,6 @@ export function buildSimpleMount(ctx: TileRenderContext): ((el: HTMLElement) => 
   const { kind } = tile
 
   if (kind === 'treetable') {
-    const mk = tile.measureKey ?? measureKey
-    const nodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.rows, tile.groupBy) : ds.rows)
-    return (el: HTMLElement) => {
-      el.style.cssText = 'width:100%;height:100%;overflow:auto'
-      mountTreetable(el, nodes, mk)
-    }
-  }
-
-  if (kind === 'br-lc-treetable') {
-    // br-lc-treetable expects a BiNode tree structure, but our data is already in PNode format.
-    // The vanilla treetable can handle it — use that for now.
     const mk = tile.measureKey ?? measureKey
     const nodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.rows, tile.groupBy) : ds.rows)
     return (el: HTMLElement) => {
@@ -344,7 +334,6 @@ export function buildSimpleMount(ctx: TileRenderContext): ((el: HTMLElement) => 
 export function simpleTag(kind: string): string | null {
   const map: Record<string, string> = {
     'treetable': 'div',
-    'br-lc-treetable': 'div',
     'br-lc-gauge': 'v-br-gauge',
     'br-lc-gauge-segmented': 'v-br-gauge-segmented',
     'br-lc-sankey': 'v-br-sankey',
@@ -361,7 +350,7 @@ export function simpleDataKey(ctx: TileRenderContext): string {
   const rawNodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.rows, tile.groupBy) : ds.rows)
   const leaves = rawNodes.filter(n => !rawNodes.some(m => m.parentId === n.id))
   const { kind } = tile
-  if (kind === 'treetable' || kind === 'br-lc-treetable') {
+  if (kind === 'treetable') {
     return `treetable|${mk}|${ds.rows.length}`
   }
   if (kind === 'br-lc-gauge' || kind === 'br-lc-gauge-segmented') {
