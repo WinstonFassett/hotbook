@@ -421,13 +421,14 @@ export function sankeyScene(
     const groupLinks = isSink ? topology.inc[n]! : topology.out[n]!;
     if (groupLinks.length > 0) {
       const sources: Writable<Num>[] = groupLinks.map((li) => linkValues[li]!.value as unknown as Writable<Num>);
-      // Group grip on the node BAR (its x-center), at the bar's bottom edge so it
-      // tracks the cursor as the node grows. The bar center x differs from the
-      // flow-face x where single grips sit, so they don't collide; the grip is
-      // also drawn after the single grips (below), winning the hit-test on the bar.
+      // Group grip: horizontal bar handle at node's bottom edge, centered.
+      // Offset down by 8px to avoid collision with ribbon grips.
+      const GRIP_OFFSET = 8;
+      const BAR_WIDTH = 32;
+      const BAR_HEIGHT = 4;
       const gripPos = () => {
         const b = layout.value.nodes[n]!;
-        return { x: (b.x0 + b.x1) / 2, y: b.y1 };
+        return { x: (b.x0 + b.x1) / 2, y: b.y1 + GRIP_OFFSET };
       };
       // Nodes are center-stacked, so BOTH edges move when a node resizes — no edge
       // is a stable absolute reference. frozenGripPos pins the lens getter to the
@@ -448,17 +449,27 @@ export function sankeyScene(
           return startVals.map((v) => Math.max(LINK_MIN, v * k));
         },
       );
-      const gripVis = Vec.derive(() => frozenGripPos ?? gripPos());
-      const grip = s(circle(gripVis, 5, {
+      // Horizontal bar grip (visual)
+      const gripX = derive(() => (frozenGripPos?.x ?? gripPos().x) - BAR_WIDTH / 2);
+      const gripY = derive(() => (frozenGripPos?.y ?? gripPos().y) - BAR_HEIGHT / 2);
+      const grip = s(rect(gripX, gripY, BAR_WIDTH, BAR_HEIGHT, {
         fill: "#0b0d12",
         stroke: derive(() => nodeActive.value ? "#fff" : fill.value),
         strokeWidth: 2,
         opacity: derive(() => nodeActive.value ? 1 : 0),
+        rx: 2,
       }));
-      grip.el.style.cursor = "ns-resize";
-      grip.el.style.transition = "opacity 0.12s";
-      grip.el.addEventListener("pointerenter", () => { nodeActive.value = true; });
-      dragCancelable(grip, lens, sources, {
+      // Larger invisible hit zone for touch (44×44px minimum)
+      const hitX = derive(() => (frozenGripPos?.x ?? gripPos().x) - 22);
+      const hitY = derive(() => (frozenGripPos?.y ?? gripPos().y) - 22);
+      const hitZone = s(rect(hitX, hitY, 44, 44, {
+        fill: "transparent",
+        opacity: 0,
+      }));
+      hitZone.el.style.cursor = "ns-resize";
+      hitZone.el.style.transition = "opacity 0.12s";
+      hitZone.el.addEventListener("pointerenter", () => { nodeActive.value = true; });
+      dragCancelable(hitZone, lens, sources, {
         onStart: () => {
           nodeActive.value = true;
           frozenGripPos = gripPos();
@@ -508,9 +519,11 @@ export function sankeyScene(
       const active = cell(false);
 
       // Position: bottom edge of link `li` on the source face = boundary with sibling.
+      // Offset ribbon grips 12px to the right (away from node) to avoid group grip collision.
+      const RIBBON_GRIP_OFFSET = 12;
       const boundaryPos = () => {
         const b = layout.value.links[li]!;
-        return { x: b.sx, y: b.sy + b.width / 2 };
+        return { x: b.sx + RIBBON_GRIP_OFFSET, y: b.sy + b.width / 2 };
       };
       const gripVis = Vec.derive(boundaryPos);
 
@@ -546,17 +559,23 @@ export function sankeyScene(
         );
       }
 
-      const grip = s(circle(gripVis, 4, {
+      // Visual grip: circle at 6px radius (12px diameter) for better visibility
+      const grip = s(circle(gripVis, 6, {
         fill: "#0b0d12",
         stroke: derive(() => active.value ? "#fff" : (nodeColors.value[n] ?? "#6ab0f5")),
         strokeWidth: 2,
         opacity: derive(() => (active.value || hovered.value === li || focused.value === li) ? 1 : 0),
       }));
-      grip.el.style.cursor = "ns-resize";
-      grip.el.style.transition = "opacity 0.12s";
-      grip.el.addEventListener("pointerenter", () => { active.value = true; hovered.value = li; });
-      grip.el.addEventListener("pointerleave", () => { if (!active.value && hovered.value === li) hovered.value = null; });
-      dragCancelable(grip, lens, lensSources, {
+      // Larger invisible hit zone for touch (44×44px)
+      const hitZone = s(circle(gripVis, 22, {
+        fill: "transparent",
+        opacity: 0,
+      }));
+      hitZone.el.style.cursor = "ns-resize";
+      hitZone.el.style.transition = "opacity 0.12s";
+      hitZone.el.addEventListener("pointerenter", () => { active.value = true; hovered.value = li; });
+      hitZone.el.addEventListener("pointerleave", () => { if (!active.value && hovered.value === li) hovered.value = null; });
+      dragCancelable(hitZone, lens, lensSources, {
         onStart: () => { active.value = true; focused.value = li; },
         onEnd: () => { active.value = false; },
       });
