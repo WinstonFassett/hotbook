@@ -5,7 +5,7 @@
 // valueMode:   inside (inside bar) | outside (beyond bar end) | none
 // minBandSize: minimum px for a band before touch target is clamped (0 = scale freely)
 
-import { Anchor, cell, circle, derive, Diagram, effect as biEffect, label, line, type Mount, rect, Vec, vec } from "bireactive";
+import { Anchor, cell, circle, derive, Diagram, easeInOut, effect as biEffect, label, line, type Mount, num, rect, tween, Vec } from "bireactive";
 import { scaleLinear, scaleBand } from "d3-scale";
 import { axis } from "../lib/axis";
 import { chartContext } from "../lib/chart-context";
@@ -40,7 +40,18 @@ function makeData(): Bar[] {
 }
 
 export class MdBarChartLC extends Diagram {
-  static styles = `text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}`
+  static styles = `
+    text { pointer-events: none; }
+    ${FILL_STYLE}
+    ${GESTURE_SUPPRESSION_CSS}
+    [data-focusable]:focus {
+      outline: 2px solid #4a9eff;
+      outline-offset: 2px;
+    }
+    [data-focusable]:focus:not(:focus-visible) {
+      outline: none;
+    }
+  `
 
   readonly dataCell = cell<readonly Bar[]>(makeData());
 
@@ -63,7 +74,7 @@ export class MdBarChartLC extends Diagram {
 
   protected scene(s: Mount): void {
     const size = useHostSize(this, { width: W, height: H });
-    this.tabIndex = 0;
+    this.tabIndex = -1; // Container not directly focusable, items are
     this.style.outline = "none";
     const data = this.dataCell;
     if (this.orientation === 'horizontal') {
@@ -84,7 +95,7 @@ export class MdBarChartLC extends Diagram {
     const PAD = { top: 16, right: 24, bottom: 36, left: 48 };
     const plotX = PAD.left, plotY = PAD.top;
 
-    const rows0 = data.value as Bar[];
+    const rows0 = data.peek() as Bar[];
 
     // Overflow mode: fixed bar width per bar, chart scrolls horizontally.
     const BAR_STEP = 56; // px per bar (step including gap) in overflow mode
@@ -132,14 +143,28 @@ export class MdBarChartLC extends Diagram {
       Vec.derive(() => ({ x: plotX + plotW.value, y: ay1.value })),
       { thin: true, opacity: 0.5, stroke: "#888" }
     ));
-    for (let i = 0; i < rows0.length; i++) {
-      const key = String(i);
-      const tx = derive(() => (xBand.value(key) ?? 0) + xBand.value.bandwidth() / 2);
-      s(
-        line(Vec.derive(() => ({ x: tx.value, y: ay1.value })), Vec.derive(() => ({ x: tx.value, y: ay1.value + 4 })), { thin: true, stroke: "#888", opacity: 0.6 }),
-        // Live read so the category label follows its bar after a re-sort.
-        label(Vec.derive(() => ({ x: tx.value, y: ay1.value + 16 })), derive(() => (data.value as Bar[])[i]?.label ?? ""), { size: 10, align: Anchor.Center, fill: "#888", opacity: 0.8 }),
-      );
+    // Identity-keyed axis labels: each label tracks a specific datum and slides with it.
+    for (let oi = 0; oi < rows0.length; oi++) {
+      const datumId = rows0[oi]!.id ?? rows0[oi]!.label;
+      const cur = derive(() => {
+        const arr = data.value as Bar[];
+        return arr.findIndex(d => (d.id ?? d.label) === datumId);
+      });
+      const di = (): Bar | null => (data.value as Bar[])[cur.value] ?? null;
+      const txTarget = derive(() => {
+        const idx = cur.value;
+        if (idx < 0) return -9999;
+        return (xBand.value(String(idx)) ?? 0) + xBand.value.bandwidth() / 2;
+      });
+      const tx = num(txTarget.value);
+      let txCancel: (() => void) | null = null;
+      biEffect(() => {
+        const target = txTarget.value;
+        txCancel?.();
+        txCancel = this.anim.start(tween(tx, target, 0.25, easeInOut) as any);
+      });
+      s(line(Vec.derive(() => ({ x: tx.value, y: ay1.value })), Vec.derive(() => ({ x: tx.value, y: ay1.value + 4 })), { thin: true, stroke: "#888", opacity: 0.6 }));
+      s(label(Vec.derive(() => ({ x: tx.value, y: ay1.value + 16 })), derive(() => di()?.label ?? ""), { size: 10, align: Anchor.Center, fill: "#888", opacity: 0.8 }));
     }
 
     const hover = cell<Bar | null>(null);
@@ -218,10 +243,13 @@ export class MdBarChartLC extends Diagram {
       const rows = data.value as Bar[];
       const cur = selected.value;
       const i = cur ? rows.indexOf(cur) : -1;
-      if (ke.key === "Tab" || ke.key === "ArrowRight" || ke.key === "ArrowLeft") {
-        const next = (ke.key === "ArrowLeft" || (ke.key === "Tab" && ke.shiftKey))
-          ? rows[(i <= 0 ? rows.length : i) - 1] ?? null : rows[(i + 1) % rows.length] ?? null;
-        selected.value = next; ke.preventDefault(); return;
+      if (ke.key === "ArrowRight" || ke.key === "ArrowLeft") {
+        const nextIdx = ke.key === "ArrowLeft"
+          ? (i <= 0 ? rows.length : i) - 1
+          : (i + 1) % rows.length;
+        selected.value = rows[nextIdx] ?? null;
+        focusDatum(selected.value);
+        ke.preventDefault(); return;
       }
       if (!cur) return;
       const step = dynamicWheelStep(cur.value, ke.shiftKey);
@@ -261,54 +289,94 @@ export class MdBarChartLC extends Diagram {
     hlRect.el.style.transition = "x 0.15s ease, opacity 0.1s ease";
     hlRect.el.style.pointerEvents = "none";
 
-    // Bars — MAX_ROWS slots; each reads data.value[idx] live so sort reorders visually.
-    const MAX_ROWS = rows0.length;
-    for (let idx = 0; idx < MAX_ROWS; idx++) {
-      const di = (): Bar | null => (data.value as Bar[])[idx] ?? null;
-      const key = String(idx);
-      const base = this.#barColor(idx);
-      const hoverColor = this.#hoverColor(idx);
+    // Bars — identity-keyed: each bar element tracks a specific datum by id.
+    const tileElements: Map<string, SVGGElement> = new Map(); // Track elements by datum id
+    // ID-based focus helper (matches selection/gesture pattern)
+    const focusDatum = (d: Bar | null) => {
+      if (!d?.id) return;
+      tileElements.get(d.id)?.focus();
+    };
+    for (let oi = 0; oi < rows0.length; oi++) {
+      const datumId = rows0[oi]!.id ?? rows0[oi]!.label;
+      const cur = derive(() => {
+        const arr = data.value as Bar[];
+        return arr.findIndex(d => (d.id ?? d.label) === datumId);
+      });
+      const di = (): Bar | null => (data.value as Bar[])[cur.value] ?? null;
+      const base = this.#barColor(oi);
+      const hoverColor = this.#hoverColor(oi);
 
-      const barX = derive(() => xBand.value(key) ?? 0);
+      const barXTarget = derive(() => {
+        const idx = cur.value;
+        if (idx < 0) return -9999;
+        return xBand.value(String(idx)) ?? 0;
+      });
+      // Bireactive-driven tween for x — CSS transitions on the SVG `x`
+      // attribute proved unreliable under bireactive's reactive flush (the
+      // browser committed the target as the starting frame on the first
+      // change of the run). Tween drives the cell per-frame, so bireactive
+      // writes each intermediate x to the rect via setAttribute.
+      const barX = num(barXTarget.value);
+      let barXCancel: (() => void) | null = null;
+      biEffect(() => {
+        const target = barXTarget.value;
+        barXCancel?.();
+        barXCancel = this.anim.start(tween(barX, target, 0.25, easeInOut) as any);
+      });
       const barW = derive(() => xBand.value.bandwidth());
       const barY = derive(() => { const d = di(); return d ? (ctx.yScale.value as any)(d.value) : plotY + plotH.value; });
       const barH = derive(() => Math.max(0, plotY + plotH.value - barY.value));
       const fill = derive(() => { const d = di(); return selected.value === d ? "#fff" : hover.value === d ? hoverColor : base; });
 
       const tile = s(rect(barX, barY, barW, barH, { fill, corner: 2 }));
-      tile.el.style.cursor = "pointer";
-      // Value-change settle: height/y interpolate when value changes outside a
-      // gesture (external data, arrow-key edit, wheel-commit). Suppressed
-      // during active wheel/drag via .vf-gesture-active on the host, so
-      // cursor feedback stays instant (Part 2 / Interaction Principle 4).
-      tile.el.style.transition = settleTransition(["y", "height", "fill"]);
+      tileElements.set(datumId, tile.el); // Store for focus management
+      tile.el.style.cursor = "ns-resize";
+      // Make each bar individually focusable
+      tile.el.setAttribute('tabindex', '0');
+      tile.el.setAttribute('data-focusable', 'bar');
+      biEffect(() => {
+        const d = di();
+        if (d) tile.el.setAttribute('aria-label', `${d.label}: ${Math.round(d.value)}`);
+      });
       tile.el.addEventListener("pointerenter", () => { const d = di(); if (!wheelController.active && d) hover.value = d; });
       tile.el.addEventListener("pointerleave", () => { const d = di(); if (!wheelController.active && d && hover.value === d) hover.value = null; });
       tile.el.addEventListener("click", () => { const d = di(); if (!d) return; selected.value = selected.value === d ? null : d; });
+      tile.el.addEventListener("focus", () => { const d = di(); if (d) selected.value = d; });
+      tile.el.addEventListener("blur", () => { const d = di(); if (d && selected.value === d) selected.value = null; });
 
       const barCX = derive(() => barX.value + barW.value / 2);
 
+      // Settle transitions on the intrinsic (rect/text/circle). Reorder (x/cx)
+      // is driven by a bireactive tween on `barX`, not CSS — downstream label
+      // and handle positions derive from barX and follow per frame.
+      const settleTargets: Array<{ el: SVGElement; props: readonly string[] }> = [];
+      if (tile.intrinsic) settleTargets.push({ el: tile.intrinsic as SVGElement, props: ["y", "height", "fill"] });
+
       // Inside label (labelMode: inside | both).
+      let insideLabel: ReturnType<typeof label> | null = null;
       if (this.labelMode === 'inside' || this.labelMode === 'both') {
         const insideOpacity = derive(() => barH.value >= (this.minBandSize || 48) ? 1 : 0);
         const labelFill = derive(() => { const d = di(); return selected.value === d ? base : "#fff"; });
-        s(label(Vec.derive(() => ({ x: barCX.value, y: barY.value + 14 })), derive(() => di()?.label ?? ""),
+        insideLabel = s(label(Vec.derive(() => ({ x: barCX.value, y: barY.value + 14 })), derive(() => di()?.label ?? ""),
           { size: 10, align: Anchor.Center, fill: labelFill, opacity: insideOpacity }));
+        if (insideLabel.intrinsic) settleTargets.push({ el: insideLabel.intrinsic as SVGElement, props: ["y", "fill"] });
       }
 
       // Value label.
+      let valueLabel: ReturnType<typeof label> | null = null;
       if (this.valueMode !== 'none') {
         if (this.valueMode === 'inside') {
           const insideOpacity = derive(() => barH.value >= (this.minBandSize || 48) ? 1 : 0);
           const labelFill = derive(() => { const d = di(); return selected.value === d ? base : "#fff"; });
-          s(label(Vec.derive(() => ({ x: barCX.value, y: barY.value + (this.labelMode !== 'axis' ? 28 : 14) })),
+          valueLabel = s(label(Vec.derive(() => ({ x: barCX.value, y: barY.value + (this.labelMode !== 'axis' ? 28 : 14) })),
             derive(() => { const d = di(); return d ? `${Math.round(d.value)}` : ""; }),
             { size: 10, align: Anchor.Center, fill: labelFill, opacity: insideOpacity }));
         } else {
-          s(label(Vec.derive(() => ({ x: barCX.value, y: barY.value - 6 })),
+          valueLabel = s(label(Vec.derive(() => ({ x: barCX.value, y: barY.value - 6 })),
             derive(() => { const d = di(); return d ? `${Math.round(d.value)}` : ""; }),
-            { size: 10, align: Anchor.Center, fill: "#888", opacity: derive(() => barH.value > 0 ? 1 : 0) }));
+            { size: 10, align: Anchor.Center, fill: "#888", opacity: derive(() => barH.value >= 8 ? 1 : 0) }));
         }
+        if (valueLabel.intrinsic) settleTargets.push({ el: valueLabel.intrinsic as SVGElement, props: ["y", "fill"] });
       }
 
       // Drag handle at bar top.
@@ -322,6 +390,14 @@ export class MdBarChartLC extends Diagram {
       handle.el.style.transition = hoverTransition("opacity");
       handle.el.addEventListener("pointerenter", () => { const d = di(); if (!wheelController.active && d) hover.value = d; });
       handle.el.addEventListener("pointerleave", () => { const d = di(); if (!wheelController.active && d && hover.value === d) hover.value = null; });
+      if (handle.intrinsic) settleTargets.push({ el: handle.intrinsic as SVGElement, props: ["cy", "fill"] });
+
+      // Static settle transition on the intrinsic element (SVG attributes only
+      // transition when the style is on the element that owns them, not the
+      // wrapping <g>). x/cx are driven by bireactive tween, not CSS.
+      for (const t of settleTargets) {
+        t.el.style.transition = settleTransition(t.props);
+      }
     }
 
     s(label(Vec.derive(() => ({ x: Wc.value / 2, y: 12 })), derive(() => {
@@ -337,7 +413,7 @@ export class MdBarChartLC extends Diagram {
     const PAD = { top: 16, right: 64, bottom: 16, left: 16 };
     const plotX = PAD.left, plotY = PAD.top;
 
-    const rows0 = data.value as Bar[];
+    const rows0 = data.peek() as Bar[];
 
     // Overflow mode: fixed band height per row, chart scrolls vertically.
     const BAND_STEP = 44; // px per band (step including gap) in overflow mode
@@ -451,10 +527,13 @@ export class MdBarChartLC extends Diagram {
       const rows = data.value as Bar[];
       const cur = selected.value;
       const i = cur ? rows.indexOf(cur) : -1;
-      if (ke.key === "Tab" || ke.key === "ArrowDown" || ke.key === "ArrowUp") {
-        const next = (ke.key === "ArrowUp" || (ke.key === "Tab" && ke.shiftKey))
-          ? rows[(i <= 0 ? rows.length : i) - 1] ?? null : rows[(i + 1) % rows.length] ?? null;
-        selected.value = next; ke.preventDefault(); return;
+      if (ke.key === "ArrowDown" || ke.key === "ArrowUp") {
+        const nextIdx = ke.key === "ArrowUp"
+          ? (i <= 0 ? rows.length : i) - 1
+          : (i + 1) % rows.length;
+        selected.value = rows[nextIdx] ?? null;
+        focusDatumH(selected.value);
+        ke.preventDefault(); return;
       }
       if (!cur) return;
       const step = ke.shiftKey ? 5 : 1;
@@ -494,61 +573,120 @@ export class MdBarChartLC extends Diagram {
     hlRect.el.style.transition = "y 0.15s ease, opacity 0.1s ease";
     hlRect.el.style.pointerEvents = "none";
 
-    // Axis labels on left — live read so sort reorders.
+    // Axis labels on left — identity-keyed: each label tracks a specific datum and slides with it.
     if (this.labelMode === 'axis' || this.labelMode === 'both') {
-      for (let i = 0; i < rows0.length; i++) {
-        const barCY = derive(() => (yBand.value(String(i)) ?? 0) + yBand.value.bandwidth() / 2);
-        s(label(Vec.derive(() => ({ x: plotX - 6, y: barCY.value })), derive(() => (data.value as Bar[])[i]?.label ?? ""),
+      for (let oi = 0; oi < rows0.length; oi++) {
+        const datumId = rows0[oi]!.id ?? rows0[oi]!.label;
+        const cur = derive(() => {
+          const arr = data.value as Bar[];
+          return arr.findIndex(d => (d.id ?? d.label) === datumId);
+        });
+        const di = (): Bar | null => (data.value as Bar[])[cur.value] ?? null;
+        const barCYTarget = derive(() => {
+          const idx = cur.value;
+          if (idx < 0) return -9999;
+          return (yBand.value(String(idx)) ?? 0) + yBand.value.bandwidth() / 2;
+        });
+        const barCY = num(barCYTarget.value);
+        let barCYCancel: (() => void) | null = null;
+        biEffect(() => {
+          const target = barCYTarget.value;
+          barCYCancel?.();
+          barCYCancel = this.anim.start(tween(barCY, target, 0.25, easeInOut) as any);
+        });
+        s(label(Vec.derive(() => ({ x: plotX - 6, y: barCY.value })), derive(() => di()?.label ?? ""),
           { size: 11, align: Anchor.Right, fill: "#888", opacity: 0.8 }));
       }
     }
 
-    // Bars — live read from data.value[idx] so sort reorders visually.
-    for (let idx = 0; idx < rows0.length; idx++) {
-      const di = (): Bar | null => (data.value as Bar[])[idx] ?? null;
-      const key = String(idx);
-      const base = this.#barColor(idx);
-      const hoverColor = this.#hoverColor(idx);
+    // Bars — identity-keyed: each bar element tracks a specific datum by id.
+    const tileElementsH: Map<string, SVGGElement> = new Map(); // Track elements by datum id
+    // ID-based focus helper (matches selection/gesture pattern)
+    const focusDatumH = (d: Bar | null) => {
+      if (!d?.id) return;
+      tileElementsH.get(d.id)?.focus();
+    };
+    for (let oi = 0; oi < rows0.length; oi++) {
+      const datumId = rows0[oi]!.id ?? rows0[oi]!.label;
+      const cur = derive(() => {
+        const arr = data.value as Bar[];
+        return arr.findIndex(d => (d.id ?? d.label) === datumId);
+      });
+      const di = (): Bar | null => (data.value as Bar[])[cur.value] ?? null;
+      const base = this.#barColor(oi);
+      const hoverColor = this.#hoverColor(oi);
 
-      const barY = derive(() => yBand.value(key) ?? 0);
+      const barYTarget = derive(() => {
+        const idx = cur.value;
+        if (idx < 0) return -9999;
+        return yBand.value(String(idx)) ?? 0;
+      });
+      const barY = num(barYTarget.value);
+      let barYCancel: (() => void) | null = null;
+      biEffect(() => {
+        const target = barYTarget.value;
+        barYCancel?.();
+        barYCancel = this.anim.start(tween(barY, target, 0.25, easeInOut) as any);
+      });
       const barH = derive(() => yBand.value.bandwidth());
       const barW = derive(() => { const d = di(); return d ? Math.max(0, (xLinear.value as any)(d.value) - plotX) : 0; });
       const fill = derive(() => { const d = di(); return selected.value === d ? "#fff" : hover.value === d ? hoverColor : base; });
       const labelFill = derive(() => { const d = di(); return selected.value === d ? base : "#fff"; });
 
       const tile = s(rect(plotX, barY, barW, barH, { fill, corner: 3 }));
-      tile.el.style.cursor = "pointer";
-      tile.el.style.transition = settleTransition(["width", "fill"]);
+      tileElementsH.set(datumId, tile.el); // Store for focus management
+      tile.el.style.cursor = "ew-resize";
+      // Make each bar individually focusable
+      tile.el.setAttribute('tabindex', '0');
+      tile.el.setAttribute('data-focusable', 'bar');
+      biEffect(() => {
+        const d = di();
+        if (d) tile.el.setAttribute('aria-label', `${d.label}: ${Math.round(d.value)}`);
+      });
       tile.el.addEventListener("pointerenter", () => { const d = di(); if (!wheelController.active && d) hover.value = d; });
       tile.el.addEventListener("pointerleave", () => { const d = di(); if (!wheelController.active && d && hover.value === d) hover.value = null; });
       tile.el.addEventListener("click", () => { const d = di(); if (!d) return; selected.value = selected.value === d ? null : d; });
+      tile.el.addEventListener("focus", () => { const d = di(); if (d) selected.value = d; });
+      tile.el.addEventListener("blur", () => { const d = di(); if (d && selected.value === d) selected.value = null; });
 
       const barCY = derive(() => barY.value + barH.value / 2);
       const minBand = this.minBandSize || 60;
 
+      // Settle transitions on the intrinsic. Reorder (y/cy) is driven by the
+      // bireactive tween on barY; label/handle positions follow via derive.
+      const settleTargets: Array<{ el: SVGElement; props: readonly string[] }> = [];
+      if (tile.intrinsic) settleTargets.push({ el: tile.intrinsic as SVGElement, props: ["width", "fill"] });
+
       // Inside label (labelMode: inside | both).
+      let insideLabel: ReturnType<typeof label> | null = null;
       if (this.labelMode === 'inside' || this.labelMode === 'both') {
         const insideOpacity = derive(() => barW.value >= minBand ? 1 : 0);
-        s(label(Vec.derive(() => ({ x: plotX + 8, y: barCY.value })), derive(() => di()?.label ?? ""),
+        insideLabel = s(label(Vec.derive(() => ({ x: plotX + 8, y: barCY.value })), derive(() => di()?.label ?? ""),
           { size: 11, align: Anchor.Left, fill: labelFill, opacity: insideOpacity }));
+        if (insideLabel.intrinsic) settleTargets.push({ el: insideLabel.intrinsic as SVGElement, props: ["fill"] });
       }
 
       // Value label.
+      let valueLabel: ReturnType<typeof label> | null = null;
+      let valueLabelOutside: ReturnType<typeof label> | null = null;
       if (this.valueMode !== 'none') {
         if (this.valueMode === 'inside') {
           const insideOpacity = derive(() => barW.value >= minBand ? 1 : 0);
-          s(label(Vec.derive(() => ({ x: plotX + barW.value - 8, y: barCY.value })),
+          valueLabel = s(label(Vec.derive(() => ({ x: plotX + barW.value - 8, y: barCY.value })),
             derive(() => { const d = di(); return d ? `${Math.round(d.value)}` : ""; }),
             { size: 11, align: Anchor.Right, fill: labelFill, opacity: insideOpacity }));
+          if (valueLabel.intrinsic) settleTargets.push({ el: valueLabel.intrinsic as SVGElement, props: ["x", "fill"] });
           // Fallback value outside when bar too short.
           const outsideOpacity = derive(() => barW.value < minBand ? 1 : 0);
-          s(label(Vec.derive(() => ({ x: plotX + barW.value + 6, y: barCY.value })),
+          valueLabelOutside = s(label(Vec.derive(() => ({ x: plotX + barW.value + 6, y: barCY.value })),
             derive(() => { const d = di(); return d ? `${Math.round(d.value)}` : ""; }),
             { size: 11, align: Anchor.Left, fill: "#aaa", opacity: outsideOpacity }));
+          if (valueLabelOutside.intrinsic) settleTargets.push({ el: valueLabelOutside.intrinsic as SVGElement, props: ["x", "fill"] });
         } else {
-          s(label(Vec.derive(() => ({ x: plotX + barW.value + 6, y: barCY.value })),
+          valueLabel = s(label(Vec.derive(() => ({ x: plotX + barW.value + 6, y: barCY.value })),
             derive(() => { const d = di(); return d ? `${Math.round(d.value)}` : ""; }),
             { size: 11, align: Anchor.Left, fill: "#888", opacity: derive(() => barW.value > 0 ? 1 : 0) }));
+          if (valueLabel.intrinsic) settleTargets.push({ el: valueLabel.intrinsic as SVGElement, props: ["x", "fill"] });
         }
       }
 
@@ -563,6 +701,11 @@ export class MdBarChartLC extends Diagram {
       handle.el.style.transition = hoverTransition("opacity");
       handle.el.addEventListener("pointerenter", () => { const d = di(); if (!wheelController.active && d) hover.value = d; });
       handle.el.addEventListener("pointerleave", () => { const d = di(); if (!wheelController.active && d && hover.value === d) hover.value = null; });
+      if (handle.intrinsic) settleTargets.push({ el: handle.intrinsic as SVGElement, props: ["cx", "fill"] });
+
+      for (const t of settleTargets) {
+        t.el.style.transition = settleTransition(t.props);
+      }
     }
 
     s(label(Vec.derive(() => ({ x: Wc.value / 2, y: 8 })), derive(() => {

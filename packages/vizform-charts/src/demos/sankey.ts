@@ -20,7 +20,16 @@ const SIMPLE_LINKS: LinkDef[] = [
 ];
 
 export class MdSankeySimple extends Diagram {
-  static styles = `text { pointer-events: none; }`
+  static styles = `
+    text { pointer-events: none; }
+    [data-focusable]:focus {
+      outline: 2px solid #4a9eff;
+      outline-offset: 2px;
+    }
+    [data-focusable]:focus:not(:focus-visible) {
+      outline: none;
+    }
+  `
   externalData?: { nodes: string[]; links: { source: string; target: string; value: number }[] }
 
   protected scene(s: Mount): void {
@@ -90,6 +99,17 @@ const COMPLEX_LINKS: LinkDef[] = [
 ];
 
 export class MdSankeyComplex extends Diagram {
+  static styles = `
+    text { pointer-events: none; }
+    [data-focusable]:focus {
+      outline: 2px solid #4a9eff;
+      outline-offset: 2px;
+    }
+    [data-focusable]:focus:not(:focus-visible) {
+      outline: none;
+    }
+  `
+
   protected scene(s: Mount): void {
     const W = 800, H = 560;
     const view = this.view(W + 180, H + 48);
@@ -228,6 +248,17 @@ function hierarchyToSankey(root: HNode): { nodeIds: string[]; linkDefs: LinkDef[
 }
 
 export class MdSankeyHierarchy extends Diagram {
+  static styles = `
+    text { pointer-events: none; }
+    [data-focusable]:focus {
+      outline: 2px solid #4a9eff;
+      outline-offset: 2px;
+    }
+    [data-focusable]:focus:not(:focus-visible) {
+      outline: none;
+    }
+  `
+
   protected scene(s: Mount): void {
     const W = 680, H = 500;
     const view = this.view(W + 160, H + 48);

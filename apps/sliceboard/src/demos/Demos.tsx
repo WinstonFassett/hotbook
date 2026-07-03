@@ -5,22 +5,25 @@
  * no persistence). Spike harness for developing chart features in isolation.
  */
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
-import { HTreetable } from '@winstonfassett/vizform-react-d3'
 import {
   BrLcBar, BrLcLine, BrLcArea, BrLcScatter, BrLcPie, BrLcRadar, BrLcConcentricArc,
-  BrLcPack, BrLcTreemap, BrLcIcicle, BrLcSunburst, BrLcSankey, BrLcSankeyFlow, BrLcSankeyGrouped, BrLcSankeyHier, BrLcTree,
+  BrLcPack, BrLcTreemap, BrLcTreetable, BrLcIcicle, BrLcSunburst, BrLcSankey, BrLcSankeyFlow, BrLcSankeyGrouped, BrLcSankeyHier, BrLcTree,
+  BrLcGantt,
 } from '../viz/br/BrLcCharts'
 import type { PNode, PEdge } from '../persistence'
 import { DemoFrame } from './DemoFrame'
 import fruitFlat from './fixtures/fruit-flat.json'
 import teamHier from './fixtures/team-hier.json'
 import supplyEdges from './fixtures/supply-edges.json'
+import ganttTasks from './fixtures/gantt-tasks.json'
 
 interface FlatFixture { name: string; description: string; rows: PNode[] }
 interface EdgeFixture { name: string; description: string; edges: PEdge[] }
+interface GanttFixture { name: string; description: string; rows: PNode[]; deps: Array<{ from: string; to: string }> }
 const FRUIT: FlatFixture = fruitFlat as FlatFixture
 const TEAM:  FlatFixture = teamHier  as FlatFixture
 const SUPPLY: EdgeFixture = supplyEdges as EdgeFixture
+const GANTT: GanttFixture = ganttTasks as GanttFixture
 
 type OnNodeUpdate = (nodeId: string, measures: PNode['measures']) => void
 type OnNodesUpdate = (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
@@ -39,7 +42,7 @@ const DEMOS: DemoDef[] = [
   {
     slug: 'treetable', label: 'Treetable', fixtureName: 'team-hier', fixture: TEAM,
     initRows: TEAM.rows,
-    render: (rows) => <HTreetable nodes={rows} measureKey="budget" />,
+    render: (rows, _edges, onNodeUpdate, onNodesUpdate) => <BrLcTreetable nodes={rows} measureKey="budget" onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />,
   },
   {
     slug: 'br-lc-bar', label: 'Bar', fixtureName: 'fruit-flat', fixture: FRUIT,
@@ -87,6 +90,11 @@ const DEMOS: DemoDef[] = [
     render: (rows, _edges, onNodeUpdate, onNodesUpdate) => <BrLcTreemap nodes={rows} measureKey="budget" onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />,
   },
   {
+    slug: 'br-lc-treetable', label: 'Treetable (BR)', fixtureName: 'team-hier', fixture: TEAM,
+    initRows: TEAM.rows,
+    render: (rows, _edges, onNodeUpdate, onNodesUpdate) => <BrLcTreetable nodes={rows} measureKey="budget" onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />,
+  },
+  {
     slug: 'br-lc-icicle', label: 'Icicle', fixtureName: 'team-hier', fixture: TEAM,
     initRows: TEAM.rows,
     render: (rows, _edges, onNodeUpdate, onNodesUpdate) => <BrLcIcicle nodes={rows} measureKey="budget" onUpdate={onNodeUpdate} onUpdateMany={onNodesUpdate} />,
@@ -117,6 +125,16 @@ const DEMOS: DemoDef[] = [
   {
     slug: 'br-lc-sankey-hier', label: 'Sankey (hierarchical, expand/collapse)', fixtureName: '(built-in)', fixture: { note: 'WIN-56 — click dashed bars to expand/collapse group nodes' },
     render: () => <BrLcSankeyHier />,
+  },
+  {
+    slug: 'br-lc-gantt', label: 'Gantt', fixtureName: 'gantt-tasks', fixture: GANTT,
+    initRows: GANTT.rows,
+    render: (rows) => <BrLcGantt nodes={rows} startKey="start" endKey="end" deps={GANTT.deps} />,
+  },
+  {
+    slug: 'br-lc-gantt-enforced', label: 'Gantt (enforce deps)', fixtureName: 'gantt-tasks', fixture: GANTT,
+    initRows: GANTT.rows,
+    render: (rows) => <BrLcGantt nodes={rows} startKey="start" endKey="end" deps={GANTT.deps} enforceDeps />,
   },
 ]
 

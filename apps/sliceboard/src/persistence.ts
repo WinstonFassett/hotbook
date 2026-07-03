@@ -1,9 +1,24 @@
-import type { PNode } from '@winstonfassett/vizform-react-d3'
-import type { PEdge, ScalingMode } from '@winstonfassett/vizform-core'
+import type { PNode, PEdge, ScalingMode } from '@winstonfassett/vizform-core'
 import { colorFor } from '@winstonfassett/vizform-core'
-import type { LayoutItem } from 'react-grid-layout'
+import type { DockNode } from './dock'
+import { removeTileFromDock } from './dock'
 
 export type { PNode, PEdge }
+
+// Minimal shape of the legacy grid layout items — kept for persistence compatibility
+// with stored dashboards. The dock model replaces the grid in the new shell.
+export interface LayoutItem {
+  i: string
+  x: number
+  y: number
+  w: number
+  h: number
+  minW?: number
+  maxW?: number
+  minH?: number
+  maxH?: number
+  static?: boolean
+}
 
 // ─── Schema defs ──────────────────────────────────────────────────────────────
 
@@ -45,10 +60,10 @@ export interface Dataset {
 export type RetiredTileKind =
   | 'treemap' | 'radial' | 'bands'           // gen-0 flat morph trio
   | 'h-treemap' | 'h-icicle' | 'h-radial'   // gen-0 hier D3
+  | 'treetable'                              // replaced by br-lc-treetable
   | 'svelte-br-lc-sunburst' | 'svelte-br-lc-icicle' | 'svelte-br-lc-pack' | 'svelte-br-lc-treemap' | 'svelte-treemap-demo'
 
 export type TileKind =
-  | 'treetable'
   // bireactive LC-port charts (canon)
   | 'br-lc-bar'
   | 'br-lc-bands'
@@ -62,11 +77,13 @@ export type TileKind =
   | 'br-lc-gauge-segmented'
   | 'br-lc-pack'
   | 'br-lc-treemap'
+  | 'br-lc-treetable'
   | 'br-lc-icicle'
   | 'br-lc-sunburst'
   | 'br-lc-sankey'
   | 'br-lc-sankey-flow'
   | 'br-lc-tree'
+  | 'br-lc-gantt'
   | RetiredTileKind
 
 export interface Tile {
@@ -100,9 +117,13 @@ export interface Dashboard {
   layout: LayoutItem[]
   tiles: Tile[]
   measureKey: string
-  /** Persisted drill scope (cross-tile). null/undefined = full tree from real
-   *  root; non-null = every hierarchical tile re-roots at this PNode id. */
+  /** Persisted drill scope map: drillKey → drillNodeId. Tiles with same drillKey
+   *  share drill context. Each chart drills internally via scale remap. */
+  drills?: Record<string, string | null>
+  /** Legacy single drill scope - migrated to drills['default'] on load. */
   drillNodeId?: string | null
+  /** Persisted dock tree. If absent, synthesized from tiles. */
+  dockTree?: DockNode | null
 }
 
 // ─── Workspace ────────────────────────────────────────────────────────────────
@@ -116,7 +137,7 @@ export interface Workspace {
 
 // ─── Storage ──────────────────────────────────────────────────────────────────
 
-const LS_KEY = 'sb:workspace:v10'
+const LS_KEY = 'sb:workspace:v11'
 
 function genId(): string {
   return Math.random().toString(36).slice(2, 10)
@@ -507,10 +528,53 @@ function buildSupplyChainDataset(): Dataset {
     id: 'ds-supply',
     name: 'Supply chain (sankey)',
     createdAt: NOW,
+    shape: 'graph',
     rows: [],
     edges,
     measureDefs: [],
     dimDefs: [],
+  }
+}
+
+// ─── Dataset 5: Project Schedule (tasks with dependencies for Gantt) ──────────
+
+function buildGanttDataset(): Dataset {
+  _idc = 0
+  // Tasks with start/end dates (day-offsets from 2026-01-01), duration, and slack
+  // Slack = buffer days before successor starts (shows scheduling flexibility)
+  const rows: PNode[] = [
+    row('Discovery',  { start: 0,  end: 7,  duration: 7,  slack: 0  }, { phase: 'research' }, null, '#e08888'),
+    row('Design',     { start: 9,  end: 18, duration: 9,  slack: 0  }, { phase: 'planning' }, null, '#d4a86c'),
+    row('Frontend',   { start: 20, end: 35, duration: 15, slack: 5  }, { phase: 'build' },    null, '#7ec87e'),
+    row('Backend',    { start: 20, end: 38, duration: 18, slack: 2  }, { phase: 'build' },    null, '#6fb0d2'),
+    row('QA',         { start: 40, end: 49, duration: 9,  slack: 0  }, { phase: 'verify' },   null, '#7aaae8'),
+    row('Deploy',     { start: 51, end: 54, duration: 3,  slack: 0  }, { phase: 'launch' },   null, '#b090e0'),
+  ]
+  // Dependencies with lag (positive = required gap, negative = allowed overlap)
+  const edges: PEdge[] = [
+    { source: rows[0]!.id, target: rows[1]!.id, value: 0, lag: 2  },  // Discovery → Design (2 day gap)
+    { source: rows[1]!.id, target: rows[2]!.id, value: 0, lag: 2  },  // Design → Frontend (2 day gap)
+    { source: rows[1]!.id, target: rows[3]!.id, value: 0, lag: 2  },  // Design → Backend (2 day gap)
+    { source: rows[2]!.id, target: rows[4]!.id, value: 0, lag: 5  },  // Frontend → QA (5 day gap, has slack)
+    { source: rows[3]!.id, target: rows[4]!.id, value: 0, lag: 2  },  // Backend → QA (2 day gap)
+    { source: rows[4]!.id, target: rows[5]!.id, value: 0, lag: 2  },  // QA → Deploy (2 day gap)
+  ]
+  return {
+    id: 'ds-gantt',
+    name: 'Project schedule (gantt)',
+    createdAt: NOW,
+    shape: 'graph',
+    rows,
+    edges,
+    measureDefs: [
+      { key: 'start', label: 'Start (days from 2026-01-01)' },
+      { key: 'end', label: 'End (days from 2026-01-01)' },
+      { key: 'duration', label: 'Duration (days)' },
+      { key: 'slack', label: 'Slack (buffer days)' },
+    ],
+    dimDefs: [
+      { key: 'phase', label: 'Phase', values: ['research', 'planning', 'build', 'verify', 'launch'] },
+    ],
   }
 }
 
@@ -519,16 +583,18 @@ function buildSeedWorkspace(): Workspace {
   const team  = buildTeamDataset()
   const life  = buildLifeDataset()
 
-  // Canon viz kinds for seed dashboard (retired gen-0/Svelte kinds excluded)
+  // Canon viz kinds for seed dashboard (retired gen-0/Svelte kinds excluded).
+  // Hierarchical charts first (top row) for drill dogfooding.
   const ALL_KINDS: TileKind[] = [
+    'br-lc-pack', 'br-lc-treemap', 'br-lc-treetable', 'br-lc-icicle', 'br-lc-sunburst',
     'treetable',
     'br-lc-bar', 'br-lc-bands', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie',
     'br-lc-radar', 'br-lc-concentric-arc',
-    'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-sankey-flow', 'br-lc-tree',
+    'br-lc-sankey', 'br-lc-sankey-flow', 'br-lc-tree',
   ]
 
   const GROUPBY_KINDS = new Set<TileKind>([
-    'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree',
+    'br-lc-pack', 'br-lc-treemap', 'br-lc-treetable', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree',
   ])
 
   function makeAllVizDash(prefix: string, flatGroupBy?: string): { tiles: Tile[]; layout: LayoutItem[] } {
@@ -554,14 +620,18 @@ function buildSeedWorkspace(): Workspace {
   const supply   = buildSupplyChainDataset()
   const supplyTiles: Tile[] = [{ id: 'sp-0', kind: 'br-lc-sankey', title: 'Supply chain' }]
   const supplyLayout: LayoutItem[] = [{ i: 'sp-0', x: 0, y: 0, w: 12, h: 8 }]
+  const gantt    = buildGanttDataset()
+  const ganttTiles: Tile[] = [{ id: 'gt-0', kind: 'br-lc-gantt', title: 'Project schedule' }]
+  const ganttLayout: LayoutItem[] = [{ i: 'gt-0', x: 0, y: 0, w: 12, h: 8 }]
 
   return {
-    datasets: [life, fruit, team, supply],
+    datasets: [life, fruit, team, supply, gantt],
     dashboards: [
-      { id: 'dash-life',   datasetId: life.id,   name: 'Life',          createdAt: NOW, layout: lifeViz.layout,   tiles: lifeViz.tiles,   measureKey: 'est' },
-      { id: 'dash-fruit',  datasetId: fruit.id,  name: 'Fruit',         createdAt: NOW, layout: fruitViz.layout,  tiles: fruitViz.tiles,  measureKey: 'value' },
-      { id: 'dash-team',   datasetId: team.id,   name: 'Team',          createdAt: NOW, layout: teamViz.layout,   tiles: teamViz.tiles,   measureKey: 'budget' },
-      { id: 'dash-supply', datasetId: supply.id, name: 'Supply chain',  createdAt: NOW, layout: supplyLayout,     tiles: supplyTiles,     measureKey: 'value' },
+      { id: 'dash-life',    datasetId: life.id,    name: 'Life',             createdAt: NOW, layout: lifeViz.layout,   tiles: lifeViz.tiles,    measureKey: 'est' },
+      { id: 'dash-fruit',   datasetId: fruit.id,   name: 'Fruit',            createdAt: NOW, layout: fruitViz.layout,  tiles: fruitViz.tiles,   measureKey: 'value' },
+      { id: 'dash-team',    datasetId: team.id,    name: 'Team',             createdAt: NOW, layout: teamViz.layout,   tiles: teamViz.tiles,    measureKey: 'budget' },
+      { id: 'dash-supply',  datasetId: supply.id,  name: 'Supply chain',     createdAt: NOW, layout: supplyLayout,     tiles: supplyTiles,      measureKey: 'value' },
+      { id: 'dash-gantt',   datasetId: gantt.id,   name: 'Project schedule', createdAt: NOW, layout: ganttLayout,      tiles: ganttTiles,       measureKey: 'start' },
     ],
     activeDatasetId: life.id,
     activeDashboardId: 'dash-life',
@@ -573,8 +643,19 @@ function buildSeedWorkspace(): Workspace {
 function load(): Workspace | null {
   try {
     const raw = localStorage.getItem(LS_KEY)
-    if (!raw) return null
-    return JSON.parse(raw) as Workspace
+    if (raw) return JSON.parse(raw) as Workspace
+
+    // One-shot migration from v10
+    const legacy = localStorage.getItem('sb:workspace:v10')
+    if (!legacy) return null
+    const ws = JSON.parse(legacy) as Workspace
+    ws.dashboards.forEach(dash => {
+      if (dash.drillNodeId != null && dash.drills == null) {
+        dash.drills = { default: dash.drillNodeId }
+      }
+      delete dash.drillNodeId
+    })
+    return ws
   } catch {
     return null
   }
@@ -654,33 +735,6 @@ export function drillPath(rows: PNode[], drillNodeId: string | null): PNode[] {
     cur = cur.parentId ? byId.get(cur.parentId) : undefined
   }
   return path
-}
-
-/**
- * Filter `rows` to the subtree rooted at `drillNodeId` (the drilled node plus
- * all descendants). The drilled node's `parentId` is rewritten to `null` so
- * downstream buildBiTree treats it as the real root. null/missing → identity.
- */
-export function drillSubtree(rows: PNode[], drillNodeId: string | null): PNode[] {
-  if (!drillNodeId) return rows
-  const byId = new Map(rows.map(n => [n.id, n]))
-  const root = byId.get(drillNodeId)
-  if (!root) return rows // stale drill id (e.g. from another dataset) — fall back to full tree
-  // BFS down through children
-  const keep = new Set<string>([root.id])
-  const queue = [root.id]
-  while (queue.length) {
-    const pid = queue.shift()!
-    for (const r of rows) {
-      if (r.parentId === pid && !keep.has(r.id)) {
-        keep.add(r.id)
-        queue.push(r.id)
-      }
-    }
-  }
-  return rows
-    .filter(r => keep.has(r.id))
-    .map(r => r.id === root.id ? { ...r, parentId: null } : r)
 }
 
 // ─── Mutations ────────────────────────────────────────────────────────────────
@@ -780,6 +834,7 @@ export function removeTile(ws: Workspace, dashId: string, tileId: string): Works
     ...dash,
     tiles: dash.tiles.filter(t => t.id !== tileId),
     layout: dash.layout.filter(l => l.i !== tileId),
+    dockTree: removeTileFromDock(dash.dockTree ?? null, tileId),
   })
 }
 

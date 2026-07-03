@@ -35,5 +35,5 @@ export function BrLcTile({ source }: { source: TileSource }) {
     ctrlRef.current?.update(source)
   })
 
-  return <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+  return <div ref={containerRef} style={{ width: '100%', height: '100%', flex: 1, minHeight: 0 }} />
 }

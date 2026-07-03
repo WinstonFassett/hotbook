@@ -113,6 +113,13 @@
   overflow-y: auto;
 }
 
+/* Drill tiles: flex column so the breadcrumb takes natural height and the
+   chart gets the remaining space. */
+.tile-body--drill {
+  display: flex;
+  flex-direction: column;
+}
+
 /* Topbar extras */
 .sb-topbar-sep {
   color: #2a2a2a;
@@ -424,6 +431,7 @@
   background: #0d0f14;
   font-size: 12px;
   animation: sb-drill-fade-in 180ms ease-out;
+  flex-shrink: 0;
 }
 .sb-drill-crumb {
   background: none;

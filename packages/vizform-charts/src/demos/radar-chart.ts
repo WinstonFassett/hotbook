@@ -2,7 +2,7 @@
 // Mirrors LC's radial Chart + scaleBand for x (angle per category).
 // Grid: polygon rings at radius ticks + spoke lines. Points on polygon are clickable/editable.
 
-import { Anchor, cell, circle, derive, Diagram, effect as biEffect, label, type Mount, pathD, Vec } from "bireactive";
+import { Anchor, cell, circle, derive, Diagram, easeInOut, effect as biEffect, label, type Mount, num, pathD, tween, Vec } from "bireactive";
 import { scaleLinear } from "d3-scale";
 import { extent, ticks as d3Ticks } from "d3-array";
 import { wheelController, dragController, dynamicWheelStep } from "../lib/interaction";
@@ -29,7 +29,17 @@ function makeData(): Spoke[] {
 }
 
 export class MdRadarChartLC extends Diagram {
-  static styles = `text { pointer-events: none; }${FILL_STYLE}`
+  static styles = `
+    text { pointer-events: none; }
+    ${FILL_STYLE}
+    [data-focusable]:focus {
+      outline: 2px solid #4a9eff;
+      outline-offset: 2px;
+    }
+    [data-focusable]:focus:not(:focus-visible) {
+      outline: none;
+    }
+  `
   readonly dataCell = cell<readonly Spoke[]>(makeData());
   tickCount = 4;
   set externalData(v: { label: string; value: number }[] | undefined) {
@@ -41,7 +51,7 @@ export class MdRadarChartLC extends Diagram {
   protected scene(s: Mount): void {
     const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
     this.view(Wc, Hc);
-    this.tabIndex = 0;
+    this.tabIndex = -1; // Container not directly focusable, items are
     this.style.outline = "none";
 
     const cx = derive(() => Wc.value / 2);
@@ -157,14 +167,39 @@ export class MdRadarChartLC extends Diagram {
       s(label(lblPos, lblText, { size: 11, align: Anchor.Center, fill: "#aaa" }));
     }
 
-    // Filled polygon (value area).
+    // Per-slot radius tween cells. On sort, the datum at slot i changes — the
+    // tween morphs the polygon from old value to new value along each spoke.
+    const rPxCells: ReturnType<typeof num>[] = [];
+    for (let i = 0; i < MAX_SPOKES; i++) {
+      const rTarget = derive(() => {
+        const rows = data.value as Spoke[];
+        if (i >= rows.length) return 0;
+        return yScale.value(rows[i]!.value);
+      });
+      const rPx = num(rTarget.value);
+      rPxCells.push(rPx);
+      let rCancel: (() => void) | null = null;
+      let rInited = false;
+      biEffect(() => {
+        const target = rTarget.value;
+        if (!rInited) { rInited = true; rPx.value = target; return; }
+        if ((this as any).gestureActive) {
+          rCancel?.(); rCancel = null;
+          rPx.value = target;
+        } else {
+          rCancel?.();
+          rCancel = this.anim.start(tween(rPx, target, 0.25, easeInOut) as any);
+        }
+      });
+    }
+
+    // Filled polygon (value area) — reads from tweened radius cells.
     const polyD = derive(() => {
       const rows = data.value as Spoke[];
-      const ys = yScale.value;
       const cxv = cx.value, cyv = cy.value;
       const pts = rows.map((d, i) => {
         const a = angle(i);
-        const r = ys(d.value);
+        const r = rPxCells[i]?.value ?? 0;
         const x = (cxv + Math.cos(a) * r).toFixed(1);
         const y = (cyv + Math.sin(a) * r).toFixed(1);
         return `${i === 0 ? "M" : "L"}${x},${y}`;
@@ -176,12 +211,19 @@ export class MdRadarChartLC extends Diagram {
     s(pathD(polyD, { fill: "none", stroke: COLOR, strokeWidth: 2, opacity: 0.85 }));
 
     // Data points — one slot per MAX_SPOKES; each reads data.value[i] reactively.
+    const spokeElements: SVGCircleElement[] = [];
+    // ID-based focus helper (matches selection/gesture pattern)
+    const focusDatum = (d: Spoke | null) => {
+      if (!d?.id) return;
+      const idx = (data.value as Spoke[]).findIndex(item => item.id === d.id);
+      if (idx >= 0) spokeElements[idx]?.focus();
+    };
     for (let i = 0; i < MAX_SPOKES; i++) {
       const dotPos = Vec.derive(() => {
         const rows = data.value as Spoke[];
         if (i >= rows.length) return { x: -1000, y: -1000 }; // hide off-screen
         const a = angle(i);
-        const r = yScale.value(rows[i]!.value);
+        const r = rPxCells[i]?.value ?? 0;
         return { x: cx.value + Math.cos(a) * r, y: cy.value + Math.sin(a) * r };
       });
       const dotR = derive(() => {
@@ -202,7 +244,15 @@ export class MdRadarChartLC extends Diagram {
         return d && selected.value === d ? 2.5 : 1.5;
       });
       const dot = s(circle(dotPos, dotR, { fill: COLOR, stroke: dotStroke, strokeWidth: dotStrokeW }));
+      spokeElements[i] = dot.el as SVGCircleElement;
       dot.el.style.cursor = "ns-resize";
+      // Make each spoke individually focusable
+      dot.el.setAttribute('tabindex', '0');
+      dot.el.setAttribute('data-focusable', 'spoke');
+      biEffect(() => {
+        const d = (data.value as Spoke[])[i];
+        if (d) dot.el.setAttribute('aria-label', `${d.name}: ${Math.round(d.value)}`);
+      });
       dot.el.addEventListener("pointerenter", () => {
         const d = (data.value as Spoke[])[i];
         if (d && !wheelController.active) hover.value = d;
@@ -215,6 +265,14 @@ export class MdRadarChartLC extends Diagram {
         const d = (data.value as Spoke[])[i];
         if (!d) return;
         selected.value = selected.value === d ? null : d;
+      });
+      dot.el.addEventListener("focus", () => {
+        const d = (data.value as Spoke[])[i];
+        if (d) selected.value = d;
+      });
+      dot.el.addEventListener("blur", () => {
+        const d = (data.value as Spoke[])[i];
+        if (d && selected.value === d) selected.value = null;
       });
     }
 
@@ -306,11 +364,12 @@ export class MdRadarChartLC extends Diagram {
       const rows = data.value as Spoke[];
       const cur = selected.value;
       const i = cur ? rows.indexOf(cur) : -1;
-      if (ke.key === "Tab" || ke.key === "ArrowRight" || ke.key === "ArrowLeft") {
-        const next = (ke.key === "ArrowLeft" || (ke.key === "Tab" && ke.shiftKey))
-          ? rows[(i <= 0 ? rows.length : i) - 1] ?? null
-          : rows[(i + 1) % rows.length] ?? null;
-        selected.value = next;
+      if (ke.key === "ArrowRight" || ke.key === "ArrowLeft") {
+        const nextIdx = ke.key === "ArrowLeft"
+          ? (i <= 0 ? rows.length : i) - 1
+          : (i + 1) % rows.length;
+        selected.value = rows[nextIdx] ?? null;
+        focusDatum(selected.value);
         ke.preventDefault(); return;
       }
       if (!cur) return;

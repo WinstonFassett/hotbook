@@ -13,6 +13,7 @@ import type { PNode } from '../../persistence'
 import { buildBiTree } from './tree'
 import type { BiNode } from './tree'
 import { hudStore } from '../../store'
+import { wheelController, dragController } from '@winstonfassett/vizform-charts'
 
 // ─── Epsilon + helpers ────────────────────────────────────────────────────────
 
@@ -30,6 +31,7 @@ interface BrSyncBridge {
   setExternalSelect(id: string | null): void
   onHover(cb: (id: string | null) => void): () => void
   onSelect(cb: (id: string | null) => void): () => void
+  onDrill?(cb: (drillKey: string, id: string | null) => void): () => void
 }
 interface ElWithBrSync extends HTMLElement { brSync?: BrSyncBridge }
 
@@ -40,25 +42,66 @@ interface ElWithBrSync extends HTMLElement { brSync?: BrSyncBridge }
  */
 export function bindHudSync(el: ElWithBrSync): () => void {
   const bridge = el.brSync
-  if (!bridge) return () => {}
+  if (!bridge) {
+    // Element is not yet connected to the document (connectedCallback hasn't run),
+    // so scene() hasn't set brSync yet. Retry with exponential backoff.
+    let disposed = false
+    let inner: (() => void) | null = null
+    let retryCount = 0
+    const maxRetries = 10
+
+    const tryBind = () => {
+      if (disposed) return
+      const currentBridge = el.brSync
+      if (currentBridge) {
+        inner = bindHudSync(el)
+      } else if (retryCount < maxRetries) {
+        retryCount++
+        const delay = Math.min(100, Math.pow(2, retryCount))
+        setTimeout(tryBind, delay)
+      } else {
+        console.warn('bindHudSync: brSync not set after max retries', el)
+      }
+    }
+
+    Promise.resolve().then(tryBind)
+    return () => { disposed = true; inner?.() }
+  }
   let lastInHover: string | null = null
   let lastInSelect: string | null = null
+  let lastInDrill: string | null = null
 
   const offHover = bridge.onHover(id => { if (id !== lastInHover) hudStore.setHover(id) })
   const offSelect = bridge.onSelect(id => { if (id !== lastInSelect) hudStore.setSelection(id) })
+  const offDrill = bridge.onDrill ? bridge.onDrill((drillKey, id) => {
+    const resolved = id === '' ? null : id
+    lastInDrill = resolved
+    hudStore.setDrill(drillKey, resolved)
+  }) : () => {}
 
   const unsub = hudStore.subscribe(() => {
     const s = hudStore.getSnapshot()
     if (s.hoverId !== lastInHover) { lastInHover = s.hoverId; bridge.setExternalHover(s.hoverId) }
     if (s.selectionId !== lastInSelect) { lastInSelect = s.selectionId; bridge.setExternalSelect(s.selectionId) }
+    // Sync drill directly — bypasses React round-trip that was losing tiles on pop-out.
+    const drillKey = (el as any).drillKey
+    if (drillKey && bridge.setExternalDrill) {
+      const drillId = s.drills[drillKey] ?? null
+      if (drillId !== lastInDrill) { lastInDrill = drillId; bridge.setExternalDrill(drillId) }
+    }
   })
   // Seed current store state into the freshly mounted element.
   const s0 = hudStore.getSnapshot()
   lastInHover = s0.hoverId; lastInSelect = s0.selectionId
   bridge.setExternalHover(s0.hoverId)
   bridge.setExternalSelect(s0.selectionId)
+  const drillKey0 = (el as any).drillKey
+  if (drillKey0 && bridge.setExternalDrill) {
+    lastInDrill = s0.drills[drillKey0] ?? null
+    bridge.setExternalDrill(lastInDrill)
+  }
 
-  return () => { offHover(); offSelect(); unsub() }
+  return () => { offHover(); offSelect(); offDrill(); unsub() }
 }
 
 // ─── TileSource contract ──────────────────────────────────────────────────────
@@ -121,8 +164,12 @@ export function bindTile(container: HTMLElement, source: TileSource): TileContro
     // Initialize last echo map (after append so dataCell is initialized by scene())
     lastRef = src.initialLast(newEl)
 
-    // HUD sync — element is connected so brSync is set
-    unbindHud = bindHudSync(newEl as ElWithBrSync)
+    // HUD sync — defer to next microtask to ensure scene() has run and brSync is set
+    Promise.resolve().then(() => {
+      if (el === newEl) {  // Only bind if element hasn't been dismounted
+        unbindHud = bindHudSync(newEl as ElWithBrSync)
+      }
+    })
 
     // Edit-out subscription — uses src's internal refs (updated via _syncRefs on same-shapeKey update)
     unbindEditOut = src.bindEditOut(newEl, lastRef)
@@ -174,7 +221,10 @@ export function bindTile(container: HTMLElement, source: TileSource): TileContro
         const mounted = currentSourceRef.current
         mounted.syncFrom?.(nextSource)
         if (el) {
-          mounted.applyData(el, { gestureActive: !!el.gestureActive, lastRef })
+          // Treat any active gesture (drag OR wheel) as frozen — do not snap
+          // values back from the store while the user is actively editing.
+          const frozen = !!el.gestureActive || wheelController.active || dragController.active
+          mounted.applyData(el, { gestureActive: frozen, lastRef })
         }
       }
     },
@@ -231,7 +281,7 @@ export function makeFlatSource<D>(spec: FlatSpec<D>): TileSource {
     initialLast(el: HTMLElement): Map<string, number> {
       const typedEl = el as ElWithDataCell<D>
       const s = specRef.current
-      const arr = typedEl.dataCell?.value as D[] ?? []
+      const arr = typedEl.dataCell?.peek() as D[] ?? []
       return new Map(arr.map(d => [s.idOf(d), s.readValue(d)]))
     },
 
@@ -239,7 +289,11 @@ export function makeFlatSource<D>(spec: FlatSpec<D>): TileSource {
       const typedEl = el as ElWithDataCell<D>
       if (!typedEl.dataCell) return
       const s = specRef.current
-      const arr = typedEl.dataCell.value as D[]
+      // Use peek() to avoid registering dataCell as a bireactive dependency of
+      // whatever effect called applyData. If we used .value here, the DockView
+      // biEffect (which calls _syncChart → applyData) would re-fire on every
+      // dataCell write, overwriting in-flight gesture edits with stale store values.
+      const arr = typedEl.dataCell.peek() as D[]
       const valueById = new Map<string, number>()
       for (let j = 0; j < s.ids.length; j++) valueById.set(s.ids[j]!, s.values[j]!)
 
@@ -333,6 +387,11 @@ export function makeFlatSource<D>(spec: FlatSpec<D>): TileSource {
 interface ElWithRoot extends HTMLElement {
   externalRoot?: BiNode
   maxDepth?: number
+  drillNodeId?: string | null
+  drillKey?: string
+  showBreadcrumb?: boolean
+  sortBy?: 'index' | 'value'
+  orientation?: 'horizontal' | 'vertical'
 }
 
 export interface HierSpec {
@@ -341,8 +400,13 @@ export interface HierSpec {
   measureKey: string
   depth?: number
   sortBy?: 'index' | 'value'
+  orientation?: 'horizontal' | 'vertical'
+  sortBy?: 'index' | 'value'
   shapeKey: string
   valueKey: string
+  drillNodeId?: string | null
+  drillKey?: string
+  showBreadcrumb?: boolean
   onUpdate?: (nodeId: string, measures: PNode['measures']) => void
   onUpdateMany?: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
 }
@@ -353,6 +417,11 @@ export function makeHierSource(spec: HierSpec): TileSource {
   const onUpdateManyRef = { current: spec.onUpdateMany }
   const leavesRef = { current: [] as BiNode[] }
   const measureKeyRef = { current: spec.measureKey }
+  const drillKeyRef = { current: spec.drillKey }
+  const drillNodeIdRef = { current: spec.drillNodeId as string | null | undefined }
+  const showBreadcrumbRef = { current: spec.showBreadcrumb }
+  const sortByRef = { current: spec.sortBy ?? 'index' }
+  const orientationRef = { current: spec.orientation }
 
   const source: TileSource = {
     tag: spec.tag,
@@ -367,23 +436,50 @@ export function makeHierSource(spec: HierSpec): TileSource {
       const typedEl = el as ElWithRoot
       typedEl.externalRoot = root
       if (spec.depth !== undefined) typedEl.maxDepth = spec.depth
+      if (spec.drillNodeId !== undefined) typedEl.drillNodeId = spec.drillNodeId
+      if (spec.drillKey !== undefined) typedEl.drillKey = spec.drillKey
+      if (spec.showBreadcrumb !== undefined) typedEl.showBreadcrumb = spec.showBreadcrumb
+      typedEl.sortBy = sortByRef.current
+      delete (typedEl as any).orientation;
+      if (orientationRef.current !== undefined) typedEl.orientation = orientationRef.current
     },
 
     initialLast(_el: HTMLElement): Map<string, number> {
-      return new Map(leavesRef.current.map(l => [l.value.id, l.value.total.value]))
+      return new Map(leavesRef.current.map(l => [l.value.id, l.value.total.peek()]))
     },
 
-    applyData(_el: HTMLElement, { lastRef }) {
+    applyData(el: HTMLElement, { gestureActive, lastRef }) {
       // Apply external store changes into the live leaf cells, in place.
+      // Skip during active gestures — wheel/drag are editing the live cells right
+      // now; overwriting them from the store would snap values back.
+      if (gestureActive) return
+      // Use peek() to avoid registering Num cells as deps of whichever bireactive
+      // effect called applyData — DockView's biEffect calls this via _syncChart, and
+      // accidentally tracking Num cells would make DockView re-render on every value
+      // change, causing overwrite loops.
       const byId = new Map(nodesRef.current.map(n => [n.id, n]))
       for (const leaf of leavesRef.current) {
         const node = byId.get(leaf.value.id)
         if (!node) continue
         const target = node.measures[measureKeyRef.current] ?? 0
-        if (!near(leaf.value.total.value, target)) {
+        if (!near(leaf.value.total.peek(), target)) {
           leaf.value.total.value = target
           lastRef.set(leaf.value.id, target)
         }
+      }
+      const typedEl = el as ElWithRoot
+      if (drillKeyRef.current !== undefined) typedEl.drillKey = drillKeyRef.current
+      if (showBreadcrumbRef.current !== undefined) typedEl.showBreadcrumb = showBreadcrumbRef.current
+      // Sync sortBy reactively — the chart's setter writes a reactive cell so
+      // the layout re-derives and tweens to the new order (no remount).
+      typedEl.sortBy = sortByRef.current
+      // Delete any own property that shadows the prototype getter/setter,
+      // then assign — this ensures the reactive setter fires.
+      delete (typedEl as any).orientation;
+      if (orientationRef.current !== undefined) typedEl.orientation = orientationRef.current
+      // Push drillNodeId so Esc/breadcrumb drill changes reach the chart element.
+      if (drillNodeIdRef.current !== undefined && typedEl.drillNodeId !== drillNodeIdRef.current) {
+        typedEl.drillNodeId = drillNodeIdRef.current
       }
     },
 
@@ -420,6 +516,11 @@ export function makeHierSource(spec: HierSpec): TileSource {
       onUpdateRef.current = nextSpec.onUpdate
       onUpdateManyRef.current = nextSpec.onUpdateMany
       measureKeyRef.current = nextSpec.measureKey
+      drillKeyRef.current = nextSpec.drillKey
+      drillNodeIdRef.current = nextSpec.drillNodeId
+      showBreadcrumbRef.current = nextSpec.showBreadcrumb
+      sortByRef.current = nextSpec.sortBy ?? 'index'
+      orientationRef.current = nextSpec.orientation
     },
   }
 
@@ -434,6 +535,9 @@ export function hierValueKey(nodes: PNode[], measureKey: string): string {
   return nodes.map(n => `${n.id}:${vkey(n.measures[measureKey] ?? 0)}`).sort().join(',')
 }
 
-export function hierShapeKey(tag: string, nodes: PNode[], measureKey: string, depth?: number, sortBy?: string): string {
-  return `${tag}|${measureKey}|${depth ?? 'all'}|${sortBy ?? 'index'}|${nodes.map(n => `${n.id}:${n.parentId ?? ''}`).sort().join(',')}`
+export function hierShapeKey(tag: string, nodes: PNode[], _measureKey: string, depth?: number): string {
+  // NOTE: sortBy and measureKey are intentionally excluded — sort and measure
+  // changes flow through the same-shape syncFrom/applyData path so the chart
+  // can animate the reorder/value-swap instead of remounting and snapping.
+  return `${tag}|${depth ?? 'all'}|${nodes.map(n => `${n.id}:${n.parentId ?? ''}`).sort().join(',')}`
 }

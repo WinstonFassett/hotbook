@@ -13,6 +13,7 @@ import type { Num, Writable } from 'bireactive'
 import type { PNode, PEdge } from '../../persistence'
 import { makeFlatSource, makeHierSource, hierShapeKey, hierValueKey } from './bindTile'
 import { BrLcTile } from './BrLcTile'
+import { useDrillNodeId } from '../../store'
 
 import {
   MdBarChartLC,
@@ -26,6 +27,7 @@ import {
   MdGaugeSegmentedLC,
   MdPack,
   MdTreemapLC,
+  MdTreetableLC,
   MdIcicleLC,
   MdSunburstLC,
   MdSankeySimple,
@@ -33,6 +35,9 @@ import {
   MdSankeyGrouped,
   MdSankeyHier,
   MdTreeChart,
+  numberDrag,
+  MdGanttChartLC,
+  type GanttTask,
 } from '@winstonfassett/vizform-charts'
 
 // Register custom elements once
@@ -48,6 +53,7 @@ const TAGS = [
   ['v-br-gauge-segmented', MdGaugeSegmentedLC],
   ['v-br-pack',           MdPack],
   ['v-br-treemap',        MdTreemapLC],
+  ['v-br-treetable',      MdTreetableLC],
   ['v-br-icicle',         MdIcicleLC],
   ['v-br-sunburst',       MdSunburstLC],
   ['v-br-sankey',         MdSankeySimple],
@@ -55,6 +61,7 @@ const TAGS = [
   ['v-br-sankey-grouped', MdSankeyGrouped],
   ['v-br-sankey-hier',    MdSankeyHier],
   ['v-br-tree',           MdTreeChart],
+  ['v-br-gantt',          MdGanttChartLC],
 ] as const
 
 for (const [tag, cls] of TAGS) {
@@ -310,36 +317,116 @@ interface HierProps {
   measureKey: string
   depth?: number
   sortBy?: 'index' | 'value'
+  orientation?: 'horizontal' | 'vertical'
+  drillKey?: string
+  drillNodeId?: string | null
+  showBreadcrumb?: boolean
   onUpdate?: (nodeId: string, measures: PNode['measures']) => void
   onUpdateMany?: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
 }
 
-function makeHier(tag: string, { nodes, measureKey, depth, sortBy, onUpdate, onUpdateMany }: HierProps) {
-  const shapeKey = hierShapeKey(tag, nodes, measureKey, depth, sortBy)
+function makeHier(tag: string, { nodes, measureKey, depth, sortBy, orientation, drillKey = 'default', drillNodeId, showBreadcrumb = true, onUpdate, onUpdateMany }: HierProps) {
+  const shapeKey = hierShapeKey(tag, nodes, measureKey, depth)
   const valueKey = hierValueKey(nodes, measureKey)
   return makeHierSource({
-    tag, nodes, measureKey, depth, sortBy, shapeKey, valueKey, onUpdate, onUpdateMany,
+    tag, nodes, measureKey, depth, sortBy, orientation, shapeKey, valueKey, drillKey, drillNodeId, showBreadcrumb, onUpdate, onUpdateMany,
   })
 }
 
 export function BrLcPack(props: HierProps) {
-  return <BrLcTile source={makeHier('v-br-pack', props)} />
+  const drillNodeId = useDrillNodeId(props.drillKey ?? 'default')
+  return <BrLcTile source={makeHier('v-br-pack', { ...props, drillNodeId })} />
 }
 
 export function BrLcTreemap(props: HierProps) {
-  return <BrLcTile source={makeHier('v-br-treemap', props)} />
+  const drillNodeId = useDrillNodeId(props.drillKey ?? 'default')
+  return <BrLcTile source={makeHier('v-br-treemap', { ...props, drillNodeId })} />
 }
 
 export function BrLcIcicle(props: HierProps) {
-  return <BrLcTile source={makeHier('v-br-icicle', props)} />
+  const drillNodeId = useDrillNodeId(props.drillKey ?? 'default')
+  return <BrLcTile source={makeHier('v-br-icicle', { ...props, drillNodeId })} />
 }
 
 export function BrLcSunburst(props: HierProps) {
-  return <BrLcTile source={makeHier('v-br-sunburst', props)} />
+  const drillNodeId = useDrillNodeId(props.drillKey ?? 'default')
+  return <BrLcTile source={makeHier('v-br-sunburst', { ...props, drillNodeId })} />
 }
 
 export function BrLcTree(props: HierProps) {
-  return <BrLcTile source={makeHier('v-br-tree', props)} />
+  const drillNodeId = useDrillNodeId(props.drillKey ?? 'default')
+  return <BrLcTile source={makeHier('v-br-tree', { ...props, drillNodeId })} />
+}
+
+export function BrLcTreetable(props: HierProps) {
+  const { nodes, measureKey, onUpdate } = props
+  const drillNodeId = useDrillNodeId(props.drillKey ?? 'default')
+  const source = makeHier('v-br-treetable', { ...props, drillNodeId })
+
+  // Extend source to add numberDrag to ALL value cells (parents and leaves)
+  const originalMountProps = source.mountProps
+  const extendedSource = {
+    ...source,
+    mountProps(el: HTMLElement) {
+      originalMountProps?.(el)
+
+      // numberDrag integration - attach to ALL nodes for sum-redistribute editing
+      const disposers: Array<() => void> = []
+      const typedEl = el as any // MdTreetableLC
+
+      const unsubRender = typedEl.onRender?.((allNodeIds: string[]) => {
+        // Clean up previous drag handlers
+        for (const d of disposers.splice(0)) d()
+
+        const root = typedEl.getRoot?.()
+        if (!root) return
+
+        // Get the externalRoot (BiNode tree)
+        const biRoot = typedEl.externalRoot
+        if (!biRoot) return
+
+        // Build a map of ALL BiNodes by id (including parents)
+        const allNodes: any[] = []
+        const walk = (node: any) => {
+          allNodes.push(node)
+          for (const child of node.children as any[]) walk(child)
+        }
+        walk(biRoot)
+        const nodeMap = new Map(allNodes.map(n => [n.value.id, n]))
+
+        // Attach numberDrag to ALL visible value cells
+        for (const id of allNodeIds) {
+          const cell = root.querySelector<HTMLElement>(`[data-editable-value="${id}"]`)
+          if (!cell) continue
+
+          const biNode = nodeMap.get(id)
+          if (!biNode) continue
+
+          const get = () => biNode.value.total.value
+          const set = (v: number) => {
+            // Write to the BiNode - lens will handle redistribution for parents
+            biNode.value.total.value = v
+            const pnode = nodes.find(n => n.id === id)
+            if (pnode && onUpdate) {
+              onUpdate(id, { ...pnode.measures, [measureKey]: v })
+            }
+          }
+
+          disposers.push(numberDrag(cell, { get, set, pxPerUnit: 4 }))
+        }
+      })
+
+      // Store cleanup function
+      const originalDispose = (el as any).__dispose
+      ;(el as any).__dispose = () => {
+        unsubRender?.()
+        for (const d of disposers) d()
+        originalDispose?.()
+      }
+    }
+  }
+
+  return <BrLcTile source={extendedSource} />
 }
 
 // ─── Sankey (flat edge-list) ────────────────────────────────────────────────────
@@ -355,6 +442,53 @@ export function BrLcSankey({ edges }: SankeyProps) {
   const ref = useBrElement<MdSankeySimple>('v-br-sankey', el => { el.externalData = data }, [JSON.stringify(data)])
   if (edges.length === 0) return <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.4, fontSize: 12 }}>No edge data — dataset needs a flat edge list</div>
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
+}
+
+// ─── Gantt ──────────────────────────────────────────────────────────────────
+
+interface GanttProps {
+  nodes: PNode[]
+  /** Measure keys carrying day-offsets from `epoch`. */
+  startKey?: string
+  endKey?: string
+  /** Day-offset epoch (default 2026-01-01). */
+  epoch?: Date
+  /** Finish-to-start dependency edges (successorId ← predecessorId). */
+  deps?: Array<{ from: string; to: string }>
+  /** Push/pull dependents so each successor.start == max(pred.end). */
+  enforceDeps?: boolean
+}
+
+export function BrLcGantt({
+  nodes,
+  startKey = 'start',
+  endKey = 'end',
+  epoch = new Date(2026, 0, 1),
+  deps = [],
+  enforceDeps = false,
+}: GanttProps) {
+  const epochMs = epoch.getTime()
+  const depsByTo = new Map<string, string[]>()
+  for (const e of deps) {
+    const arr = depsByTo.get(e.to) ?? []
+    arr.push(e.from)
+    depsByTo.set(e.to, arr)
+  }
+  const tasks: GanttTask[] = nodes.map(n => ({
+    id: n.id,
+    label: n.name,
+    start: new Date(epochMs + (n.measures[startKey] ?? 0) * 86400000),
+    end:   new Date(epochMs + (n.measures[endKey]   ?? 1) * 86400000),
+    color: n.color,
+    deps: depsByTo.get(n.id),
+  }))
+  const key = JSON.stringify([enforceDeps, tasks.map(t => [t.id, t.label, +t.start, +t.end, t.color, t.deps ?? []])])
+  const ref = useBrElement<MdGanttChartLC>(
+    'v-br-gantt',
+    (el) => { el.enforceDeps = enforceDeps; el.externalData = tasks },
+    [key],
+  )
+  return <div ref={ref} style={{ width: '100%', height: '100%', overflow: 'auto' }} />
 }
 
 // ─── Sankey (conservation flow) ─────────────────────────────────────────────────

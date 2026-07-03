@@ -1,6 +1,6 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-html, body, #root {
+html, body, #root, #app {
   height: 100%;
   --pv-bg:           oklch(0.18 0.01 250);
   --pv-surface:      oklch(0.22 0.01 250);
@@ -27,4 +27,477 @@ html, body, #root {
 
 @media (prefers-reduced-motion: reduce) {
   html { --pv-dur: 0ms; }
+}
+
+/* ─── Shell ─────────────────────────────────────────────────────────────────── */
+
+.sb-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.sb-topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border-bottom: 1px solid #222;
+  flex-shrink: 0;
+  background: #111;
+}
+.sb-wordmark {
+  color: #444;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-right: 4px;
+  user-select: none;
+}
+.sb-topbar-sep {
+  color: #2a2a2a;
+  font-size: 12px;
+  padding: 0 2px;
+}
+.sb-topbar-right { margin-left: auto; }
+
+.sb-grid-wrap {
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ─── Buttons ────────────────────────────────────────────────────────────────── */
+
+.sb-btn {
+  padding: 2px 10px;
+  border-radius: 4px;
+  border: 1px solid #2a2a2a;
+  background: transparent;
+  color: #888;
+  cursor: pointer;
+  font-size: 11px;
+}
+.sb-btn:hover { color: #ccc; border-color: #444; }
+
+/* ─── Menus ──────────────────────────────────────────────────────────────────── */
+
+.sb-menu-wrap { position: relative; }
+.sb-menu-trigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 200px;
+  overflow: hidden;
+}
+.sb-menu-trigger-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sb-menu-caret { color: #555; flex-shrink: 0; }
+.sb-menu-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 200;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 4px;
+  min-width: 220px;
+  margin-top: 2px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+}
+.sb-menu-boards {
+  padding: 4px 0;
+  border-bottom: 1px solid #252525;
+}
+.sb-menu-board-btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 5px 12px;
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 12px;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+}
+.sb-menu-board-btn:hover { color: #ddd; background: #1f1f1f; }
+.sb-menu-board-btn.active { color: #fff; border-left-color: #555; }
+.sb-menu-actions { padding: 4px 0; }
+.sb-menu-action-btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 5px 12px;
+  background: none;
+  border: none;
+  color: #777;
+  font-size: 11px;
+  cursor: pointer;
+}
+.sb-menu-action-btn:hover { color: #bbb; }
+.sb-menu-action-btn.danger { color: #c44; }
+.sb-menu-action-btn.danger:hover { color: #e66; }
+
+/* ─── Tile chrome ────────────────────────────────────────────────────────────── */
+
+.tile-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  border-bottom: 1px solid #1e1e1e;
+  flex-shrink: 0;
+  user-select: none;
+  background: #111;
+}
+.tile-title {
+  font-size: 11px;
+  color: #444;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.tile-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.tile-measure-select {
+  background: transparent;
+  border: 1px solid #2a2a2a;
+  color: #666;
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.tile-axis-label { color: #555; font-size: 10px; user-select: none; }
+.tile-close-btn {
+  background: none;
+  border: none;
+  color: #333;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+}
+.tile-close-btn:hover { color: #888; }
+
+.tile-body {
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+  position: relative;
+}
+.tile-body--scroll { overflow-y: auto; }
+.tile-body--drill {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ─── Drill breadcrumb ───────────────────────────────────────────────────────── */
+
+.sb-drill-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-bottom: 1px solid #222;
+  background: #0d0f14;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.sb-drill-crumb {
+  background: none;
+  border: none;
+  color: #888;
+  padding: 2px 6px;
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: 3px;
+}
+.sb-drill-crumb:hover { color: #ddd; background: #1a1d23; }
+.sb-drill-crumb--current { color: #fff; font-weight: 500; }
+.sb-drill-sep { color: #555; margin: 0 1px; }
+.sb-drill-seg { display: inline-flex; align-items: center; }
+.sb-drill-up { margin-left: auto; font-size: 11px; padding: 3px 8px; }
+
+/* ─── DockView ───────────────────────────────────────────────────────────────── */
+
+sb-dock-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.dv-root {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.dv-branch {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.dv-branch--row { flex-direction: row; }
+.dv-branch--col { flex-direction: column; }
+
+.dv-cell {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.dv-gutter {
+  flex-shrink: 0;
+  z-index: 1;
+}
+.dv-gutter--row {
+  width: 4px;
+  cursor: col-resize;
+  background: #1a1a1a;
+}
+.dv-gutter--col {
+  height: 4px;
+  cursor: row-resize;
+  background: #1a1a1a;
+}
+.dv-gutter:hover, .dv-gutter:active { background: #555; }
+
+.dv-group {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid #1e1e1e;
+  background: #111;
+  overflow: hidden;
+}
+
+.dv-tabstrip {
+  display: flex;
+  align-items: stretch;
+  flex-shrink: 0;
+  background: #0e0e0e;
+  border-bottom: 1px solid #1e1e1e;
+  min-height: 26px;
+}
+.dv-tabs {
+  display: flex;
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.dv-tabs::-webkit-scrollbar { display: none; }
+.dv-tabstrip-actions {
+  display: flex;
+  align-items: center;
+  padding: 0 4px;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.dv-tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px 0 10px;
+  border-right: 1px solid #1a1a1a;
+  cursor: pointer;
+  min-width: 80px;
+  max-width: 160px;
+  flex-shrink: 0;
+  color: #555;
+  font-size: 11px;
+  user-select: none;
+  white-space: nowrap;
+}
+.dv-tab:hover { color: #888; background: #141414; }
+.dv-tab--active { color: #ccc; background: #111; border-bottom: 1px solid #111; }
+.dv-tab-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dv-tab-close {
+  background: none;
+  border: none;
+  color: #444;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0;
+  flex-shrink: 0;
+  opacity: 0;
+}
+.dv-tab:hover .dv-tab-close { opacity: 1; }
+.dv-tab--active .dv-tab-close { opacity: 0.5; }
+.dv-tab--active .dv-tab-close:hover { opacity: 1; color: #ccc; }
+
+.dv-tab-maximize {
+  background: none;
+  border: none;
+  color: #444;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 4px;
+}
+.dv-tab-maximize:hover { color: #888; }
+
+.dv-tab-add {
+  background: none;
+  border: none;
+  color: #555;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 6px;
+  line-height: 1;
+}
+.dv-tab-add:hover { color: #ccc; }
+
+.dv-body {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.dv-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.dv-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #333;
+  font-size: 13px;
+}
+
+/* ─── Drop indicators ─────────────────────────────────────────────────────────── */
+
+.dv-drop-indicator {
+  position: absolute;
+  z-index: 10;
+  pointer-events: none;
+  background: rgba(88, 166, 255, 0.18);
+  border: 2px solid #58a6ff;
+}
+.dv-drop-indicator--left   { top: 0; left: 0; width: 33%; height: 100%; }
+.dv-drop-indicator--right  { top: 0; right: 0; width: 33%; height: 100%; }
+.dv-drop-indicator--up     { top: 0; left: 0; width: 100%; height: 33%; }
+.dv-drop-indicator--down   { bottom: 0; left: 0; width: 100%; height: 33%; }
+.dv-drop-indicator--center { top: 0; left: 0; width: 100%; height: 100%; }
+
+/* ─── Drag ghost ─────────────────────────────────────────────────────────────── */
+
+.dv-drag-ghost {
+  position: fixed;
+  padding: 4px 10px;
+  background: #1a1a2e;
+  border: 1px solid #58a6ff;
+  border-radius: 4px;
+  color: #ccc;
+  font-size: 11px;
+  pointer-events: none;
+  z-index: 9999;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+}
+
+/* ─── Touch drag surfaces ───────────────────────────────────────────────────
+   Rule 14 (interaction-principles.md): touch and mouse are equivalent gesture
+   surfaces. Elements that own a drag gesture (tabs, gutters, tile headers,
+   number-drag cells) must claim the touch gesture from the browser via
+   `touch-action: none`; otherwise iOS/Android start scrolling on the first
+   pointermove and never send us the drag events. Tabstrip and tabs area keep
+   `pan-x` so horizontal swipe still scrolls hidden overflow tabs.
+   ─────────────────────────────────────────────────────────────────────────── */
+.dv-tab { touch-action: none; }
+.dv-tabs { touch-action: pan-x; }
+.dv-tabstrip { touch-action: none; }
+.dv-gutter { touch-action: none; }
+.tile-header { touch-action: none; }
+/* Chart tile bodies are gesture surfaces — Rule 14: touch drag-edit must not
+   lose to page scroll. Scrollable tile bodies (e.g. the tree table) keep
+   their default behavior so vertical scroll still works. Individual scrubber
+   cells inside a scroll body claim their own gesture via touch-action:none. */
+.tile-body:not(.tile-body--scroll) > * { touch-action: none; }
+
+/* ─── Mobile (≤640px) ────────────────────────────────────────────────────────
+   Sliceboard's DockView renders splits inline (flex-direction set via
+   element.style), so overrides here need !important. On narrow viewports we:
+   - Collapse row splits to a vertical stack so each pane gets the full width.
+   - Widen split gutters into a proper touch-sized hit area between panes;
+     _startGutterDrag derives the drag axis from the DOM so the horizontal
+     bar drags vertical size correctly.
+   - Enlarge tab and close-button hit targets for touch.
+   - Let tile headers/toolbars wrap instead of clipping.
+   ────────────────────────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .dv-root,
+  .dv-branch--row {
+    flex-direction: column !important;
+  }
+  /* Row gutter now sits between vertically stacked panes — flip it to a
+     horizontal bar and give it a fat touch hit area. */
+  .dv-gutter--row {
+    width: 100% !important;
+    height: 14px !important;
+    cursor: row-resize !important;
+  }
+  .dv-gutter--col { height: 14px; }
+  .dv-tabstrip { min-height: 34px; }
+  .dv-tab {
+    min-width: 96px;
+    max-width: 180px;
+    padding: 0 10px 0 12px;
+    font-size: 12px;
+  }
+  .dv-tab-close,
+  .dv-tab-maximize,
+  .dv-tab-add { font-size: 16px; padding: 4px 8px; }
+  .dv-tab-close { opacity: 0.6; }
+  .tile-header {
+    padding: 6px 10px;
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+  .tile-title { font-size: 12px; }
+  .tile-measure-select { font-size: 12px; padding: 3px 6px; }
+  .tile-close-btn { font-size: 18px; padding: 2px 8px; }
+  .sb-topbar { padding: 6px 10px; gap: 10px; }
+  .sb-menu-trigger { max-width: 44vw; }
+  .sb-menu-dropdown {
+    min-width: min(260px, 90vw);
+    max-width: calc(100vw - 16px);
+  }
+  /* Right-most topbar menu opens toward the left edge so it stays in view. */
+  .sb-topbar .sb-menu-wrap:last-of-type .sb-menu-dropdown {
+    left: auto;
+    right: 0;
+  }
 }

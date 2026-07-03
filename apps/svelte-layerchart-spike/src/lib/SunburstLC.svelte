@@ -1,24 +1,15 @@
 <svelte:options customElement="lc-sunburst-lc" />
 
 <!--
-  Sunburst = d3.partition laid out into polar coords. We size <Partition>
-  directly into [angle ∈ [0, 2π], radius ∈ [0, R]] so each node's x0/x1 come
-  back as start/end angles and y0/y1 as inner/outer radii — no <Bounds> needed.
-
-  Same shared bireactive tree model as the treemap; same gesture model
-  (hover + cmd/ctrl+wheel, sticky-locked on the modifier; Tab navigates;
-  arrows nudge value). Group scaling rescales sibling arcs via Num.lens.
-
-  Live-data seam: when sliceboard injects `externalRoot` (a writable BiNode tree
-  built from the active dataset) the chart binds to it instead of the standalone
-  module-scope sharedTree, and edits write back through it. `no-source` hides the
-  footer hint; `brSync` bridges hover/select to the sliceboard hudStore.
+  Sunburst = d3.partition laid out into polar coords.
+  Supports drill-down via internal scale remap (angles and radii).
 -->
 
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
   import { type HierarchyRectangularNode } from "d3-hierarchy";
-  import { Chart, Svg, Partition, Arc } from "layerchart";
+  import { Chart, Svg, Partition, Arc, Bounds } from "layerchart";
+  import { cubicOut } from "svelte/easing";
   import { sharedTree, buildParentIndex, type BiNode } from "./tree";
   import {
     applyDelta,
@@ -34,14 +25,21 @@
     width = 480,
     height = 480,
     externalRoot = undefined,
-  }: { width?: number; height?: number; externalRoot?: BiNode } = $props();
+    drillNodeId = undefined,
+    drillKey = 'default',
+    showBreadcrumb = true,
+  }: {
+    width?: number;
+    height?: number;
+    externalRoot?: BiNode;
+    drillNodeId?: string | null;
+    drillKey?: string;
+    showBreadcrumb?: boolean;
+  } = $props();
 
-  // Effective size: fixed props standalone; tracks the host (tile) when mounted
-  // as a sliceboard custom element (see onMount → observeHostSize below).
   let w = $state(width);
   let h = $state(height);
 
-  // Bind to the injected tree when present, else the standalone sharedTree.
   const root = externalRoot ?? sharedTree;
   const parentIdx = buildParentIndex(root);
   const parentOf = (n: BiNode) => parentIdx.get(n);
@@ -60,8 +58,28 @@
 
   $effect(() => installGestureRelease(() => (wheelLocked = null)));
 
+  // ── Drill support ────────────────────────────────────────────────────────────
+
+  function findNodeById(node: any, id: string): any | null {
+    if (node.data?.value?.id === id) return node;
+    for (const child of node.children ?? []) {
+      const found = findNodeById(child, id);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  const drilledNode = $derived.by(() => {
+    if (!drillNodeId || !hData) return null;
+    return findNodeById(hData, drillNodeId);
+  });
+
+  const breadcrumbPath = $derived.by(() => {
+    if (!drilledNode) return [];
+    return drilledNode.ancestors().reverse();
+  });
+
   // ── Cross-tile hover/select bridge ──────────────────────────────────────────
-  // Index nodes by PNode id so external ids resolve to BiNodes.
   let hostEl = $state.raw<ElementWithBridge | null>(null);
   let applyingExternal = false;
   const byId = new Map<string, BiNode>();
@@ -86,7 +104,6 @@
     hostEl = ($host() as ElementWithBridge) ?? null;
     if (hostEl) {
       hostEl.brSync = bridge;
-      // Fill the tile (sliceboard) — fall back to fixed props standalone.
       disposeSize = observeHostSize(hostEl, height / width, (nw, nh) => { w = nw; h = nh; });
     }
   });
@@ -95,7 +112,6 @@
     disposeSize?.();
   });
 
-  // Emit our own hover/select out, unless we're echoing an external write.
   $effect(() => {
     const hov = hoveredNode;
     if (applyingExternal) return;
@@ -141,6 +157,12 @@
     }
   }
 
+  function handleDrill(nodeId: string) {
+    if (bridge.emitDrill) {
+      bridge.emitDrill(drillKey, nodeId);
+    }
+  }
+
   const total = $derived.by(() => {
     void version;
     return root.value.total.value;
@@ -150,50 +172,117 @@
 </script>
 
 <div
-  style="width: {w}px; height: {h}px; outline: none;"
+  style="width: {w}px; height: {h}px; outline: none; position: relative;"
   tabindex="0"
   role="application"
   aria-label="sunburst-lc"
   onwheel={onWheel}
   onkeydown={onKeydown}
 >
+  {#if showBreadcrumb && drilledNode}
+    <div class="drill-breadcrumb">
+      <button class="drill-crumb" onclick={() => handleDrill('')}>Root</button>
+      {#each breadcrumbPath.slice(1) as ancestor, i}
+        <span class="drill-sep">›</span>
+        <button
+          class="drill-crumb"
+          class:current={i === breadcrumbPath.length - 2}
+          onclick={() => handleDrill(ancestor.data.value.id)}
+        >
+          {ancestor.data.value.label}
+        </button>
+      {/each}
+    </div>
+  {/if}
+
   <Chart data={hData} width={w} height={h}>
     <Svg center>
-      <Partition size={[2 * Math.PI, radius]} let:nodes>
-        {#each nodes as node (node.data)}
-          {@const n = node as HierarchyRectangularNode<BiNode>}
-          {@const isLeaf = n.data.children.length === 0}
-          {@const isFocused = focusedNode === n.data}
-          {@const isHovered = hoveredNode === n.data}
-          {#if n.depth > 0}
-            <Arc
-              startAngle={n.x0}
-              endAngle={n.x1}
-              innerRadius={n.y0}
-              outerRadius={n.y1}
-              fill={n.data.value.color}
-              fillOpacity={isLeaf ? 0.95 : 0.5}
-              stroke={isFocused ? "#fff" : isHovered ? "#c8cdd6" : "#0b0d12"}
-              strokeWidth={isFocused || isHovered ? 2 : 1}
-              onclick={() => (focusedNode = n.data)}
-              onpointerenter={() => (hoveredNode = n.data)}
-              onpointerleave={() => { if (hoveredNode === n.data) hoveredNode = null; }}
-            />
-          {/if}
-        {/each}
-      </Partition>
+      <Bounds
+        domain={drilledNode ? {
+          x0: drilledNode.x0,
+          y0: drilledNode.y0,
+          x1: drilledNode.x1,
+          y1: drilledNode.y1
+        } : { x0: 0, y0: 0, x1: 2 * Math.PI, y1: radius }}
+        range={{ x0: 0, y0: 0, x1: 2 * Math.PI, y1: radius }}
+        tweened={{ duration: 800, easing: cubicOut }}
+        let:xScale
+        let:yScale
+      >
+        <Partition size={[2 * Math.PI, radius]} let:nodes>
+          {#each nodes as node (node.data)}
+            {@const n = node as HierarchyRectangularNode<BiNode>}
+            {@const isLeaf = n.data.children.length === 0}
+            {@const isFocused = focusedNode === n.data}
+            {@const isHovered = hoveredNode === n.data}
+            {@const hasChildren = n.children && n.children.length > 0}
+            {#if n.depth > 0}
+              <Arc
+                startAngle={xScale(n.x0)}
+                endAngle={xScale(n.x1)}
+                innerRadius={yScale(n.y0)}
+                outerRadius={yScale(n.y1)}
+                fill={n.data.value.color}
+                fillOpacity={isLeaf ? 0.95 : 0.5}
+                stroke={isFocused ? "#fff" : isHovered ? "#c8cdd6" : "#0b0d12"}
+                strokeWidth={isFocused || isHovered ? 2 : 1}
+                onclick={() => (focusedNode = n.data)}
+                ondblclick={() => { if (hasChildren) handleDrill(n.data.value.id); }}
+                onpointerenter={() => (hoveredNode = n.data)}
+                onpointerleave={() => { if (hoveredNode === n.data) hoveredNode = null; }}
+              />
+            {/if}
+          {/each}
+        </Partition>
+      </Bounds>
     </Svg>
   </Chart>
   {#if !noSource}
     <div style="font-size: 10px; color: #9aa0a8; text-align: center; margin-top: -18px; pointer-events: none;">
-      total: {total.toFixed(0)} · focused: {focusedNode?.value.label ?? "(none)"} · hover + cmd/ctrl+wheel · click + arrows/Tab
+      total: {total.toFixed(0)} · focused: {focusedNode?.value.label ?? "(none)"} · hover + cmd/ctrl+wheel · click + arrows/Tab{drilledNode ? ` · drilled: ${drilledNode.data.value.label}` : ''}
     </div>
   {/if}
 </div>
 
 <style>
-  /* Fill the tile WIDTH so observeHostSize measures it; height follows the
-     chart's aspect (height:100% would feed svg growth back into the RO and
-     loop). overflow hidden clips a square chart in a short/wide tile. */
   :host { display: block; width: 100%; overflow: hidden; }
+
+  .drill-breadcrumb {
+    position: absolute;
+    top: 4px;
+    left: 8px;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    background: rgba(0, 0, 0, 0.6);
+    padding: 4px 8px;
+    border-radius: 4px;
+  }
+
+  .drill-crumb {
+    background: none;
+    border: none;
+    color: #9aa0a8;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 2px;
+    transition: all 0.15s;
+  }
+
+  .drill-crumb:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+  }
+
+  .drill-crumb.current {
+    color: #fff;
+    font-weight: 500;
+  }
+
+  .drill-sep {
+    color: #555;
+    pointer-events: none;
+  }
 </style>
