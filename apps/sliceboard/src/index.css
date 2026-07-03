@@ -406,10 +406,10 @@ sb-dock-view {
   background: rgba(88, 166, 255, 0.18);
   border: 2px solid #58a6ff;
 }
-.dv-drop-indicator--left   { top: 0; left: 0; width: 33%; height: 100%; }
-.dv-drop-indicator--right  { top: 0; right: 0; width: 33%; height: 100%; }
-.dv-drop-indicator--up     { top: 0; left: 0; width: 100%; height: 33%; }
-.dv-drop-indicator--down   { bottom: 0; left: 0; width: 100%; height: 33%; }
+.dv-drop-indicator--left   { top: 0; left: 0; width: 50%; height: 100%; }
+.dv-drop-indicator--right  { top: 0; right: 0; width: 50%; height: 100%; }
+.dv-drop-indicator--up     { top: 0; left: 0; width: 100%; height: 50%; }
+.dv-drop-indicator--down   { bottom: 0; left: 0; width: 100%; height: 50%; }
 .dv-drop-indicator--center { top: 0; left: 0; width: 100%; height: 100%; }
 
 /* ─── Drag ghost ─────────────────────────────────────────────────────────────── */
