@@ -174,13 +174,15 @@ export function bindTile(container: HTMLElement, source: TileSource): TileContro
     // Edit-out subscription — uses src's internal refs (updated via _syncRefs on same-shapeKey update)
     unbindEditOut = src.bindEditOut(newEl, lastRef)
 
-    // gesturecommit → re-run applyData with gestureActive:false (the single commit re-sort).
-    // Reads currentSourceRef.current so it picks up the latest spec after same-shapeKey updates.
-    const onCommit = () => {
-      if (el) currentSourceRef.current.applyData(el, { gestureActive: false, lastRef })
-    }
-    newEl.addEventListener('gesturecommit', onCommit)
-    ;(newEl as any)._commitHandler = onCommit
+    // gesturecommit: charts dispatch this on gesture end (release or Esc-cancel).
+    // We do NOT call applyData here. The gesturecommit fires synchronously inside
+    // end(), before bindEditOut's microtask pushes the final/restored value to the
+    // store. Calling applyData here would read stale specRef.current.values (the
+    // pre-commit edited values), write them back to the datum (undoing an Esc
+    // restore), and update lastRef (so bindEditOut sees no change and never pushes
+    // the restore to the store). Instead, the store update path handles everything:
+    // bindEditOut → onUpdateMany → commit → setTiles → update → syncFrom →
+    // applyData({ gestureActive: false }) with fresh store values + sort reorder.
 
     // Initial data push (element is connected, dataCell is live)
     src.applyData(newEl, { gestureActive: false, lastRef })
@@ -188,7 +190,6 @@ export function bindTile(container: HTMLElement, source: TileSource): TileContro
 
   function dismount() {
     if (!el) return
-    el.removeEventListener('gesturecommit', (el as any)._commitHandler)
     unbindHud()
     unbindEditOut()
     if (container.contains(el)) container.removeChild(el)
