@@ -44,14 +44,27 @@ export function bindHudSync(el: ElWithBrSync): () => void {
   const bridge = el.brSync
   if (!bridge) {
     // Element is not yet connected to the document (connectedCallback hasn't run),
-    // so scene() hasn't set brSync yet. Defer one microtask so connectedCallback
-    // fires first, then re-run.
+    // so scene() hasn't set brSync yet. Retry with exponential backoff.
     let disposed = false
     let inner: (() => void) | null = null
-    setTimeout(() => {
+    let retryCount = 0
+    const maxRetries = 10
+
+    const tryBind = () => {
       if (disposed) return
-      inner = bindHudSync(el)
-    }, 0)
+      const currentBridge = el.brSync
+      if (currentBridge) {
+        inner = bindHudSync(el)
+      } else if (retryCount < maxRetries) {
+        retryCount++
+        const delay = Math.min(100, Math.pow(2, retryCount))
+        setTimeout(tryBind, delay)
+      } else {
+        console.warn('bindHudSync: brSync not set after max retries', el)
+      }
+    }
+
+    Promise.resolve().then(tryBind)
     return () => { disposed = true; inner?.() }
   }
   let lastInHover: string | null = null
@@ -151,8 +164,12 @@ export function bindTile(container: HTMLElement, source: TileSource): TileContro
     // Initialize last echo map (after append so dataCell is initialized by scene())
     lastRef = src.initialLast(newEl)
 
-    // HUD sync — element is connected so brSync is set
-    unbindHud = bindHudSync(newEl as ElWithBrSync)
+    // HUD sync — defer to next microtask to ensure scene() has run and brSync is set
+    Promise.resolve().then(() => {
+      if (el === newEl) {  // Only bind if element hasn't been dismounted
+        unbindHud = bindHudSync(newEl as ElWithBrSync)
+      }
+    })
 
     // Edit-out subscription — uses src's internal refs (updated via _syncRefs on same-shapeKey update)
     unbindEditOut = src.bindEditOut(newEl, lastRef)
