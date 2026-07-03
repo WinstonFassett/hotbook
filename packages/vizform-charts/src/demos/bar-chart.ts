@@ -80,7 +80,7 @@ export class MdBarChartLC extends Diagram {
     const data = this.dataCell;
     // Register for global gesture-active class sync (suppresses settle transitions
     // on ALL charts when ANY chart has an active gesture).
-    s(trackGlobalGesture(this));
+    trackGlobalGesture(this);
     if (this.orientation === 'horizontal') {
       this.#horizontal(s, data, size);
     } else {

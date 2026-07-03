@@ -126,7 +126,7 @@ export class MdGanttChartLC extends Diagram {
     const size = useHostSize(this, { width: W, height: H });
     this.tabIndex = 0;
     this.style.outline = "none";
-    s(trackGlobalGesture(this));
+    trackGlobalGesture(this);
     this.#draw(s, size);
   }
 

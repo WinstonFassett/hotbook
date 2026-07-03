@@ -54,7 +54,7 @@ export class MdPack extends Diagram {
     const view = this.view(Wc, Hc);
     this.tabIndex = -1;
     this.style.outline = "none";
-    s(trackGlobalGesture(this));
+    trackGlobalGesture(this);
 
     const root = this.externalRoot ?? portfolio();
     const parentIdx = buildParentIndex(root);
