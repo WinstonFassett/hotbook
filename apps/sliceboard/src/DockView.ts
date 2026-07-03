@@ -289,7 +289,16 @@ export class DockView extends HTMLElement {
         // Panel list unchanged — just update active class and close button state.
         const singlePanel = group.panels.length <= 1
         tabsWrap?.querySelectorAll<HTMLElement>('.dv-tab').forEach(tab => {
-          tab.classList.toggle('dv-tab--active', tab.dataset.panelId === group.activeId)
+          const isActive = tab.dataset.panelId === group.activeId
+          tab.classList.toggle('dv-tab--active', isActive)
+          // Scroll active tab into view if it's outside the visible area
+          if (isActive && tabsWrap) {
+            const tabRect = tab.getBoundingClientRect()
+            const wrapRect = tabsWrap.getBoundingClientRect()
+            if (tabRect.left < wrapRect.left || tabRect.right > wrapRect.right) {
+              tab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
+            }
+          }
           const closeBtn = tab.querySelector<HTMLElement>('.dv-tab-close')
           if (closeBtn) {
             closeBtn.toggleAttribute('disabled', singlePanel)
@@ -540,7 +549,10 @@ export class DockView extends HTMLElement {
     maxBtn.className = 'dv-tab-maximize'
     maxBtn.title = group.maximized ? 'Restore' : 'Maximize'
     maxBtn.setAttribute('aria-label', group.maximized ? 'Restore' : 'Maximize')
-    maxBtn.textContent = group.maximized ? '❐' : '□'
+    maxBtn.textContent = group.maximized ? '◱' : '⛶'
+    maxBtn.style.minWidth = '24px'
+    maxBtn.style.minHeight = '24px'
+    maxBtn.style.fontSize = '16px'
     maxBtn.addEventListener('click', () => this._toggleMaximize(group.id))
     actions.appendChild(maxBtn)
 
