@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import {
   BrLcBar, BrLcLine, BrLcArea, BrLcScatter, BrLcPie, BrLcRadar, BrLcConcentricArc,
-  BrLcPack, BrLcTreemap, BrLcTreetable, BrLcIcicle, BrLcSunburst, BrLcSankey, BrLcSankeyFlow, BrLcSankeyGrouped, BrLcSankeyHier, BrLcTree,
+  BrLcPack, BrLcTreemap, BrLcTreetable, BrLcIcicle, BrLcSunburst, BrLcSankey, BrLcSankeyFlow, BrLcSankeyGrouped, BrLcSankeyHier, BrLcSankeyHierBireactive, BrLcTree,
   BrLcGantt,
 } from '../viz/br/BrLcCharts'
 import type { PNode, PEdge } from '../persistence'
@@ -125,6 +125,10 @@ const DEMOS: DemoDef[] = [
   {
     slug: 'br-lc-sankey-hier', label: 'Sankey (hierarchical, expand/collapse)', fixtureName: '(built-in)', fixture: { note: 'WIN-56 — click dashed bars to expand/collapse group nodes' },
     render: () => <BrLcSankeyHier />,
+  },
+  {
+    slug: 'br-lc-sankey-hier-bireactive', label: 'Sankey (hierarchical, BIREACTIVE)', fixtureName: '(built-in)', fixture: { note: 'WIN-56 — bireactive pattern with structural conservation' },
+    render: () => <BrLcSankeyHierBireactive />,
   },
   {
     slug: 'br-lc-gantt', label: 'Gantt', fixtureName: 'gantt-tasks', fixture: GANTT,

@@ -34,6 +34,7 @@ import {
   MdSankeyFlow,
   MdSankeyGrouped,
   MdSankeyHier,
+  MdSankeyHierBireactive,
   MdTreeChart,
   numberDrag,
   MdGanttChartLC,
@@ -60,6 +61,7 @@ const TAGS = [
   ['v-br-sankey-flow',    MdSankeyFlow],
   ['v-br-sankey-grouped', MdSankeyGrouped],
   ['v-br-sankey-hier',    MdSankeyHier],
+  ['v-br-sankey-hier-bireactive', MdSankeyHierBireactive],
   ['v-br-tree',           MdTreeChart],
   ['v-br-gantt',          MdGanttChartLC],
 ] as const
@@ -506,5 +508,11 @@ export function BrLcSankeyGrouped() {
 // ─── Sankey (hierarchical, expand/collapse, WIN-56) ────────────────────────────
 export function BrLcSankeyHier() {
   const ref = useBrElement<MdSankeyHier>('v-br-sankey-hier', () => {}, [])
+  return <div ref={ref} style={{ width: '100%', height: '100%' }} />
+}
+
+// ─── Sankey (hierarchical, BIREACTIVE variant with structural conservation) ─────
+export function BrLcSankeyHierBireactive() {
+  const ref = useBrElement<MdSankeyHierBireactive>('v-br-sankey-hier-bireactive', () => {}, [])
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }
