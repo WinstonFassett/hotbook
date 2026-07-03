@@ -587,10 +587,9 @@ function buildSeedWorkspace(): Workspace {
   // Hierarchical charts first (top row) for drill dogfooding.
   const ALL_KINDS: TileKind[] = [
     'br-lc-pack', 'br-lc-treemap', 'br-lc-treetable', 'br-lc-icicle', 'br-lc-sunburst',
-    'treetable',
     'br-lc-bar', 'br-lc-bands', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie',
     'br-lc-radar', 'br-lc-concentric-arc',
-    'br-lc-sankey', 'br-lc-sankey-flow', 'br-lc-tree',
+    'br-lc-sankey', 'br-lc-sankey-flow', 'br-lc-tree', 'br-lc-gantt',
   ]
 
   const GROUPBY_KINDS = new Set<TileKind>([
@@ -640,10 +639,37 @@ function buildSeedWorkspace(): Workspace {
 
 // ─── Load / save ──────────────────────────────────────────────────────────────
 
+// Valid tile kinds that can be rendered (includes retired kinds that still work)
+const VALID_TILE_KINDS = new Set<TileKind>([
+  'br-lc-bar', 'br-lc-bands', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie',
+  'br-lc-radar', 'br-lc-concentric-arc',
+  'br-lc-gauge', 'br-lc-gauge-segmented',
+  'br-lc-pack', 'br-lc-treemap', 'br-lc-treetable', 'br-lc-icicle', 'br-lc-sunburst',
+  'br-lc-sankey', 'br-lc-sankey-flow', 'br-lc-tree', 'br-lc-gantt',
+  'treetable', // retired but still renders via vanilla treetable
+])
+
 function load(): Workspace | null {
   try {
     const raw = localStorage.getItem(LS_KEY)
-    if (raw) return JSON.parse(raw) as Workspace
+    if (raw) {
+      const ws = JSON.parse(raw) as Workspace
+      // Guard: filter out tiles with unknown kinds
+      ws.dashboards.forEach(dash => {
+        const before = dash.tiles.length
+        dash.tiles = dash.tiles.filter(tile => {
+          const valid = VALID_TILE_KINDS.has(tile.kind)
+          if (!valid) {
+            console.warn(`[persistence] Dropped tile ${tile.id} with unknown kind: ${tile.kind}`)
+          }
+          return valid
+        })
+        if (dash.tiles.length < before) {
+          console.warn(`[persistence] Dropped ${before - dash.tiles.length} invalid tiles from dashboard ${dash.id}`)
+        }
+      })
+      return ws
+    }
 
     // One-shot migration from v10
     const legacy = localStorage.getItem('sb:workspace:v10')
@@ -654,9 +680,22 @@ function load(): Workspace | null {
         dash.drills = { default: dash.drillNodeId }
       }
       delete dash.drillNodeId
+      // Guard: filter out tiles with unknown kinds (also for migrated data)
+      const before = dash.tiles.length
+      dash.tiles = dash.tiles.filter(tile => {
+        const valid = VALID_TILE_KINDS.has(tile.kind)
+        if (!valid) {
+          console.warn(`[persistence] Dropped tile ${tile.id} with unknown kind: ${tile.kind}`)
+        }
+        return valid
+      })
+      if (dash.tiles.length < before) {
+        console.warn(`[persistence] Dropped ${before - dash.tiles.length} invalid tiles from dashboard ${dash.id}`)
+      }
     })
     return ws
-  } catch {
+  } catch (e) {
+    console.error('[persistence] Failed to load workspace:', e)
     return null
   }
 }

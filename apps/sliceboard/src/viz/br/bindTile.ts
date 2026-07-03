@@ -7,13 +7,13 @@
  * Behavior is IDENTICAL — same echo suppression, freeze, commit re-sort, batching.
  */
 
-import { effect as biEffect, leavesOf } from 'bireactive'
+import { effect as biEffect, leavesOf, walkTree } from 'bireactive'
 import type { Cell, Num, Writable } from 'bireactive'
 import type { PNode } from '../../persistence'
 import { buildBiTree } from './tree'
 import type { BiNode } from './tree'
 import { hudStore } from '../../store'
-import { wheelController, dragController } from '@winstonfassett/vizform-charts'
+import { wheelController, dragController, numberDrag } from '@winstonfassett/vizform-charts'
 
 // ─── Epsilon + helpers ────────────────────────────────────────────────────────
 
@@ -401,7 +401,6 @@ export interface HierSpec {
   depth?: number
   sortBy?: 'index' | 'value'
   orientation?: 'horizontal' | 'vertical'
-  sortBy?: 'index' | 'value'
   shapeKey: string
   valueKey: string
   drillNodeId?: string | null
@@ -409,6 +408,10 @@ export interface HierSpec {
   showBreadcrumb?: boolean
   onUpdate?: (nodeId: string, measures: PNode['measures']) => void
   onUpdateMany?: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
+  enableNumberDrag?: {
+    selector: string  // CSS selector prefix for editable elements, e.g., '[data-editable-value'
+    pxPerUnit?: number
+  }
 }
 
 export function makeHierSource(spec: HierSpec): TileSource {
@@ -422,6 +425,7 @@ export function makeHierSource(spec: HierSpec): TileSource {
   const showBreadcrumbRef = { current: spec.showBreadcrumb }
   const sortByRef = { current: spec.sortBy ?? 'index' }
   const orientationRef = { current: spec.orientation }
+  const enableNumberDragRef = { current: spec.enableNumberDrag }
 
   const source: TileSource = {
     tag: spec.tag,
@@ -442,6 +446,54 @@ export function makeHierSource(spec: HierSpec): TileSource {
       typedEl.sortBy = sortByRef.current
       delete (typedEl as any).orientation;
       if (orientationRef.current !== undefined) typedEl.orientation = orientationRef.current
+
+      // Attach numberDrag if configured (for treetable and similar)
+      if (enableNumberDragRef.current && typeof (typedEl as any).onRender === 'function') {
+        const disposers: Array<() => void> = []
+        const { selector, pxPerUnit = 4 } = enableNumberDragRef.current
+
+        const unsubRender = (typedEl as any).onRender((allNodeIds: string[]) => {
+          // Clean up previous drag handlers
+          for (const d of disposers.splice(0)) d()
+
+          const rootEl = (typedEl as any).getRoot?.()
+          if (!rootEl) return
+
+          // Build a map of ALL BiNodes by id (including parents)
+          const allNodes: BiNode[] = []
+          walkTree(root, (n) => allNodes.push(n as BiNode))
+          const nodeMap = new Map(allNodes.map(n => [n.value.id, n]))
+
+          // Attach numberDrag to ALL visible value cells
+          for (const id of allNodeIds) {
+            const cell = rootEl.querySelector<HTMLElement>(`${selector}="${id}"]`)
+            if (!cell) continue
+
+            const biNode = nodeMap.get(id)
+            if (!biNode) continue
+
+            const get = () => biNode.value.total.value
+            const set = (v: number) => {
+              // Write to the BiNode - lens will handle redistribution for parents
+              biNode.value.total.value = v
+              const pnode = nodesRef.current.find(n => n.id === id)
+              if (pnode && onUpdateRef.current) {
+                onUpdateRef.current(id, { ...pnode.measures, [measureKeyRef.current]: v })
+              }
+            }
+
+            disposers.push(numberDrag(cell, { get, set, pxPerUnit }))
+          }
+        })
+
+        // Store cleanup function
+        const originalDispose = (typedEl as any).__dispose
+        ;(typedEl as any).__dispose = () => {
+          unsubRender?.()
+          for (const d of disposers) d()
+          originalDispose?.()
+        }
+      }
     },
 
     initialLast(_el: HTMLElement): Map<string, number> {
