@@ -496,4 +496,21 @@ function mount() {
   render()
 }
 
-mount()
+function isDemosHash(): boolean {
+  return window.location.hash.startsWith('#/demos')
+}
+
+function route() {
+  if (isDemosHash()) {
+    import('./demos/demos-main').then((m) => m.mountDemos())
+  } else {
+    mount()
+  }
+}
+
+route()
+
+window.addEventListener('hashchange', () => {
+  // Demos and sliceboard are two separate surfaces; reload to switch cleanly.
+  window.location.reload()
+})
