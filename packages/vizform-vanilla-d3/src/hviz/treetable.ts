@@ -175,22 +175,8 @@ export function mountTreetable(
       fragment.appendChild(row)
     }
 
-    // Animate out stale rows before removing
-    if (transitionsEnabled && !prefersReducedMotion() && existing.size > 0) {
-      for (const el of existing.values()) {
-        el.style.opacity = '0'
-        el.style.transform = 'translateX(-8px)'
-      }
-      // Wait for exit animation to complete before removing
-      setTimeout(() => {
-        for (const el of existing.values()) {
-          if (el.parentNode) el.remove()
-        }
-      }, 250)
-    } else {
-      // Immediate removal if transitions disabled
-      for (const el of existing.values()) el.remove()
-    }
+    // Remove stale rows immediately (no exit animation - collapse should be instant)
+    for (const el of existing.values()) el.remove()
 
     body.appendChild(fragment)
 

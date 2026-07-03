@@ -183,30 +183,12 @@ export class MdTreetableLC extends HTMLElement {
       fragment.appendChild(row);
     }
 
-    // Remove stale rows and clean up their effects
-    if (transitionsOn && !prefersReducedMotion() && existing.size > 0) {
-      // Animate out before removing
-      for (const [id, el] of existing.entries()) {
-        el.style.opacity = '0';
-        el.style.transform = 'translateX(-8px)';
-      }
-      // Wait for exit animation before cleanup
-      setTimeout(() => {
-        for (const [id, el] of existing.entries()) {
-          if (el.parentNode) el.remove();
-          const dispose = this.valueEffectDisposers.get(id);
-          dispose?.();
-          this.valueEffectDisposers.delete(id);
-        }
-      }, 250);
-    } else {
-      // Immediate removal if transitions disabled
-      for (const [id, el] of existing.entries()) {
-        el.remove();
-        const dispose = this.valueEffectDisposers.get(id);
-        dispose?.();
-        this.valueEffectDisposers.delete(id);
-      }
+    // Remove stale rows immediately (no exit animation - collapse should be instant)
+    for (const [id, el] of existing.entries()) {
+      el.remove();
+      const dispose = this.valueEffectDisposers.get(id);
+      dispose?.();
+      this.valueEffectDisposers.delete(id);
     }
 
     this.body.appendChild(fragment);
