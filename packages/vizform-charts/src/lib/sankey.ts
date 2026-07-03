@@ -444,19 +444,18 @@ export function sankeyScene(
     const groupLinks = isSink ? topology.inc[n]! : topology.out[n]!;
     if (groupLinks.length > 0) {
       const sources: Writable<Num>[] = groupLinks.map((li) => linkValues[li]!.value as unknown as Writable<Num>);
-      // Group grip: horizontal bar handle at node's bottom edge, centered.
-      // Offset down by 8px to avoid collision with ribbon grips.
-      const GRIP_OFFSET = 8;
+      // Group grip: horizontal bar handle at node's TOP edge, centered.
+      // Drag down = grow, drag up = shrink. Matches sankey-flow reference pattern.
       const BAR_WIDTH = 32;
       const BAR_HEIGHT = 4;
       const gripPos = () => {
         const b = layout.value.nodes[n]!;
-        return { x: (b.x0 + b.x1) / 2, y: b.y1 + GRIP_OFFSET };
+        return { x: (b.x0 + b.x1) / 2, y: b.y0 };
       };
       // Nodes are center-stacked, so BOTH edges move when a node resizes — no edge
       // is a stable absolute reference. frozenGripPos pins the lens getter to the
       // capture position for the duration of the drag so the grip tracks the cursor
-      // at 1:1 (without freezing, the bottom edge moves at half the drag rate
+      // at 1:1 (without freezing, the top edge moves at half the drag rate
       // because growth splits evenly between top and bottom).
       let frozenGripPos: { x: number; y: number } | null = null;
       let startY = 0, startTot = 0, startVals: number[] = [];
@@ -465,7 +464,7 @@ export function sankeyScene(
         () => frozenGripPos ?? gripPos(),
         (target, vals: readonly number[]) => {
           if (startTot <= 0) return vals.slice();
-          const wantTot = Math.max(LINK_MIN, startTot + (target.y - startY) / pxPerUnit);
+          const wantTot = Math.max(LINK_MIN, startTot + (startY - target.y) / pxPerUnit);
           const k = wantTot / startTot;
           // Scale from the gesture-START values (not the live ones) so repeated
           // moves don't compound. startVals aligns with `sources`/`vals` order.
@@ -541,12 +540,12 @@ export function sankeyScene(
       const aCell = linkValues[li]!.value as unknown as Writable<Num>;
       const active = cell(false);
 
-      // Position: bottom edge of link `li` on the source face = boundary with sibling.
-      // Offset ribbon grips 12px to the right (away from node) to avoid group grip collision.
+      // Position: TOP edge of link `li` on the source face = boundary with sibling.
+      // Ribbon grips offset 12px to the right (away from node) for better separation.
       const RIBBON_GRIP_OFFSET = 12;
       const boundaryPos = () => {
         const b = layout.value.links[li]!;
-        return { x: b.sx + RIBBON_GRIP_OFFSET, y: b.sy + b.width / 2 };
+        return { x: b.sx + RIBBON_GRIP_OFFSET, y: b.sy - b.width / 2 };
       };
       const gripVis = Vec.derive(boundaryPos);
 
