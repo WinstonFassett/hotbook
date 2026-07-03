@@ -1,5 +1,5 @@
 import { useRef, useEffect } from 'react';
-import { writable } from 'bireactive';
+import { cell } from 'bireactive';
 import { MdBarChartLC } from '@winstonfassett/vizform-charts';
 import { DataTable } from '../components/DataTable';
 import type { ExampleMeta } from './types';
@@ -14,10 +14,10 @@ function BarTableDemo() {
 
   // Create reactive data
   const data = [
-    { id: 'apples', label: 'Apples', value: writable(30) },
-    { id: 'bananas', label: 'Bananas', value: writable(45) },
-    { id: 'oranges', label: 'Oranges', value: writable(25) },
-    { id: 'grapes', label: 'Grapes', value: writable(60) },
+    { id: 'apples', label: 'Apples', value: cell(30) },
+    { id: 'bananas', label: 'Bananas', value: cell(45) },
+    { id: 'oranges', label: 'Oranges', value: cell(25) },
+    { id: 'grapes', label: 'Grapes', value: cell(60) },
   ];
 
   useEffect(() => {
@@ -58,10 +58,10 @@ const example: ExampleMeta = {
   description: 'Interactive bar chart with bidirectional data binding. Drag bars to update values, or edit the table to change the chart.',
   maturity: 'released',
   render: () => <BarTableDemo />,
-  source: `// Data with bireactive writables
+  source: `// Data with bireactive cells
 const data = [
-  { id: 'apples', label: 'Apples', value: writable(30) },
-  { id: 'bananas', label: 'Bananas', value: writable(45) },
+  { id: 'apples', label: 'Apples', value: cell(30) },
+  { id: 'bananas', label: 'Bananas', value: cell(45) },
   // ...
 ];
 

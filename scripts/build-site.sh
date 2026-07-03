@@ -8,6 +8,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 echo "==> Building packages..."
+npm run build -w packages/vizform-charts
 npm run build -w packages/vizform-vanilla-d3
 npm run build -w packages/vizform-react-d3
 

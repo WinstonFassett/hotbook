@@ -1,5 +1,5 @@
 import { useRef, useEffect } from 'react';
-import { writable } from 'bireactive';
+import { cell } from 'bireactive';
 import { MdTreemapLC } from '@winstonfassett/vizform-charts';
 import { DataTable } from '../components/DataTable';
 import type { ExampleMeta } from './types';
@@ -14,12 +14,12 @@ function TreemapTableDemo() {
 
   // Create hierarchical reactive data
   const data = [
-    { id: 'engineering', label: 'Engineering', value: writable(120), parentId: null },
-    { id: 'frontend', label: 'Frontend', value: writable(50), parentId: 'engineering' },
-    { id: 'backend', label: 'Backend', value: writable(70), parentId: 'engineering' },
-    { id: 'marketing', label: 'Marketing', value: writable(80), parentId: null },
-    { id: 'content', label: 'Content', value: writable(40), parentId: 'marketing' },
-    { id: 'social', label: 'Social', value: writable(40), parentId: 'marketing' },
+    { id: 'engineering', label: 'Engineering', value: cell(120), parentId: null },
+    { id: 'frontend', label: 'Frontend', value: cell(50), parentId: 'engineering' },
+    { id: 'backend', label: 'Backend', value: cell(70), parentId: 'engineering' },
+    { id: 'marketing', label: 'Marketing', value: cell(80), parentId: null },
+    { id: 'content', label: 'Content', value: cell(40), parentId: 'marketing' },
+    { id: 'social', label: 'Social', value: cell(40), parentId: 'marketing' },
   ];
 
   useEffect(() => {
@@ -64,8 +64,8 @@ const example: ExampleMeta = {
   render: () => <TreemapTableDemo />,
   source: `// Hierarchical data with parent relationships
 const data = [
-  { id: 'engineering', label: 'Engineering', value: writable(120), parentId: null },
-  { id: 'frontend', label: 'Frontend', value: writable(50), parentId: 'engineering' },
+  { id: 'engineering', label: 'Engineering', value: cell(120), parentId: null },
+  { id: 'frontend', label: 'Frontend', value: cell(50), parentId: 'engineering' },
   // ...
 ];
 

@@ -1,9 +1,5 @@
 ---
-import { getExamples } from '../examples';
-import { TableOfContents } from '../components/TableOfContents';
-import { ExampleSection } from '../components/ExampleSection';
-
-const examples = getExamples(['released', 'candidate']);
+import { DocsApp } from '../components/DocsApp';
 const title = 'vizform - Bidirectional Data Visualization';
 ---
 
@@ -119,7 +115,7 @@ const title = 'vizform - Bidirectional Data Visualization';
       margin: 0 0.5rem;
     }
 
-    /* Main Content */
+    /* Main content */
     .main-content {
       margin-left: var(--toc-width);
       flex: 1;
@@ -127,7 +123,6 @@ const title = 'vizform - Bidirectional Data Visualization';
       max-width: 1200px;
     }
 
-    /* Hero Section */
     .hero {
       padding: 4rem 0;
       border-bottom: 1px solid var(--border);
@@ -145,7 +140,6 @@ const title = 'vizform - Bidirectional Data Visualization';
       max-width: 600px;
     }
 
-    /* Example Sections */
     .example-section {
       margin-bottom: 4rem;
       scroll-margin-top: 2rem;
@@ -170,20 +164,9 @@ const title = 'vizform - Bidirectional Data Visualization';
       text-transform: uppercase;
     }
 
-    .maturity-released {
-      background: #238636;
-      color: #fff;
-    }
-
-    .maturity-candidate {
-      background: #d29922;
-      color: #fff;
-    }
-
-    .maturity-experimental {
-      background: #8b949e;
-      color: #fff;
-    }
+    .maturity-released { background: #238636; color: #fff; }
+    .maturity-candidate { background: #d29922; color: #fff; }
+    .maturity-experimental { background: #8b949e; color: #fff; }
 
     .example-description {
       color: var(--text-dim);
@@ -198,11 +181,7 @@ const title = 'vizform - Bidirectional Data Visualization';
       margin-bottom: 1rem;
     }
 
-    /* Demo Layout */
-    .demo-container {
-      width: 100%;
-    }
-
+    .demo-container { width: 100%; }
     .demo-layout {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -210,26 +189,17 @@ const title = 'vizform - Bidirectional Data Visualization';
     }
 
     @media (max-width: 1024px) {
-      .demo-layout {
-        grid-template-columns: 1fr;
-      }
+      .demo-layout { grid-template-columns: 1fr; }
     }
 
-    .demo-chart {
-      min-height: 400px;
-    }
-
-    .demo-data h3 {
-      margin-bottom: 0.5rem;
-    }
-
+    .demo-chart { min-height: 400px; }
+    .demo-data h3 { margin-bottom: 0.5rem; }
     .demo-data p {
       font-size: 0.875rem;
       color: var(--text-dim);
       margin-bottom: 1rem;
     }
 
-    /* Data Table */
     .data-table table {
       width: 100%;
       border-collapse: collapse;
@@ -261,10 +231,7 @@ const title = 'vizform - Bidirectional Data Visualization';
       border-color: var(--accent);
     }
 
-    /* Source Code */
-    .example-source {
-      margin-top: 1rem;
-    }
+    .example-source { margin-top: 1rem; }
 
     .source-toggle {
       background: var(--surface);
@@ -277,9 +244,7 @@ const title = 'vizform - Bidirectional Data Visualization';
       transition: all 0.2s;
     }
 
-    .source-toggle:hover {
-      background: var(--surface-hover);
-    }
+    .source-toggle:hover { background: var(--surface-hover); }
 
     .source-code {
       margin-top: 1rem;
@@ -296,10 +261,7 @@ const title = 'vizform - Bidirectional Data Visualization';
       line-height: 1.5;
     }
 
-    /* Getting Started */
-    .getting-started {
-      padding: 2rem 0;
-    }
+    .getting-started { padding: 2rem 0; }
 
     .getting-started pre {
       background: var(--bg);
@@ -315,12 +277,8 @@ const title = 'vizform - Bidirectional Data Visualization';
       font-size: 0.875rem;
     }
 
-    /* Responsive */
     @media (max-width: 768px) {
-      .toc {
-        display: none;
-      }
-
+      .toc { display: none; }
       .main-content {
         margin-left: 0;
         padding: 2rem 1rem;
@@ -329,39 +287,6 @@ const title = 'vizform - Bidirectional Data Visualization';
   </style>
 </head>
 <body>
-  <div class="layout">
-    <TableOfContents examples={examples} client:load />
-
-    <main class="main-content">
-      <section id="hero" class="hero">
-        <h1>vizform</h1>
-        <p>
-          Framework-agnostic data visualization with true bidirectional binding.
-          Drag a chart element to update data. Edit data to update the chart.
-          All powered by bireactive.
-        </p>
-      </section>
-
-      {examples.map((example) => (
-        <ExampleSection example={example} client:load />
-      ))}
-
-      <section id="getting-started" class="getting-started">
-        <h2>Getting Started</h2>
-        <p>Install the packages you need:</p>
-        <pre><code>npm install @winstonfassett/vizform-react-d3 @winstonfassett/vizform-core bireactive</code></pre>
-        <p>Check out the examples above to see how to use vizform in your project.</p>
-        <p>
-          <a href="https://github.com/WinstonFassett/vizform" style="color: var(--accent);">
-            View on GitHub
-          </a>
-          {' · '}
-          <a href="/playground" style="color: var(--accent);">
-            Try the Playground
-          </a>
-        </p>
-      </section>
-    </main>
-  </div>
+  <DocsApp client:only="react" />
 </body>
 </html>
