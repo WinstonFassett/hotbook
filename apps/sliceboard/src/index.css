@@ -406,10 +406,10 @@ sb-dock-view {
   background: rgba(88, 166, 255, 0.18);
   border: 2px solid #58a6ff;
 }
-.dv-drop-indicator--left   { top: 0; left: 0; width: 33%; height: 100%; }
-.dv-drop-indicator--right  { top: 0; right: 0; width: 33%; height: 100%; }
-.dv-drop-indicator--up     { top: 0; left: 0; width: 100%; height: 33%; }
-.dv-drop-indicator--down   { bottom: 0; left: 0; width: 100%; height: 33%; }
+.dv-drop-indicator--left   { top: 0; left: 0; width: 50%; height: 100%; }
+.dv-drop-indicator--right  { top: 0; right: 0; width: 50%; height: 100%; }
+.dv-drop-indicator--up     { top: 0; left: 0; width: 100%; height: 50%; }
+.dv-drop-indicator--down   { bottom: 0; left: 0; width: 100%; height: 50%; }
 .dv-drop-indicator--center { top: 0; left: 0; width: 100%; height: 100%; }
 
 /* ─── Drag ghost ─────────────────────────────────────────────────────────────── */
@@ -426,4 +426,78 @@ sb-dock-view {
   z-index: 9999;
   white-space: nowrap;
   box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+}
+
+/* ─── Touch drag surfaces ───────────────────────────────────────────────────
+   Rule 14 (interaction-principles.md): touch and mouse are equivalent gesture
+   surfaces. Elements that own a drag gesture (tabs, gutters, tile headers,
+   number-drag cells) must claim the touch gesture from the browser via
+   `touch-action: none`; otherwise iOS/Android start scrolling on the first
+   pointermove and never send us the drag events. Tabstrip and tabs area keep
+   `pan-x` so horizontal swipe still scrolls hidden overflow tabs.
+   ─────────────────────────────────────────────────────────────────────────── */
+.dv-tab { touch-action: none; }
+.dv-tabs { touch-action: pan-x; }
+.dv-tabstrip { touch-action: none; }
+.dv-gutter { touch-action: none; }
+.tile-header { touch-action: none; }
+/* Chart tile bodies are gesture surfaces — Rule 14: touch drag-edit must not
+   lose to page scroll. Scrollable tile bodies (e.g. the tree table) keep
+   their default behavior so vertical scroll still works. Individual scrubber
+   cells inside a scroll body claim their own gesture via touch-action:none. */
+.tile-body:not(.tile-body--scroll) > * { touch-action: none; }
+
+/* ─── Mobile (≤640px) ────────────────────────────────────────────────────────
+   Sliceboard's DockView renders splits inline (flex-direction set via
+   element.style), so overrides here need !important. On narrow viewports we:
+   - Collapse row splits to a vertical stack so each pane gets the full width.
+   - Widen split gutters into a proper touch-sized hit area between panes;
+     _startGutterDrag derives the drag axis from the DOM so the horizontal
+     bar drags vertical size correctly.
+   - Enlarge tab and close-button hit targets for touch.
+   - Let tile headers/toolbars wrap instead of clipping.
+   ────────────────────────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .dv-root,
+  .dv-branch--row {
+    flex-direction: column !important;
+  }
+  /* Row gutter now sits between vertically stacked panes — flip it to a
+     horizontal bar and give it a fat touch hit area. */
+  .dv-gutter--row {
+    width: 100% !important;
+    height: 14px !important;
+    cursor: row-resize !important;
+  }
+  .dv-gutter--col { height: 14px; }
+  .dv-tabstrip { min-height: 34px; }
+  .dv-tab {
+    min-width: 96px;
+    max-width: 180px;
+    padding: 0 10px 0 12px;
+    font-size: 12px;
+  }
+  .dv-tab-close,
+  .dv-tab-maximize,
+  .dv-tab-add { font-size: 16px; padding: 4px 8px; }
+  .dv-tab-close { opacity: 0.6; }
+  .tile-header {
+    padding: 6px 10px;
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+  .tile-title { font-size: 12px; }
+  .tile-measure-select { font-size: 12px; padding: 3px 6px; }
+  .tile-close-btn { font-size: 18px; padding: 2px 8px; }
+  .sb-topbar { padding: 6px 10px; gap: 10px; }
+  .sb-menu-trigger { max-width: 44vw; }
+  .sb-menu-dropdown {
+    min-width: min(260px, 90vw);
+    max-width: calc(100vw - 16px);
+  }
+  /* Right-most topbar menu opens toward the left edge so it stays in view. */
+  .sb-topbar .sb-menu-wrap:last-of-type .sb-menu-dropdown {
+    left: auto;
+    right: 0;
+  }
 }

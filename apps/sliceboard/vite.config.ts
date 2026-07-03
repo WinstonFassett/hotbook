@@ -6,6 +6,11 @@ try {
   sveltePlugin = (await import('@sveltejs/vite-plugin-svelte')).svelte as (opts: unknown) => PluginOption
 } catch { /* svelte not available in this env */ }
 
+let reactPlugin: (() => PluginOption) | null = null
+try {
+  reactPlugin = (await import('@vitejs/plugin-react')).default as () => PluginOption
+} catch { /* not available in all envs (CI/prod) */ }
+
 let webdevPlugin: (() => PluginOption) | null = null
 try {
   webdevPlugin = (await import('@winstonfassett/webdev-vite')).webdev as () => PluginOption
@@ -14,6 +19,7 @@ try {
 export default defineConfig({
   plugins: [
     sveltePlugin?.({ extensions: ['.svelte'], compilerOptions: { customElement: true } }),
+    reactPlugin?.(),
     webdevPlugin?.(),
   ],
   resolve: {
@@ -21,6 +27,15 @@ export default defineConfig({
     dedupe: ['bireactive'],
     alias: {
       '@svelte-lc': path.resolve(__dirname, '../../apps/svelte-layerchart-spike/src'),
+    },
+  },
+  build: {
+    // bireactive's Diagram subclasses derive their custom element tag name from
+    // the class name at runtime via static get tagName(). Rollup minifies class
+    // names to single letters (e.g. "f0"), making define() throw. Keep them.
+    minify: 'terser',
+    terserOptions: {
+      keep_classnames: true,
     },
   },
 })

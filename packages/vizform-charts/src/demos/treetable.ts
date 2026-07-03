@@ -43,6 +43,13 @@ function computeVisible(root: BiNode, collapsed: Set<string>, maxDepth?: number)
   return out;
 }
 
+export interface ColumnDef {
+  key: string;
+  label: string;
+  width?: number;
+  visible?: boolean;
+}
+
 /**
  * MdTreetableLC - HTML-based hierarchical treetable for BiNode data.
  * Does NOT extend Diagram because tables need HTML DOM for proper scrolling
@@ -50,6 +57,9 @@ function computeVisible(root: BiNode, collapsed: Set<string>, maxDepth?: number)
  *
  * Supports reactive value updates and editing of both leaves AND parents via
  * the bireactive sum-redistribute lens pattern.
+ *
+ * Now supports multiple columns with a column picker UI and whole-row editing
+ * when only one column is visible.
  */
 export class MdTreetableLC extends HTMLElement {
   externalRoot?: BiNode;
@@ -58,39 +68,199 @@ export class MdTreetableLC extends HTMLElement {
   drillNodeId?: string | null;
   showBreadcrumb?: boolean;
   enableTransitions?: boolean;
+  columns?: ColumnDef[];
 
   private root!: HTMLDivElement;
   private body!: HTMLDivElement;
   private collapsed = new Set<string>();
   private renderListeners = new Set<(allNodeIds: string[]) => void>();
   private valueEffectDisposers = new Map<string, () => void>();
+  private columnVisibility = new Map<string, boolean>();
 
   connectedCallback() {
     this.render();
   }
 
+  private showColumnPicker(anchorEl: HTMLElement, columns: ColumnDef[]) {
+    // Remove existing picker if any
+    const existingPicker = document.querySelector('[data-column-picker]');
+    if (existingPicker) {
+      existingPicker.remove();
+      return; // Toggle off
+    }
+
+    const picker = document.createElement('div');
+    picker.dataset.columnPicker = 'true';
+    picker.style.cssText = 'position:absolute;background:oklch(0.18 0 0);border:1px solid oklch(0.25 0 0);border-radius:4px;padding:8px;font-size:11px;z-index:1000;box-shadow:0 4px 12px rgba(0,0,0,0.3);min-width:150px;';
+
+    // Position picker below the button
+    const rect = anchorEl.getBoundingClientRect();
+    picker.style.left = `${rect.left}px`;
+    picker.style.top = `${rect.bottom + 4}px`;
+
+    // Column checkboxes
+    for (const col of columns) {
+      const isVisible = this.columnVisibility.get(col.key) !== false;
+      const visibleCount = this.getVisibleColumns().length;
+      const isOnlyVisible = isVisible && visibleCount === 1;
+
+      const item = document.createElement('label');
+      item.style.cssText = 'display:flex;align-items:center;gap:6px;padding:4px;cursor:pointer;color:oklch(0.8 0 0);transition:background 80ms;';
+      if (isOnlyVisible) {
+        item.style.opacity = '0.5';
+        item.style.cursor = 'not-allowed';
+        item.title = 'At least one column must be visible';
+      }
+
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = isVisible;
+      checkbox.disabled = isOnlyVisible;
+      checkbox.style.cssText = 'cursor:pointer;';
+
+      checkbox.addEventListener('change', (e) => {
+        e.stopPropagation();
+        if (!isOnlyVisible) {
+          this.toggleColumnVisibility(col.key);
+        }
+      });
+
+      const label = document.createElement('span');
+      label.textContent = col.label;
+
+      item.addEventListener('mouseenter', () => {
+        if (!isOnlyVisible) item.style.background = 'oklch(0.22 0 0)';
+      });
+      item.addEventListener('mouseleave', () => { item.style.background = ''; });
+
+      item.appendChild(checkbox);
+      item.appendChild(label);
+      picker.appendChild(item);
+    }
+
+    document.body.appendChild(picker);
+
+    // Close picker on outside click
+    const closeHandler = (e: MouseEvent) => {
+      if (!picker.contains(e.target as Node) && e.target !== anchorEl) {
+        picker.remove();
+        document.removeEventListener('click', closeHandler);
+      }
+    };
+    setTimeout(() => document.addEventListener('click', closeHandler), 0);
+  }
+
+  private getAvailableColumns(): ColumnDef[] {
+    if (this.columns && this.columns.length > 0) {
+      return this.columns;
+    }
+
+    // Auto-detect columns from rootNode measures
+    const rootNode = this.externalRoot ?? portfolio();
+    const measureKeys = new Set<string>();
+
+    function collectKeys(node: BiNode) {
+      if (node.value.measures) {
+        for (const key of Object.keys(node.value.measures)) {
+          measureKeys.add(key);
+        }
+      }
+      for (const child of node.children as BiNode[]) {
+        collectKeys(child);
+      }
+    }
+    collectKeys(rootNode);
+
+    // If no measures found, default to showing "total" as "Value" column
+    if (measureKeys.size === 0) {
+      return [{
+        key: 'total',
+        label: 'Value',
+        width: 80,
+        visible: true
+      }];
+    }
+
+    return Array.from(measureKeys).map(key => ({
+      key,
+      label: key.charAt(0).toUpperCase() + key.slice(1),
+      width: 80,
+      visible: true
+    }));
+  }
+
+  private getVisibleColumns(): ColumnDef[] {
+    const allColumns = this.getAvailableColumns();
+    return allColumns.filter(col =>
+      this.columnVisibility.get(col.key) !== false && (col.visible !== false)
+    );
+  }
+
+  private toggleColumnVisibility(key: string) {
+    const current = this.columnVisibility.get(key) !== false;
+    this.columnVisibility.set(key, !current);
+    this.render();
+  }
+
   private render() {
     const rootNode = this.externalRoot ?? portfolio();
+    const allColumns = this.getAvailableColumns();
+    const visibleColumns = this.getVisibleColumns();
+    const singleColumnMode = visibleColumns.length === 1;
 
     // Create root container if needed
     if (!this.root) {
       this.root = document.createElement('div');
       this.root.style.cssText = 'width:100%;height:100%;overflow-y:auto;font-size:12px;font-family:inherit;background:oklch(0.14 0 0);';
+      this.appendChild(this.root);
+    }
 
-      // Header
-      const head = document.createElement('div');
-      head.style.cssText = 'display:flex;align-items:center;padding:4px 8px;border-bottom:1px solid oklch(0.25 0 0);position:sticky;top:0;background:oklch(0.14 0 0);z-index:1;';
-      head.innerHTML = `
-        <div style="flex:1;font-size:10px;font-weight:600;letter-spacing:0.06em;color:oklch(0.5 0 0);text-transform:uppercase;">Name</div>
-        <div style="width:60px;text-align:right;font-size:10px;font-weight:600;letter-spacing:0.06em;color:oklch(0.5 0 0);text-transform:uppercase;">Value</div>
-      `;
-      this.root.appendChild(head);
+    // Rebuild header each render to update column picker state
+    const existingHead = this.root.querySelector('[data-table-header]') as HTMLElement;
+    if (existingHead) existingHead.remove();
 
-      // Body
+    const head = document.createElement('div');
+    head.dataset.tableHeader = 'true';
+    head.style.cssText = 'display:flex;align-items:center;padding:4px 8px;border-bottom:1px solid oklch(0.25 0 0);position:sticky;top:0;background:oklch(0.14 0 0);z-index:1;gap:4px;';
+
+    // Name column header
+    const nameHeader = document.createElement('div');
+    nameHeader.style.cssText = 'flex:1;font-size:10px;font-weight:600;letter-spacing:0.06em;color:oklch(0.5 0 0);text-transform:uppercase;';
+    nameHeader.textContent = 'Name';
+    head.appendChild(nameHeader);
+
+    // Column picker button
+    if (allColumns.length > 0) {
+      const pickerBtn = document.createElement('button');
+      pickerBtn.style.cssText = 'all:unset;cursor:pointer;padding:2px 6px;font-size:10px;color:oklch(0.5 0 0);background:oklch(0.18 0 0);border-radius:3px;transition:background 80ms;';
+      pickerBtn.textContent = '⚙';
+      pickerBtn.title = 'Column picker';
+
+      pickerBtn.addEventListener('mouseenter', () => { pickerBtn.style.background = 'oklch(0.25 0 0)'; });
+      pickerBtn.addEventListener('mouseleave', () => { pickerBtn.style.background = 'oklch(0.18 0 0)'; });
+
+      pickerBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.showColumnPicker(pickerBtn, allColumns);
+      });
+
+      head.appendChild(pickerBtn);
+    }
+
+    // Value column headers
+    for (const col of visibleColumns) {
+      const colHeader = document.createElement('div');
+      colHeader.style.cssText = `width:${col.width ?? 80}px;text-align:right;font-size:10px;font-weight:600;letter-spacing:0.06em;color:oklch(0.5 0 0);text-transform:uppercase;`;
+      colHeader.textContent = col.label;
+      head.appendChild(colHeader);
+    }
+
+    this.root.insertBefore(head, this.root.firstChild);
+
+    // Body container
+    if (!this.body) {
       this.body = document.createElement('div');
       this.root.appendChild(this.body);
-
-      this.appendChild(this.root);
     }
 
     const visible = computeVisible(rootNode, this.collapsed, this.maxDepth);
@@ -137,8 +307,13 @@ export class MdTreetableLC extends HTMLElement {
       const isCollapsed = this.collapsed.has(nodeId);
       const color = node.value.color;
 
+<<<<<<< HEAD
       const valueTransition = transitionsOn ? settleTransition('color') : 'none';
       row.innerHTML = `
+=======
+      // Build name cell
+      const nameCell = `
+>>>>>>> origin/main
         <div style="flex:1;display:flex;align-items:center;gap:4px;padding-left:${indent}px;min-width:0;">
           ${hasKids
             ? `<button data-twist="${nodeId}" style="all:unset;cursor:pointer;width:14px;text-align:center;color:oklch(0.5 0 0);font-size:10px;flex-shrink:0;">${isCollapsed ? '▸' : '▾'}</button>`
@@ -147,8 +322,24 @@ export class MdTreetableLC extends HTMLElement {
           <span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;"></span>
           <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:oklch(0.88 0 0);">${node.value.label}</span>
         </div>
+<<<<<<< HEAD
         <div data-value-cell="${nodeId}" data-editable-value="${nodeId}" style="width:60px;text-align:right;color:oklch(0.7 0 0);font-variant-numeric:tabular-nums;transition:${valueTransition};cursor:ew-resize;touch-action:none;"></div>
+=======
+>>>>>>> origin/main
       `;
+
+      // Build value cells for each visible column
+      const valueCells = visibleColumns.map(col => {
+        const cellCursor = singleColumnMode ? 'pointer' : 'ew-resize';
+        return `<div data-value-cell="${nodeId}:${col.key}" data-editable-value="${nodeId}:${col.key}" data-measure-key="${col.key}" style="width:${col.width ?? 80}px;text-align:right;color:oklch(0.7 0 0);font-variant-numeric:tabular-nums;cursor:${cellCursor};touch-action:none;"></div>`;
+      }).join('');
+
+      row.innerHTML = nameCell + valueCells;
+
+      // In single-column mode, make the whole row editable
+      if (singleColumnMode) {
+        row.style.cursor = 'ew-resize';
+      }
 
       // Attach expand/collapse handler
       if (hasKids) {
@@ -164,20 +355,27 @@ export class MdTreetableLC extends HTMLElement {
         });
       }
 
-      // Set up reactive value display
-      const valueCell = row.querySelector<HTMLElement>(`[data-value-cell="${nodeId}"]`);
-      if (valueCell) {
-        // Clean up old effect if it exists
-        const oldDispose = this.valueEffectDisposers.get(nodeId);
-        oldDispose?.();
+      // Set up reactive value display for each column
+      for (const col of visibleColumns) {
+        const valueCell = row.querySelector<HTMLElement>(`[data-value-cell="${nodeId}:${col.key}"]`);
+        if (valueCell) {
+          // Clean up old effect if it exists
+          const effectKey = `${nodeId}:${col.key}`;
+          const oldDispose = this.valueEffectDisposers.get(effectKey);
+          oldDispose?.();
 
-        // Create reactive effect to update value display
-        const dispose = effect(() => {
-          const value = node.value.total.value;
-          valueCell.textContent = fmtNum(value);
-        });
+          // Create reactive effect to update value display
+          // For backward compatibility: if col.key is 'total' or measures don't exist, use node.value.total
+          const measureValue = (col.key === 'total' || !node.value.measures)
+            ? node.value.total
+            : (node.value.measures[col.key] ?? node.value.total);
+          const dispose = effect(() => {
+            const value = measureValue.value;
+            valueCell.textContent = fmtNum(value);
+          });
 
-        this.valueEffectDisposers.set(nodeId, dispose);
+          this.valueEffectDisposers.set(effectKey, dispose);
+        }
       }
 
       fragment.appendChild(row);

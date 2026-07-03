@@ -61,9 +61,9 @@ export function attachCartesianGestures<TData>(
   // Per-gesture value-mapping handed to the SHARED wheel/drag controllers (app-
   // wide singletons; one pointer → one live gesture).
   const wheelConfig = {
-    snapshot: (d: TData) => ctx.yAcc(d) as number,
+    snapshot: (d: TData) => { (host as any).gestureActive = true; return ctx.yAcc(d) as number; },
     restore: (d: TData, v: number) => mutateDatum(d, v - (ctx.yAcc(d) as number)),
-    onEnd: () => { state.hover.value = null; gestureOrder = null; host.dispatchEvent(new CustomEvent("gesturecommit")); },
+    onEnd: () => { (host as any).gestureActive = false; state.hover.value = null; gestureOrder = null; host.dispatchEvent(new CustomEvent("gesturecommit")); },
   };
 
   // Captured at pointerdown, read by dragConfig.snapshot (called inside begin()).
@@ -187,6 +187,12 @@ export function attachCartesianGestures<TData>(
     host.style.cursor = pt && Math.abs(y - yPixel(pt)) <= 12 ? "ns-resize" : "";
   };
 
+  // Rule 14: touch is a first-class gesture surface. Claim the touch gesture
+  // from the browser so vertical drag-edit doesn't lose to page scroll on
+  // mobile. Restored on dispose.
+  const prevTouchAction = host.style.touchAction;
+  host.style.touchAction = "none";
+
   host.addEventListener("pointerleave", onPointerLeave);
   host.addEventListener("click", onClick);
   host.addEventListener("wheel", onWheel, { passive: false });
@@ -224,6 +230,7 @@ export function attachCartesianGestures<TData>(
   });
 
   return () => {
+    host.style.touchAction = prevTouchAction;
     host.removeEventListener("pointerleave", onPointerLeave);
     host.removeEventListener("click", onClick);
     host.removeEventListener("wheel", onWheel);

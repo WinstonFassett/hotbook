@@ -70,9 +70,9 @@ export class MdPieChartLC extends Diagram {
 
     // Config handed to the SHARED wheel controller (app-wide singleton).
     const wheelConfig = {
-      snapshot: (d: Slice) => d.value.value,
+      snapshot: (d: Slice) => { (this as any).gestureActive = true; return d.value.value; },
       restore: (d: Slice, v: number) => { d.value.value = Math.max(1, v); },
-      onEnd: () => { hover.value = null; this.dispatchEvent(new CustomEvent("gesturecommit")); },
+      onEnd: () => { (this as any).gestureActive = false; hover.value = null; this.dispatchEvent(new CustomEvent("gesturecommit")); },
     };
 
     // Pie layout (reactive). Reads each slice's value CELL so the layout

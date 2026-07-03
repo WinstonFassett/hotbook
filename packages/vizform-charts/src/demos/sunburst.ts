@@ -17,7 +17,7 @@ import {
   untracked,
 } from "bireactive";
 import { partition, type HierarchyRectangularNode } from "d3-hierarchy";
-import { depthFill } from "../lib/depth-color";
+import { depthFill, labelInk } from "../lib/depth-color";
 import { buildHierarchy } from "../lib/interaction";
 import { buildParentIndex, type BiNode } from "../lib/tree";
 import { portfolio, walkWithDepth } from "../lib/portfolio";
@@ -306,7 +306,38 @@ export class MdSunburstLC extends Diagram {
       arc.el.addEventListener("pointerenter", () => { state.hovered.current = node; hoverCell.value = node; state.emitHover?.(node); });
       arc.el.addEventListener("pointerleave", () => { if (state.hovered.current === node) { state.hovered.current = null; hoverCell.value = null; state.emitHover?.(null); } });
 
-      return arc;
+      // Label rendering — only show for arcs large enough to fit text
+      const isLeaf = !node.children || node.children.length === 0;
+      const arcAngleSpan = derive(() => Math.abs(a1.value - a0.value));
+      const arcRadialThickness = derive(() => rOut.value - rIn.value);
+      const showLabel = derive(() => {
+        // Only show label if arc is large enough: at least 0.15 radians (~8.6°) and 20px thick
+        return arcAngleSpan.value >= 0.15 && arcRadialThickness.value >= 20;
+      });
+
+      const labelPos = Vec.derive(() => {
+        const midAngle = (a0.value + a1.value) / 2;
+        const midRadius = (rIn.value + rOut.value) / 2;
+        const c = center.value;
+        return { x: c.x + midRadius * Math.cos(midAngle), y: c.y + midRadius * Math.sin(midAngle) };
+      });
+
+      const labelText = derive(() => {
+        if (!showLabel.value) return '';
+        return isLeaf
+          ? `${node.value.label}\n${node.value.total.value.toFixed(0)}`
+          : node.value.label;
+      });
+
+      const nodeFill = depthFill(node.value.color, depth).toString();
+      const lbl = label(labelPos, labelText, {
+        size: isLeaf ? 11 : 10,
+        align: Anchor.Center,
+        fill: labelInk(nodeFill),
+        bold: !isLeaf,
+      });
+
+      return group(arc, lbl);
     }, { key: (n) => n.value.id });
 
     // Windowed handle rendering.

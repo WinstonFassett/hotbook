@@ -26,7 +26,7 @@ const TILE_KINDS: TileKind[] = [
   'treetable',
   'br-lc-bar', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie',
   'br-lc-radar', 'br-lc-concentric-arc', 'br-lc-gauge', 'br-lc-gauge-segmented',
-  'br-lc-pack', 'br-lc-treemap', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-sankey-flow', 'br-lc-tree',
+  'br-lc-pack', 'br-lc-treemap', 'br-lc-treetable', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-sankey-flow', 'br-lc-tree', 'br-lc-gantt',
 ]
 
 const TILE_LABELS: Record<TileKind, string> = {
@@ -43,11 +43,13 @@ const TILE_LABELS: Record<TileKind, string> = {
   'br-lc-gauge-segmented':'Gauge (segmented)',
   'br-lc-pack':           'Pack',
   'br-lc-treemap':        'Treemap',
+  'br-lc-treetable':      'Treetable',
   'br-lc-icicle':         'Icicle',
   'br-lc-sunburst':       'Sunburst',
   'br-lc-sankey':         'Sankey',
   'br-lc-sankey-flow':    'Sankey Flow',
   'br-lc-tree':           'Tree',
+  'br-lc-gantt':          'Gantt',
   'h-treemap':            'H-Treemap (retired)',
   'h-icicle':             'Icicle (retired)',
   'h-radial':             'Sunburst (retired)',
@@ -66,6 +68,16 @@ function tileLabel(tile: Tile): string {
 }
 
 // ─── App state ────────────────────────────────────────────────────────────────
+
+// Check for reset URL param
+if (new URLSearchParams(window.location.search).get('reset') === '1') {
+  localStorage.clear()
+  console.log('[main] Workspace reset via ?reset=1')
+  // Remove the param from the URL to avoid repeated resets
+  const url = new URL(window.location.href)
+  url.searchParams.delete('reset')
+  window.history.replaceState({}, '', url.toString())
+}
 
 let ws: Workspace = initWorkspace()
 const dockView = document.createElement('sb-dock-view') as DockView
@@ -235,6 +247,24 @@ function renderTopbar(ws: Workspace) {
     dashes.length > 1 ? () => deleteDash(ws.activeDashboardId) : undefined,
     'dashboard',
   ))
+
+  // Spacer to push reset button to the right
+  const spacer = document.createElement('div')
+  spacer.style.flex = '1'
+  topbar.appendChild(spacer)
+
+  // Reset workspace button
+  const resetBtn = document.createElement('button')
+  resetBtn.className = 'sb-btn sb-reset-btn'
+  resetBtn.textContent = 'Reset'
+  resetBtn.title = 'Clear workspace and reload seed data'
+  resetBtn.addEventListener('click', () => {
+    if (confirm('Reset workspace to seed data? This will clear all changes.')) {
+      localStorage.clear()
+      window.location.reload()
+    }
+  })
+  topbar.appendChild(resetBtn)
 }
 
 function buildDropdown(
@@ -466,4 +496,21 @@ function mount() {
   render()
 }
 
-mount()
+function isDemosHash(): boolean {
+  return window.location.hash.startsWith('#/demos')
+}
+
+function route() {
+  if (isDemosHash()) {
+    import('./demos/demos-main').then((m) => m.mountDemos())
+  } else {
+    mount()
+  }
+}
+
+route()
+
+window.addEventListener('hashchange', () => {
+  // Demos and sliceboard are two separate surfaces; reload to switch cleanly.
+  window.location.reload()
+})

@@ -230,9 +230,9 @@ export class MdGaugeLC extends Diagram {
 
     // Wheel edit on the whole diagram (cmd+wheel, like sibling charts).
     const wheelConfig = {
-      snapshot: () => value.value,
+      snapshot: () => { (this as any).gestureActive = true; return value.value; },
       restore: (_t: unknown, snap: number) => { value.value = Math.max(minV, Math.min(maxV, snap)); },
-      onEnd: () => { this.dispatchEvent(new CustomEvent("gesturecommit")); },
+      onEnd: () => { (this as any).gestureActive = false; this.dispatchEvent(new CustomEvent("gesturecommit")); },
     };
     this.addEventListener("wheel", (e) => {
       const we = e as WheelEvent;
