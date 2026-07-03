@@ -1,15 +1,31 @@
 {
-  "name": "vizform-docs",
-  "version": "0.0.1",
-  "private": true,
+  "name": "docs",
   "type": "module",
+  "version": "0.0.1",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "dev": "portless docs astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "@astrojs/react": "^4.1.0",
+    "astro": "^7.0.6",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "@winstonfassett/vizform-charts": "*",
+    "@winstonfassett/vizform-core": "*",
+    "@winstonfassett/vizform-vanilla-d3": "*",
+    "@winstonfassett/vizform-react-d3": "*",
+    "bireactive": "^0.3.4",
+    "@types/d3": "^7.4.3",
+    "d3": "^7.9.0"
   },
   "devDependencies": {
-    "typescript": "^5.7.2",
-    "vite": "^6.3.5"
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0"
   }
 }
