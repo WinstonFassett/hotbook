@@ -306,32 +306,23 @@ export class DockView extends HTMLElement {
     const active = group.panels.find(p => p.id === group.activeId) ?? group.panels[0]
     if (!active) { body.innerHTML = ''; return }
 
-    // Find the currently visible (non-hidden) panel to know what's shown right now.
-    const existingPanelEl = Array.from(body.querySelectorAll<HTMLElement>('.dv-panel'))
-      .find(p => p.style.display !== 'none')
+    const existingPanelEl = body.querySelector<HTMLElement>('.dv-panel')
     const existingPanelId = existingPanelEl?.dataset.panelId
 
     // Remove stale drop indicators
     body.querySelectorAll('.dv-drop-indicator').forEach(e => e.remove())
 
     if (existingPanelId !== active.id) {
-      // Active panel changed — hide inactive panels (keeps chart elements connected
-      // so connectedCallback/scene() don't re-run on tab switch) and show active panel.
-      body.querySelectorAll<HTMLElement>('.dv-panel').forEach(p => { p.style.display = 'none' })
-      // Get or create the active panel wrap.
-      const existingActive = this._panelCtrls.get(active.id)
-      if (existingActive?.wrap && body.contains(existingActive.wrap)) {
-        // Wrap already in body (just hidden) — show it.
-        existingActive.wrap.style.display = ''
-        if (tilesChanged) {
-          const tileRec = tiles.find(t => t.tile.id === active.tileId)
-          if (tileRec) this._syncChart(active.id, tileRec)
-        }
-      } else {
-        // First time showing this panel — create and append its wrap.
-        const wrap = this._getPanelContent(active.id, active.tileId, tiles)
-        if (wrap) body.appendChild(wrap)
-      }
+      // Active panel changed — remove the old panel (detaching its chart element,
+      // which lets bireactive's disconnectedCallback dispose the scene graph) and
+      // create a fresh wrap for the now-active panel. _mountChart rebuilds the
+      // chart with fresh data, so hidden tabs never go stale. This re-runs scene()
+      // on tab switch, which is the cost we pay for correctness — the keep-alive
+      // optimization (44654dc) introduced a class of stale-data bugs by caching
+      // hidden charts and only syncing the active one.
+      body.querySelectorAll<HTMLElement>('.dv-panel').forEach(p => p.remove())
+      const wrap = this._getPanelContent(active.id, active.tileId, tiles)
+      if (wrap) body.appendChild(wrap)
     } else if (tilesChanged) {
       // Same panel, tiles data changed — sync source data (syncFrom/applyData).
       // Skip when only dock changed (gutter drag) to avoid overwriting in-flight gesture edits.
@@ -822,11 +813,26 @@ export class DockView extends HTMLElement {
         }
         this._panelCtrls.set(panelId, ctrl)
       } else {
-        // Re-parent without moving the chart element — keep it in its container.
-        // (We get here only on first show after initial mount if wrap wasn't cached.)
-        body.appendChild(existing.container)
-        if (wrap) existing.wrap = wrap
-        existing.tileCtrl?.update(source)
+        // The previous chart element was detached when its wrap was removed on
+        // tab switch — bireactive's disconnectedCallback disposed its scene graph,
+        // so the old tileCtrl is stale. Dispose it and create a fresh bindTile
+        // (which creates a new chart element + scene() run with current data).
+        existing.dispose()
+        this._panelCtrls.delete(panelId)
+        const container = document.createElement('div')
+        container.style.cssText = 'width:100%;height:100%;flex:1;min-height:0'
+        body.appendChild(container)
+        const tileCtrl = bindTile(container, source)
+        const ctrl: PanelCtrl = {
+          container,
+          tileCtrl,
+          simpleEl: null,
+          simpleDataKey: '',
+          tileId: tile.id,
+          wrap: wrap ?? null,
+          dispose: () => { tileCtrl.dispose(); container.remove() },
+        }
+        this._panelCtrls.set(panelId, ctrl)
       }
     } else {
       // Simple one-shot element (gauge, sankey)
