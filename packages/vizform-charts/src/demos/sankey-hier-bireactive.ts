@@ -192,11 +192,12 @@ export class MdSankeyHierBireactive extends Diagram {
       const lens = Vec.lens(
         [lc.value],
         ([v]) => {
-          const l = layout.peek().links[i]!;
+          // Use layout.value (not peek) so lens tracks layout changes
+          const l = layout.value.links[i]!;
           return { x: l.x1 + 12, y: l.y1 + l.width / 2 };
         },
         (t, [v]) => {
-          // Compute new value from y position
+          // Use peek in write since we're computing the change
           const l = layout.peek().links[i]!;
           const dy = t.y - (l.y1 + l.width / 2);
           const dv = dy / pxPerUnit;
@@ -245,10 +246,12 @@ export class MdSankeyHierBireactive extends Diagram {
         const lens = Vec.lens(
           sources,
           (vals) => {
-            const nd = layout.peek().nodes[n]!;
+            // Use layout.value (not peek) so lens tracks layout changes
+            const nd = layout.value.nodes[n]!;
             return { x: nd.x0 + NODE_WIDTH / 2, y: nd.y1 + 6 };
           },
           (t, vals) => {
+            // Use peek in write since we're computing the change
             const nd = layout.peek().nodes[n]!;
             const dy = t.y - (nd.y1 + 6);
             const totalCurrent = vals.reduce((sum, v) => sum + v, 0);
