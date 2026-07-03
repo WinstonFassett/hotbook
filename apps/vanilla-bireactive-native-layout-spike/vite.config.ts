@@ -9,10 +9,7 @@ const bireactiveSrc = fileURLToPath(
 );
 
 export default defineConfig({
-  base: '/native-layout/',
   build: {
-    outDir: '../../apps/sliceboard/dist/native-layout',
-    emptyOutDir: true,
     // bireactive's Diagram.define() derives the custom element tag name from
     // the class name at runtime (this.name). Rollup's default minifier mangles
     // class names to short ids (e.g. "f0"), making define() throw
