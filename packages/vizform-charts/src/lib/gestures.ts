@@ -3,6 +3,7 @@ import {
   dynamicWheelStep,
   flatOrder,
   wheelController,
+  realModifierDown,
   type ScalingMode,
 } from "./interaction";
 import { walkTree, effect as biEffect, batch } from "bireactive";
@@ -57,10 +58,13 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
 
   const onWheel = (e: WheelEvent) => {
     if (!e.ctrlKey) return;
+    // Distinguish trackpad pinch (synthetic ctrlKey, no real key) from a real
+    // Cmd/Ctrl+wheel. Pinch needs a different commit strategy (no keyup fires).
+    const isPinch = !realModifierDown();
     if (!wheelController.active) {
       const t = state.hovered.current ?? state.focused.value;
       if (!t || t === root) return;
-      wheelController.begin(t, wheelConfig);
+      wheelController.begin(t, wheelConfig, { pinch: isPinch });
       state.wheelLocked.current = wheelController.target as BiNode | null;
     }
     const target = wheelController.target as BiNode | null;

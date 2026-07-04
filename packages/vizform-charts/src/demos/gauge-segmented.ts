@@ -9,7 +9,7 @@ import {
   group, label, mount, type Mount, Num, num, pathD, rect, Vec, type Writable,
 } from "bireactive";
 import { arc as d3Arc } from "d3-shape";
-import { wheelController } from "../lib/interaction";
+import { wheelController, realModifierDown } from "../lib/interaction";
 import { dragCancelable } from "../lib/esc-contract";
 import { numberDrag } from "../lib/number-drag";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
@@ -219,7 +219,7 @@ export class MdGaugeSegmentedLC extends Diagram {
     this.addEventListener("wheel", (e) => {
       const we = e as WheelEvent;
       if (!we.ctrlKey && !we.metaKey) return;
-      const t = wheelController.begin(this, wheelConfig);
+      const t = wheelController.begin(this, wheelConfig, { pinch: !realModifierDown() });
       if (!t) return;
       we.preventDefault();
       const step = (we.shiftKey ? 5 : 1) * (we.altKey ? 0.1 : 1);

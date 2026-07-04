@@ -5,7 +5,7 @@
 import { Anchor, cell, circle, derive, Diagram, effect as biEffect, label, type Mount, num, pathD, Vec } from "bireactive";
 import { scaleLinear } from "d3-scale";
 import { extent, ticks as d3Ticks } from "d3-array";
-import { wheelController, dragController, dynamicWheelStep } from "../lib/interaction";
+import { wheelController, dragController, dynamicWheelStep, realModifierDown } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 
@@ -344,7 +344,7 @@ export class MdRadarChartLC extends Diagram {
     svgEl.addEventListener("wheel", (e) => {
       const we = e as WheelEvent;
       if (!we.ctrlKey) return;
-      const t = wheelController.begin(hover.value ?? selected.value, wheelConfig);
+      const t = wheelController.begin(hover.value ?? selected.value, wheelConfig, { pinch: !realModifierDown() });
       if (!t) return;
       we.preventDefault();
       const s = dynamicWheelStep(t.value, we.shiftKey);

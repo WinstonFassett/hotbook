@@ -37,6 +37,7 @@ import {
   dragController,
   dynamicWheelStep,
   wheelController,
+  realModifierDown,
 } from "../lib/interaction";
 import {
   GESTURE_ACTIVE_CLASS,
@@ -607,7 +608,7 @@ export class MdGanttChartLC extends Diagram {
       const we = e as WheelEvent;
       if (!we.ctrlKey && !we.metaKey) return;
       we.preventDefault(); we.stopPropagation();
-      const t = wheelController.begin(hover.value ?? selected.value, wheelConfig);
+      const t = wheelController.begin(hover.value ?? selected.value, wheelConfig, { pinch: !realModifierDown() });
       if (!t) return;
       const curDays = Math.max(1, Math.round((t.end.getTime() - t.start.getTime()) / DAY_MS));
       const step = dynamicWheelStep(curDays, we.shiftKey);

@@ -4,7 +4,7 @@
 
 import { Anchor, cell, circle, derive, Diagram, easeInOut, effect as biEffect, group, label, mount, type Mount, num, pathD, tween, Vec } from "bireactive";
 import { arc as d3Arc } from "d3-shape";
-import { wheelController, dragController } from "../lib/interaction";
+import { wheelController, dragController, realModifierDown } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 
@@ -311,7 +311,7 @@ export class MdConcentricArcLC extends Diagram {
     svgEl.addEventListener("wheel", (e) => {
       const we = e as WheelEvent;
       if (!we.ctrlKey) return;
-      const t = wheelController.begin(selected.value ?? hover.value ?? lastRing, wheelConfig);
+      const t = wheelController.begin(selected.value ?? hover.value ?? lastRing, wheelConfig, { pinch: !realModifierDown() });
       if (!t) return;
       we.preventDefault();
       mutateDatum(t, we.deltaY < 0 ? (we.shiftKey ? 5 : 1) : (we.shiftKey ? -5 : -1));
