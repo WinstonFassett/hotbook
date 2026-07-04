@@ -165,25 +165,6 @@ function initialPxPerUnit(
   return isFinite(ppu) && ppu > 0 ? ppu : 1;
 }
 
-/**
- * Viewer side of the decoupling: reactively frame the diagram's announced bounds
- * into the host SVG via the viewBox. As the figure grows/shrinks (editing flows)
- * the viewBox tracks its bounds — a pure transform, never a geometry recompute.
- * `preserveAspectRatio` keeps it centered and uniformly scaled. The SVG's CSS box
- * is whatever the host/tile gives it (auto-height in the spike, a fixed resizable
- * tile in sliceboard); the viewBox maps data-space → that box either way.
- */
-function fitHostToBounds(host: Diagram, layout: { value: { bounds: { x: number; y: number; w: number; h: number } } }): void {
-  const svg = (host as any).svg as SVGSVGElement;
-  const PAD = 8;
-  biEffect(() => {
-    const b = layout.value.bounds;
-    const x = b.x - PAD, y = b.y - PAD, w = b.w + PAD * 2, h = b.h + PAD * 2;
-    svg.setAttribute("viewBox", `${x} ${y} ${w} ${h}`);
-    svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
-  });
-}
-
 export function sankeyScene(
   host: Diagram,
   s: Mount,
@@ -237,14 +218,9 @@ export function sankeyScene(
   const layout = derive<SankeyLayout>(() =>
     computeLayout(topology, linkValues.map((l) => l.value.value), dims)
   );
-
-  // Viewer policy (decoupled from geometry): frame the diagram's announced
-  // bounds into the host. The diagram reports its size; the viewBox transform
-  // fits it — a GPU transform, never a geometry recompute. Reactive, so as the
-  // figure grows/shrinks the framing tracks it without reflowing anything.
-  // (Spike demos: this auto-fits the growing figure. Sliceboard's fixed tile
-  //  simply imposes its own box on the same element — same diagram, two viewers.)
-  fitHostToBounds(host, layout);
+  // NOTE: fitHostToBounds was removed — it reactively overrode the fixed viewBox
+  // set by view(), causing captions (color controls, help text) to move and scale
+  // with the diagram during edits. The fixed viewBox from view() is correct.
 
   const nodeColors = derive(() =>
     nodeColorScale(topology.layer, nodeColorProp.value, interp)
