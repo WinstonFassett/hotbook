@@ -64,12 +64,15 @@ export class MdScatterChartLC extends Diagram {
 
     const data = this.dataCell;
 
-    // Per-point tweened x/y value cells — TWEEN on measure swap (animate
-    // dots to new positions), SNAP on value edits / gestures (write-through).
-    // Same two-lane gate pattern as hier charts (WIN-143).
+    // Per-point tweened x/y value cells — TWEEN on measure swap or sort
+    // (animate dots to new positions), SNAP on value edits / gestures
+    // (write-through). Same two-lane gate pattern as hier charts (WIN-143).
     const points0 = data.peek() as Point[];
     const xCells = new Map<string, ReturnType<typeof num>>();
     const yCells = new Map<string, ReturnType<typeof num>>();
+    // orderHash detects sort — when xKey is _index, reindex changes x values,
+    // so sort moves dots horizontally. The gate tweens on order change.
+    const orderHash = derive(() => (data.value as Point[]).map(d => d.id ?? String((data.value as Point[]).indexOf(d))).join(','));
     for (const pt of points0) {
       const pid = pt.id ?? String(points0.indexOf(pt));
       const xTarget = derive(() => { void data.value; return pt.x; });
@@ -80,13 +83,15 @@ export class MdScatterChartLC extends Diagram {
       let inited = false;
       let seenMeasureKey = untracked(() => this._measureKeyCell.value);
       let seenXKey = untracked(() => this._xKeyCell.value);
+      let seenOrder = untracked(() => orderHash.value);
       biEffect(() => {
         const xt = xTarget.value, yt = yTarget.value;
         const measureKey = untracked(() => this._measureKeyCell.value);
         const xKey = untracked(() => this._xKeyCell.value);
-        if (!inited) { inited = true; seenMeasureKey = measureKey; seenXKey = xKey; xc.value = xt; yc.value = yt; return; }
-        const structural = measureKey !== seenMeasureKey || xKey !== seenXKey;
-        seenMeasureKey = measureKey; seenXKey = xKey;
+        const order = orderHash.value;
+        if (!inited) { inited = true; seenMeasureKey = measureKey; seenXKey = xKey; seenOrder = order; xc.value = xt; yc.value = yt; return; }
+        const structural = measureKey !== seenMeasureKey || xKey !== seenXKey || order !== seenOrder;
+        seenMeasureKey = measureKey; seenXKey = xKey; seenOrder = order;
         if (structural && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
           cancel?.();
           cancel = this.anim.start(

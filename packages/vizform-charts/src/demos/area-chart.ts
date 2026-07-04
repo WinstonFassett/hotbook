@@ -94,13 +94,18 @@ export class MdAreaChartLC extends Diagram {
     }
     // Tweened data cell — replaces raw values with tweened values for rendering.
     // Gestures still mutate raw data; tween cells snap to follow.
+    // Sort points by date so the area always draws left-to-right regardless of
+    // array order (sort-by-value reorders the array but the area shape is
+    // date-based, not order-based — sort is a visual no-op for area charts).
     const tweenedData = derive(() => {
       void data.value; // track data changes (reorder, add/remove)
-      return (data.peek() as Point[]).map(pt => {
-        const pid = pt.id ?? String(pt.date.getTime());
-        const yc = yCells.get(pid);
-        return yc ? { ...pt, value: yc.value } : pt;
-      });
+      return (data.peek() as Point[])
+        .map(pt => {
+          const pid = pt.id ?? String(pt.date.getTime());
+          const yc = yCells.get(pid);
+          return yc ? { ...pt, value: yc.value } : pt;
+        })
+        .sort((a, b) => a.date.getTime() - b.date.getTime());
     });
 
     const ctx = chartContext<Point>({

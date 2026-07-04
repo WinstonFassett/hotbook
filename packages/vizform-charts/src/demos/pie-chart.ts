@@ -81,7 +81,7 @@ export class MdPieChartLC extends Diagram {
     const wheelConfig = {
       snapshot: (d: Slice) => { setGestureActive(true); return d.value.value; },
       restore: (d: Slice, v: number) => { d.value.value = Math.max(1, v); },
-      onEnd: () => { setGestureActive(false); hover.value = null; this.dispatchEvent(new CustomEvent("gesturecommit")); },
+      onEnd: (canceled: boolean) => { setGestureActive(false); hover.value = null; this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } })); },
     };
 
     // Per-slice tweened value cells — TWEEN on measure swap (animate arcs to
@@ -277,7 +277,7 @@ export class MdPieChartLC extends Diagram {
         dragCancelable(dot, knob, [a, b], {
           host: this,
           onStart: () => { active.value = true; setGestureActive(true); dot.el.style.cursor = "grabbing"; },
-          onEnd: () => { active.value = false; setGestureActive(false); dot.el.style.cursor = "grab"; this.dispatchEvent(new CustomEvent("gesturecommit")); },
+          onEnd: (canceled: boolean) => { active.value = false; setGestureActive(false); dot.el.style.cursor = "grab"; this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } })); },
         });
         dot.el.style.cursor = "grab";
         dot.el.addEventListener("pointerenter", () => { active.value = true; });

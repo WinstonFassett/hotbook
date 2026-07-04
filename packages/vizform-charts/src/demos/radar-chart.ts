@@ -80,7 +80,7 @@ export class MdRadarChartLC extends Diagram {
     const wheelConfig = {
       snapshot: (d: Spoke) => { setGestureActive(true); return d.value; },
       restore: (d: Spoke, v: number) => mutateDatum(d, v - d.value),
-      onEnd: () => { setGestureActive(false); hover.value = null; this.dispatchEvent(new CustomEvent("gesturecommit")); },
+      onEnd: (canceled: boolean) => { setGestureActive(false); hover.value = null; this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } })); },
     };
 
     // y: scaleLinear 0–100 → radius 0–R_MAX
@@ -337,13 +337,13 @@ export class MdRadarChartLC extends Diagram {
       snapshot: (d: Spoke) => d.value,
       restore: (d: Spoke, v: number) => mutateDatum(d, v - d.value),
       onMove: onDragMove,
-      onEnd: () => {
+      onEnd: (canceled: boolean) => {
         if (dragPointerId >= 0 && (this as any).hasPointerCapture?.(dragPointerId)) {
           (this as any).releasePointerCapture(dragPointerId);
         }
         dragPointerId = -1;
         setGestureActive(false);
-        this.dispatchEvent(new CustomEvent("gesturecommit"));
+        this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } }));
       },
     };
     this.addEventListener("pointerdown", (e) => {

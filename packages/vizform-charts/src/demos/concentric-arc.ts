@@ -127,7 +127,7 @@ export class MdConcentricArcLC extends Diagram {
     const wheelConfig = {
       snapshot: (d: Ring) => { setGestureActive(true); return d.value; },
       restore: (d: Ring, v: number) => mutateDatum(d, v - d.value),
-      onEnd: () => { setGestureActive(false); this.dispatchEvent(new CustomEvent("gesturecommit")); },
+      onEnd: (canceled: boolean) => { setGestureActive(false); this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } })); },
     };
     // Last ring the pointer was over — kept past pointerleave so a wheel edit can
     // still target it for a moment after the cursor exits the ring band.
@@ -172,7 +172,7 @@ export class MdConcentricArcLC extends Diagram {
         setGestureActive(false);
         if (activeHandle) activeHandle.style.cursor = "grab";
         activeHandle = null;
-        this.dispatchEvent(new CustomEvent("gesturecommit"));
+        this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled: false } }));
       },
     };
 

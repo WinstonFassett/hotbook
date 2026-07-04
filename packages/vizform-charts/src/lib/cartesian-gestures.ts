@@ -66,7 +66,7 @@ export function attachCartesianGestures<TData>(
   const wheelConfig = {
     snapshot: (d: TData) => { setGestureActive(true); return ctx.yAcc(d) as number; },
     restore: (d: TData, v: number) => mutateDatum(d, v - (ctx.yAcc(d) as number)),
-    onEnd: () => { setGestureActive(false); state.hover.value = null; gestureOrder = null; host.dispatchEvent(new CustomEvent("gesturecommit")); },
+    onEnd: (canceled: boolean) => { setGestureActive(false); state.hover.value = null; gestureOrder = null; host.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } })); },
   };
 
   // Captured at pointerdown, read by dragConfig.snapshot (called inside begin()).
@@ -104,7 +104,7 @@ export function attachCartesianGestures<TData>(
       gestureOrder = null;
       host.style.cursor = "";
       setGestureActive(false);
-      host.dispatchEvent(new CustomEvent("gesturecommit"));
+      host.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled: false } }));
     },
   };
 

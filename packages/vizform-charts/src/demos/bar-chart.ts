@@ -383,6 +383,10 @@ export class MdBarChartLC extends Diagram {
     ));
 
     // ─── Bars — identity-keyed, tweened x/y/w/h with gate ─────────────────
+    // orderHash detects sort (reorder) — id sequence changes when sliceboard
+    // hands data in a new display order. Tween on sort/orientation/measure;
+    // snap on value edits (same datum, different value).
+    const orderHash = derive(() => (data.value as Bar[]).map(d => d.id ?? d.label).join(','));
     for (let oi = 0; oi < rows0.length; oi++) {
       const datumId = rows0[oi]!.id ?? rows0[oi]!.label;
       const cur = derive(() => {
@@ -417,7 +421,7 @@ export class MdBarChartLC extends Diagram {
         return isVert.value ? Math.max(0, plotBottom.value - (valueScale.value as any)(d.value)) : bandScale.value.bandwidth();
       });
 
-      // Tweened cells — gate: tween on orientation/measure swap, snap on value edit.
+      // Tweened cells — gate: tween on orientation/measure/sort, snap on value edit.
       const barX = num(barXTarget.value);
       const barY = num(barYTarget.value);
       const barW = num(barWTarget.value);
@@ -426,17 +430,19 @@ export class MdBarChartLC extends Diagram {
       let inited = false;
       let seenOrient = untracked(() => this._orientationCell.value);
       let seenMeasureKey = untracked(() => this._measureKeyCell.value);
+      let seenOrder = untracked(() => orderHash.value);
       biEffect(() => {
         const xt = barXTarget.value, yt = barYTarget.value, wt = barWTarget.value, ht = barHTarget.value;
         const orient = this._orientationCell.value;
         const measureKey = untracked(() => this._measureKeyCell.value);
+        const order = orderHash.value;
         if (!inited) {
-          inited = true; seenOrient = orient; seenMeasureKey = measureKey;
+          inited = true; seenOrient = orient; seenMeasureKey = measureKey; seenOrder = order;
           barX.value = xt; barY.value = yt; barW.value = wt; barH.value = ht;
           return;
         }
-        const structural = orient !== seenOrient || measureKey !== seenMeasureKey;
-        seenOrient = orient; seenMeasureKey = measureKey;
+        const structural = orient !== seenOrient || measureKey !== seenMeasureKey || order !== seenOrder;
+        seenOrient = orient; seenMeasureKey = measureKey; seenOrder = order;
         if (structural && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
           cancel?.();
           cancel = this.anim.start(
