@@ -261,9 +261,8 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
       tag, nodes: sortedWithIndex, measureKey: mk, depth, sortBy, shapeKey, valueKey,
       drillKey, drillNodeId, showBreadcrumb: true, onUpdate, onUpdateMany,
       enableNumberDrag,
+      orientation: orientationProp,
     })
-    // Stash orientationProp so DockView can set it on the element after mount
-    if (orientationProp) (src as any)._orientation = orientationProp
     return src
   }
 
