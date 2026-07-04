@@ -73,7 +73,7 @@ export function DocsApp() {
           <pre><code>npm install @winstonfassett/vizform-react-d3 @winstonfassett/vizform-core bireactive</code></pre>
           <p>Check out the examples above to see how to use vizform in your project.</p>
           <p>
-            <a href="https://github.com/WinstonFassett/vizform" style="color: var(--accent);">
+            <a href="https://github.com/WinstonFassett/vizform" style={{color: 'var(--accent)'}}>
               View on GitHub →
             </a>
           </p>
