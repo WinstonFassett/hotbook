@@ -1,0 +1,13 @@
+{
+  "name": "pinch-test",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "bireactive": "^0.3.4",
+    "@winstonfassett/vizform-charts": "*"
+  }
+}

@@ -9,7 +9,7 @@ import { Anchor, cell, circle, derive, Diagram, easeInOut, effect as biEffect, l
 import { scaleLinear, scaleBand } from "d3-scale";
 import { axis } from "../lib/axis";
 import { chartContext } from "../lib/chart-context";
-import { wheelController, dragController, dynamicWheelStep } from "../lib/interaction";
+import { wheelController, dragController, dynamicWheelStep, realModifierDown } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE, type HostSize } from "../lib/host-size";
 import {
@@ -231,7 +231,7 @@ export class MdBarChartLC extends Diagram {
       // from scrolling the bars instead of editing the hovered value.
       we.preventDefault();
       we.stopPropagation();
-      const t = wheelController.begin(hover.value ?? selected.value, wheelConfig);
+      const t = wheelController.begin(hover.value ?? selected.value, wheelConfig, { pinch: !realModifierDown() });
       if (!t) return;
       const s = dynamicWheelStep(t.value, we.shiftKey);
       mutateDatum(t, we.deltaY < 0 ? +s : -s);
@@ -507,7 +507,7 @@ export class MdBarChartLC extends Diagram {
       // from scrolling the bars instead of editing the hovered value.
       we.preventDefault();
       we.stopPropagation();
-      const t = wheelController.begin(hover.value ?? selected.value, wheelConfig);
+      const t = wheelController.begin(hover.value ?? selected.value, wheelConfig, { pinch: !realModifierDown() });
       if (!t) return;
       const s = dynamicWheelStep(t.value, we.shiftKey);
       mutateDatum(t, we.deltaY < 0 ? +s : -s);

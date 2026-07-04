@@ -164,6 +164,29 @@ export function installGestureRelease(release: () => void): () => void {
   };
 }
 
+// ── Real modifier-key state ──────────────────────────────────────────────
+// Trackpad pinch fires wheel events with synthetic ctrlKey=true — the browser
+// lies. To distinguish pinch from a real Cmd/Ctrl+wheel, we track whether a
+// real modifier key is physically down. This is a lightweight always-on
+// boolean tracker (not a gesture handler); it's the same key state the browser
+// tracks internally, just made queryable for the synthetic-ctrlKey case.
+let _realCtrlDown = false;
+let _realMetaDown = false;
+if (typeof window !== "undefined") {
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Control") _realCtrlDown = true;
+    if (e.key === "Meta") _realMetaDown = true;
+  });
+  window.addEventListener("keyup", (e) => {
+    if (e.key === "Control") _realCtrlDown = false;
+    if (e.key === "Meta") _realMetaDown = false;
+  });
+  window.addEventListener("blur", () => { _realCtrlDown = false; _realMetaDown = false; });
+}
+/** True only when a physical Ctrl or Cmd key is held down. Use this (NOT
+ *  `e.ctrlKey` on a wheel event) to tell cmd+wheel from trackpad pinch. */
+export function realModifierDown(): boolean { return _realCtrlDown || _realMetaDown; }
+
 // ===========================================================================
 // ONE wheel controller + ONE drag controller for the WHOLE app.
 //
@@ -203,8 +226,13 @@ export interface WheelController {
   /** True while a gesture is live (i.e. its end-listeners are installed). */
   readonly active: boolean;
   /** Lock a target and capture its revert snapshot. No-op if already locked.
-   *  Returns the locked target (or null) so callers can `const t = begin(...)`. */
-  begin<T>(target: T | null, config: WheelConfig<T>): T | null;
+   *  Returns the locked target (or null) so callers can `const t = begin(...)`.
+   *
+   *  `opts.pinch = true` when the gesture is a trackpad pinch (synthetic
+   *  ctrlKey, no real key press). Pinch gestures can't commit on keyup (no
+   *  key was pressed), so they commit on the next non-wheel input instead,
+   *  with an idle-timeout fallback. cmd+wheel (real key) keeps keyup commit. */
+  begin<T>(target: T | null, config: WheelConfig<T>, opts?: { pinch?: boolean }): T | null;
   /** Force-cancel (revert) if still live. For teardown. */
   cancel(): boolean;
 }
@@ -214,6 +242,24 @@ function makeWheelController(): WheelController {
   let snap: unknown = undefined;
   let cfg: WheelConfig<any> | null = null;
   let teardown: (() => void) | null = null;
+  let isPinchGesture = false;
+  // After Esc cancels a pinch, the user's fingers are still on the trackpad
+  // and wheel events keep coming. Without suppression, the very next event
+  // starts a NEW gesture on the same element — Esc appears to do nothing.
+  // Suppression is PER-TARGET: only the cancelled element is blocked. A
+  // different element can start a new gesture immediately. The suppression
+  // lifts 200ms after the last wheel event for the blocked element (i.e.
+  // when the physical pinch ends). No global wheel-eater — the call sites
+  // drive the timer via rejected begin() calls.
+  let suppressedTarget: unknown = null;
+  let suppressTimer: ReturnType<typeof setTimeout> | null = null;
+  const SUPPRESS_MS = 200;
+
+  const clearSuppress = () => { if (suppressTimer) { clearTimeout(suppressTimer); suppressTimer = null; } };
+  const armSuppress = () => {
+    clearSuppress();
+    suppressTimer = setTimeout(() => { suppressedTarget = null; }, SUPPRESS_MS);
+  };
 
   // Remove the gesture-scoped listeners and clear the frame. Idempotent.
   const end = (canceled: boolean) => {
@@ -228,32 +274,100 @@ function makeWheelController(): WheelController {
   const cancel = (): boolean => {
     if (target === null || !cfg) return false;
     cfg.restore(target, snap);
-    end(true);
+    if (isPinchGesture) {
+      // Esc during pinch: revert values, then suppress THIS target only.
+      // The user's fingers are still on the trackpad; wheel events keep
+      // coming. We block re-lock on this specific element until the pinch
+      // physically ends (200ms with no wheel event for it). A different
+      // element can start a new gesture immediately.
+      const cancelledTarget = target;
+      const onEnd = cfg.onEnd;
+      if (teardown) { teardown(); teardown = null; }
+      target = null;
+      snap = undefined;
+      cfg = null;
+      suppressedTarget = cancelledTarget;
+      onEnd?.(true);
+      armSuppress();
+    } else {
+      end(true);
+    }
     return true;
   };
 
   return {
     get target() { return target; },
+    // active does NOT include suppression — other elements can start gestures.
     get active() { return target !== null; },
-    begin<T>(t: T | null, config: WheelConfig<T>): T | null {
+    begin<T>(t: T | null, config: WheelConfig<T>, opts?: { pinch?: boolean }): T | null {
       if (target !== null || t == null) return target as T | null;
+      // If this specific target is suppressed (Esc-cancelled pinch still in
+      // progress), reject and reset the suppression timer. The call site
+      // sees null and returns without applying a delta. A different target
+      // is not suppressed — fall through and start a new gesture, lifting
+      // any prior suppression.
+      if (suppressedTarget !== null && t === suppressedTarget) {
+        armSuppress();
+        return null;
+      }
+      // Different target — clear any stale suppression.
+      clearSuppress();
+      suppressedTarget = null;
+
       target = t;
       cfg = config;
       snap = config.snapshot(t);
-      // Install end-of-gesture listeners for the lifetime of THIS gesture only.
-      const onKeyup = (e: KeyboardEvent) => { if (e.key === "Meta" || e.key === "Control") commit(); };
-      const onBlur = () => commit();
-      const onKeydown = (e: KeyboardEvent) => {
-        if (e.key === "Escape" && cancel()) { e.preventDefault(); e.stopPropagation(); }
-      };
-      window.addEventListener("keyup", onKeyup);
-      window.addEventListener("blur", onBlur);
-      window.addEventListener("keydown", onKeydown, true);
-      teardown = () => {
-        window.removeEventListener("keyup", onKeyup);
-        window.removeEventListener("blur", onBlur);
-        window.removeEventListener("keydown", onKeydown, true);
-      };
+      isPinchGesture = opts?.pinch ?? false;
+
+      if (isPinchGesture) {
+        // Trackpad pinch: synthetic ctrlKey, no real key was pressed, so keyup
+        // will never fire. The gesture stays live until a REAL signal ends it:
+        //   - Esc → cancel (revert to snapshot)
+        //   - pointermove/pointerdown/click → commit (user did something else)
+        //   - non-ctrlKey wheel → commit (user switched to plain scroll)
+        //   - any keydown other than Esc → commit (user pressed a key)
+        //   - blur → commit (window lost focus)
+        // NO idle timeout — it creates false gesture boundaries. A 150ms gap
+        // in wheel events is not "pinch ended"; it's just a slow pinch. With
+        // no timeout, Esc always reverts to the TRUE gesture start, not to
+        // some mid-pinch commit point. The gesture stays live until the user
+        // does something else, which is the correct behavior.
+        const onAnyInput = () => commit();
+        const onWheelOther = (e: WheelEvent) => { if (!e.ctrlKey) commit(); };
+        const onKeydown = (e: KeyboardEvent) => {
+          if (e.key === "Escape") { if (cancel()) { e.preventDefault(); e.stopPropagation(); } }
+          else commit(); // any other key = pinch is over
+        };
+        window.addEventListener("pointermove", onAnyInput);
+        window.addEventListener("pointerdown", onAnyInput);
+        window.addEventListener("click", onAnyInput);
+        window.addEventListener("wheel", onWheelOther);
+        window.addEventListener("keydown", onKeydown, true);
+        window.addEventListener("blur", onAnyInput);
+        teardown = () => {
+          window.removeEventListener("pointermove", onAnyInput);
+          window.removeEventListener("pointerdown", onAnyInput);
+          window.removeEventListener("click", onAnyInput);
+          window.removeEventListener("wheel", onWheelOther);
+          window.removeEventListener("keydown", onKeydown, true);
+          window.removeEventListener("blur", onAnyInput);
+        };
+      } else {
+        // cmd+wheel (real key press): commit when the key is released.
+        const onKeyup = (e: KeyboardEvent) => { if (e.key === "Meta" || e.key === "Control") commit(); };
+        const onBlur = () => commit();
+        const onKeydown = (e: KeyboardEvent) => {
+          if (e.key === "Escape" && cancel()) { e.preventDefault(); e.stopPropagation(); }
+        };
+        window.addEventListener("keyup", onKeyup);
+        window.addEventListener("blur", onBlur);
+        window.addEventListener("keydown", onKeydown, true);
+        teardown = () => {
+          window.removeEventListener("keyup", onKeyup);
+          window.removeEventListener("blur", onBlur);
+          window.removeEventListener("keydown", onKeydown, true);
+        };
+      }
       return t;
     },
     cancel,

@@ -1,6 +1,6 @@
 import { Anchor, annularSector, cell, circle, derive, Diagram, effect as biEffect, label, type Mount, Num, num, Vec, type Writable } from "bireactive";
 import { pie } from "d3-shape";
-import { wheelController, dynamicWheelStep } from "../lib/interaction";
+import { wheelController, dynamicWheelStep, realModifierDown } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { dragCancelable } from "../lib/esc-contract";
@@ -210,7 +210,7 @@ export class MdPieChartLC extends Diagram {
     this.addEventListener("wheel", (e) => {
       const we = e as WheelEvent;
       if (!we.ctrlKey) return;
-      const t = wheelController.begin(hover.value ?? selected.value, wheelConfig);
+      const t = wheelController.begin(hover.value ?? selected.value, wheelConfig, { pinch: !realModifierDown() });
       if (!t) return;
       we.preventDefault();
       const s = dynamicWheelStep(t.value.value, we.shiftKey);
