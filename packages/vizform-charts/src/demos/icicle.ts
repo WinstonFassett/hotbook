@@ -27,6 +27,7 @@ import { dragCancelable } from "../lib/esc-contract";
 import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, settleTransition } from "../lib/transitions";
 import { withExitDelay, membershipCell } from "../lib/mark-lifecycle";
 import type { ElementWithBridge } from "../lib/hud-bridge";
+import { Viewer } from "../lib/viewer";
 
 const W = 720;
 const H = 360;
@@ -181,13 +182,12 @@ export class MdIcicleLC extends Diagram {
       return map;
     });
 
-    // Viewport cells: map layout-space → canvas. vx = depth axis, vy = sibling
-    // axis. For horizontal, depth axis = canvas x, sibling axis = canvas y;
-    // for vertical, depth axis = canvas y, sibling axis = canvas x.
-    const vx0 = num(0);
-    const vy0 = num(0);
-    const vx1 = num(isHoriz.value ? W : H);
-    const vy1 = num(isHoriz.value ? H : W);
+    // Viewport: map layout-space → canvas. For horizontal, a = depth (x),
+    // b = sibling (y); for vertical, a = depth (y), b = sibling (x).
+    const viewer = new Viewer(
+      { a0: 0, a1: isHoriz.value ? W : H, b0: 0, b1: isHoriz.value ? H : W },
+      { anim: this.anim, host: this, gestureClassMs: DRILL_DURATION + 60 },
+    );
 
     // Focus depth (reactive).
     const focusDepth = derive(() => {
@@ -228,16 +228,10 @@ export class MdIcicleLC extends Diagram {
     const windowMembership = membershipCell(windowTarget, (n) => n);
 
     // Drill viewport tween: compute target viewport from focus node bounds and
-    // tween all 4 cells. Uses untracked for layout reads so value changes don't
+    // delegate to viewer. Uses untracked for layout reads so value changes don't
     // re-run this effect (only drill-id and resize do).
-    let drillInited = false;
     let lastDrillId: string | null = null;
-    let drillCancel: (() => void) | null = null;
-    let drillClassTimer: ReturnType<typeof setTimeout> | null = null;
-    this._trackScene(() => {
-      if (drillClassTimer) { clearTimeout(drillClassTimer); drillClassTimer = null; }
-      drillCancel?.(); drillCancel = null;
-    });
+    this._trackScene(() => viewer.dispose());
     this._trackScene(biEffect(() => {
       const id = this._drillIdCell.value;
       void Wc.value; void Hc.value; // track resize
@@ -249,7 +243,7 @@ export class MdIcicleLC extends Diagram {
       const depthCanvas = isHoriz.value ? W0 : H0;
       const sibCanvas = isHoriz.value ? H0 : W0;
 
-      let tx0 = 0, ty0 = 0, tx1 = depthCanvas, ty1 = sibCanvas;
+      let ta0 = 0, tb0 = 0, ta1 = depthCanvas, tb1 = sibCanvas;
       const lmap = untracked(() => layout.value);
       if (id) {
         const biNode = nodeById.get(id);
@@ -272,60 +266,36 @@ export class MdIcicleLC extends Diagram {
               }
             }
           }
-          tx0 = d0; tx1 = maxD1;
-          ty0 = isHoriz.value ? lnode.y0 : lnode.x0;
-          ty1 = isHoriz.value ? lnode.y1 : lnode.x1;
+          ta0 = d0; ta1 = maxD1;
+          tb0 = isHoriz.value ? lnode.y0 : lnode.x0;
+          tb1 = isHoriz.value ? lnode.y1 : lnode.x1;
         }
       } else {
         // At root: depth axis = full canvas, sibling axis = full canvas.
-        tx0 = 0; tx1 = depthCanvas; ty0 = 0; ty1 = sibCanvas;
+        ta0 = 0; ta1 = depthCanvas; tb0 = 0; tb1 = sibCanvas;
       }
 
+      const target = { a0: ta0, a1: ta1, b0: tb0, b1: tb1 };
       const drillChanged = id !== lastDrillId;
       lastDrillId = id;
-      if (!drillInited) {
-        vx0.value = tx0; vy0.value = ty0; vx1.value = tx1; vy1.value = ty1;
-        drillInited = true;
-        return;
+      if (drillChanged) {
+        viewer.animateTo(target, DRILL_SEC, { flashGesture: true });
+      } else {
+        viewer.animateTo(target, DRILL_SEC);  // resize-only: tween, no flash
       }
-      drillCancel?.();
-      drillCancel = null;
-      if (!drillChanged) {
-        // Resize-only: re-tween to new target.
-        drillCancel = this.anim.start(
-          tween(vx0, tx0, DRILL_SEC, easeOut),
-          tween(vy0, ty0, DRILL_SEC, easeOut),
-          tween(vx1, tx1, DRILL_SEC, easeOut),
-          tween(vy1, ty1, DRILL_SEC, easeOut),
-        );
-        return;
-      }
-      // Drill in/out: tween viewport + flash gesture-active class.
-      if (drillClassTimer) { clearTimeout(drillClassTimer); drillClassTimer = null; }
-      this.classList.add(GESTURE_ACTIVE_CLASS);
-      drillClassTimer = setTimeout(() => {
-        drillClassTimer = null;
-        this.classList.remove(GESTURE_ACTIVE_CLASS);
-      }, DRILL_DURATION + 60);
-      drillCancel = this.anim.start(
-        tween(vx0, tx0, DRILL_SEC, easeOut),
-        tween(vy0, ty0, DRILL_SEC, easeOut),
-        tween(vx1, tx1, DRILL_SEC, easeOut),
-        tween(vy1, ty1, DRILL_SEC, easeOut),
-      );
     }));
 
     // Remap layout-space coords through viewport cells → canvas coords.
-    // vx = depth axis, vy = sibling axis.
+    // a = depth axis, b = sibling axis.
     const remapX = (raw: number) => {
-      const v0 = isHoriz.value ? vx0.value : vy0.value;
-      const v1 = isHoriz.value ? vx1.value : vy1.value;
+      const v0 = isHoriz.value ? viewer.a0.value : viewer.b0.value;
+      const v1 = isHoriz.value ? viewer.a1.value : viewer.b1.value;
       const span = v1 - v0;
       return span === 0 ? 0 : (raw - v0) / span * Wc.value;
     };
     const remapY = (raw: number) => {
-      const v0 = isHoriz.value ? vy0.value : vx0.value;
-      const v1 = isHoriz.value ? vy1.value : vx1.value;
+      const v0 = isHoriz.value ? viewer.b0.value : viewer.a0.value;
+      const v1 = isHoriz.value ? viewer.b1.value : viewer.a1.value;
       const span = v1 - v0;
       return span === 0 ? 0 : (raw - v0) / span * Hc.value;
     };
