@@ -329,7 +329,7 @@ export class MdSunburstLC extends Diagram {
           : node.value.label;
       });
 
-      const nodeFill = depthFill(node.value.color, depth).toString();
+      const nodeFill = depthFill(node.value.color, depth);
       const lbl = label(labelPos, labelText, {
         size: isLeaf ? 11 : 10,
         align: Anchor.Center,
