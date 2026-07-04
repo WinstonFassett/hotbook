@@ -75,8 +75,31 @@ class R2Harness:
 
     # ── tab / dock control ────────────────────────────────────────────────────
     def _activate(self, tab_label: str):
-        self.page.click(f"text={tab_label}")
+        # Match the tab by EXACT label and activate via pointerdown/up — NOT
+        # page.click("text=..."). Two reasons the naive form failed:
+        #   1. `text=` is a substring match, so "br-lc-tree" also matched
+        #      "br-lc-treetable"/"br-lc-treemap" (a prefix collision) and clicked
+        #      the wrong tab.
+        #   2. Dock tabs activate on pointerdown→pointerup (a non-drag click path
+        #      in DockView._startTabDrag), not on the DOM `click` event, so a plain
+        #      click didn't switch the active panel for some tabs.
+        ok = self.page.evaluate(
+            """(label) => {
+              const tabs = [...document.querySelectorAll('.dv-tab')];
+              const tab = tabs.find(t => {
+                const lbl = t.querySelector('.dv-tab-label');
+                const txt = (lbl ? lbl.textContent : t.textContent) || '';
+                return txt.trim() === label;
+              });
+              if (!tab) return false;
+              tab.dispatchEvent(new PointerEvent('pointerdown', {bubbles: true, button: 0}));
+              tab.dispatchEvent(new PointerEvent('pointerup', {bubbles: true, button: 0}));
+              return true;
+            }""",
+            tab_label,
+        )
         self.page.wait_for_timeout(500)
+        return ok
 
     def pick_driver(self, chart_short: str) -> str:
         """Return the tab label of a cross-dock editable tile to drive edits from.
