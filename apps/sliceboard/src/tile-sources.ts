@@ -217,6 +217,9 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
       // Write new x values IN PLACE on existing datum objects. The tween cells
       // capture pt references at scene init; replacing the array with new
       // objects would orphan them. applyData does the same for y values.
+      // DON'T trigger dataCell here — applyData's own dataCell.value = newArr
+      // at the end is the single reactivity trigger. A premature trigger makes
+      // the gate fire before reindex writes new x values, causing a snap.
       mountProps: (el: any) => {
         el.xKey = xKey
         const arr = el.dataCell?.peek() as { id: string; x: number; y: number }[] | undefined
@@ -226,7 +229,6 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
             const node = nodeById.get(d.id)
             if (node) d.x = xKey === '_index' ? i : (node.measures[xKey] ?? 0)
           }
-          el.dataCell.value = [...arr] // trigger reactivity so tween cells see new x
         }
       },
       readValue: d => d.y, writeValue: (d, v) => { d.y = v }, idOf: d => d.id,
@@ -247,7 +249,9 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
       shapeKey,
       build: () => leaves.map((n, i) => ({ id: n.id, date: new Date(SERIES_START + i * DAY_MS), value: n.measures[mk] ?? 0 })),
       readValue: d => d.value, writeValue: (d, v) => { d.value = v }, idOf: d => d.id,
-      reindex: (d, k) => { d.date = new Date(SERIES_START + k * DAY_MS) },
+      // No reindex — dates are the x-axis and must stay stable. Sort reorders
+      // the array but the line always renders left-to-right by date (tweenedData
+      // sorts by date). Reindexing dates would make points jump x positions.
       nodes: rawNodes, onUpdate,
     })
   }
@@ -264,7 +268,7 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
       shapeKey,
       build: () => leaves.map((n, i) => ({ id: n.id, date: new Date(SERIES_START + i * DAY_MS), value: n.measures[mk] ?? 0 })),
       readValue: d => d.value, writeValue: (d, v) => { d.value = v }, idOf: d => d.id,
-      reindex: (d, k) => { d.date = new Date(SERIES_START + k * DAY_MS) },
+      // No reindex — dates are the x-axis and must stay stable (same as line).
       nodes: rawNodes, onUpdate,
     })
   }
