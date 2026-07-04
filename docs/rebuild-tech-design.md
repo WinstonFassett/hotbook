@@ -586,3 +586,84 @@ Phase read: **P0 ~70% done · P1 ~10% (the real work) · P2–P3 = conversions o
 already-correct rendering · P4 = mostly deletion.** Rebuild is plausibly net-negative LOC.
 The gap is not "build a chart library" — it's "the library never had its interface
 written down and enforced."
+
+## Appendix C — Motion-policy scorecard: R1–R5 per chart (2026-07-04)
+
+Audit of every shipping chart against the five binding transition rules (§"Motion
+policy"). Method: source analysis of each demo's animated-property dependency chain
+against `lib/transitions.ts`. **Key mechanism:** `settleTransition()` / a manual
+`tween()` animates a prop for 250ms; `GESTURE_SUPPRESSION_CSS`
+(`:host(.vf-gesture-active) * { transition: none }`) suppresses it **only during
+this chart's own local gesture**. So the settle is invisible while you drag *this*
+chart — but a **cross-tile / table edit** (this chart has no gesture class) animates
+the value change. **That cross-tile settle-lag is the R2 violation.** R2 says value
+changes must be immediate; animating value-geometry (bar height, arc sweep, tile
+size, spoke radius) on a remote edit is exactly the "tween toward where the user
+already put it reads as lag" anti-pattern (WIN-94).
+
+Legend: value-geometry = a prop encoding a datum value (violates R2 if settle/tween
+animated on remote edits) · position = slot/order (R1 — animating is *correct*) ·
+appearance = fill/opacity/stroke (neutral).
+
+| Chart | R1 reorder | R2 value-immediate | R3 config | R4 enter/exit | R5 drill | Animated props (classified) |
+|---|---|---|---|---|---|---|
+| bar | PASS (`x` = `tween` :324) | **FAIL** — settle on `y`,`height` + handle `cy` (live-confirmed on shadow rect) | FAIL — orientation flip is instant scene swap :80 | FAIL — fixed row loop, no enter/exit | N/A | value-geometry `y`,`height`,`cy`; appearance `fill` |
+| bands | PASS (`y` = `tween` :629) | **FAIL (worst cartesian)** — settle on `width` + 3 label `x` + handle `cx` = 5 elements | FAIL — same instant swap | FAIL — fixed loop | N/A | value-geometry `width`,`x`×3,`cx`; appearance `fill` |
+| line | FAIL — no reorder path exists | PASS — pure `derive()`, `d` immediate | N/A — no mode toggle | FAIL — points built once, no add/remove | N/A | none (no anim infra) |
+| area | FAIL — no reorder path | PASS — pure `derive()` | N/A — curve hardcoded | FAIL — points built once | N/A | none (no anim infra) |
+| scatter | FAIL — no reorder trigger, would snap | PASS — pure `derive()`, `mutateDatum` immediate | N/A | FAIL — fixed 40-pt array | N/A | none (no anim infra) |
+| gantt | FAIL — rows keyed to fixed slot, reorder teleports | **FAIL** — settle on `x`,`width` (start/duration) | PARTIAL — dep-toggle reuses same settle path (accidental) | FAIL — `MAX_ROWS` fixed at build | N/A | value-geometry `x`,`width`; appearance `fill` |
+| icicle | PASS (tile tween) | **FAIL** — layout tween fires on remote value edit | UNKNOWN | UNKNOWN | PASS — viewport tween | settle is appearance-only, but layout `tween` retweens on value |
+| sunburst | PASS (arc tween) | **FAIL** — settle on arc `d`, hub `r` + layout tween | N/A | UNKNOWN | PASS — viewport tween | value-geometry `d`,`r` |
+| treemap | PASS (per-tile tween) | **FAIL (worst)** — tweens `x/y/w/h` on "sort+value+size" | N/A | UNKNOWN | PASS — `retargetTiles()` | value-geometry `x/y/w/h` via manual tween |
+| pack | PASS (circle tween) | **FAIL** — tweens `cx/cy/r` on value | N/A | UNKNOWN | PASS — viewport tween | value-geometry `cx/cy/r` via manual tween |
+| tree | PASS | **FAIL** — `posCells` effect retweens on value | PASS — orientation tweened | PARTIAL — opacity on collapse; depth cutoff hard | N/A (collapse only) | value-geometry via pos tween |
+| treetable | N/A (flat list) | PASS — value text direct write, no transition | N/A | PASS — enter settle; exit instant | N/A | appearance/position, enter-only |
+| pie | N/A (`sort(null)`) | PASS — arc angles pure `derive()` | N/A | N/A | N/A | none |
+| radar | N/A | **FAIL** — 250ms `tween` on spoke radius, gated *inverted* (tweens when NOT gesture-active) | N/A | N/A | N/A | value-geometry `rPx` |
+| concentric-arc | PASS (`rOuter` = rank tween) | **FAIL (mild)** — `d 0.1s` CSS transition on value arc | N/A | N/A | N/A | position `rOuter` OK; value-geometry `d` 100ms |
+| gauge | N/A | PASS — pure `derive()` | N/A | N/A | N/A | none |
+| gauge-segmented | N/A | PASS — pure `derive()` | N/A | N/A | N/A | none |
+| sankey | N/A | PASS — pure `derive()` from layout | UNKNOWN (color-mode instant) | N/A | N/A | none |
+| sankey-flow | N/A | PASS — pure `derive()` | N/A | N/A | N/A | none |
+
+**R2 offenders (the motion-policy work list), worst first:**
+1. **treemap / pack** — manual `tween()` on pure geometry (`x/y/w/h`, `cx/cy/r`),
+   guarded only by a local-gesture flag never set on cross-tile edits → full
+   250–350ms settle-lag on any remote value change.
+2. **radar** — 250ms spoke-radius `tween` gated *inverted*: it animates precisely
+   when `gestureActive` is false, i.e. exactly the remote case the policy says must
+   be immediate. Cleanest single fix: remove or re-gate the tween.
+3. **sunburst / icicle / tree** — same reactive `biEffect`/`tween` idiom off the
+   value-summing `layout` derive; sunburst also settle-animates arc `d`/hub `r`
+   directly. icicle's `settleTransition` itself is appearance-only — its violation is
+   the layout tween, not the CSS settle.
+4. **bands / bar / gantt** — `settleTransition` on value-geometry. bands is the worst
+   cartesian offender (settles `width` + 3 label `x` + handle `cx` = 5 elements at
+   once); bar settles `y`/`height` (live-confirmed on the shadow rect while idle:
+   `transition: y 0.25s…, height 0.25s…`); gantt settles `x`/`width`. Milder than the
+   hier tweens (clean CSS, cleanly suppressed locally) but still lags remote edits.
+5. **concentric-arc** — leftover `d 0.1s` CSS transition on the value arc; smallest.
+
+**Clean on R2 (value changes snap immediately):** line, area, scatter, pie, gauge,
+gauge-segmented, sankey, sankey-flow, treetable — all pure `derive()`. Caveat:
+line/area/scatter pass R2 *by omission* — they have **no animation infrastructure at
+all**, so they also FAIL R1 (no reorder slide) and R4 (no enter/exit). When they get
+motion, build it two-lane from the start rather than retrofitting settle.
+
+**R5 (drill) is genuinely wired** for icicle, sunburst, treemap, pack (viewport /
+per-tile retarget tween keyed on `drillNodeId`). Tree/treetable have no drill concept
+(N/A, not failing).
+
+**R1 (reorder) passes broadly** — the reorder-slide is the one structural transition
+already built right (bireactive tween on the position/slot, distinct from the value
+settle). The fix is not "add motion" — it's **stop settle-animating value-geometry on
+remote edits** while keeping the R1 reorder tween. Two-lane render path (§"Motion
+policy" implementation consequence): write-through for value, tween only for
+position/order/drill.
+
+**Suggested first PR** (proves the two-lane pattern on one chart, then sweep like the
+P1 lifecycle spike): **radar** (single inverted `tween` call — smallest, sharpest
+fix) or **bar/bands** (already has the sort-reorder regression fix landed nearby, and
+its settle is a clean `settleTransition` swap). treemap/pack are the highest-value but
+most involved (manual tween loop).
