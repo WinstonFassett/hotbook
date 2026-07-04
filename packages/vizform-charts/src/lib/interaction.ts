@@ -243,6 +243,15 @@ function makeWheelController(): WheelController {
   let cfg: WheelConfig<any> | null = null;
   let teardown: (() => void) | null = null;
   let idleTimer: ReturnType<typeof setTimeout> | null = null;
+  let isPinchGesture = false;
+  // After Esc cancels a pinch, the user's fingers are still on the trackpad
+  // and wheel events keep coming. Without suppression, the very next event
+  // starts a NEW gesture on the same element — Esc appears to do nothing.
+  // Suppression eats all ctrlKey wheel events (capture phase, so call sites
+  // never see them) until the pinch physically ends (200ms with no wheel).
+  let suppressed = false;
+  let suppressTimer: ReturnType<typeof setTimeout> | null = null;
+  const SUPPRESS_MS = 200;
 
   const clearIdle = () => { if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; } };
   // Arm/reset the idle timer. Only used for pinch gestures. Fires once if no
@@ -251,6 +260,17 @@ function makeWheelController(): WheelController {
   const armIdle = () => {
     clearIdle();
     idleTimer = setTimeout(commit, 150);
+  };
+
+  const clearSuppress = () => { if (suppressTimer) { clearTimeout(suppressTimer); suppressTimer = null; } };
+  const armSuppress = () => {
+    clearSuppress();
+    suppressTimer = setTimeout(exitSuppression, SUPPRESS_MS);
+  };
+  const exitSuppression = () => {
+    clearSuppress();
+    if (teardown) { teardown(); teardown = null; }
+    suppressed = false;
   };
 
   // Remove the gesture-scoped listeners and clear the frame. Idempotent.
@@ -267,26 +287,58 @@ function makeWheelController(): WheelController {
   const cancel = (): boolean => {
     if (target === null || !cfg) return false;
     cfg.restore(target, snap);
-    end(true);
+    if (isPinchGesture) {
+      // Esc during pinch: revert values, then enter suppression so the
+      // remaining wheel events from the same physical pinch don't start a
+      // new gesture. The user sees the revert stick. Suppression lifts
+      // 200ms after the last ctrlKey wheel event (fingers lifted).
+      const onEnd = cfg.onEnd;
+      // Tear down gesture listeners, install suppression wheel-eater.
+      if (teardown) { teardown(); teardown = null; }
+      target = null;
+      snap = undefined;
+      cfg = null;
+      suppressed = true;
+      onEnd?.(true);
+      const onSuppressWheel = (e: WheelEvent) => {
+        if (e.ctrlKey) {
+          // Same physical pinch — eat it and reset the suppression timer.
+          e.preventDefault();
+          e.stopPropagation();
+          armSuppress();
+        } else {
+          // Non-ctrlKey wheel = user switched to scrolling = pinch is over.
+          exitSuppression();
+        }
+      };
+      window.addEventListener("wheel", onSuppressWheel, { capture: true });
+      armSuppress();
+      teardown = () => {
+        clearSuppress();
+        window.removeEventListener("wheel", onSuppressWheel, { capture: true });
+      };
+    } else {
+      end(true);
+    }
     return true;
   };
 
   return {
     get target() { return target; },
-    get active() { return target !== null; },
+    get active() { return target !== null || suppressed; },
     begin<T>(t: T | null, config: WheelConfig<T>, opts?: { pinch?: boolean }): T | null {
       if (target !== null || t == null) return target as T | null;
       target = t;
       cfg = config;
       snap = config.snapshot(t);
-      const isPinch = opts?.pinch ?? false;
+      isPinchGesture = opts?.pinch ?? false;
 
       // Esc cancels for both gesture types.
       const onKeydown = (e: KeyboardEvent) => {
         if (e.key === "Escape" && cancel()) { e.preventDefault(); e.stopPropagation(); }
       };
 
-      if (isPinch) {
+      if (isPinchGesture) {
         // Trackpad pinch: synthetic ctrlKey, no real key was pressed, so keyup
         // will never fire. Commit when the user does ANYTHING else — pointer
         // move, click, a different key, a non-ctrlKey wheel (plain scroll) —
