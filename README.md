@@ -10,27 +10,30 @@ D3-based proportional and hierarchical visualization library — framework-agnos
 graph LR
   subgraph lib["lib"]
     core["vizform-core"]
-    react["vizform-react"]
-    element["vizform-element"]
+    charts["vizform-charts"]
+    vanilla["vizform-vanilla-d3"]
+    react["vizform-react-d3"]
   end
   subgraph app["app"]
     apitable["vizform-apitable"]
     sliceboard["sliceboard"]
   end
 
-  react --> core
-  element --> core
+  vanilla --> core
+  vanilla --> charts
+  react --> vanilla
   apitable --> react
-  sliceboard --> react
+  sliceboard --> vanilla
 ```
 
 | Package | Description |
 |---|---|
-| [`vizform-core`](packages/vizform-core) | Visualization engine. Pure D3 + TypeScript, zero framework deps. |
-| [`vizform-react`](packages/vizform-react) | React adapter. Exports `<Viz>` (flat) and `<HViz>` (hierarchical). |
-| [`vizform-element`](packages/vizform-element) | Vanilla custom elements — `<vizform-viz>` and `<vizform-hviz>`. |
-| [`vizform-apitable`](packages/vizform-apitable) | APITable widget wrapping `vizform-react`. |
-| [`apps/sliceboard`](apps/sliceboard) | Multi-board demo: editable table + live viz with 6 modes. |
+| [`vizform-core`](packages/vizform-core) | Core data structures and utilities. Framework-agnostic. |
+| [`vizform-charts`](packages/vizform-charts) | Chart type definitions and metadata. |
+| [`vizform-vanilla-d3`](packages/vizform-vanilla-d3) | Pure D3 + TypeScript visualization engine, zero framework deps. |
+| [`vizform-react-d3`](packages/vizform-react-d3) | React adapter for vizform-vanilla-d3 charts. |
+| [`vizform-apitable`](packages/vizform-apitable) | APITable widget wrapping `vizform-react-d3`. |
+| [`apps/sliceboard`](apps/sliceboard) | Multi-board demo: editable table + live viz with multiple chart types. |
 
 ## Visualization modes
 
@@ -63,18 +66,20 @@ const goals = [
 <Viz goals={goals} mode="treemap" activeUnit="value" unitKind="size" />
 ```
 
-For hierarchical data, use `<HViz>` with a `GoalTree` — see [`vizform-react`](packages/vizform-react/README.md).
+For hierarchical data, use `<HViz>` with a `GoalTree` — see [`vizform-react-d3`](packages/vizform-react-d3/README.md).
 
 ## Monorepo layout
 
 ```
 packages/
-  vizform-core/       # D3 rendering engine
-  vizform-react/      # React components
-  vizform-element/    # Custom elements
+  vizform-core/       # Core data structures
+  vizform-charts/     # Chart definitions
+  vizform-vanilla-d3/ # D3 rendering engine
+  vizform-react-d3/   # React components
   vizform-apitable/   # APITable widget
 apps/
   sliceboard/         # Demo app (Netlify)
+  docs/               # Documentation site
 inspo/                # gitignored — reference/scratch material
 ```
 
@@ -88,8 +93,9 @@ npm run build        # builds core → react → sliceboard in order
 To develop a specific package:
 
 ```sh
-npm run dev -w packages/vizform-core    # watch mode
-npm run dev -w apps/sliceboard          # Vite dev server
+npm run dev -w packages/vizform-vanilla-d3  # watch mode
+npm run dev -w apps/sliceboard              # Vite dev server
+npm run dev -w apps/docs                    # Docs site dev server
 ```
 
 ### Chart demos

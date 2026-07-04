@@ -46,13 +46,23 @@ export class MdIcicleLC extends Diagram {
       outline: none;
     }
   `
-  externalRoot?: BiNode
-  maxDepth?: number
   drillKey?: string
-  /** Icicle orientation. "horizontal" (default) stacks depth levels along the
-   *  x-axis with siblings split vertically — a classic partition chart. "vertical"
-   *  stacks depth along y with siblings split horizontally (the original icicle). */
-  orientation?: "horizontal" | "vertical"
+
+  // ── Constructor-scope state: every cell a host can set lives at element
+  // lifetime, NOT scene lifetime. scene() is a pure projection of these, so
+  // it can be set before or after mount, and disconnect/reconnect (dock moves,
+  // tab reparents) rebuilds the identical chart with nothing lost.
+  private _dataCell = cell<BiNode | null>(null)
+  /** The reactive data tree. Settable at any time — before or after mount. */
+  get data(): BiNode | null { return this._dataCell.value }
+  set data(root: BiNode | null) { this._dataCell.value = root }
+  /** @deprecated alias for `data` (legacy wiring name). */
+  get externalRoot(): BiNode | undefined { return this._dataCell.value ?? undefined }
+  set externalRoot(root: BiNode | undefined) { this._dataCell.value = root ?? null }
+
+  private _maxDepthCell = cell<number | undefined>(undefined)
+  get maxDepth(): number | undefined { return this._maxDepthCell.value }
+  set maxDepth(v: number | undefined) { this._maxDepthCell.value = v }
 
   private _drillIdCell = cell<string | null>(null)
   get drillNodeId(): string | null { return this._drillIdCell.value }
@@ -63,10 +73,27 @@ export class MdIcicleLC extends Diagram {
   set sortBy(v: 'index' | 'value') { this._sortByCell.value = v }
 
   private _orientationCell = cell<'horizontal' | 'vertical'>('horizontal')
+  /** Icicle orientation. "horizontal" (default) stacks depth levels along the
+   *  x-axis with siblings split vertically — a classic partition chart. "vertical"
+   *  stacks depth along y with siblings split horizontally (the original icicle). */
   get orientation(): 'horizontal' | 'vertical' { return this._orientationCell.value }
   set orientation(v: 'horizontal' | 'vertical') { this._orientationCell.value = v }
 
+  // Effects created in scene() must die with the scene: Diagram re-runs
+  // scene() per connect, and without this the old scene's effects would pile
+  // up across dock moves / tab reparents.
+  private _sceneDisposers: Array<() => void> = []
+  private _trackScene(d: () => void): void { this._sceneDisposers.push(d) }
+  private _disposeScene(): void {
+    for (const d of this._sceneDisposers.splice(0)) d()
+  }
+  disconnectedCallback(): void {
+    this._disposeScene()
+    super.disconnectedCallback()
+  }
+
   protected scene(s: Mount): void {
+    this._disposeScene() // reconnect: drop the previous scene's effects first
     const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
     const view = this.view(Wc, Hc);
     this.tabIndex = -1;
@@ -74,37 +101,51 @@ export class MdIcicleLC extends Diagram {
 
     const isHoriz = derive(() => this._orientationCell.value === 'horizontal');
 
-    const root = this.externalRoot ?? portfolio();
-    const parentIdx = buildParentIndex(root);
-    const parentOf = (n: BiNode) => parentIdx.get(n);
+    // Reactive root: scene is a pure projection of the data cell. A demo
+    // fallback fills in when un-wired (kept for the spike apps; slated for
+    // removal per the rebuild design's empty-is-empty rule).
+    let fallbackRoot: BiNode | null = null;
+    const rootCell = derive(() => this._dataCell.value ?? (fallbackRoot ??= portfolio()));
+
+    // Structure maps derive from the root — a data swap rebuilds them and
+    // everything downstream reacts; nothing is snapshotted at scene time.
+    const structure = derive(() => {
+      const root = rootCell.value;
+      const nodeById = new Map<string, BiNode>();
+      const nodeDepth = new Map<BiNode, number>();
+      let totalDepth = 0;
+      for (const { node, depth } of walkWithDepth(root)) {
+        if (node.value.id) nodeById.set(node.value.id, node);
+        nodeDepth.set(node, depth);
+        if (depth > totalDepth) totalDepth = depth;
+      }
+      return { root, nodeById, nodeDepth, totalDepth, parentIdx: buildParentIndex(root) };
+    });
+    const parentOf = (n: BiNode) => structure.value.parentIdx.get(n);
 
     const state: SelectionState = {
       focused: cell<BiNode | null>(null),
       hovered: { current: null },
       wheelLocked: { current: null },
     };
-    attachChartGestures(this, { root, parentOf, state, scalingMode: "proportional-neighbor" });
+    // Gestures bind to a concrete root, so re-attach when the data swaps.
+    let gestureDispose: (() => void) | null = null;
+    this._trackScene(biEffect(() => {
+      const root = rootCell.value;
+      gestureDispose?.();
+      gestureDispose = attachChartGestures(this, { root, parentOf, state, scalingMode: "proportional-neighbor" });
+    }));
+    this._trackScene(() => { gestureDispose?.(); gestureDispose = null; });
     const hoverCell = cell<BiNode | null>(null);
     state.hoverCell = hoverCell;
-
-    // Pre-build static maps (tree structure is immutable).
-    const nodeById = new Map<string, BiNode>();
-    const nodeDepth = new Map<BiNode, number>();
-    let totalDepth = 0;
-    for (const { node, depth } of walkWithDepth(root)) {
-      if (node.value.id) nodeById.set(node.value.id, node);
-      nodeDepth.set(node, depth);
-      if (depth > totalDepth) totalDepth = depth;
-    }
-
-    const maxD = this.maxDepth;
 
     // Partition layout — orientation-aware. The depth axis is scaled so one
     // extra row sits above the viewport, then coords are shifted so depth-1
     // tiles start at 0. For horizontal, partition's x (sibling) → canvas y and
     // partition's y (depth) → canvas x; for vertical, no swap needed.
     const layout = derive(() => {
-      const h = buildHierarchy(root, this._sortByCell.value);
+      const maxD = this._maxDepthCell.value;
+      const h = buildHierarchy(rootCell.value, this._sortByCell.value);
       const td = h.height; // levels below root
       const visibleDepth = maxD !== undefined ? Math.min(maxD, td) : td;
       const sibAxis = isHoriz.value ? Hc.value : Wc.value;
@@ -146,6 +187,7 @@ export class MdIcicleLC extends Diagram {
     const focusDepth = derive(() => {
       const id = this._drillIdCell.value;
       if (!id) return 0;
+      const { nodeById, nodeDepth } = structure.value;
       const n = nodeById.get(id);
       return n ? (nodeDepth.get(n) ?? 0) : 0;
     });
@@ -156,6 +198,8 @@ export class MdIcicleLC extends Diagram {
     const windowTarget = derive((): readonly BiNode[] => {
       const fd = focusDepth.value;
       const id = this._drillIdCell.value;
+      const { root, nodeById, totalDepth } = structure.value;
+      const maxD = this._maxDepthCell.value;
       const maxWindow = maxD !== undefined ? fd + maxD : totalDepth;
       const result: BiNode[] = [];
       const focusNode = id ? nodeById.get(id) : null;
@@ -174,7 +218,8 @@ export class MdIcicleLC extends Diagram {
     const renderedSet = cell<readonly BiNode[]>([]);
     let leaveTimer: ReturnType<typeof setTimeout> | null = null;
     let lastDrillId_rs: string | null = null;
-    biEffect(() => {
+    this._trackScene(() => { if (leaveTimer) { clearTimeout(leaveTimer); leaveTimer = null; } });
+    this._trackScene(biEffect(() => {
       const newTarget = windowTarget.value;
       const currentDrillId = untracked(() => this._drillIdCell.value);
       const drillChanged = currentDrillId !== lastDrillId_rs;
@@ -192,7 +237,7 @@ export class MdIcicleLC extends Diagram {
       } else {
         renderedSet.value = newTarget;
       }
-    });
+    }));
 
     // Drill viewport tween: compute target viewport from focus node bounds and
     // tween all 4 cells. Uses untracked for layout reads so value changes don't
@@ -201,10 +246,16 @@ export class MdIcicleLC extends Diagram {
     let lastDrillId: string | null = null;
     let drillCancel: (() => void) | null = null;
     let drillClassTimer: ReturnType<typeof setTimeout> | null = null;
-    biEffect(() => {
+    this._trackScene(() => {
+      if (drillClassTimer) { clearTimeout(drillClassTimer); drillClassTimer = null; }
+      drillCancel?.(); drillCancel = null;
+    });
+    this._trackScene(biEffect(() => {
       const id = this._drillIdCell.value;
       void Wc.value; void Hc.value; // track resize
       void isHoriz.value; // track orientation
+      const { nodeById, nodeDepth, totalDepth } = structure.value; // track data swap
+      const maxD = this._maxDepthCell.value;
       const W0 = Wc.value, H0 = Hc.value;
       const depthCanvas = isHoriz.value ? W0 : H0;
       const sibCanvas = isHoriz.value ? H0 : W0;
@@ -273,7 +324,7 @@ export class MdIcicleLC extends Diagram {
         tween(vx1, tx1, DRILL_SEC, easeOut),
         tween(vy1, ty1, DRILL_SEC, easeOut),
       );
-    });
+    }));
 
     // Remap layout-space coords through viewport cells → canvas coords.
     // vx = depth axis, vy = sibling axis.
@@ -293,7 +344,9 @@ export class MdIcicleLC extends Diagram {
     // Windowed tile rendering via forEach (keyed by node id).
     const tileLayer = s(group());
     forEach(tileLayer, renderedSet, (node) => {
-      const depth = nodeDepth.get(node) ?? 0;
+      // peek: a data swap creates new nodes → new tiles, so depth is stable
+      // for this tile's lifetime.
+      const depth = untracked(() => structure.value.nodeDepth.get(node)) ?? 0;
       const isLeaf = (node.children as BiNode[]).length === 0;
 
       // Per-tile raw layout-position cells. Tweened on sort change so tiles
@@ -309,13 +362,19 @@ export class MdIcicleLC extends Diagram {
       });
       let lcancel: (() => void) | null = null;
       let lInited = false;
+      let seenSortBy = untracked(() => this._sortByCell.value);
       biEffect(() => {
         const t = ltarget.value; // track layout (reacts to sort + value + size)
-        if (!lInited) { lInited = true; lx0.value = t.x0; ly0.value = t.y0; lx1.value = t.x1; ly1.value = t.y1; return; }
-        if (this.classList.contains(GESTURE_ACTIVE_CLASS)) {
-          lcancel?.(); lcancel = null;
-          lx0.value = t.x0; ly0.value = t.y0; lx1.value = t.x1; ly1.value = t.y1;
-        } else {
+        const sortBy = this._sortByCell.value; // track sort key so a toggle re-fires this effect
+        if (!lInited) { lInited = true; seenSortBy = sortBy; lx0.value = t.x0; ly0.value = t.y0; lx1.value = t.x1; ly1.value = t.y1; return; }
+        // Two-lane split. TWEEN only for a real reorder (sort key toggled) —
+        // partitions slide to new slots. SNAP for everything else: active gesture
+        // (real-time drag), and — crucially — value edits / commits / resize,
+        // including REMOTE cross-tile edits that carry no gesture class (R2:
+        // value changes are write-through, no 250-350ms settle-lag).
+        const reordered = sortBy !== seenSortBy;
+        seenSortBy = sortBy;
+        if (reordered && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
           lcancel?.();
           lcancel = this.anim.start(
             tween(lx0, t.x0, SORT_SEC, easeOut),
@@ -323,6 +382,9 @@ export class MdIcicleLC extends Diagram {
             tween(lx1, t.x1, SORT_SEC, easeOut),
             tween(ly1, t.y1, SORT_SEC, easeOut),
           );
+        } else {
+          lcancel?.(); lcancel = null;
+          lx0.value = t.x0; ly0.value = t.y0; lx1.value = t.x1; ly1.value = t.y1;
         }
       });
 
@@ -366,7 +428,7 @@ export class MdIcicleLC extends Diagram {
         if (isContextNode.value) {
           e.stopPropagation();
           const parent = parentOf(node);
-          const targetId = (parent && (nodeDepth.get(parent) ?? 0) > 0)
+          const targetId = (parent && (structure.value.nodeDepth.get(parent) ?? 0) > 0)
             ? (parent.value.id ?? null)
             : null;
           // Drill directly — don't wait for a round-trip.
@@ -404,6 +466,8 @@ export class MdIcicleLC extends Diagram {
       type HandleItem = { parent: BiNode; i: number; aNode: BiNode; bNode: BiNode };
       const handleWindow = derive((): readonly HandleItem[] => {
         const fd = focusDepth.value;
+        const { nodeDepth, totalDepth } = structure.value;
+        const maxD = this._maxDepthCell.value;
         const maxWindow = maxD !== undefined ? fd + maxD : totalDepth;
         const items: HandleItem[] = [];
         for (const n of renderedSet.value) {
@@ -502,7 +566,7 @@ export class MdIcicleLC extends Diagram {
 
     if (!this.hasAttribute('no-source')) s(label(view.bottom.up(10), derive(() => {
       const f = state.focused.value;
-      return `total: ${root.value.total.value.toFixed(0)} · focused: ${f?.value.label ?? "(none)"} · hover + cmd/ctrl+wheel · click + arrows/Tab`;
+      return `total: ${rootCell.value.value.total.value.toFixed(0)} · focused: ${f?.value.label ?? "(none)"} · hover + cmd/ctrl+wheel · click + arrows/Tab`;
     }), { size: 10, align: Anchor.Center, fill: "#9aa0a8" }));
   }
 }

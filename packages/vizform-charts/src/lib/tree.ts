@@ -9,18 +9,22 @@ import {
 } from "bireactive";
 
 export interface NodeValue {
+  id: string;
   label: string;
   color: string;
   total: Writable<Num>;
+  /** Optional: all measures keyed by name. For backward compat, may be undefined. */
+  measures?: Record<string, Writable<Num>>;
 }
 
 export type BiNode = TreeNode<NodeValue>;
 
-export function leaf(label: string, value: number, color: string): BiNode {
-  return treeNode({ label, color, total: num(value) });
+export function leaf(id: string, label: string, value: number, color: string): BiNode {
+  const total = num(value);
+  return treeNode({ id, label, color, total, measures: { total } });
 }
 
-export function group(label: string, color: string, children: BiNode[]): BiNode {
+export function group(id: string, label: string, color: string, children: BiNode[]): BiNode {
   const total = Num.lens(
     children.map((c) => c.value.total),
     (vs: readonly number[]) => vs.reduce((a, b) => a + b, 0),
@@ -32,7 +36,7 @@ export function group(label: string, color: string, children: BiNode[]): BiNode 
       return arr.map((v) => v * scale) as never;
     },
   );
-  return treeNode({ label, color, total }, children);
+  return treeNode({ id, label, color, total, measures: { total } }, children);
 }
 
 export function leaves(root: BiNode): BiNode[] {

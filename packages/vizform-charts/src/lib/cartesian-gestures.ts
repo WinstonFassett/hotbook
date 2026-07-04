@@ -1,7 +1,7 @@
 // Shared interaction layer for cartesian (x-bisect) charts.
 // Mirrors attachChartGestures for hierarchical charts.
 
-import { wheelController, dragController, dynamicWheelStep } from "./interaction";
+import { wheelController, dragController, dynamicWheelStep, realModifierDown } from "./interaction";
 import type { ChartContext } from "./chart-context";
 import { bisector } from "d3-array";
 import { effect as biEffect } from "bireactive";
@@ -61,9 +61,9 @@ export function attachCartesianGestures<TData>(
   // Per-gesture value-mapping handed to the SHARED wheel/drag controllers (app-
   // wide singletons; one pointer → one live gesture).
   const wheelConfig = {
-    snapshot: (d: TData) => ctx.yAcc(d) as number,
+    snapshot: (d: TData) => { (host as any).gestureActive = true; return ctx.yAcc(d) as number; },
     restore: (d: TData, v: number) => mutateDatum(d, v - (ctx.yAcc(d) as number)),
-    onEnd: () => { state.hover.value = null; gestureOrder = null; host.dispatchEvent(new CustomEvent("gesturecommit")); },
+    onEnd: () => { (host as any).gestureActive = false; state.hover.value = null; gestureOrder = null; host.dispatchEvent(new CustomEvent("gesturecommit")); },
   };
 
   // Captured at pointerdown, read by dragConfig.snapshot (called inside begin()).
@@ -117,8 +117,10 @@ export function attachCartesianGestures<TData>(
   const onWheel = (e: Event) => {
     const we = e as WheelEvent;
     if (!we.ctrlKey || !canEdit()) return;
+    // Distinguish trackpad pinch (synthetic ctrlKey) from real Cmd/Ctrl+wheel.
+    const isPinch = !realModifierDown();
     if (!wheelController.active) gestureOrder = order();
-    const target = wheelController.begin(state.hover.value ?? state.selected.value, wheelConfig);
+    const target = wheelController.begin(state.hover.value ?? state.selected.value, wheelConfig, { pinch: isPinch });
     if (!target) return;
     we.preventDefault();
     const step = dynamicWheelStep(ctx.yAcc(target) as number, we.shiftKey);

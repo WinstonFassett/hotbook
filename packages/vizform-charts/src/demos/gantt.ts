@@ -37,12 +37,12 @@ import {
   dragController,
   dynamicWheelStep,
   wheelController,
+  realModifierDown,
 } from "../lib/interaction";
 import {
   GESTURE_ACTIVE_CLASS,
   GESTURE_SUPPRESSION_CSS,
   hoverTransition,
-  settleTransition,
 } from "../lib/transitions";
 
 const W = 720;
@@ -608,7 +608,7 @@ export class MdGanttChartLC extends Diagram {
       const we = e as WheelEvent;
       if (!we.ctrlKey && !we.metaKey) return;
       we.preventDefault(); we.stopPropagation();
-      const t = wheelController.begin(hover.value ?? selected.value, wheelConfig);
+      const t = wheelController.begin(hover.value ?? selected.value, wheelConfig, { pinch: !realModifierDown() });
       if (!t) return;
       const curDays = Math.max(1, Math.round((t.end.getTime() - t.start.getTime()) / DAY_MS));
       const step = dynamicWheelStep(curDays, we.shiftKey);
@@ -751,7 +751,7 @@ export class MdGanttChartLC extends Diagram {
 
       const tile = s(rect(xS, barY, barW, ROW_H, { fill, corner: 3 }));
       tile.el.style.cursor = "grab";
-      tile.el.style.transition = settleTransition(["x", "width", "fill"]);
+      // Value geometry (x/width = task start/duration) is write-through — no settle.
 
       // Inside label (task name) — shown when bar wide enough.
       const inOpacity = derive(() => barW.value >= 60 ? 1 : 0);

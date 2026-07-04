@@ -7,13 +7,13 @@
  * Behavior is IDENTICAL — same echo suppression, freeze, commit re-sort, batching.
  */
 
-import { effect as biEffect, leavesOf } from 'bireactive'
+import { effect as biEffect, leavesOf, walkTree } from 'bireactive'
 import type { Cell, Num, Writable } from 'bireactive'
 import type { PNode } from '../../persistence'
 import { buildBiTree } from './tree'
 import type { BiNode } from './tree'
 import { hudStore } from '../../store'
-import { wheelController, dragController } from '@winstonfassett/vizform-charts'
+import { numberDrag } from '@winstonfassett/vizform-charts'
 
 // ─── Epsilon + helpers ────────────────────────────────────────────────────────
 
@@ -151,6 +151,7 @@ export function bindTile(container: HTMLElement, source: TileSource): TileContro
   let lastRef = new Map<string, number>()
   let unbindHud: () => void = () => {}
   let unbindEditOut: () => void = () => {}
+  let onCommit: ((e: Event) => void) | null = null
 
   function mount(src: TileSource) {
     currentSourceRef.current = src
@@ -174,13 +175,47 @@ export function bindTile(container: HTMLElement, source: TileSource): TileContro
     // Edit-out subscription — uses src's internal refs (updated via _syncRefs on same-shapeKey update)
     unbindEditOut = src.bindEditOut(newEl, lastRef)
 
-    // gesturecommit → re-run applyData with gestureActive:false (the single commit re-sort).
-    // Reads currentSourceRef.current so it picks up the latest spec after same-shapeKey updates.
-    const onCommit = () => {
-      if (el) currentSourceRef.current.applyData(el, { gestureActive: false, lastRef })
+    // gesturecommit: charts dispatch this on gesture end (release or Esc-cancel).
+    //
+    // Why we need a trailing re-apply here at all:
+    // The final value write of a gesture happens *during* the gesture, while
+    // el.gestureActive is still true. bindEditOut pushes it to the store, which
+    // round-trips back through update()→applyData — but that applyData runs with
+    // gestureActive:true and takes the FROZEN branch (order held, per Rule 7). When
+    // the gesture ends, onEnd() flips gestureActive→false and fires this event, but
+    // it writes NO new value — so nothing re-triggers applyData, and the frozen
+    // display order is never reconciled against the (already-correct) sorted store
+    // state. Result: a same-chart edit that should reorder leaves the mark in place.
+    // (Cross-tile edits never hit this because the receiving tile's gestureActive is
+    // always false, so its applyData always takes the commit/reorder branch.)
+    //
+    // We must NOT call applyData synchronously in this handler — for an Esc-cancel,
+    // the restore's value writes push to the store via bindEditOut's own
+    // queueMicrotask, so a synchronous read would see stale pre-restore values and
+    // clobber the restore. Deferring past that microtask lets specRef/lastRef settle
+    // to the committed store values first; applyData({ gestureActive:false }) then
+    // reindexes in fresh sort order off the settled state.
+    onCommit = (e: Event) => {
+      // Opt-in: only charts that send an explicit { canceled } detail participate in
+      // the trailing re-apply. Charts that dispatch bare gesturecommit (no detail)
+      // keep their exact prior behavior — no trailing re-apply — so this change's
+      // blast radius is limited to the charts that adopted the detail contract
+      // (currently bar/bands). Extend a chart into this path by having its onEnd
+      // dispatch `new CustomEvent('gesturecommit', { detail: { canceled } })`.
+      const detail = (e as CustomEvent).detail
+      if (!detail || typeof detail.canceled !== 'boolean') return
+      // On Esc-cancel the chart already restored the live cells and bindEditOut is
+      // pushing those restored values to the store; re-applying here would read the
+      // still-stale (pre-restore) specRef and clobber the revert. Let the store
+      // round-trip own the cancel path. Only reconcile order on a real commit.
+      if (detail.canceled) return
+      queueMicrotask(() => {
+        if (el === newEl && !newEl.gestureActive) {
+          currentSourceRef.current.applyData(newEl, { gestureActive: false, lastRef })
+        }
+      })
     }
     newEl.addEventListener('gesturecommit', onCommit)
-    ;(newEl as any)._commitHandler = onCommit
 
     // Initial data push (element is connected, dataCell is live)
     src.applyData(newEl, { gestureActive: false, lastRef })
@@ -188,9 +223,9 @@ export function bindTile(container: HTMLElement, source: TileSource): TileContro
 
   function dismount() {
     if (!el) return
-    el.removeEventListener('gesturecommit', (el as any)._commitHandler)
     unbindHud()
     unbindEditOut()
+    if (onCommit) { el.removeEventListener('gesturecommit', onCommit); onCommit = null }
     if (container.contains(el)) container.removeChild(el)
     el = null
     lastRef = new Map()
@@ -221,10 +256,13 @@ export function bindTile(container: HTMLElement, source: TileSource): TileContro
         const mounted = currentSourceRef.current
         mounted.syncFrom?.(nextSource)
         if (el) {
-          // Treat any active gesture (drag OR wheel) as frozen — do not snap
-          // values back from the store while the user is actively editing.
-          const frozen = !!el.gestureActive || wheelController.active || dragController.active
-          mounted.applyData(el, { gestureActive: frozen, lastRef })
+          // Freeze only the chart being actively edited (per-element flag set by
+          // the chart's own gesture handlers). Other charts must update live —
+          // that's the bidirectional viz promise. The global controller check
+          // (0ffe125) froze ALL charts during ANY gesture, breaking cross-chart
+          // sync: edits on one visible chart never reached the chart next to it
+          // until the gesture ended and a tab switch forced a remount.
+          mounted.applyData(el, { gestureActive: !!el.gestureActive, lastRef })
         }
       }
     },
@@ -401,7 +439,6 @@ export interface HierSpec {
   depth?: number
   sortBy?: 'index' | 'value'
   orientation?: 'horizontal' | 'vertical'
-  sortBy?: 'index' | 'value'
   shapeKey: string
   valueKey: string
   drillNodeId?: string | null
@@ -409,6 +446,10 @@ export interface HierSpec {
   showBreadcrumb?: boolean
   onUpdate?: (nodeId: string, measures: PNode['measures']) => void
   onUpdateMany?: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
+  enableNumberDrag?: {
+    selector: string  // CSS selector prefix for editable elements, e.g., '[data-editable-value'
+    pxPerUnit?: number
+  }
 }
 
 export function makeHierSource(spec: HierSpec): TileSource {
@@ -422,6 +463,7 @@ export function makeHierSource(spec: HierSpec): TileSource {
   const showBreadcrumbRef = { current: spec.showBreadcrumb }
   const sortByRef = { current: spec.sortBy ?? 'index' }
   const orientationRef = { current: spec.orientation }
+  const enableNumberDragRef = { current: spec.enableNumberDrag }
 
   const source: TileSource = {
     tag: spec.tag,
@@ -442,6 +484,54 @@ export function makeHierSource(spec: HierSpec): TileSource {
       typedEl.sortBy = sortByRef.current
       delete (typedEl as any).orientation;
       if (orientationRef.current !== undefined) typedEl.orientation = orientationRef.current
+
+      // Attach numberDrag if configured (for treetable and similar)
+      if (enableNumberDragRef.current && typeof (typedEl as any).onRender === 'function') {
+        const disposers: Array<() => void> = []
+        const { selector, pxPerUnit = 4 } = enableNumberDragRef.current
+
+        const unsubRender = (typedEl as any).onRender((allNodeIds: string[]) => {
+          // Clean up previous drag handlers
+          for (const d of disposers.splice(0)) d()
+
+          const rootEl = (typedEl as any).getRoot?.()
+          if (!rootEl) return
+
+          // Build a map of ALL BiNodes by id (including parents)
+          const allNodes: BiNode[] = []
+          walkTree(root, (n) => allNodes.push(n as BiNode))
+          const nodeMap = new Map(allNodes.map(n => [n.value.id, n]))
+
+          // Attach numberDrag to ALL visible value cells
+          for (const id of allNodeIds) {
+            const cell = rootEl.querySelector<HTMLElement>(`${selector}="${id}"]`)
+            if (!cell) continue
+
+            const biNode = nodeMap.get(id)
+            if (!biNode) continue
+
+            const get = () => biNode.value.total.value
+            const set = (v: number) => {
+              // Write to the BiNode - lens will handle redistribution for parents
+              biNode.value.total.value = v
+              const pnode = nodesRef.current.find(n => n.id === id)
+              if (pnode && onUpdateRef.current) {
+                onUpdateRef.current(id, { ...pnode.measures, [measureKeyRef.current]: v })
+              }
+            }
+
+            disposers.push(numberDrag(cell, { get, set, pxPerUnit }))
+          }
+        })
+
+        // Store cleanup function
+        const originalDispose = (typedEl as any).__dispose
+        ;(typedEl as any).__dispose = () => {
+          unsubRender?.()
+          for (const d of disposers) d()
+          originalDispose?.()
+        }
+      }
     },
 
     initialLast(_el: HTMLElement): Map<string, number> {

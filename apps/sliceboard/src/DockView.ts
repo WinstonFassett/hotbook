@@ -286,15 +286,18 @@ export class DockView extends HTMLElement {
         const newStrip = this._renderTabStrip(group, tiles)
         strip.replaceWith(newStrip)
       } else {
-        // Panel list unchanged — just update active class and close button state.
-        const singlePanel = group.panels.length <= 1
+        // Panel list unchanged — just update active class. Close is always
+        // enabled (an area may go empty), so no close-button state to sync.
         tabsWrap?.querySelectorAll<HTMLElement>('.dv-tab').forEach(tab => {
-          tab.classList.toggle('dv-tab--active', tab.dataset.panelId === group.activeId)
-          const closeBtn = tab.querySelector<HTMLElement>('.dv-tab-close')
-          if (closeBtn) {
-            closeBtn.toggleAttribute('disabled', singlePanel)
-            closeBtn.style.opacity = singlePanel ? '0.3' : ''
-            closeBtn.style.cursor = singlePanel ? 'default' : ''
+          const isActive = tab.dataset.panelId === group.activeId
+          tab.classList.toggle('dv-tab--active', isActive)
+          // Scroll active tab into view if it's outside the visible area
+          if (isActive && tabsWrap) {
+            const tabRect = tab.getBoundingClientRect()
+            const wrapRect = tabsWrap.getBoundingClientRect()
+            if (tabRect.left < wrapRect.left || tabRect.right > wrapRect.right) {
+              tab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
+            }
           }
         })
       }
@@ -479,25 +482,19 @@ export class DockView extends HTMLElement {
       closeBtn.title = 'Close panel'
       closeBtn.setAttribute('aria-label', 'Close panel')
       closeBtn.textContent = '×'
-      // Don't allow closing the last panel in a group
-      if (group.panels.length <= 1) {
-        closeBtn.disabled = true
-        closeBtn.style.opacity = '0.3'
-        closeBtn.style.cursor = 'default'
-      } else {
-        closeBtn.addEventListener('click', (e) => {
-          e.stopPropagation()
-          this._closePanel(group.id, p.id)
-        })
-      }
+      // An area may go empty (VS Code-style) — closing the last panel is
+      // allowed. removePanel() prunes the emptied group and the dock collapses
+      // to the empty state, so no per-area "keep last view" guard is needed.
+      closeBtn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        this._closePanel(group.id, p.id)
+      })
       tab.appendChild(closeBtn)
 
-      // Middle-click to close (only if more than 1 panel)
-      if (group.panels.length > 1) {
-        tab.addEventListener('mousedown', (e) => {
-          if (e.button === 1) { e.preventDefault(); this._closePanel(group.id, p.id) }
-        })
-      }
+      // Middle-click to close
+      tab.addEventListener('mousedown', (e) => {
+        if (e.button === 1) { e.preventDefault(); this._closePanel(group.id, p.id) }
+      })
 
       tab.addEventListener('pointerdown', (e) => {
         if (e.button !== 0) return
@@ -540,7 +537,10 @@ export class DockView extends HTMLElement {
     maxBtn.className = 'dv-tab-maximize'
     maxBtn.title = group.maximized ? 'Restore' : 'Maximize'
     maxBtn.setAttribute('aria-label', group.maximized ? 'Restore' : 'Maximize')
-    maxBtn.textContent = group.maximized ? '❐' : '□'
+    maxBtn.textContent = group.maximized ? '◱' : '⛶'
+    maxBtn.style.minWidth = '24px'
+    maxBtn.style.minHeight = '24px'
+    maxBtn.style.fontSize = '16px'
     maxBtn.addEventListener('click', () => this._toggleMaximize(group.id))
     actions.appendChild(maxBtn)
 
@@ -1157,8 +1157,8 @@ export class DockView extends HTMLElement {
       e.preventDefault()
       const dock = this._dockCell?.value ?? null
       const activeGroup = this._getKeyboardGroup(dock)
-      // Don't close the last panel in a group
-      if (activeGroup && activeGroup.activeId && activeGroup.panels.length > 1) this._closePanel(activeGroup.id, activeGroup.activeId)
+      // Closing the last panel is allowed — the emptied area collapses.
+      if (activeGroup && activeGroup.activeId) this._closePanel(activeGroup.id, activeGroup.activeId)
       return
     }
     if (this._awaitingKChord) this._awaitingKChord = false

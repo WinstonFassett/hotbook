@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Pinch Zoom Test</title>
+<style>
+  body { margin: 0; font-family: system-ui; background: #1a1a2e; color: #eee; padding: 2rem; }
+  #chart-container { width: 600px; height: 400px; background: #16213e; }
+  #log { position: fixed; top: 10px; right: 10px; width: 350px; max-height: 80vh; overflow-y: auto; background: #0f0f23; border: 1px solid #333; padding: 8px; font-size: 11px; font-family: monospace; z-index: 100; }
+  #log div { border-bottom: 1px solid #222; padding: 2px 0; }
+  #status { position: fixed; bottom: 10px; left: 10px; background: #0f0f23; border: 1px solid #333; padding: 8px 16px; font-family: monospace; font-size: 14px; }
+</style>
+</head>
+<body>
+<h1>Pinch Zoom Test — Bar Chart</h1>
+<p>Pinch-zoom (ctrl+wheel) a bar, press Esc mid-pinch, keep pinching. Value should snap back and stay reverted.</p>
+<div id="chart-container"></div>
+<div id="log"></div>
+<div id="status">idle</div>
+<script type="module">
+  import { effect, num } from 'bireactive';
+  import { MdBarChartLC } from '@winstonfassett/vizform-charts';
+
+  if (!customElements.get('v-br-bar')) {
+    customElements.define('v-br-bar', MdBarChartLC);
+  }
+
+  const log = document.getElementById('log');
+  function addLog(msg) {
+    const div = document.createElement('div');
+    div.textContent = new Date().toISOString().substr(11,12) + ' ' + msg;
+    log.prepend(div);
+  }
+
+  const rows = [
+    { label: 'A', value: num(50) },
+    { label: 'B', value: num(30) },
+    { label: 'C', value: num(70) },
+    { label: 'D', value: num(40) },
+    { label: 'E', value: num(60) },
+  ];
+
+  // Create element, set data BEFORE append (Diagram reads it on connect)
+  const chartEl = document.createElement('v-br-bar');
+  chartEl.style.width = '600px';
+  chartEl.style.height = '400px';
+  chartEl.externalData = rows.map(r => ({ label: r.label, value: r.value.value }));
+  document.getElementById('chart-container').appendChild(chartEl);
+
+  // Debug: intercept the chart's wheel handler to log what's happening
+  const origAddEventListener = chartEl.addEventListener.bind(chartEl);
+  // After a tick, check internal state
+  setTimeout(() => {
+    addLog('chartEl.dataCell.value: ' + JSON.stringify(chartEl.dataCell?.value?.map?.(d => ({label: d.label, value: d.value})) ?? 'no dataCell'));
+  }, 500);
+
+  // Track value changes for test verification
+  rows.forEach((r, i) => {
+    effect(() => {
+      const v = r.value.value;
+      addLog('bar[' + i + '] (' + r.label + ') = ' + v);
+      document.getElementById('status').textContent = 'bar[' + i + ']=' + v;
+    });
+  });
+
+  // Expose for test
+  window.__test = {
+    rows,
+    chartEl,
+    addLog,
+    getValues: () => rows.map(r => r.value.value),
+    getChartRect: () => chartEl.getBoundingClientRect(),
+    hasSvg: () => !!chartEl.shadowRoot?.querySelector('svg'),
+    getRectCount: () => chartEl.shadowRoot?.querySelectorAll('rect').length ?? 0,
+    // Hover a bar by index — dispatches pointermove on the host with
+    // coordinates that map to that bar's position in the plot area.
+    hoverBar: (idx) => {
+      const rect = chartEl.getBoundingClientRect();
+      // Chart has PAD={top:16,right:24,bottom:36,left:48}, 5 bars
+      // Plot width = 600 - 48 - 24 = 528, band = 528/5 = 105.6
+      // Bar idx center = 48 + 105.6 * (idx + 0.5)
+      const PAD_LEFT = 48, PAD_RIGHT = 24;
+      const plotW = rect.width - PAD_LEFT - PAD_RIGHT;
+      const band = plotW / 5;
+      const barX = PAD_LEFT + band * (idx + 0.5);
+      const clientX = rect.left + barX;
+      const clientY = rect.top + rect.height * 0.5;
+      // Dispatch pointermove on the host — the chart's handler calls
+      // findAtPixel(localPoint(e).x) to set hover.
+      chartEl.dispatchEvent(new PointerEvent('pointermove', {
+        bubbles: true, cancelable: true,
+        clientX, clientY,
+        pointerId: 1, pointerType: 'mouse',
+      }));
+      return true;
+    },
+    // Dispatch a synthetic pinch wheel event (ctrlKey=true, no real key)
+    pinchWheel: (deltaY = -3) => {
+      const rect = chartEl.getBoundingClientRect();
+      const ev = new WheelEvent('wheel', {
+        bubbles: true, cancelable: true,
+        clientX: rect.left + rect.width * 0.3,
+        clientY: rect.top + rect.height * 0.5,
+        ctrlKey: true, deltaY,
+      });
+      chartEl.dispatchEvent(ev);
+      return ev.defaultPrevented;
+    },
+    // Dispatch Escape key
+    sendEsc: () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Escape', bubbles: true, cancelable: true,
+      }));
+    },
+  };
+</script>
+</body>
+</html>

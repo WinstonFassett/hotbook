@@ -24,11 +24,13 @@ import {
   MdGaugeSegmentedLC,
   MdPack,
   MdTreemapLC,
+  MdTreetableLC,
   MdIcicleLC,
   MdSunburstLC,
   MdSankeySimple,
   MdSankeyFlow,
   MdTreeChart,
+  MdGanttChartLC,
 } from '@winstonfassett/vizform-charts'
 
 // Register custom elements once
@@ -44,11 +46,13 @@ const TAGS = [
   ['v-br-gauge-segmented', MdGaugeSegmentedLC],
   ['v-br-pack',           MdPack],
   ['v-br-treemap',        MdTreemapLC],
+  ['v-br-treetable',      MdTreetableLC],
   ['v-br-icicle',         MdIcicleLC],
   ['v-br-sunburst',       MdSunburstLC],
   ['v-br-sankey',         MdSankeySimple],
   ['v-br-sankey-flow',    MdSankeyFlow],
   ['v-br-tree',           MdTreeChart],
+  ['v-br-gantt',          MdGanttChartLC],
 ] as const
 
 for (const [tag, cls] of TAGS) {
@@ -238,6 +242,7 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
   const hierTags: Record<string, string> = {
     'br-lc-pack': 'v-br-pack',
     'br-lc-treemap': 'v-br-treemap',
+    'br-lc-treetable': 'v-br-treetable',
     'br-lc-icicle': 'v-br-icicle',
     'br-lc-sunburst': 'v-br-sunburst',
     'br-lc-tree': 'v-br-tree',
@@ -248,9 +253,14 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
     const shapeKey = hierShapeKey(tag, sortedWithIndex, mk, depth, sortBy)
       + (orientationProp ? `|${orientationProp}` : '')
     const valueKey = hierValueKey(sortedWithIndex, mk)
+    // Enable numberDrag for treetable
+    const enableNumberDrag = kind === 'br-lc-treetable'
+      ? { selector: '[data-editable-value', pxPerUnit: 4 }
+      : undefined
     const src = makeHierSource({
       tag, nodes: sortedWithIndex, measureKey: mk, depth, sortBy, shapeKey, valueKey,
       drillKey, drillNodeId, showBreadcrumb: true, onUpdate, onUpdateMany,
+      enableNumberDrag,
     })
     // Stash orientationProp so DockView can set it on the element after mount
     if (orientationProp) (src as any)._orientation = orientationProp
@@ -278,6 +288,21 @@ export function buildSimpleMount(ctx: TileRenderContext): ((el: HTMLElement) => 
     return (el: HTMLElement) => {
       el.style.cssText = 'width:100%;height:100%;overflow:auto'
       mountTreetable(el, nodes, mk)
+    }
+  }
+
+  if (kind === 'br-lc-gantt') {
+    // br-lc-gantt expects GanttTask[] with start/end dates
+    // For now, construct a simple timeline from the data rows
+    const tasks = leaves.map((n, i) => ({
+      id: n.id,
+      label: n.name,
+      start: new Date(SERIES_START + i * 7 * DAY_MS),
+      end: new Date(SERIES_START + (i * 7 + Math.max(1, Math.round((n.measures[mk] ?? 0) / 10))) * DAY_MS),
+      color: n.color,
+    }))
+    return (el: any) => {
+      el.externalData = tasks
     }
   }
 
@@ -318,6 +343,7 @@ export function simpleTag(kind: string): string | null {
     'br-lc-gauge-segmented': 'v-br-gauge-segmented',
     'br-lc-sankey': 'v-br-sankey',
     'br-lc-sankey-flow': 'v-br-sankey-flow',
+    'br-lc-gantt': 'v-br-gantt',
   }
   return map[kind] ?? null
 }
@@ -337,6 +363,9 @@ export function simpleDataKey(ctx: TileRenderContext): string {
   }
   if (kind === 'br-lc-sankey') {
     return `sankey|${JSON.stringify(ds.edges ?? [])}`
+  }
+  if (kind === 'br-lc-gantt') {
+    return `gantt|${mk}|${ds.rows.length}`
   }
   return kind
 }

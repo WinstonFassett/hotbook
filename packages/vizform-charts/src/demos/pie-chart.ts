@@ -1,6 +1,6 @@
 import { Anchor, annularSector, cell, circle, derive, Diagram, effect as biEffect, label, type Mount, Num, num, Vec, type Writable } from "bireactive";
 import { pie } from "d3-shape";
-import { wheelController, dynamicWheelStep } from "../lib/interaction";
+import { wheelController, dynamicWheelStep, realModifierDown } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { dragCancelable } from "../lib/esc-contract";
@@ -70,9 +70,9 @@ export class MdPieChartLC extends Diagram {
 
     // Config handed to the SHARED wheel controller (app-wide singleton).
     const wheelConfig = {
-      snapshot: (d: Slice) => d.value.value,
+      snapshot: (d: Slice) => { (this as any).gestureActive = true; return d.value.value; },
       restore: (d: Slice, v: number) => { d.value.value = Math.max(1, v); },
-      onEnd: () => { hover.value = null; this.dispatchEvent(new CustomEvent("gesturecommit")); },
+      onEnd: () => { (this as any).gestureActive = false; hover.value = null; this.dispatchEvent(new CustomEvent("gesturecommit")); },
     };
 
     // Pie layout (reactive). Reads each slice's value CELL so the layout
@@ -210,7 +210,7 @@ export class MdPieChartLC extends Diagram {
     this.addEventListener("wheel", (e) => {
       const we = e as WheelEvent;
       if (!we.ctrlKey) return;
-      const t = wheelController.begin(hover.value ?? selected.value, wheelConfig);
+      const t = wheelController.begin(hover.value ?? selected.value, wheelConfig, { pinch: !realModifierDown() });
       if (!t) return;
       we.preventDefault();
       const s = dynamicWheelStep(t.value.value, we.shiftKey);

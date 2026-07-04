@@ -287,8 +287,8 @@ export function dropOnEdge(node: DockNode | null, panelId: string, targetGroupId
   const newGroup = makeGroup([panel])
   const direction: DockDir = edge === 'left' || edge === 'right' ? 'row' : 'col'
   const placeAfter = edge === 'right' || edge === 'down'
-  // Target keeps 75%, dropped panel gets 25%
-  const sizes = placeAfter ? [3, 1] : [1, 3]
+  // 50/50 split by default
+  const sizes = [1, 1]
   const split = makeSplit(direction, placeAfter ? [stillTarget, newGroup] : [newGroup, stillTarget], sizes)
   const result = replaceNode(detached, stillTarget.id, split)
   return result ?? detached

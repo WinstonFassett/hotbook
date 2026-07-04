@@ -10,7 +10,7 @@
 // primitive — used by the gauge center readout, but applicable anywhere a
 // scalar is shown.
 
-import { dragController, wheelController, dynamicWheelStep } from "./interaction";
+import { dragController, wheelController, dynamicWheelStep, realModifierDown } from "./interaction";
 
 export interface NumberDragOpts {
   /** Get the current value at gesture-start (snapshot) and during drag (read). */
@@ -101,7 +101,7 @@ export function numberDrag(el: HTMLElement | SVGElement, opts: NumberDragOpts): 
   const onWheel = (e: Event) => {
     const we = e as WheelEvent;
     if (!we.ctrlKey && !we.metaKey) return;
-    const t = wheelController.begin(el, wheelConfig);
+    const t = wheelController.begin(el, wheelConfig, { pinch: !realModifierDown() });
     if (!t) return;
     we.preventDefault();
     const cur = opts.get();

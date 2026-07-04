@@ -15,7 +15,7 @@ import {
 } from "bireactive";
 import { scaleSequential } from "d3-scale";
 import { interpolateCool } from "d3-scale-chromatic";
-import { wheelController, dynamicWheelStep } from "./interaction";
+import { wheelController, dynamicWheelStep, realModifierDown } from "./interaction";
 import { dragCancelable } from "./esc-contract";
 import {
   buildTopology,
@@ -237,6 +237,7 @@ export function sankeyScene(
     const idx = wheelController.begin(
       hovered.value ?? focused.value ?? hitTestRibbon(e.clientX, e.clientY),
       wheelConfig,
+      { pinch: !realModifierDown() },
     );
     if (idx === null) return;
     wheelLocked.value = idx;

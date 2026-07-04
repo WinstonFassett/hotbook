@@ -17,14 +17,14 @@ import {
   untracked,
 } from "bireactive";
 import { partition, type HierarchyRectangularNode } from "d3-hierarchy";
-import { depthFill } from "../lib/depth-color";
+import { depthFill, labelInk } from "../lib/depth-color";
 import { buildHierarchy } from "../lib/interaction";
 import { buildParentIndex, type BiNode } from "../lib/tree";
 import { portfolio, walkWithDepth } from "../lib/portfolio";
 import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { dragCancelable } from "../lib/esc-contract";
-import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, settleTransition } from "../lib/transitions";
+import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS } from "../lib/transitions";
 import type { ElementWithBridge } from "../lib/hud-bridge";
 
 const W = 480;
@@ -259,13 +259,19 @@ export class MdSunburstLC extends Diagram {
       });
       let lcancel: (() => void) | null = null;
       let lInited = false;
+      let seenSortBy = untracked(() => this._sortByCell.value);
       biEffect(() => {
         const t = ltarget.value; // track layout (reacts to sort + value + size)
-        if (!lInited) { lInited = true; la0.value = t.x0; la1.value = t.x1; lr0.value = t.y0; lr1.value = t.y1; return; }
-        if (this.classList.contains(GESTURE_ACTIVE_CLASS)) {
-          lcancel?.(); lcancel = null;
-          la0.value = t.x0; la1.value = t.x1; lr0.value = t.y0; lr1.value = t.y1;
-        } else {
+        const sortBy = this._sortByCell.value; // track sort key so a toggle re-fires this effect
+        if (!lInited) { lInited = true; seenSortBy = sortBy; la0.value = t.x0; la1.value = t.x1; lr0.value = t.y0; lr1.value = t.y1; return; }
+        // Two-lane split. TWEEN only for a real reorder (sort key toggled) — arcs
+        // sweep to new angular slots. SNAP for everything else: active gesture
+        // (real-time drag), and — crucially — value edits / commits / resize,
+        // including REMOTE cross-tile edits that carry no gesture class (R2:
+        // value changes are write-through, no 250-350ms settle-lag).
+        const reordered = sortBy !== seenSortBy;
+        seenSortBy = sortBy;
+        if (reordered && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
           lcancel?.();
           lcancel = this.anim.start(
             tween(la0, t.x0, SORT_SEC, easeOut),
@@ -273,6 +279,9 @@ export class MdSunburstLC extends Diagram {
             tween(lr0, t.y0, SORT_SEC, easeOut),
             tween(lr1, t.y1, SORT_SEC, easeOut),
           );
+        } else {
+          lcancel?.(); lcancel = null;
+          la0.value = t.x0; la1.value = t.x1; lr0.value = t.y0; lr1.value = t.y1;
         }
       });
 
@@ -294,7 +303,6 @@ export class MdSunburstLC extends Diagram {
       });
       arc.el.dataset.id = node.value.id ?? "";
       arc.el.style.cursor = "pointer";
-      arc.el.style.transition = settleTransition("d");
       arc.el.setAttribute('tabindex', '0');
       arc.el.setAttribute('data-focusable', 'arc');
       biEffect(() => {
@@ -306,7 +314,40 @@ export class MdSunburstLC extends Diagram {
       arc.el.addEventListener("pointerenter", () => { state.hovered.current = node; hoverCell.value = node; state.emitHover?.(node); });
       arc.el.addEventListener("pointerleave", () => { if (state.hovered.current === node) { state.hovered.current = null; hoverCell.value = null; state.emitHover?.(null); } });
 
-      return arc;
+      // Label rendering — only show for arcs large enough to fit text
+      const isLeaf = !node.children || node.children.length === 0;
+      const arcAngleSpan = derive(() => Math.abs(a1.value - a0.value));
+      const arcRadialThickness = derive(() => rOut.value - rIn.value);
+      const showLabel = derive(() => {
+        // Only show label if arc is large enough: at least 0.15 radians (~8.6°) and 20px thick
+        return arcAngleSpan.value >= 0.15 && arcRadialThickness.value >= 20;
+      });
+
+      const labelPos = Vec.derive(() => {
+        const midAngle = (a0.value + a1.value) / 2;
+        const midRadius = (rIn.value + rOut.value) / 2;
+        const c = center.value;
+        return { x: c.x + midRadius * Math.cos(midAngle), y: c.y + midRadius * Math.sin(midAngle) };
+      });
+
+      const labelText = derive(() => {
+        if (!showLabel.value) return '';
+        return isLeaf
+          ? `${node.value.label}\n${node.value.total.value.toFixed(0)}`
+          : node.value.label;
+      });
+
+      const nodeFill = depthFill(node.value.color, depth);
+      const lbl = label(labelPos, labelText, {
+        size: isLeaf ? 11 : 10,
+        align: Anchor.Center,
+        fill: labelInk(nodeFill),
+        bold: !isLeaf,
+      });
+
+      // group(opts, ...children): first arg is OPTS — passing the arc there
+      // silently swallowed it (labels-only sunburst). Return both shapes.
+      return [arc, lbl];
     }, { key: (n) => n.value.id });
 
     // Windowed handle rendering.
@@ -421,7 +462,6 @@ export class MdSunburstLC extends Diagram {
       strokeWidth: 1,
     }));
     hub.el.style.cursor = "pointer";
-    hub.el.style.transition = settleTransition("r");
     hub.el.addEventListener("dblclick", (e: MouseEvent) => {
       e.stopPropagation();
       if (!this._drillIdCell.value) return;

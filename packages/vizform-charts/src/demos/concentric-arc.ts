@@ -4,7 +4,7 @@
 
 import { Anchor, cell, circle, derive, Diagram, easeInOut, effect as biEffect, group, label, mount, type Mount, num, pathD, tween, Vec } from "bireactive";
 import { arc as d3Arc } from "d3-shape";
-import { wheelController, dragController } from "../lib/interaction";
+import { wheelController, dragController, realModifierDown } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 
@@ -113,9 +113,9 @@ export class MdConcentricArcLC extends Diagram {
 
     // Config handed to the SHARED wheel controller (app-wide singleton).
     const wheelConfig = {
-      snapshot: (d: Ring) => d.value,
+      snapshot: (d: Ring) => { (this as any).gestureActive = true; return d.value; },
       restore: (d: Ring, v: number) => mutateDatum(d, v - d.value),
-      onEnd: () => { this.dispatchEvent(new CustomEvent("gesturecommit")); },
+      onEnd: () => { (this as any).gestureActive = false; this.dispatchEvent(new CustomEvent("gesturecommit")); },
     };
     // Last ring the pointer was over — kept past pointerleave so a wheel edit can
     // still target it for a moment after the cursor exits the ring band.
@@ -238,7 +238,6 @@ export class MdConcentricArcLC extends Diagram {
       const valueStroke = derive(() => { const d = di(); return selected.value === d ? "#fff" : hover.value === d ? (d?.color ?? "none") : "none"; });
       const valueStrokeW = derive(() => { const d = di(); return selected.value === d ? 1.5 : hover.value === d ? 3 : 0; });
       const valueEl = gs(pathD(valueD, { fill: slotColor, stroke: valueStroke, strokeWidth: valueStrokeW }));
-      valueEl.el.style.transition = "d 0.1s";
       valueEl.el.addEventListener("pointerenter", () => { const d = di(); if (d && !wheelController.active && !dragController.active) hover.value = d; });
       valueEl.el.addEventListener("pointerleave", () => { const d = di(); if (d && !wheelController.active && !dragController.active && hover.value === d) hover.value = null; });
       valueEl.el.addEventListener("click", () => { const d = di(); if (!d) return; selected.value = selected.value === d ? null : d; this.focus(); });
@@ -312,7 +311,7 @@ export class MdConcentricArcLC extends Diagram {
     svgEl.addEventListener("wheel", (e) => {
       const we = e as WheelEvent;
       if (!we.ctrlKey) return;
-      const t = wheelController.begin(selected.value ?? hover.value ?? lastRing, wheelConfig);
+      const t = wheelController.begin(selected.value ?? hover.value ?? lastRing, wheelConfig, { pinch: !realModifierDown() });
       if (!t) return;
       we.preventDefault();
       mutateDatum(t, we.deltaY < 0 ? (we.shiftKey ? 5 : 1) : (we.shiftKey ? -5 : -1));
