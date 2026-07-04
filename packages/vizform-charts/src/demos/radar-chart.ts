@@ -2,7 +2,7 @@
 // Mirrors LC's radial Chart + scaleBand for x (angle per category).
 // Grid: polygon rings at radius ticks + spoke lines. Points on polygon are clickable/editable.
 
-import { Anchor, cell, circle, derive, Diagram, easeInOut, effect as biEffect, label, type Mount, num, pathD, tween, Vec } from "bireactive";
+import { Anchor, cell, circle, derive, Diagram, effect as biEffect, label, type Mount, num, pathD, Vec } from "bireactive";
 import { scaleLinear } from "d3-scale";
 import { extent, ticks as d3Ticks } from "d3-array";
 import { wheelController, dragController, dynamicWheelStep } from "../lib/interaction";
@@ -167,8 +167,17 @@ export class MdRadarChartLC extends Diagram {
       s(label(lblPos, lblText, { size: 11, align: Anchor.Center, fill: "#aaa" }));
     }
 
-    // Per-slot radius tween cells. On sort, the datum at slot i changes — the
-    // tween morphs the polygon from old value to new value along each spoke.
+    // Per-slot radius cells — write-through, no tween (motion policy R2).
+    //
+    // Radar has NO structural transition class: spoke order is fixed by the data
+    // array (no reorder — R1 N/A), no orientation/mode toggle (R3 N/A), fixed spoke
+    // pool (R4 N/A). So every change to a spoke's radius is a VALUE change, which R2
+    // says must be immediate. The previous code tweened rPx toward target for 250ms
+    // whenever `!gestureActive` — which is exactly the remote/cross-tile edit case
+    // the policy calls out as settle-lag ("tween toward where the user already put
+    // it reads as lag"). The local-gesture case was already write-through via the
+    // gestureActive branch; this makes the remote case match it. Two-lane, degenerate
+    // form: value lane only, because radar has nothing on the structural lane.
     const rPxCells: ReturnType<typeof num>[] = [];
     for (let i = 0; i < MAX_SPOKES; i++) {
       const rTarget = derive(() => {
@@ -178,22 +187,10 @@ export class MdRadarChartLC extends Diagram {
       });
       const rPx = num(rTarget.value);
       rPxCells.push(rPx);
-      let rCancel: (() => void) | null = null;
-      let rInited = false;
-      biEffect(() => {
-        const target = rTarget.value;
-        if (!rInited) { rInited = true; rPx.value = target; return; }
-        if ((this as any).gestureActive) {
-          rCancel?.(); rCancel = null;
-          rPx.value = target;
-        } else {
-          rCancel?.();
-          rCancel = this.anim.start(tween(rPx, target, 0.25, easeInOut) as any);
-        }
-      });
+      biEffect(() => { rPx.value = rTarget.value; });
     }
 
-    // Filled polygon (value area) — reads from tweened radius cells.
+    // Filled polygon (value area) — reads from the write-through radius cells.
     const polyD = derive(() => {
       const rows = data.value as Spoke[];
       const cxv = cx.value, cyv = cy.value;
