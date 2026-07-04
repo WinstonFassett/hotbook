@@ -113,6 +113,10 @@ export class MdTreeChart extends Diagram {
   get orientation(): 'vertical' | 'horizontal' { return this._orientationCell.value }
   set orientation(v: 'vertical' | 'horizontal') { this._orientationCell.value = v }
 
+  private _measureKeyCell = cell<string>('')
+  get measureKey(): string { return this._measureKeyCell.value }
+  set measureKey(v: string) { this._measureKeyCell.value = v }
+
   // Reactive cell wrapping the collapsed-node Set. We replace the Set object
   // (new reference) on each toggle so derive() detects the change.
   private _collapsedCell = cell<Set<BiNode>>(new Set<BiNode>())
@@ -230,24 +234,27 @@ export class MdTreeChart extends Diagram {
       });
       let lcancel: (() => void) | null = null;
       let lInited = false;
-      // Structural triggers that SHOULD tween: sort key, orientation, and the
-      // collapsed set (its Set object is replaced on change, so identity compares).
+      // Structural triggers that SHOULD tween: sort key, orientation, measure
+      // swap, and the collapsed set (its Set object is replaced on change, so
+      // identity compares).
       let seenSort = untracked(() => this._sortByCell.value);
       let seenOrient = untracked(() => this._orientationCell.value);
+      let seenMeasureKey = untracked(() => this._measureKeyCell.value);
       let seenCollapsed = untracked(() => this._collapsedCell.value);
       biEffect(() => {
         const t = ltarget.value; // reacts to sort + value + size + orientation + collapsed
         const sort = this._sortByCell.value;         // track structural triggers so a
         const orient = this._orientationCell.value;  // toggle re-fires this effect and
         const collapsed = this._collapsedCell.value; // is classified as a reorder below.
-        if (!lInited) { lInited = true; seenSort = sort; seenOrient = orient; seenCollapsed = collapsed; lx.value = t.x; ly.value = t.y; return; }
+        const measureKey = untracked(() => this._measureKeyCell.value); // read untracked — effect fires on layout change (leaf writes), by which point measureKey is already set
+        if (!lInited) { lInited = true; seenSort = sort; seenOrient = orient; seenMeasureKey = measureKey; seenCollapsed = collapsed; lx.value = t.x; ly.value = t.y; return; }
         // Two-lane split. TWEEN for a real STRUCTURAL change (sort / orientation /
-        // collapse-expand) — nodes slide to new positions. SNAP for everything
-        // else: active gesture (real-time drag), and — crucially — value edits /
-        // commits / resize, including REMOTE cross-tile edits that carry no
-        // gesture class (R2: value changes are write-through, no settle-lag).
-        const structural = sort !== seenSort || orient !== seenOrient || collapsed !== seenCollapsed;
-        seenSort = sort; seenOrient = orient; seenCollapsed = collapsed;
+        // measure swap / collapse-expand) — nodes slide to new positions. SNAP
+        // for everything else: active gesture (real-time drag), and — crucially —
+        // value edits / commits / resize, including REMOTE cross-tile edits that
+        // carry no gesture class (R2: value changes are write-through, no settle-lag).
+        const structural = sort !== seenSort || orient !== seenOrient || measureKey !== seenMeasureKey || collapsed !== seenCollapsed;
+        seenSort = sort; seenOrient = orient; seenMeasureKey = measureKey; seenCollapsed = collapsed;
         if (structural && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
           lcancel?.();
           lcancel = this.anim.start(

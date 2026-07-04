@@ -2,15 +2,17 @@
 // Mirrors LC's radial Chart + scaleBand for x (angle per category).
 // Grid: polygon rings at radius ticks + spoke lines. Points on polygon are clickable/editable.
 
-import { Anchor, cell, circle, derive, Diagram, effect as biEffect, label, type Mount, num, pathD, Vec } from "bireactive";
+import { Anchor, cell, circle, derive, Diagram, easeOut, effect as biEffect, label, type Mount, num, pathD, tween, untracked, Vec } from "bireactive";
 import { scaleLinear } from "d3-scale";
 import { extent, ticks as d3Ticks } from "d3-array";
 import { wheelController, dragController, dynamicWheelStep, realModifierDown } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
+import { GESTURE_ACTIVE_CLASS } from "../lib/transitions";
 
 const W = 640;
 const H = 640;
+const SORT_SEC = 0.35; // s — measure-swap tween duration
 
 const COLOR = "#7aaae8";
 
@@ -42,6 +44,11 @@ export class MdRadarChartLC extends Diagram {
   `
   readonly dataCell = cell<readonly Spoke[]>(makeData());
   tickCount = 4;
+
+  private _measureKeyCell = cell<string>('')
+  get measureKey(): string { return this._measureKeyCell.value }
+  set measureKey(v: string) { this._measureKeyCell.value = v }
+
   set externalData(v: { label: string; value: number }[] | undefined) {
     if (v) this.dataCell.value = v as unknown as Spoke[];
   }
@@ -67,11 +74,13 @@ export class MdRadarChartLC extends Diagram {
       data.value = [...data.value];
     };
 
+    const setGestureActive = (on: boolean) => { this.classList.toggle(GESTURE_ACTIVE_CLASS, on); (this as any).gestureActive = on; };
+
     // Config handed to the SHARED wheel controller (app-wide singleton).
     const wheelConfig = {
-      snapshot: (d: Spoke) => { (this as any).gestureActive = true; return d.value; },
+      snapshot: (d: Spoke) => { setGestureActive(true); return d.value; },
       restore: (d: Spoke, v: number) => mutateDatum(d, v - d.value),
-      onEnd: () => { (this as any).gestureActive = false; hover.value = null; this.dispatchEvent(new CustomEvent("gesturecommit")); },
+      onEnd: () => { setGestureActive(false); hover.value = null; this.dispatchEvent(new CustomEvent("gesturecommit")); },
     };
 
     // y: scaleLinear 0–100 → radius 0–R_MAX
@@ -167,17 +176,11 @@ export class MdRadarChartLC extends Diagram {
       s(label(lblPos, lblText, { size: 11, align: Anchor.Center, fill: "#aaa" }));
     }
 
-    // Per-slot radius cells — write-through, no tween (motion policy R2).
+    // Per-slot radius cells — two-lane gate (WIN-144).
     //
-    // Radar has NO structural transition class: spoke order is fixed by the data
-    // array (no reorder — R1 N/A), no orientation/mode toggle (R3 N/A), fixed spoke
-    // pool (R4 N/A). So every change to a spoke's radius is a VALUE change, which R2
-    // says must be immediate. The previous code tweened rPx toward target for 250ms
-    // whenever `!gestureActive` — which is exactly the remote/cross-tile edit case
-    // the policy calls out as settle-lag ("tween toward where the user already put
-    // it reads as lag"). The local-gesture case was already write-through via the
-    // gestureActive branch; this makes the remote case match it. Two-lane, degenerate
-    // form: value lane only, because radar has nothing on the structural lane.
+    // Radar has no reorder or orientation toggle, but measure-swap IS a structural
+    // transition: all vertices slide to their new radii simultaneously. Value edits
+    // (drag, wheel, keyboard, remote cross-tile) stay write-through (snap) per R2.
     const rPxCells: ReturnType<typeof num>[] = [];
     for (let i = 0; i < MAX_SPOKES; i++) {
       const rTarget = derive(() => {
@@ -187,7 +190,23 @@ export class MdRadarChartLC extends Diagram {
       });
       const rPx = num(rTarget.value);
       rPxCells.push(rPx);
-      biEffect(() => { rPx.value = rTarget.value; });
+      let rCancel: (() => void) | null = null;
+      let rInited = false;
+      let seenMeasureKey = untracked(() => this._measureKeyCell.value);
+      biEffect(() => {
+        const target = rTarget.value;
+        const measureKey = untracked(() => this._measureKeyCell.value);
+        if (!rInited) { rInited = true; seenMeasureKey = measureKey; rPx.value = target; return; }
+        const measureSwapped = measureKey !== seenMeasureKey;
+        seenMeasureKey = measureKey;
+        if (measureSwapped && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
+          rCancel?.();
+          rCancel = this.anim.start(tween(rPx, target, SORT_SEC, easeOut));
+        } else {
+          rCancel?.(); rCancel = null;
+          rPx.value = target;
+        }
+      });
     }
 
     // Filled polygon (value area) — reads from the write-through radius cells.
@@ -316,7 +335,7 @@ export class MdRadarChartLC extends Diagram {
           (this as any).releasePointerCapture(dragPointerId);
         }
         dragPointerId = -1;
-        (this as any).gestureActive = false;
+        setGestureActive(false);
         this.dispatchEvent(new CustomEvent("gesturecommit"));
       },
     };
@@ -334,7 +353,7 @@ export class MdRadarChartLC extends Diagram {
       const dy = y - (cy.peek() + Math.sin(a) * r);
       if (Math.sqrt(dx*dx + dy*dy) > 20) return;
       dragPointerId = pe.pointerId;
-      (this as any).gestureActive = true;
+      setGestureActive(true);
       selected.value = spoke;
       (this as any).setPointerCapture(pe.pointerId);
       dragController.begin(spoke, dragConfig); // controller owns move/up/Esc from here

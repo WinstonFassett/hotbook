@@ -1,14 +1,16 @@
 // ScatterChart — vanilla-TS port of LayerChart's ScatterChart wrapper.
 
-import { Anchor, cell, circle, derive, Diagram, label, type Mount, Vec, vec } from "bireactive";
+import { Anchor, cell, circle, derive, Diagram, easeOut, effect as biEffect, label, type Mount, num, tween, untracked, Vec } from "bireactive";
 import { axis } from "../lib/axis";
 import { chartContext } from "../lib/chart-context";
 import { attachCartesianGestures, makeBisectFinder } from "../lib/cartesian-gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
+import { GESTURE_ACTIVE_CLASS } from "../lib/transitions";
 
 const W = 720;
 const H = 360;
 const COLOR = "#7aaae8";
+const SORT_SEC = 0.35; // s — measure-swap tween duration
 
 interface Point {
   id?: string;
@@ -37,6 +39,11 @@ export class MdScatterChartLC extends Diagram {
     }
   `
   readonly dataCell = cell<readonly Point[]>(makeData());
+
+  private _measureKeyCell = cell<string>('')
+  get measureKey(): string { return this._measureKeyCell.value }
+  set measureKey(v: string) { this._measureKeyCell.value = v }
+
   set externalData(v: { x: number; y: number }[] | undefined) {
     if (v) this.dataCell.value = v as Point[];
   }
@@ -51,8 +58,52 @@ export class MdScatterChartLC extends Diagram {
 
     const data = this.dataCell;
 
+    // Per-point tweened x/y value cells — TWEEN on measure swap (animate
+    // dots to new positions), SNAP on value edits / gestures (write-through).
+    // Same two-lane gate pattern as hier charts (WIN-143).
+    const points0 = data.peek() as Point[];
+    const xCells = new Map<string, ReturnType<typeof num>>();
+    const yCells = new Map<string, ReturnType<typeof num>>();
+    for (const pt of points0) {
+      const pid = pt.id ?? String(points0.indexOf(pt));
+      const xTarget = derive(() => { void data.value; return pt.x; });
+      const yTarget = derive(() => { void data.value; return pt.y; });
+      const xc = num(xTarget.value), yc = num(yTarget.value);
+      xCells.set(pid, xc); yCells.set(pid, yc);
+      let cancel: (() => void) | null = null;
+      let inited = false;
+      let seenMeasureKey = untracked(() => this._measureKeyCell.value);
+      biEffect(() => {
+        const xt = xTarget.value, yt = yTarget.value;
+        const measureKey = untracked(() => this._measureKeyCell.value);
+        if (!inited) { inited = true; seenMeasureKey = measureKey; xc.value = xt; yc.value = yt; return; }
+        const measureSwapped = measureKey !== seenMeasureKey;
+        seenMeasureKey = measureKey;
+        if (measureSwapped && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
+          cancel?.();
+          cancel = this.anim.start(
+            tween(xc, xt, SORT_SEC, easeOut),
+            tween(yc, yt, SORT_SEC, easeOut),
+          );
+        } else {
+          cancel?.(); cancel = null;
+          xc.value = xt; yc.value = yt;
+        }
+      });
+    }
+    // Tweened data cell — replaces raw x/y with tweened values for rendering.
+    // Gestures still mutate raw data; tween cells snap to follow.
+    const tweenedData = derive(() => {
+      void data.value; // track data changes (reorder, add/remove)
+      return (data.peek() as Point[]).map((pt, i) => {
+        const pid = pt.id ?? String(i);
+        const xc = xCells.get(pid), yc = yCells.get(pid);
+        return { ...pt, x: xc ? xc.value : pt.x, y: yc ? yc.value : pt.y };
+      });
+    });
+
     const ctx = chartContext<Point>({
-      width: Wc, height: Hc, data,
+      width: Wc, height: Hc, data: tweenedData,
       x: (d) => d.x, y: (d) => d.y,
       padding: { top: 16, right: 24, bottom: 36, left: 48 },
       xNice: true, yNice: true, yBaseline: 0,

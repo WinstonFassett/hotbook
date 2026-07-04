@@ -149,7 +149,9 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
   if (kind === 'br-lc-pie') {
     const leaves = leavesOfNodes(sorted)
     const ids = leaves.map(n => n.id)
-    const shapeKey = `${mk}|${[...ids].sort().join(',')}|${[...leaves].sort((a,b)=>a.id<b.id?-1:1).map(n=>n.name).join(',')}`
+    // shapeKey excludes mk — measure changes flow through applyData (sets
+    // reactive measureKey cell) so the chart animates instead of remounting.
+    const shapeKey = `${[...ids].sort().join(',')}|${[...leaves].sort((a,b)=>a.id<b.id?-1:1).map(n=>n.name).join(',')}`
     return makeFlatSource<{ id: string; label: string; value: Writable<Num> }>({
       tag: 'v-br-pie', ids, measureKey: mk,
       values: leaves.map(n => n.measures[mk] ?? 0),
@@ -163,7 +165,9 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
   if (kind === 'br-lc-radar') {
     const leaves = leavesOfNodes(sorted)
     const ids = leaves.map(n => n.id)
-    const shapeKey = `${mk}|${[...ids].sort().join(',')}|${[...leaves].sort((a,b)=>a.id<b.id?-1:1).map(n=>n.name).join(',')}`
+    // shapeKey excludes mk — measure changes flow through applyData (sets
+    // reactive measureKey cell) so the chart animates instead of remounting.
+    const shapeKey = `${[...ids].sort().join(',')}|${[...leaves].sort((a,b)=>a.id<b.id?-1:1).map(n=>n.name).join(',')}`
     return makeFlatSource<{ id: string; name: string; value: number }>({
       tag: 'v-br-radar', ids, measureKey: mk,
       values: leaves.map(n => n.measures[mk] ?? 0),
@@ -179,7 +183,9 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
     const ids = leaves.map(n => n.id)
     const maxItems = tile.maxItems
     const palette = ['#e05c5c', '#f0a742', '#4cba6e', '#5b8def', '#b76de0', '#44c4c4']
-    const shapeKey = `${mk}|${maxItems ?? ''}|${[...ids].sort().join(',')}|${[...leaves].sort((a,b)=>a.id<b.id?-1:1).map(n=>n.name).join(',')}`
+    // shapeKey excludes mk and maxItems — measure/ring-count changes flow through
+    // applyData (sets reactive cells) so the chart animates instead of remounting.
+    const shapeKey = `${[...ids].sort().join(',')}|${[...leaves].sort((a,b)=>a.id<b.id?-1:1).map(n=>n.name).join(',')}`
     return makeFlatSource<{ id: string; label: string; color: string; value: number }>({
       tag: 'v-br-concentric-arc', ids, measureKey: mk,
       values: leaves.map(n => Math.min(100, n.measures[mk] ?? 0)),
@@ -196,7 +202,9 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
     const yKey = tile.yKey ?? mk
     const leaves = leavesOfNodes(sorted)
     const ids = leaves.map(n => n.id)
-    const shapeKey = `${xKey}|${yKey}|${[...ids].sort().join(',')}`
+    // shapeKey excludes xKey/yKey — measure/key changes flow through applyData
+    // (sets reactive measureKey cell) so the chart animates instead of remounting.
+    const shapeKey = `${[...ids].sort().join(',')}`
     return makeFlatSource<{ id: string; x: number; y: number }>({
       tag: 'v-br-scatter', ids, measureKey: yKey,
       values: leaves.map(n => n.measures[yKey] ?? 0),
@@ -211,7 +219,9 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
   if (kind === 'br-lc-line') {
     const leaves = leavesOfNodes(sorted)
     const ids = leaves.map(n => n.id)
-    const shapeKey = `${mk}|${[...ids].sort().join(',')}`
+    // shapeKey excludes mk — measure changes flow through applyData (sets
+    // reactive measureKey cell) so the chart animates instead of remounting.
+    const shapeKey = `${[...ids].sort().join(',')}`
     return makeFlatSource<{ id: string; date: Date; value: number }>({
       tag: 'v-br-line', ids, measureKey: mk,
       values: leaves.map(n => n.measures[mk] ?? 0),
@@ -226,7 +236,9 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
   if (kind === 'br-lc-area') {
     const leaves = leavesOfNodes(sorted)
     const ids = leaves.map(n => n.id)
-    const shapeKey = `${mk}|${[...ids].sort().join(',')}`
+    // shapeKey excludes mk — measure changes flow through applyData (sets
+    // reactive measureKey cell) so the chart animates instead of remounting.
+    const shapeKey = `${[...ids].sort().join(',')}`
     return makeFlatSource<{ id: string; date: Date; value: number }>({
       tag: 'v-br-area', ids, measureKey: mk,
       values: leaves.map(n => n.measures[mk] ?? 0),

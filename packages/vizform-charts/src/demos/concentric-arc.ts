@@ -2,15 +2,17 @@
 // Full-360° track per ring, rounded ends, value arc on top.
 // Click ring to select · Tab/←/→ nav · ↑/↓ edit · cmd+wheel.
 
-import { Anchor, cell, circle, derive, Diagram, easeInOut, effect as biEffect, group, label, mount, type Mount, num, pathD, tween, Vec } from "bireactive";
+import { Anchor, cell, circle, derive, Diagram, easeInOut, easeOut, effect as biEffect, group, label, mount, type Mount, num, pathD, tween, untracked, Vec } from "bireactive";
 import { arc as d3Arc } from "d3-shape";
 import { wheelController, dragController, realModifierDown } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
+import { GESTURE_ACTIVE_CLASS } from "../lib/transitions";
 
 const W = 640;
 const H = 640;
 
+const SORT_SEC = 0.35; // s — measure-swap tween duration
 const RING_GAP = 8;
 // Fraction of total radius reserved as empty center (for label readout / future hover info).
 // 1.5 means the dead zone equals 1.5 ring-step widths.
@@ -68,9 +70,17 @@ export class MdConcentricArcLC extends Diagram {
     }
   `
   readonly dataCell = cell<readonly Ring[]>(makeData());
-  maxRings: number = DEFAULT_MAX_RINGS;
+
+  private _maxRingsCell = cell<number>(DEFAULT_MAX_RINGS)
+  get maxRings(): number { return this._maxRingsCell.value }
+  set maxRings(v: number) { this._maxRingsCell.value = v }
+
+  private _measureKeyCell = cell<string>('')
+  get measureKey(): string { return this._measureKeyCell.value }
+  set measureKey(v: string) { this._measureKeyCell.value = v }
+
   set externalData(v: { label: string; value: number }[] | undefined) {
-    if (v) this.dataCell.value = (v as unknown as Ring[]).slice(0, this.maxRings);
+    if (v) this.dataCell.value = (v as unknown as Ring[]).slice(0, this._maxRingsCell.peek());
   }
   get externalData(): { label: string; value: number }[] | undefined {
     return this.dataCell.value as unknown as { label: string; value: number }[];
@@ -85,13 +95,13 @@ export class MdConcentricArcLC extends Diagram {
     const cy = derive(() => Hc.value / 2);
 
     const data = this.dataCell;
-    const maxRings = this.maxRings;
+    const maxRingsCell = this._maxRingsCell;
     // n for the static render loop (mount-time snapshot, safe because externalData caps at maxRings).
     // Use peek() so this mount-time read doesn't register dataCell as a dep of whatever
     // bireactive effect triggered the mount (e.g. DockView's biEffect).
-    const n = Math.min((data.peek() as Ring[]).length, maxRings);
-    // Reactive count drives thickness so it re-derives if data changes after mount.
-    const nCell = derive(() => Math.min((data.value as Ring[]).length, maxRings));
+    const n = Math.min((data.peek() as Ring[]).length, maxRingsCell.peek());
+    // Reactive count drives thickness so it re-derives if data or maxRings changes after mount.
+    const nCell = derive(() => Math.min((data.value as Ring[]).length, maxRingsCell.value));
 
     // Outermost ring outer radius — fills the container with padding for end-cap labels.
     const rOuterStart = derive(() => Math.min(Wc.value, Hc.value) / 2 - 30);
@@ -111,11 +121,13 @@ export class MdConcentricArcLC extends Diagram {
     };
     const mutateDatum = (d: Ring, delta: number) => setValue(d, d.value + delta);
 
+    const setGestureActive = (on: boolean) => { this.classList.toggle(GESTURE_ACTIVE_CLASS, on); (this as any).gestureActive = on; };
+
     // Config handed to the SHARED wheel controller (app-wide singleton).
     const wheelConfig = {
-      snapshot: (d: Ring) => { (this as any).gestureActive = true; return d.value; },
+      snapshot: (d: Ring) => { setGestureActive(true); return d.value; },
       restore: (d: Ring, v: number) => mutateDatum(d, v - d.value),
-      onEnd: () => { (this as any).gestureActive = false; this.dispatchEvent(new CustomEvent("gesturecommit")); },
+      onEnd: () => { setGestureActive(false); this.dispatchEvent(new CustomEvent("gesturecommit")); },
     };
     // Last ring the pointer was over — kept past pointerleave so a wheel edit can
     // still target it for a moment after the cursor exits the ring band.
@@ -157,7 +169,7 @@ export class MdConcentricArcLC extends Diagram {
           (this as any).releasePointerCapture(dragPointerId);
         }
         dragPointerId = -1;
-        (this as any).gestureActive = false;
+        setGestureActive(false);
         if (activeHandle) activeHandle.style.cursor = "grab";
         activeHandle = null;
         this.dispatchEvent(new CustomEvent("gesturecommit"));
@@ -221,14 +233,39 @@ export class MdConcentricArcLC extends Diagram {
       trackEl.el.addEventListener("focus", () => { const d = di(); if (d) selected.value = d; });
       trackEl.el.addEventListener("blur", () => { const d = di(); if (d && selected.value === d) selected.value = null; });
 
+      // Per-ring value fraction tween — TWEEN on measure swap (animate arcs
+      // to new values), SNAP on value edits / gestures (write-through, no lag).
+      // Same two-lane gate pattern as hier charts (WIN-143).
+      const fracTarget = derive(() => {
+        void data.value;
+        const d = di();
+        return d ? d.value / 100 : 0;
+      });
+      const frac = num(fracTarget.value);
+      let fracCancel: (() => void) | null = null;
+      let fracInited = false;
+      let seenMeasureKey = untracked(() => this._measureKeyCell.value);
+      biEffect(() => {
+        const target = fracTarget.value;
+        const measureKey = untracked(() => this._measureKeyCell.value);
+        if (!fracInited) { fracInited = true; seenMeasureKey = measureKey; frac.value = target; return; }
+        const measureSwapped = measureKey !== seenMeasureKey;
+        seenMeasureKey = measureKey;
+        if (measureSwapped && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
+          fracCancel?.();
+          fracCancel = this.anim.start(tween(frac, target, SORT_SEC, easeOut));
+        } else {
+          fracCancel?.(); fracCancel = null;
+          frac.value = target;
+        }
+      });
+
       // Value arc.
       const valueD = derive(() => {
-        void data.value;
         if (!visible.value) return "";
         const d = di();
         if (!d) return "";
-        const frac = d.value / 100;
-        const endAngle = START + frac * TWO_PI;
+        const endAngle = START + frac.value * TWO_PI;
         if (Math.abs(endAngle - START) < 0.001) return "";
         const isActive = hover.value === d || selected.value === d;
         const ro = rOuter.value + (isActive ? 4 : 0);
@@ -244,10 +281,8 @@ export class MdConcentricArcLC extends Diagram {
 
       // End-cap drag handle.
       const handlePos = Vec.derive(() => {
-        void data.value;
-        const d = di();
-        if (!d || !visible.value) return { x: -1000, y: -1000 };
-        const d3Angle = START + (d.value / 100) * TWO_PI;
+        if (!visible.value) return { x: -1000, y: -1000 };
+        const d3Angle = START + frac.value * TWO_PI;
         const svgAngle = d3Angle - Math.PI / 2;
         const rMid = (rOuter.value + rInner.value) / 2;
         return { x: cx.value + Math.cos(svgAngle) * rMid, y: cy.value + Math.sin(svgAngle) * rMid };
@@ -273,7 +308,7 @@ export class MdConcentricArcLC extends Diagram {
         if (!d) return;
         const pe = e as PointerEvent;
         dragPointerId = pe.pointerId;
-        (this as any).gestureActive = true;
+        setGestureActive(true);
         selected.value = d;
         activeHandle = handleEl.el;
         handleEl.el.style.cursor = "grabbing";
@@ -285,14 +320,13 @@ export class MdConcentricArcLC extends Diagram {
 
       // Ring label near end-cap — d3Arc angle 0=top, clockwise; SVG: angle 0=right, y-down.
       // Sit the label just outside the ring's outer edge (rOuter + 8) so labels stay
-      // clean at all ring counts; `void data.value` re-positions on value/rank change.
+      // clean at all ring counts. Tracks frac (tweened) so it slides with the arc.
       const slotDef = RING_DEFS[oi % RING_DEFS.length]!;
       const lblPos = Vec.derive(() => {
-        void data.value; // subscribe to re-position when value or rank changes
         const d = di();
         if (!d) return { x: -1000, y: -1000 };
-        const d3Angle = START + (d.value / 100) * TWO_PI; // d3Arc angle (0=top, cw)
-        const svgAngle = d3Angle - Math.PI / 2;           // convert to SVG (0=right, cw y-down)
+        const d3Angle = START + frac.value * TWO_PI; // d3Arc angle (0=top, cw)
+        const svgAngle = d3Angle - Math.PI / 2;      // convert to SVG (0=right, cw y-down)
         return { x: cx.value + Math.cos(svgAngle) * (rOuter.value + 8), y: cy.value + Math.sin(svgAngle) * (rOuter.value + 8) };
       });
       s(label(lblPos, derive(() => di()?.label ?? ""), { size: 10, fill: derive(() => di()?.color ?? slotDef.color), opacity: 0.85 }));

@@ -327,6 +327,12 @@ export function makeFlatSource<D>(spec: FlatSpec<D>): TileSource {
       const typedEl = el as ElWithDataCell<D>
       if (!typedEl.dataCell) return
       const s = specRef.current
+      // Sync measureKey and re-apply settings (orientation, maxRings, etc.)
+      // BEFORE data writes — charts with a reactive measureKey cell read it
+      // untracked in their gate to classify the change as structural (animate)
+      // vs value edit (snap). Same pattern as hier charts (WIN-143).
+      ;(typedEl as any).measureKey = s.measureKey
+      s.mountProps?.(el)
       // Use peek() to avoid registering dataCell as a bireactive dependency of
       // whatever effect called applyData. If we used .value here, the DockView
       // biEffect (which calls _syncChart → applyData) would re-fire on every

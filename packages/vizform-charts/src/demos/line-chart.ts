@@ -1,14 +1,16 @@
 // LineChart — vanilla-TS port of LayerChart's LineChart wrapper.
 
-import { Anchor, cell, circle, derive, Diagram, label, line, type Mount, Vec, vec } from "bireactive";
+import { Anchor, cell, circle, derive, Diagram, easeOut, effect as biEffect, label, line, type Mount, num, tween, untracked, Vec } from "bireactive";
 import { axis } from "../lib/axis";
 import { chartContext } from "../lib/chart-context";
 import { attachCartesianGestures, makeBisectFinder } from "../lib/cartesian-gestures";
 import { spline } from "../lib/spline";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
+import { GESTURE_ACTIVE_CLASS } from "../lib/transitions";
 
 const W = 720;
 const H = 360;
+const SORT_SEC = 0.35; // s — measure-swap tween duration
 
 interface Point {
   id?: string;
@@ -41,6 +43,11 @@ export class MdLineChartLC extends Diagram {
     }
   `
   readonly dataCell = cell<readonly Point[]>(makeSeries());
+
+  private _measureKeyCell = cell<string>('')
+  get measureKey(): string { return this._measureKeyCell.value }
+  set measureKey(v: string) { this._measureKeyCell.value = v }
+
   set externalData(v: { date: Date; value: number }[] | undefined) {
     if (v) this.dataCell.value = v as Point[];
   }
@@ -55,8 +62,47 @@ export class MdLineChartLC extends Diagram {
 
     const data = this.dataCell;
 
+    // Per-point tweened y-value cells — TWEEN on measure swap (animate line
+    // to new values), SNAP on value edits / gestures (write-through, no lag).
+    // Same two-lane gate pattern as hier charts (WIN-143).
+    const points0 = data.peek() as Point[];
+    const yCells = new Map<string, ReturnType<typeof num>>();
+    for (const pt of points0) {
+      const pid = pt.id ?? String(pt.date.getTime());
+      const yTarget = derive(() => { void data.value; return pt.value; });
+      const yc = num(yTarget.value);
+      yCells.set(pid, yc);
+      let ycCancel: (() => void) | null = null;
+      let ycInited = false;
+      let seenMeasureKey = untracked(() => this._measureKeyCell.value);
+      biEffect(() => {
+        const target = yTarget.value;
+        const measureKey = untracked(() => this._measureKeyCell.value);
+        if (!ycInited) { ycInited = true; seenMeasureKey = measureKey; yc.value = target; return; }
+        const measureSwapped = measureKey !== seenMeasureKey;
+        seenMeasureKey = measureKey;
+        if (measureSwapped && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
+          ycCancel?.();
+          ycCancel = this.anim.start(tween(yc, target, SORT_SEC, easeOut));
+        } else {
+          ycCancel?.(); ycCancel = null;
+          yc.value = target;
+        }
+      });
+    }
+    // Tweened data cell — replaces raw values with tweened values for rendering.
+    // Gestures still mutate raw data; tween cells snap to follow.
+    const tweenedData = derive(() => {
+      void data.value; // track data changes (reorder, add/remove)
+      return (data.peek() as Point[]).map(pt => {
+        const pid = pt.id ?? String(pt.date.getTime());
+        const yc = yCells.get(pid);
+        return yc ? { ...pt, value: yc.value } : pt;
+      });
+    });
+
     const ctx = chartContext<Point>({
-      width: Wc, height: Hc, data,
+      width: Wc, height: Hc, data: tweenedData,
       x: (d) => d.date, y: (d) => d.value,
       padding: { top: 16, right: 24, bottom: 36, left: 56 },
       yNice: true, yBaseline: 0,
@@ -79,7 +125,6 @@ export class MdLineChartLC extends Diagram {
 
     // Create focusable invisible circles for each point
     const pointElements = new Map<Point, SVGCircleElement>();
-    const points0 = data.peek() as Point[]
     for (let i = 0; i < points0.length; i++) {
       const pt = points0[i]!;
       const pos = Vec.derive(() => ({ x: ctx.xGet.value(pt), y: ctx.yGet.value(pt) }));
