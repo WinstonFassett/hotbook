@@ -42,7 +42,6 @@ import {
   GESTURE_ACTIVE_CLASS,
   GESTURE_SUPPRESSION_CSS,
   hoverTransition,
-  settleTransition,
 } from "../lib/transitions";
 
 const W = 720;
@@ -751,7 +750,7 @@ export class MdGanttChartLC extends Diagram {
 
       const tile = s(rect(xS, barY, barW, ROW_H, { fill, corner: 3 }));
       tile.el.style.cursor = "grab";
-      tile.el.style.transition = settleTransition(["x", "width", "fill"]);
+      // Value geometry (x/width = task start/duration) is write-through — no settle.
 
       // Inside label (task name) — shown when bar wide enough.
       const inOpacity = derive(() => barW.value >= 60 ? 1 : 0);
