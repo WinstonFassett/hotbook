@@ -192,8 +192,8 @@ export interface WheelConfig<T> {
   snapshot: (target: T) => unknown;
   /** Applied on cancel (Esc). */
   restore: (target: T, snap: any) => void;
-  /** Runs on any end (commit or cancel). */
-  onEnd?: () => void;
+  /** Runs on any end. `canceled` = reverted via Esc (mirrors DragConfig.onEnd). */
+  onEnd?: (canceled: boolean) => void;
 }
 
 export interface WheelController {
@@ -216,19 +216,19 @@ function makeWheelController(): WheelController {
   let teardown: (() => void) | null = null;
 
   // Remove the gesture-scoped listeners and clear the frame. Idempotent.
-  const end = () => {
+  const end = (canceled: boolean) => {
     if (teardown) { teardown(); teardown = null; }
     const onEnd = cfg?.onEnd;
     target = null;
     snap = undefined;
     cfg = null;
-    onEnd?.();
+    onEnd?.(canceled);
   };
-  const commit = () => { if (target !== null) end(); };
+  const commit = () => { if (target !== null) end(false); };
   const cancel = (): boolean => {
     if (target === null || !cfg) return false;
     cfg.restore(target, snap);
-    end();
+    end(true);
     return true;
   };
 

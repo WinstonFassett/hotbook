@@ -151,6 +151,7 @@ export function bindTile(container: HTMLElement, source: TileSource): TileContro
   let lastRef = new Map<string, number>()
   let unbindHud: () => void = () => {}
   let unbindEditOut: () => void = () => {}
+  let onCommit: ((e: Event) => void) | null = null
 
   function mount(src: TileSource) {
     currentSourceRef.current = src
@@ -175,14 +176,46 @@ export function bindTile(container: HTMLElement, source: TileSource): TileContro
     unbindEditOut = src.bindEditOut(newEl, lastRef)
 
     // gesturecommit: charts dispatch this on gesture end (release or Esc-cancel).
-    // We do NOT call applyData here. The gesturecommit fires synchronously inside
-    // end(), before bindEditOut's microtask pushes the final/restored value to the
-    // store. Calling applyData here would read stale specRef.current.values (the
-    // pre-commit edited values), write them back to the datum (undoing an Esc
-    // restore), and update lastRef (so bindEditOut sees no change and never pushes
-    // the restore to the store). Instead, the store update path handles everything:
-    // bindEditOut → onUpdateMany → commit → setTiles → update → syncFrom →
-    // applyData({ gestureActive: false }) with fresh store values + sort reorder.
+    //
+    // Why we need a trailing re-apply here at all:
+    // The final value write of a gesture happens *during* the gesture, while
+    // el.gestureActive is still true. bindEditOut pushes it to the store, which
+    // round-trips back through update()→applyData — but that applyData runs with
+    // gestureActive:true and takes the FROZEN branch (order held, per Rule 7). When
+    // the gesture ends, onEnd() flips gestureActive→false and fires this event, but
+    // it writes NO new value — so nothing re-triggers applyData, and the frozen
+    // display order is never reconciled against the (already-correct) sorted store
+    // state. Result: a same-chart edit that should reorder leaves the mark in place.
+    // (Cross-tile edits never hit this because the receiving tile's gestureActive is
+    // always false, so its applyData always takes the commit/reorder branch.)
+    //
+    // We must NOT call applyData synchronously in this handler — for an Esc-cancel,
+    // the restore's value writes push to the store via bindEditOut's own
+    // queueMicrotask, so a synchronous read would see stale pre-restore values and
+    // clobber the restore. Deferring past that microtask lets specRef/lastRef settle
+    // to the committed store values first; applyData({ gestureActive:false }) then
+    // reindexes in fresh sort order off the settled state.
+    onCommit = (e: Event) => {
+      // Opt-in: only charts that send an explicit { canceled } detail participate in
+      // the trailing re-apply. Charts that dispatch bare gesturecommit (no detail)
+      // keep their exact prior behavior — no trailing re-apply — so this change's
+      // blast radius is limited to the charts that adopted the detail contract
+      // (currently bar/bands). Extend a chart into this path by having its onEnd
+      // dispatch `new CustomEvent('gesturecommit', { detail: { canceled } })`.
+      const detail = (e as CustomEvent).detail
+      if (!detail || typeof detail.canceled !== 'boolean') return
+      // On Esc-cancel the chart already restored the live cells and bindEditOut is
+      // pushing those restored values to the store; re-applying here would read the
+      // still-stale (pre-restore) specRef and clobber the revert. Let the store
+      // round-trip own the cancel path. Only reconcile order on a real commit.
+      if (detail.canceled) return
+      queueMicrotask(() => {
+        if (el === newEl && !newEl.gestureActive) {
+          currentSourceRef.current.applyData(newEl, { gestureActive: false, lastRef })
+        }
+      })
+    }
+    newEl.addEventListener('gesturecommit', onCommit)
 
     // Initial data push (element is connected, dataCell is live)
     src.applyData(newEl, { gestureActive: false, lastRef })
@@ -192,6 +225,7 @@ export function bindTile(container: HTMLElement, source: TileSource): TileContro
     if (!el) return
     unbindHud()
     unbindEditOut()
+    if (onCommit) { el.removeEventListener('gesturecommit', onCommit); onCommit = null }
     if (container.contains(el)) container.removeChild(el)
     el = null
     lastRef = new Map()
