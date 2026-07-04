@@ -222,15 +222,23 @@ export class MdTreemapLC extends Diagram {
 
     // Layout-change effect: whenever the layout re-derives (sort, measure swap,
     // value-source change, value edit commit), re-target every live tile's
-    // geometry cells toward the new layout. Animate (tween) when no gesture is
-    // active; snap during gestures for real-time drag response. Skips when a
-    // drill tween is in flight (the drill effect owns that retarget).
+    // geometry cells toward the new layout. Two-lane split: TWEEN only for a
+    // real reorder (sort key toggled index↔value) — tiles slide to new slots.
+    // SNAP for everything else: active gesture (real-time drag), and — crucially
+    // — value edits / commits / resize, including REMOTE cross-tile edits that
+    // carry no gesture class (R2: value changes are write-through, no
+    // 250-350ms settle-lag). Skips when a drill tween is in flight (the drill
+    // effect owns that retarget).
     let layoutInited = false;
+    let seenSortBy = untracked(() => this._sortByCell.value);
     biEffect(() => {
       void layout.value; // track layout (reacts to sort + value + size)
-      if (!layoutInited) { layoutInited = true; return; }
+      const sortBy = this._sortByCell.value; // track sort key so a toggle re-fires this effect
+      if (!layoutInited) { layoutInited = true; seenSortBy = sortBy; return; }
       if (drillCancel) return; // drill tween in flight — it will retarget
-      const animate = !this.classList.contains(GESTURE_ACTIVE_CLASS);
+      const reordered = sortBy !== seenSortBy;
+      seenSortBy = sortBy;
+      const animate = reordered && !this.classList.contains(GESTURE_ACTIVE_CLASS);
       // Defer past the forEach commit so tileGeo is fresh.
       requestAnimationFrame(() => {
         if (tileGeo.size > 0) {
