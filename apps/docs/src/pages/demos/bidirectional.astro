@@ -1,0 +1,115 @@
+---
+const title = 'Bidirectional Demos — vizform';
+---
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{title}</title>
+  <link rel="stylesheet" href="/src/style.css">
+  <style>
+    .demo-section {
+      margin-bottom: 3rem;
+      padding: 1.5rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    .demo-section h2 { margin-bottom: 0.5rem; }
+    .demo-section p.desc { color: var(--fg); opacity: 0.7; margin-bottom: 1rem; }
+    .demo-layout {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+    }
+    @media (max-width: 900px) {
+      .demo-layout { grid-template-columns: 1fr; }
+    }
+    .demo-chart { min-height: 400px; }
+    .demo-chart v-br-bar, .demo-chart v-br-icicle {
+      display: block;
+      width: 100%;
+      height: 400px;
+    }
+    .demo-data v-br-treetable {
+      display: block;
+      width: 100%;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+    .demo-data h3 { margin-bottom: 0.5rem; }
+    .demo-data p.hint { font-size: 0.875rem; opacity: 0.6; margin-bottom: 1rem; }
+    .data-table table { width: 100%; border-collapse: collapse; }
+    .data-table th, .data-table td {
+      padding: 0.5rem 0.75rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    .data-table th { color: var(--fg); opacity: 0.6; font-weight: 600; }
+    .data-table input {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--fg);
+      padding: 0.35rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.95rem;
+      width: 80px;
+    }
+    .data-table input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    .back-link {
+      display: inline-block;
+      margin-bottom: 1.5rem;
+      color: var(--accent);
+      text-decoration: none;
+    }
+    .back-link:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>Bidirectional Demos</h1>
+      <p class="tagline">Drag charts to edit data. Edit tables to move charts.</p>
+    </header>
+
+    <a href="/" class="back-link">← Back to vizform</a>
+
+    <section class="demo-section" id="bar-table">
+      <h2>Bar Chart ↔ Table</h2>
+      <p class="desc">Drag bars to update values. Edit the table to move the bars.</p>
+      <div class="demo-layout">
+        <div class="demo-chart" id="bar-chart-container"></div>
+        <div class="demo-data">
+          <h3>Data</h3>
+          <p class="hint">Edit a value and the bar moves. Drag a bar and the value updates.</p>
+          <div class="data-table" id="bar-table-container"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="demo-section" id="icicle-treetable">
+      <h2>Icicle ↔ Treetable</h2>
+      <p class="desc">Drag icicle bars to edit values. Edit the treetable to reflow the icicle. Both share the same reactive tree.</p>
+      <div class="demo-layout">
+        <div class="demo-chart" id="icicle-chart-container"></div>
+        <div class="demo-data">
+          <h3>Hierarchical Data</h3>
+          <p class="hint">Edit values in the treetable or drag the icicle. Group totals update automatically.</p>
+          <div id="icicle-table-container"></div>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <a href="https://github.com/WinstonFassett/vizform">GitHub</a>
+    </footer>
+  </div>
+
+  <script type="module" src="/src/demos-bidirectional.ts"></script>
+</body>
+</html>
