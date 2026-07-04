@@ -18,7 +18,7 @@ import type { Workspace, Dataset, Dashboard, Tile, TileKind } from './persistenc
 import { hudStore, resetHudForDataset } from './store'
 import type { TileRecord } from './DockView'
 import './DockView'
-import { defaultDockTree, reconcile, addTileToDock } from './dock'
+import { defaultDockTree, reconcile, addTileToDock, type DockNode } from './dock'
 
 // ─── Tile metadata ─────────────────────────────────────────────────────────────
 
@@ -154,6 +154,8 @@ function buildTileRecords(dash: Dashboard, ds: Dataset): TileRecord[] {
 
 let lastDashId = ''
 let lastTileIds: string[] = []
+let cachedDefaultTree: DockNode | null = null
+let cachedDefaultTileIds: string[] = []
 
 function getDockTree(dash: Dashboard) {
   const tileIds = dash.tiles.map(t => t.id)
@@ -164,9 +166,22 @@ function getDockTree(dash: Dashboard) {
     lastDashId = dash.id
     lastTileIds = tileIds
     if (dash.dockTree) return reconcile(dash.dockTree, tileIds)
-    return defaultDockTree(tileIds)
+    // Cache the default tree so we don't generate new random IDs on every
+    // render — that would remount every chart on each store update.
+    if (JSON.stringify(tileIds) !== JSON.stringify(cachedDefaultTileIds)) {
+      cachedDefaultTree = defaultDockTree(tileIds)
+      cachedDefaultTileIds = [...tileIds]
+    }
+    return cachedDefaultTree
   }
-  return dash.dockTree ?? defaultDockTree(tileIds)
+  if (dash.dockTree) return dash.dockTree
+  // Same default tree as last time — don't regenerate.
+  if (cachedDefaultTree && JSON.stringify(tileIds) === JSON.stringify(cachedDefaultTileIds)) {
+    return cachedDefaultTree
+  }
+  cachedDefaultTree = defaultDockTree(tileIds)
+  cachedDefaultTileIds = [...tileIds]
+  return cachedDefaultTree
 }
 
 // ─── Render ───────────────────────────────────────────────────────────────────
