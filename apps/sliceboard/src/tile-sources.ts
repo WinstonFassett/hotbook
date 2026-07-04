@@ -249,9 +249,8 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
   }
   if (kind in hierTags) {
     const tag = hierTags[kind]!
-    const orientationProp = kind === 'br-lc-icicle' ? tile.orientation : undefined
+    const orientationProp = kind === 'br-lc-icicle' ? (tile.orientation ?? 'horizontal') : undefined
     const shapeKey = hierShapeKey(tag, sortedWithIndex, mk, depth, sortBy)
-      + (orientationProp ? `|${orientationProp}` : '')
     const valueKey = hierValueKey(sortedWithIndex, mk)
     // Enable numberDrag for treetable
     const enableNumberDrag = kind === 'br-lc-treetable'
@@ -261,9 +260,8 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
       tag, nodes: sortedWithIndex, measureKey: mk, depth, sortBy, shapeKey, valueKey,
       drillKey, drillNodeId, showBreadcrumb: true, onUpdate, onUpdateMany,
       enableNumberDrag,
+      orientation: orientationProp,
     })
-    // Stash orientationProp so DockView can set it on the element after mount
-    if (orientationProp) (src as any)._orientation = orientationProp
     return src
   }
 

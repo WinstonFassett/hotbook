@@ -58,6 +58,10 @@ export class MdTreemapLC extends Diagram {
   get sortBy(): 'index' | 'value' { return this._sortByCell.value }
   set sortBy(v: 'index' | 'value') { this._sortByCell.value = v }
 
+  private _measureKeyCell = cell<string>('')
+  get measureKey(): string { return this._measureKeyCell.value }
+  set measureKey(v: string) { this._measureKeyCell.value = v }
+
   protected scene(s: Mount): void {
     const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
     const view = this.view(Wc, Hc);
@@ -231,14 +235,18 @@ export class MdTreemapLC extends Diagram {
     // effect owns that retarget).
     let layoutInited = false;
     let seenSortBy = untracked(() => this._sortByCell.value);
+    let seenMeasureKey = untracked(() => this._measureKeyCell.value);
     biEffect(() => {
       void layout.value; // track layout (reacts to sort + value + size)
       const sortBy = this._sortByCell.value; // track sort key so a toggle re-fires this effect
-      if (!layoutInited) { layoutInited = true; seenSortBy = sortBy; return; }
+      const measureKey = untracked(() => this._measureKeyCell.value); // read untracked — effect fires on layout change (leaf writes), by which point measureKey is already set
+      if (!layoutInited) { layoutInited = true; seenSortBy = sortBy; seenMeasureKey = measureKey; return; }
       if (drillCancel) return; // drill tween in flight — it will retarget
       const reordered = sortBy !== seenSortBy;
+      const measureSwapped = measureKey !== seenMeasureKey;
       seenSortBy = sortBy;
-      const animate = reordered && !this.classList.contains(GESTURE_ACTIVE_CLASS);
+      seenMeasureKey = measureKey;
+      const animate = (reordered || measureSwapped) && !this.classList.contains(GESTURE_ACTIVE_CLASS);
       // Defer past the forEach commit so tileGeo is fresh.
       requestAnimationFrame(() => {
         if (tileGeo.size > 0) {
