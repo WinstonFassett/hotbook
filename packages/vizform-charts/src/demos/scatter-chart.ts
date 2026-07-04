@@ -1,16 +1,19 @@
 // ScatterChart — vanilla-TS port of LayerChart's ScatterChart wrapper.
+//
+// Axis-binding model (WIN-144 redesign): xBinding + yBinding are reactive
+// accessor cells. Changing either fires the tween gate in chartContext —
+// dots animate to new positions. No manual tween cells, no orderHash, no
+// measureKey. Marks read through ctx.xGet/ctx.yGet which read tween cells.
 
-import { Anchor, cell, circle, derive, Diagram, easeOut, effect as biEffect, label, type Mount, num, tween, untracked, Vec } from "bireactive";
+import { cell, circle, derive, Diagram, label, type Mount, Vec } from "bireactive";
 import { axis } from "../lib/axis";
 import { chartContext } from "../lib/chart-context";
 import { attachCartesianGestures, makeBisectFinder } from "../lib/cartesian-gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
-import { GESTURE_ACTIVE_CLASS } from "../lib/transitions";
 
 const W = 720;
 const H = 360;
 const COLOR = "#7aaae8";
-const SORT_SEC = 0.35; // s — measure-swap tween duration
 
 interface Point {
   id?: string;
@@ -40,15 +43,31 @@ export class MdScatterChartLC extends Diagram {
   `
   readonly dataCell = cell<readonly Point[]>(makeData());
 
-  private _measureKeyCell = cell<string>('')
-  get measureKey(): string { return this._measureKeyCell.value }
-  set measureKey(v: string) { this._measureKeyCell.value = v }
+  // Axis bindings — reactive accessor cells. The gate in chartContext
+  // detects binding changes and tweens. Replaces measureKey + xKey.
+  private _xBindingCell = cell<(d: Point) => number>((d) => d.x);
+  private _yBindingCell = cell<(d: Point) => number>((d) => d.y);
 
-  // Scatter has TWO value axes (xKey + yKey). measureKey tracks yKey; xKey
-  // is tracked separately so x-measure changes also trigger the tween gate.
-  private _xKeyCell = cell<string>('')
-  get xKey(): string { return this._xKeyCell.value }
-  set xKey(v: string) { this._xKeyCell.value = v }
+  get xBinding(): string { return (this as any)._xBindingName ?? 'x' }
+  set xBinding(v: string) {
+    (this as any)._xBindingName = v;
+    // Accessor reads the named field from the datum
+    this._xBindingCell.value = v === '_index'
+      ? (_d: Point, _i?: number) => 0 // placeholder — tile-sources sets real accessor
+      : (d: Point) => (d as any)[v] ?? 0;
+  }
+
+  get yBinding(): string { return (this as any)._yBindingName ?? 'y' }
+  set yBinding(v: string) {
+    (this as any)._yBindingName = v;
+    this._yBindingCell.value = (d: Point) => (d as any)[v] ?? 0;
+  }
+
+  // Backward compat: measureKey maps to yBinding, xKey maps to xBinding
+  get measureKey(): string { return this.yBinding }
+  set measureKey(v: string) { this.yBinding = v }
+  get xKey(): string { return this.xBinding }
+  set xKey(v: string) { this.xBinding = v }
 
   set externalData(v: { x: number; y: number }[] | undefined) {
     if (v) this.dataCell.value = v as Point[];
@@ -56,68 +75,22 @@ export class MdScatterChartLC extends Diagram {
   get externalData(): { x: number; y: number }[] | undefined {
     return this.dataCell.value as Point[];
   }
+
   protected scene(s: Mount): void {
     const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
     this.view(Wc, Hc);
-    this.tabIndex = -1; // Container not directly focusable, items are
+    this.tabIndex = -1;
     this.style.outline = "none";
 
     const data = this.dataCell;
 
-    // Per-point tweened x/y value cells — TWEEN on measure swap or sort
-    // (animate dots to new positions), SNAP on value edits / gestures
-    // (write-through). Same two-lane gate pattern as hier charts (WIN-143).
-    const points0 = data.peek() as Point[];
-    const xCells = new Map<string, ReturnType<typeof num>>();
-    const yCells = new Map<string, ReturnType<typeof num>>();
-    // orderHash detects sort — when xKey is _index, reindex changes x values,
-    // so sort moves dots horizontally. The gate tweens on order change.
-    const orderHash = derive(() => (data.value as Point[]).map(d => d.id ?? String((data.value as Point[]).indexOf(d))).join(','));
-    for (const pt of points0) {
-      const pid = pt.id ?? String(points0.indexOf(pt));
-      const xTarget = derive(() => { void data.value; return pt.x; });
-      const yTarget = derive(() => { void data.value; return pt.y; });
-      const xc = num(xTarget.value), yc = num(yTarget.value);
-      xCells.set(pid, xc); yCells.set(pid, yc);
-      let cancel: (() => void) | null = null;
-      let inited = false;
-      let seenMeasureKey = untracked(() => this._measureKeyCell.value);
-      let seenXKey = untracked(() => this._xKeyCell.value);
-      let seenOrder = untracked(() => orderHash.value);
-      biEffect(() => {
-        const xt = xTarget.value, yt = yTarget.value;
-        const measureKey = untracked(() => this._measureKeyCell.value);
-        const xKey = untracked(() => this._xKeyCell.value);
-        const order = orderHash.value;
-        if (!inited) { inited = true; seenMeasureKey = measureKey; seenXKey = xKey; seenOrder = order; xc.value = xt; yc.value = yt; return; }
-        const structural = measureKey !== seenMeasureKey || xKey !== seenXKey || order !== seenOrder;
-        seenMeasureKey = measureKey; seenXKey = xKey; seenOrder = order;
-        if (structural && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
-          cancel?.();
-          cancel = this.anim.start(
-            tween(xc, xt, SORT_SEC, easeOut),
-            tween(yc, yt, SORT_SEC, easeOut),
-          );
-        } else {
-          cancel?.(); cancel = null;
-          xc.value = xt; yc.value = yt;
-        }
-      });
-    }
-    // Tweened data cell — replaces raw x/y with tweened values for rendering.
-    // Gestures still mutate raw data; tween cells snap to follow.
-    const tweenedData = derive(() => {
-      void data.value; // track data changes (reorder, add/remove)
-      return (data.peek() as Point[]).map((pt, i) => {
-        const pid = pt.id ?? String(i);
-        const xc = xCells.get(pid), yc = yCells.get(pid);
-        return { ...pt, x: xc ? xc.value : pt.x, y: yc ? yc.value : pt.y };
-      });
-    });
-
     const ctx = chartContext<Point>({
-      width: Wc, height: Hc, data: tweenedData,
-      x: (d) => d.x, y: (d) => d.y,
+      width: Wc, height: Hc, data,
+      x: this._xBindingCell as any,
+      y: this._yBindingCell as any,
+      idOf: (d) => d.id ?? String(data.peek().indexOf(d)),
+      host: this,
+      anim: this.anim,
       padding: { top: 16, right: 24, bottom: 36, left: 48 },
       xNice: true, yNice: true, yBaseline: 0,
     });
@@ -136,33 +109,20 @@ export class MdScatterChartLC extends Diagram {
       data.value = [...data.value];
     };
 
-    // Draw dots with focusable support.
-    // Dot positions read from TWEEN cells (xc/yc) through the scale — NOT raw
-    // d.x/d.y. Raw values jump immediately on sort/reindex; tween cells animate.
-    // Without this, the gate tweens xc/yc to nowhere — dots read raw values and
-    // jump while the tween cells animate disconnected from rendering.
+    // Draw dots — positions read through ctx.xGet/ctx.yGet (tween layer).
+    // No manual tween cells. The context handles tween vs snap.
+    const points0 = data.peek() as Point[];
     const dotElements = new Map<Point, SVGCircleElement>();
     for (const d of points0) {
-      const pid = d.id ?? String(points0.indexOf(d));
-      const xc = xCells.get(pid);
-      const yc = yCells.get(pid);
-      const pos = Vec.derive(() => ({
-        x: (ctx.xScale.value as any)(xc ? xc.value : d.x),
-        y: (ctx.yScale.value as any)(yc ? yc.value : d.y),
-      }));
+      const pos = Vec.derive(() => ({ x: ctx.xGet.value(d), y: ctx.yGet.value(d) }));
       const fill = derive(() =>
         selected.value === d ? "#fff" : hover.value === d ? "#a4c0f0" : COLOR
       );
       const dot = s(circle(pos, 5, { fill, stroke: "#0b0d12", strokeWidth: 1 }));
       dotElements.set(d, dot.el as SVGCircleElement);
-      // Make each dot individually focusable
       dot.el.setAttribute('tabindex', '0');
       dot.el.setAttribute('data-focusable', 'point');
-      biEffect(() => {
-        const xv = xc ? xc.value : d.x;
-        const yv = yc ? yc.value : d.y;
-        dot.el.setAttribute('aria-label', `x: ${xv.toFixed(1)}, y: ${yv.toFixed(1)}`);
-      });
+      dot.el.setAttribute('aria-label', `x: ${d.x.toFixed(1)}, y: ${d.y.toFixed(1)}`);
       dot.el.addEventListener("pointerenter", () => { hover.value = d; });
       dot.el.addEventListener("pointerleave", () => { if (hover.value === d) hover.value = null; });
       dot.el.addEventListener("click", () => { selected.value = selected.value === d ? null : d; });
@@ -179,16 +139,11 @@ export class MdScatterChartLC extends Diagram {
       focusDatum: (d) => { if (d) dotElements.get(d)?.focus(); },
     });
 
-    // Selection ring — reads tweened values (same as dots).
+    // Selection ring — reads through ctx.xGet/ctx.yGet (tween layer).
     const selPos = Vec.derive(() => {
       const p = selected.value;
       if (!p) return { x: -10, y: -10 };
-      const pid = p.id ?? String(points0.indexOf(p));
-      const xc = xCells.get(pid), yc = yCells.get(pid);
-      return {
-        x: (ctx.xScale.value as any)(xc ? xc.value : p.x),
-        y: (ctx.yScale.value as any)(yc ? yc.value : p.y),
-      };
+      return { x: ctx.xGet.value(p), y: ctx.yGet.value(p) };
     });
     const selOpacity = derive(() => (selected.value ? 1 : 0));
     s(
@@ -197,12 +152,9 @@ export class MdScatterChartLC extends Diagram {
 
     s(label(
       Vec.derive(() => ({ x: Wc.value / 2, y: 12 })),
-      derive(() => {
-        const p = selected.value ?? hover.value;
-        if (!p) return "ScatterChart — hover · click · ←/→ navigate · ↑/↓ edit y · cmd+wheel · drag";
-        return `x: ${p.x.toFixed(1)}  y: ${p.y.toFixed(1)}`;
-      }),
-      { size: 11, align: Anchor.Center, opacity: 0.7 },
+      "Scatter",
     ));
   }
 }
+
+customElements.define("v-br-scatter", MdScatterChartLC);
