@@ -23,6 +23,9 @@ import {
 } from '@winstonfassett/vizform-charts';
 import type { ColumnDef } from '@winstonfassett/vizform-charts';
 
+// Expose tree constructors for console poking and the e2e lifecycle tests.
+(window as unknown as Record<string, unknown>).vizformCharts = { leaf, group };
+
 // Register custom elements once
 if (!customElements.get('v-br-bar')) {
   customElements.define('v-br-bar', MdBarChartLC as CustomElementConstructor);
