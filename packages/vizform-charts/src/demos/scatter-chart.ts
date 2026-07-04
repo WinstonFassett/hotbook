@@ -51,16 +51,17 @@ export class MdScatterChartLC extends Diagram {
   get xBinding(): string { return (this as any)._xBindingName ?? 'x' }
   set xBinding(v: string) {
     (this as any)._xBindingName = v;
-    // Accessor reads the named field from the datum
-    this._xBindingCell.value = v === '_index'
-      ? (_d: Point, _i?: number) => 0 // placeholder — tile-sources sets real accessor
-      : (d: Point) => (d as any)[v] ?? 0;
+    // tile-sources writes the correct value to d.x in place (index or measure).
+    // The accessor always reads d.x — the binding name is for the gate to
+    // detect changes and trigger tweens.
+    this._xBindingCell.value = (d: Point) => d.x;
   }
 
   get yBinding(): string { return (this as any)._yBindingName ?? 'y' }
   set yBinding(v: string) {
     (this as any)._yBindingName = v;
-    this._yBindingCell.value = (d: Point) => (d as any)[v] ?? 0;
+    // tile-sources writes the correct value to d.y in place.
+    this._yBindingCell.value = (d: Point) => d.y;
   }
 
   // Backward compat: measureKey maps to yBinding, xKey maps to xBinding

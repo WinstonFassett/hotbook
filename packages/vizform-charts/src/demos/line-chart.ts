@@ -52,7 +52,10 @@ export class MdLineChartLC extends Diagram {
   get yBinding(): string { return (this as any)._yBindingName ?? 'value' }
   set yBinding(v: string) {
     (this as any)._yBindingName = v;
-    this._yBindingCell.value = (d: Point) => (d as any)[v] ?? 0;
+    // tile-sources writes the correct value to d.value in place.
+    // The accessor always reads d.value — the binding name is for the gate
+    // to detect changes and trigger tweens.
+    this._yBindingCell.value = (d: Point) => d.value;
   }
 
   // Backward compat: measureKey maps to yBinding
