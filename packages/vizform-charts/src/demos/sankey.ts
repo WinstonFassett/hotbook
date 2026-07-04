@@ -1,4 +1,4 @@
-import { Anchor, Diagram, derive, label, type Mount } from "bireactive";
+import { Diagram, effect, type Mount } from "bireactive";
 import { interpolateCool, interpolateWarm, interpolateRainbow } from "d3-scale-chromatic";
 import { hierarchy } from "d3-hierarchy";
 import { sankeyScene, renderColorControls, type LinkDef } from "../lib/sankey";
@@ -42,13 +42,18 @@ export class MdSankeySimple extends Diagram {
     const { focused, hovered, wheelLocked, linkValues, nodeColorProp, linkColorMode } = sankeyScene(this, s, {
       W, H, nodeIds, linkDefs, labelSize: 11, stringIds: true, nodePadding,
     });
-    renderColorControls(s, view, nodeColorProp, linkColorMode);
-    if (!this.hasAttribute('no-source')) s(label(view.bottom.up(40), derive(() => {
-      const i = focused.value ?? wheelLocked.value ?? hovered.value;
-      if (i === null) return "click ribbon to focus · cmd+wheel or ↑↓ to edit · Tab to cycle";
-      const lv = linkValues[i]!;
-      return `${lv.source}→${lv.target}: ${lv.value.value.toFixed(1)} · ↑↓ / cmd+wheel · Tab`;
-    }), { size: 10, align: Anchor.Center, fill: "#9aa0a8" }));
+    renderColorControls(this, nodeColorProp, linkColorMode);
+    if (!this.hasAttribute('no-source')) {
+      const root = this.shadowRoot!;
+      const help = document.createElement("div");
+      help.style.cssText = "text-align:center; font-size:10px; color:#9aa0a8; padding:2px 0;";
+      root.appendChild(help);
+      effect(() => {
+        const i = focused.value ?? wheelLocked.value ?? hovered.value;
+        if (i === null) help.textContent = "click ribbon to focus · cmd+wheel or ↑↓ to edit · Tab to cycle";
+        else { const lv = linkValues[i]!; help.textContent = `${lv.source}→${lv.target}: ${lv.value.value.toFixed(1)} · ↑↓ / cmd+wheel · Tab`; }
+      });
+    }
   }
 }
 
@@ -117,15 +122,23 @@ export class MdSankeyComplex extends Diagram {
       W, H, nodeIds: COMPLEX_NODES, linkDefs: COMPLEX_LINKS,
       nodePadding: 4, interp: interpolateWarm, labelSize: 9, stringIds: false,
     });
-    renderColorControls(s, view, nodeColorProp, linkColorMode);
-    s(label(view.bottom.up(40), derive(() => {
-      const i = focused.value ?? wheelLocked.value ?? hovered.value;
-      if (i === null) return "click ribbon to focus · cmd+wheel or ↑↓ to edit · Tab to cycle";
-      const lv = linkValues[i]!;
-      const src = typeof lv.source === "number" ? COMPLEX_NODES[lv.source] : lv.source;
-      const tgt = typeof lv.target === "number" ? COMPLEX_NODES[lv.target] : lv.target;
-      return `${src} → ${tgt}: ${lv.value.value.toFixed(1)} · ↑↓ / cmd+wheel · Tab`;
-    }), { size: 10, align: Anchor.Center, fill: "#9aa0a8" }));
+    renderColorControls(this, nodeColorProp, linkColorMode);
+    {
+      const root = this.shadowRoot!;
+      const help = document.createElement("div");
+      help.style.cssText = "text-align:center; font-size:10px; color:#9aa0a8; padding:2px 0;";
+      root.appendChild(help);
+      effect(() => {
+        const i = focused.value ?? wheelLocked.value ?? hovered.value;
+        if (i === null) help.textContent = "click ribbon to focus · cmd+wheel or ↑↓ to edit · Tab to cycle";
+        else {
+          const lv = linkValues[i]!;
+          const src = typeof lv.source === "number" ? COMPLEX_NODES[lv.source] : lv.source;
+          const tgt = typeof lv.target === "number" ? COMPLEX_NODES[lv.target] : lv.target;
+          help.textContent = `${src} → ${tgt}: ${lv.value.value.toFixed(1)} · ↑↓ / cmd+wheel · Tab`;
+        }
+      });
+    }
   }
 }
 
@@ -268,12 +281,17 @@ export class MdSankeyHierarchy extends Diagram {
       nodePadding: 3, interp: interpolateRainbow, labelSize: 8, stringIds: true,
       stepFn: (v, shift) => Math.max(1, Math.round(v * (shift ? 0.25 : 0.1))),
     });
-    renderColorControls(s, view, nodeColorProp, linkColorMode);
-    s(label(view.bottom.up(40), derive(() => {
-      const i = focused.value ?? wheelLocked.value ?? hovered.value;
-      if (i === null) return "hierarchy → sankey · click ribbon to focus · cmd+wheel or ↑↓ to edit";
-      const lv = linkValues[i]!;
-      return `${lv.source} → ${lv.target}: ${lv.value.value.toFixed(0)} · ↑↓ / cmd+wheel`;
-    }), { size: 10, align: Anchor.Center, fill: "#9aa0a8" }));
+    renderColorControls(this, nodeColorProp, linkColorMode);
+    {
+      const root = this.shadowRoot!;
+      const help = document.createElement("div");
+      help.style.cssText = "text-align:center; font-size:10px; color:#9aa0a8; padding:2px 0;";
+      root.appendChild(help);
+      effect(() => {
+        const i = focused.value ?? wheelLocked.value ?? hovered.value;
+        if (i === null) help.textContent = "hierarchy → sankey · click ribbon to focus · cmd+wheel or ↑↓ to edit";
+        else { const lv = linkValues[i]!; help.textContent = `${lv.source} → ${lv.target}: ${lv.value.value.toFixed(0)} · ↑↓ / cmd+wheel`; }
+      });
+    }
   }
 }

@@ -700,29 +700,39 @@ export function sankeyScene(
 // ---------------------------------------------------------------------------
 
 export function renderColorControls(
-  s: Mount,
-  view: { bottom: { up: (n: number) => any } },
+  host: Diagram,
   nodeColorProp: ReturnType<typeof cell<NodeColorProp>>,
   linkColorMode: ReturnType<typeof cell<LinkColorMode>>,
 ) {
   const NODE_PROPS: NodeColorProp[] = ["layer", "depth", "height", "index"];
   const LINK_MODES: LinkColorMode[] = ["source", "target", "static"];
 
-  const ncText = derive(() => `node: ${NODE_PROPS.map(p => p === nodeColorProp.value ? `[${p}]` : p).join("  ")}`);
-  const lcText = derive(() => `link: ${LINK_MODES.map(m => m === linkColorMode.value ? `[${m}]` : m).join("  ")}`);
+  const root = host.shadowRoot ?? (host as any).shadow;
+  if (!root) return;
 
-  const ncLbl = s(label(view.bottom.up(28), ncText, { size: 9, align: Anchor.Center, fill: "#9aa0a8" }));
-  const lcLbl = s(label(view.bottom.up(14), lcText, { size: 9, align: Anchor.Center, fill: "#9aa0a8" }));
+  const container = document.createElement("div");
+  container.style.cssText = "text-align:center; font-size:9px; color:#9aa0a8; padding:4px 0; cursor:pointer; user-select:none; line-height:1.6;";
 
-  ncLbl.el.style.cursor = "pointer";
-  lcLbl.el.style.cursor = "pointer";
+  const ncSpan = document.createElement("div");
+  const lcSpan = document.createElement("div");
+  container.appendChild(ncSpan);
+  container.appendChild(lcSpan);
 
-  ncLbl.el.addEventListener("click", () => {
+  biEffect(() => {
+    ncSpan.textContent = `node: ${NODE_PROPS.map(p => p === nodeColorProp.value ? `[${p}]` : p).join("  ")}`;
+  });
+  biEffect(() => {
+    lcSpan.textContent = `link: ${LINK_MODES.map(m => m === linkColorMode.value ? `[${m}]` : m).join("  ")}`;
+  });
+
+  ncSpan.addEventListener("click", () => {
     const cur = NODE_PROPS.indexOf(nodeColorProp.value);
     nodeColorProp.value = NODE_PROPS[(cur + 1) % NODE_PROPS.length]!;
   });
-  lcLbl.el.addEventListener("click", () => {
+  lcSpan.addEventListener("click", () => {
     const cur = LINK_MODES.indexOf(linkColorMode.value);
     linkColorMode.value = LINK_MODES[(cur + 1) % LINK_MODES.length]!;
   });
+
+  root.appendChild(container);
 }
