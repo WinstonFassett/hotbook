@@ -13,3 +13,4 @@ inspo/bireactive/*
 
 # Local Netlify folder
 .netlify
+tests/e2e/__pycache__/
