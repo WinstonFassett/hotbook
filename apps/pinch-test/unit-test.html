@@ -121,7 +121,49 @@
     window.removeEventListener('wheel', onWheel);
     wheelController.cancel();
 
-    // ── Test 5: Different target not suppressed ───────────────────
+    // ── Test 5: Pause mid-pinch, resume, Esc reverts to ORIGINAL ──
+    // The idle timeout bug: pausing 150ms+ committed the gesture, so
+    // Esc reverted to the mid-pinch value, not the original. Without
+    // idle timeout, the gesture stays live through pauses.
+    const target5 = makeTarget(100);
+    const config5 = {
+      snapshot: (t) => t.snapshot(),
+      restore: (t, snap) => t.restore(snap),
+      onEnd: () => {},
+    };
+    const onWheel5 = (e) => {
+      if (e.ctrlKey && wheelController.active) {
+        const tgt = wheelController.target;
+        if (tgt) tgt.value += e.deltaY < 0 ? 3 : -3;
+      }
+    };
+    window.addEventListener('wheel', onWheel5);
+
+    wheelController.begin(target5, config5, { pinch: true });
+    sendWheel(true, -3); sendWheel(true, -3); sendWheel(true, -3);
+    assert('target5 changed before pause', target5.value > 100, `value=${target5.value}`);
+    const midValue = target5.value;
+    log(`  value before pause: ${midValue}`);
+
+    // Pause for 300ms — longer than the old 150ms idle timeout
+    await sleep(300);
+
+    // Gesture should still be active (no idle commit)
+    assert('gesture still active after pause', wheelController.active);
+
+    // Resume pinching
+    sendWheel(true, -3); sendWheel(true, -3); sendWheel(true, -3);
+    assert('target5 changed after pause', target5.value > midValue, `value=${target5.value}`);
+    log(`  value after resume: ${target5.value}`);
+
+    // Esc should revert to ORIGINAL (100), not to mid-pause value
+    sendKey('Escape');
+    assert('Esc reverts to ORIGINAL after pause+resume', target5.value === 100, `value=${target5.value} (should be 100)`);
+    log(`  value after Esc: ${target5.value}`);
+
+    window.removeEventListener('wheel', onWheel5);
+
+    // ── Test 6: Different target not suppressed ───────────────────
     // Start pinch on target A, Esc, then immediately start pinch on target B
     const targetA = makeTarget(50);
     const targetB = makeTarget(200);

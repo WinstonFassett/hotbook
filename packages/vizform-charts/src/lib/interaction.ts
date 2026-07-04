@@ -242,7 +242,6 @@ function makeWheelController(): WheelController {
   let snap: unknown = undefined;
   let cfg: WheelConfig<any> | null = null;
   let teardown: (() => void) | null = null;
-  let idleTimer: ReturnType<typeof setTimeout> | null = null;
   let isPinchGesture = false;
   // After Esc cancels a pinch, the user's fingers are still on the trackpad
   // and wheel events keep coming. Without suppression, the very next event
@@ -256,15 +255,6 @@ function makeWheelController(): WheelController {
   let suppressTimer: ReturnType<typeof setTimeout> | null = null;
   const SUPPRESS_MS = 200;
 
-  const clearIdle = () => { if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; } };
-  // Arm/reset the idle timer. Only used for pinch gestures. Fires once if no
-  // wheel event arrives within the window — that's the "pinch ended" signal
-  // the platform doesn't give us natively (no wheelend event exists).
-  const armIdle = () => {
-    clearIdle();
-    idleTimer = setTimeout(commit, 150);
-  };
-
   const clearSuppress = () => { if (suppressTimer) { clearTimeout(suppressTimer); suppressTimer = null; } };
   const armSuppress = () => {
     clearSuppress();
@@ -273,7 +263,6 @@ function makeWheelController(): WheelController {
 
   // Remove the gesture-scoped listeners and clear the frame. Idempotent.
   const end = (canceled: boolean) => {
-    clearIdle();
     if (teardown) { teardown(); teardown = null; }
     const onEnd = cfg?.onEnd;
     target = null;
@@ -330,30 +319,32 @@ function makeWheelController(): WheelController {
       snap = config.snapshot(t);
       isPinchGesture = opts?.pinch ?? false;
 
-      // Esc cancels for both gesture types.
-      const onKeydown = (e: KeyboardEvent) => {
-        if (e.key === "Escape" && cancel()) { e.preventDefault(); e.stopPropagation(); }
-      };
-
       if (isPinchGesture) {
         // Trackpad pinch: synthetic ctrlKey, no real key was pressed, so keyup
-        // will never fire. Commit when the user does ANYTHING else — pointer
-        // move, click, a different key, a non-ctrlKey wheel (plain scroll) —
-        // or when wheel events stop arriving (idle timeout, 150ms). This is
-        // the best the platform allows: there is no wheelend event.
+        // will never fire. The gesture stays live until a REAL signal ends it:
+        //   - Esc → cancel (revert to snapshot)
+        //   - pointermove/pointerdown/click → commit (user did something else)
+        //   - non-ctrlKey wheel → commit (user switched to plain scroll)
+        //   - any keydown other than Esc → commit (user pressed a key)
+        //   - blur → commit (window lost focus)
+        // NO idle timeout — it creates false gesture boundaries. A 150ms gap
+        // in wheel events is not "pinch ended"; it's just a slow pinch. With
+        // no timeout, Esc always reverts to the TRUE gesture start, not to
+        // some mid-pinch commit point. The gesture stays live until the user
+        // does something else, which is the correct behavior.
         const onAnyInput = () => commit();
-        // Don't commit on the wheel events that belong to THIS gesture — only
-        // on a wheel WITHOUT ctrlKey (plain scroll = pinch is over).
         const onWheelOther = (e: WheelEvent) => { if (!e.ctrlKey) commit(); };
+        const onKeydown = (e: KeyboardEvent) => {
+          if (e.key === "Escape") { if (cancel()) { e.preventDefault(); e.stopPropagation(); } }
+          else commit(); // any other key = pinch is over
+        };
         window.addEventListener("pointermove", onAnyInput);
         window.addEventListener("pointerdown", onAnyInput);
         window.addEventListener("click", onAnyInput);
         window.addEventListener("wheel", onWheelOther);
         window.addEventListener("keydown", onKeydown, true);
         window.addEventListener("blur", onAnyInput);
-        armIdle();
         teardown = () => {
-          clearIdle();
           window.removeEventListener("pointermove", onAnyInput);
           window.removeEventListener("pointerdown", onAnyInput);
           window.removeEventListener("click", onAnyInput);
@@ -365,6 +356,9 @@ function makeWheelController(): WheelController {
         // cmd+wheel (real key press): commit when the key is released.
         const onKeyup = (e: KeyboardEvent) => { if (e.key === "Meta" || e.key === "Control") commit(); };
         const onBlur = () => commit();
+        const onKeydown = (e: KeyboardEvent) => {
+          if (e.key === "Escape" && cancel()) { e.preventDefault(); e.stopPropagation(); }
+        };
         window.addEventListener("keyup", onKeyup);
         window.addEventListener("blur", onBlur);
         window.addEventListener("keydown", onKeydown, true);
