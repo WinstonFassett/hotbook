@@ -1,3 +1,7 @@
+# Main Netlify config for sliceboard.netlify.app
+# Builds docs site at root with sliceboard and demos mounted at subpaths
+# See scripts/build-site.sh for the full build process
+
 [build]
   base    = ""
   command = "npm run build"
