@@ -135,42 +135,65 @@ export function chartContext<TData>(opts: ChartContextOpts<TData>): ChartContext
   // Per-datum tween cells. Created once from initial data. Keyed by idOf.
   // Gate: binding change → TWEEN (animate to new positions). Value edit → SNAP.
   // Marks read through ctx.xGet/ctx.yGet which read tween cells — never raw.
-  const hasTween = !!(opts.idOf && opts.host && opts.anim);
+  //
+  // Only tween an axis if:
+  //   1. The accessor is reactive (Cell) — static accessors never change
+  //   2. The value is a number — num() can't tween Dates (line/area x = date)
+  const canTween = !!(opts.idOf && opts.host && opts.anim);
+  const xIsReactive = isCell(opts.x);
+  const yIsReactive = isCell(opts.y);
+  const data0 = data.peek() as TData[];
+  const xVal0 = data0[0] !== undefined ? xAccCell.value(data0[0]) : undefined;
+  const yVal0 = data0[0] !== undefined ? yAccCell.value(data0[0]) : undefined;
+  const tweenX = canTween && xIsReactive && typeof xVal0 === 'number';
+  const tweenY = canTween && yIsReactive && typeof yVal0 === 'number';
   const xTweens = new Map<string, ReturnType<typeof num>>();
   const yTweens = new Map<string, ReturnType<typeof num>>();
   const tweenSec = opts.tweenSec ?? DEFAULT_TWEEN_SEC;
 
-  if (hasTween) {
+  if (tweenX || tweenY) {
     const idOf = opts.idOf!;
     const host = opts.host!;
     const anim = opts.anim!;
-    const data0 = data.peek() as TData[];
     for (const d of data0) {
       const pid = idOf(d);
-      const xTarget = derive(() => { void data.value; return xAcc.value(d); });
-      const yTarget = derive(() => { void data.value; return yAcc.value(d); });
-      const xc = num(xTarget.value), yc = num(yTarget.value);
-      xTweens.set(pid, xc); yTweens.set(pid, yc);
+      let xc: ReturnType<typeof num> | null = null;
+      let yc: ReturnType<typeof num> | null = null;
+      if (tweenX) {
+        const xTarget = derive(() => { void data.value; return xAcc.value(d); });
+        xc = num(xTarget.value);
+        xTweens.set(pid, xc);
+      }
+      if (tweenY) {
+        const yTarget = derive(() => { void data.value; return yAcc.value(d); });
+        yc = num(yTarget.value);
+        yTweens.set(pid, yc);
+      }
       let cancel: (() => void) | null = null;
       let inited = false;
       let seenXAcc = untracked(() => xAccCell.value);
       let seenYAcc = untracked(() => yAccCell.value);
       biEffect(() => {
-        const xt = xTarget.value, yt = yTarget.value;
+        const xt = tweenX ? (derive(() => { void data.value; return xAcc.value(d); })).value : 0;
+        const yt = tweenY ? (derive(() => { void data.value; return yAcc.value(d); })).value : 0;
         const xa = untracked(() => xAccCell.value);
         const ya = untracked(() => yAccCell.value);
-        if (!inited) { inited = true; seenXAcc = xa; seenYAcc = ya; xc.value = xt; yc.value = yt; return; }
-        const structural = xa !== seenXAcc || ya !== seenYAcc;
+        if (!inited) {
+          inited = true; seenXAcc = xa; seenYAcc = ya;
+          if (xc) xc.value = xt; if (yc) yc.value = yt;
+          return;
+        }
+        const structural = (tweenX && xa !== seenXAcc) || (tweenY && ya !== seenYAcc);
         seenXAcc = xa; seenYAcc = ya;
         if (structural && !host.classList.contains(GESTURE_ACTIVE_CLASS)) {
           cancel?.();
-          cancel = anim.start(
-            tween(xc, xt, tweenSec, easeOut),
-            tween(yc, yt, tweenSec, easeOut),
-          );
+          const anims: any[] = [];
+          if (xc) anims.push(tween(xc, xt, tweenSec, easeOut));
+          if (yc) anims.push(tween(yc, yt, tweenSec, easeOut));
+          cancel = anim.start(...anims);
         } else {
           cancel?.(); cancel = null;
-          xc.value = xt; yc.value = yt;
+          if (xc) xc.value = xt; if (yc) yc.value = yt;
         }
       });
     }
@@ -182,7 +205,7 @@ export function chartContext<TData>(opts: ChartContextOpts<TData>): ChartContext
   const tweenedData: Cell<TData[]> = derive(() => {
     void data.value;
     const rows = data.peek() as TData[];
-    if (!hasTween) return rows as TData[];
+    if (!tweenX && !tweenY) return rows as TData[];
     const idOf = opts.idOf!;
     return rows.map((d) => {
       const pid = idOf(d);
@@ -249,7 +272,7 @@ export function chartContext<TData>(opts: ChartContextOpts<TData>): ChartContext
   const xGet = derive(() => {
     const s = xScale.value;
     const acc = xAcc.value;
-    if (!hasTween) return (d: TData) => (s as any)(acc(d));
+    if (!tweenX) return (d: TData) => (s as any)(acc(d));
     const idOf = opts.idOf!;
     return (d: TData) => {
       const tween = xTweens.get(idOf(d));
@@ -260,7 +283,7 @@ export function chartContext<TData>(opts: ChartContextOpts<TData>): ChartContext
   const yGet = derive(() => {
     const s = yScale.value;
     const acc = yAcc.value;
-    if (!hasTween) return (d: TData) => (s as any)(acc(d));
+    if (!tweenY) return (d: TData) => (s as any)(acc(d));
     const idOf = opts.idOf!;
     return (d: TData) => {
       const tween = yTweens.get(idOf(d));
