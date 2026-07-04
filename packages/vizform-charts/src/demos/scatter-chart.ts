@@ -44,6 +44,12 @@ export class MdScatterChartLC extends Diagram {
   get measureKey(): string { return this._measureKeyCell.value }
   set measureKey(v: string) { this._measureKeyCell.value = v }
 
+  // Scatter has TWO value axes (xKey + yKey). measureKey tracks yKey; xKey
+  // is tracked separately so x-measure changes also trigger the tween gate.
+  private _xKeyCell = cell<string>('')
+  get xKey(): string { return this._xKeyCell.value }
+  set xKey(v: string) { this._xKeyCell.value = v }
+
   set externalData(v: { x: number; y: number }[] | undefined) {
     if (v) this.dataCell.value = v as Point[];
   }
@@ -73,13 +79,15 @@ export class MdScatterChartLC extends Diagram {
       let cancel: (() => void) | null = null;
       let inited = false;
       let seenMeasureKey = untracked(() => this._measureKeyCell.value);
+      let seenXKey = untracked(() => this._xKeyCell.value);
       biEffect(() => {
         const xt = xTarget.value, yt = yTarget.value;
         const measureKey = untracked(() => this._measureKeyCell.value);
-        if (!inited) { inited = true; seenMeasureKey = measureKey; xc.value = xt; yc.value = yt; return; }
-        const measureSwapped = measureKey !== seenMeasureKey;
-        seenMeasureKey = measureKey;
-        if (measureSwapped && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
+        const xKey = untracked(() => this._xKeyCell.value);
+        if (!inited) { inited = true; seenMeasureKey = measureKey; seenXKey = xKey; xc.value = xt; yc.value = yt; return; }
+        const structural = measureKey !== seenMeasureKey || xKey !== seenXKey;
+        seenMeasureKey = measureKey; seenXKey = xKey;
+        if (structural && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
           cancel?.();
           cancel = this.anim.start(
             tween(xc, xt, SORT_SEC, easeOut),

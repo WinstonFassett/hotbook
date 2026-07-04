@@ -136,13 +136,45 @@ export class MdPieChartLC extends Diagram {
     const focusDatum = (d: Slice | null) => {
       if (d) sliceElements.get(d)?.focus();
     };
+    // Order hash — detects sort (reorder) vs value edit. When the id sequence
+    // changes, it's a sort; the arc angles need to tween (slices rotate).
+    const orderHash = derive(() => (data.value as Slice[]).map(d => d.id ?? d.label).join(','));
     for (let i = 0; i < slices0.length; i++) {
       const d = slices0[i]!;
       const color = PALETTE[i % PALETTE.length]!;
 
       const arcDatum = derive(() => arcs.value[i]);
-      const a0 = derive(() => arcDatum.value?.startAngle ?? 0);
-      const a1 = derive(() => arcDatum.value?.endAngle ?? 0);
+      const a0Target = derive(() => arcDatum.value?.startAngle ?? 0);
+      const a1Target = derive(() => arcDatum.value?.endAngle ?? 0);
+
+      // Tweened arc angles — TWEEN on sort (order change) or measure swap,
+      // SNAP on value edits / gestures. Sort rotates slices to new positions;
+      // measure swap changes slice sizes. Both are structural.
+      const a0 = num(a0Target.value);
+      const a1 = num(a1Target.value);
+      let aCancel: (() => void) | null = null;
+      let aInited = false;
+      let seenMeasureKey = untracked(() => this._measureKeyCell.value);
+      let seenOrder = untracked(() => orderHash.value);
+      biEffect(() => {
+        const t0 = a0Target.value, t1 = a1Target.value;
+        const measureKey = untracked(() => this._measureKeyCell.value);
+        const order = orderHash.value;
+        if (!aInited) { aInited = true; seenMeasureKey = measureKey; seenOrder = order; a0.value = t0; a1.value = t1; return; }
+        const structural = measureKey !== seenMeasureKey || order !== seenOrder;
+        seenMeasureKey = measureKey; seenOrder = order;
+        if (structural && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
+          aCancel?.();
+          aCancel = this.anim.start(
+            tween(a0, t0, SORT_SEC, easeOut) as any,
+            tween(a1, t1, SORT_SEC, easeOut) as any,
+          );
+        } else {
+          aCancel?.(); aCancel = null;
+          a0.value = t0; a1.value = t1;
+        }
+      });
+
       const r = derive(() =>
         selected.value === d ? rOuter.value + 8 : hover.value === d ? rOuter.value + 4 : rOuter.value
       );
@@ -166,9 +198,7 @@ export class MdPieChartLC extends Diagram {
       sector.el.addEventListener("blur", () => { if (selected.value === d) selected.value = null; });
 
       const labelPos = Vec.derive(() => {
-        const arc = arcDatum.value;
-        if (!arc) return { x: -100, y: -100 };
-        const mid = (arc.startAngle + arc.endAngle) / 2;
+        const mid = (a0.value + a1.value) / 2;
         const r = rOuter.value * 0.65;
         return { x: cx.value + Math.cos(mid) * r, y: cy.value + Math.sin(mid) * r };
       });

@@ -178,9 +178,11 @@ export class MdRadarChartLC extends Diagram {
 
     // Per-slot radius cells — two-lane gate (WIN-144).
     //
-    // Radar has no reorder or orientation toggle, but measure-swap IS a structural
-    // transition: all vertices slide to their new radii simultaneously. Value edits
-    // (drag, wheel, keyboard, remote cross-tile) stay write-through (snap) per R2.
+    // Radar renders by slot (index), so sort changes which value is at each
+    // spoke — the polygon morphs. Measure swap also changes all radii. Both
+    // are structural: tween. Value edits (drag, wheel, keyboard, remote
+    // cross-tile) stay write-through (snap) per R2.
+    const orderHash = derive(() => (data.value as Spoke[]).map(d => d.id ?? d.name).join(','));
     const rPxCells: ReturnType<typeof num>[] = [];
     for (let i = 0; i < MAX_SPOKES; i++) {
       const rTarget = derive(() => {
@@ -193,15 +195,20 @@ export class MdRadarChartLC extends Diagram {
       let rCancel: (() => void) | null = null;
       let rInited = false;
       let seenMeasureKey = untracked(() => this._measureKeyCell.value);
+      let seenOrder = untracked(() => orderHash.value);
       biEffect(() => {
         const target = rTarget.value;
         const measureKey = untracked(() => this._measureKeyCell.value);
-        if (!rInited) { rInited = true; seenMeasureKey = measureKey; rPx.value = target; return; }
-        const measureSwapped = measureKey !== seenMeasureKey;
-        seenMeasureKey = measureKey;
-        if (measureSwapped && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
+        const order = orderHash.value;
+        if (!rInited) { rInited = true; seenMeasureKey = measureKey; seenOrder = order; rPx.value = target; return; }
+        // Structural = measure swap OR sort (order change). Radar renders by
+        // slot, so sort changes which value is at each spoke — the polygon
+        // morphs. Value edits (same datum, different value) snap per R2.
+        const structural = measureKey !== seenMeasureKey || order !== seenOrder;
+        seenMeasureKey = measureKey; seenOrder = order;
+        if (structural && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
           rCancel?.();
-          rCancel = this.anim.start(tween(rPx, target, SORT_SEC, easeOut));
+          rCancel = this.anim.start(tween(rPx, target, SORT_SEC, easeOut) as any);
         } else {
           rCancel?.(); rCancel = null;
           rPx.value = target;
