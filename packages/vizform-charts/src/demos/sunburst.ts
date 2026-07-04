@@ -259,13 +259,19 @@ export class MdSunburstLC extends Diagram {
       });
       let lcancel: (() => void) | null = null;
       let lInited = false;
+      let seenSortBy = untracked(() => this._sortByCell.value);
       biEffect(() => {
         const t = ltarget.value; // track layout (reacts to sort + value + size)
-        if (!lInited) { lInited = true; la0.value = t.x0; la1.value = t.x1; lr0.value = t.y0; lr1.value = t.y1; return; }
-        if (this.classList.contains(GESTURE_ACTIVE_CLASS)) {
-          lcancel?.(); lcancel = null;
-          la0.value = t.x0; la1.value = t.x1; lr0.value = t.y0; lr1.value = t.y1;
-        } else {
+        const sortBy = this._sortByCell.value; // track sort key so a toggle re-fires this effect
+        if (!lInited) { lInited = true; seenSortBy = sortBy; la0.value = t.x0; la1.value = t.x1; lr0.value = t.y0; lr1.value = t.y1; return; }
+        // Two-lane split. TWEEN only for a real reorder (sort key toggled) — arcs
+        // sweep to new angular slots. SNAP for everything else: active gesture
+        // (real-time drag), and — crucially — value edits / commits / resize,
+        // including REMOTE cross-tile edits that carry no gesture class (R2:
+        // value changes are write-through, no 250-350ms settle-lag).
+        const reordered = sortBy !== seenSortBy;
+        seenSortBy = sortBy;
+        if (reordered && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
           lcancel?.();
           lcancel = this.anim.start(
             tween(la0, t.x0, SORT_SEC, easeOut),
@@ -273,6 +279,9 @@ export class MdSunburstLC extends Diagram {
             tween(lr0, t.y0, SORT_SEC, easeOut),
             tween(lr1, t.y1, SORT_SEC, easeOut),
           );
+        } else {
+          lcancel?.(); lcancel = null;
+          la0.value = t.x0; la1.value = t.x1; lr0.value = t.y0; lr1.value = t.y1;
         }
       });
 
