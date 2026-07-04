@@ -228,6 +228,15 @@ reads as lag, not polish. Motion is classified into three classes with hard defa
 | **Structural transitions** — the layout MEANING changed | sort change, commit-time reorder (principle #7), drill in/out, node enter/exit, orientation flip, cross-view morph | **YES — animated, interruptible.** | Without motion the user loses object identity ("where did my datum go"). This is the transition class worth keeping and polishing. |
 | **Remote value changes** — a cell changed and this chart wasn't the gesture source | table edit moves the bar, cross-tile edit | **Immediate by default; short tween opt-in per surface.** | The pointer isn't on this chart, so a brief tween *can* aid tracking — but it's a courtesy, not a default. If in doubt, instant. |
 
+The five rules, stated as the element contract (Winston, 2026-07-03 — requirements, not
+suggestions; the contract test suite asserts them per chart):
+
+1. Charts **always transition** when items *move or are reordered*.
+2. Charts do **NOT** need to transition *value changes* — immediate is correct.
+3. Charts **SHOULD transition** when *layout config* changes (orientation, mode).
+4. **New/removed elements** transition entry and exit.
+5. Hierarchical charts **SHOULD transition** when *changing/adding/removing levels* (drill, depth window).
+
 Rules carried forward unchanged: one timing token everything derives from (principle #10 —
 no scattered ms values), every transition interruptible from current visual position
 (#11, no snap-back), reduced-motion suppresses structural/autonomous motion but never
