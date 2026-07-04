@@ -135,12 +135,17 @@ export class MdAreaChartLC extends Diagram {
     const pointElements = new Map<Point, SVGCircleElement>();
     for (let i = 0; i < points0.length; i++) {
       const pt = points0[i]!;
-      const pos = Vec.derive(() => ({ x: ctx.xGet.value(pt), y: ctx.yGet.value(pt) }));
+      const pid = pt.id ?? String(pt.date.getTime());
+      const yc = yCells.get(pid);
+      const pos = Vec.derive(() => ({
+        x: (ctx.xScale.value as any)(pt.date),
+        y: (ctx.yScale.value as any)(yc ? yc.value : pt.value),
+      }));
       const focusCircle = s(circle(pos, 8, { fill: "transparent", stroke: "none" }));
       pointElements.set(pt, focusCircle.el as SVGCircleElement);
       focusCircle.el.setAttribute('tabindex', '0');
       focusCircle.el.setAttribute('data-focusable', 'point');
-      focusCircle.el.setAttribute('aria-label', `${pt.date.toLocaleDateString()}: ${Math.round(pt.value)}`);
+      biEffect(() => { focusCircle.el.setAttribute('aria-label', `${pt.date.toLocaleDateString()}: ${Math.round(yc ? yc.value : pt.value)}`); });
       focusCircle.el.style.cursor = "pointer";
       focusCircle.el.addEventListener("focus", () => { selected.value = pt; });
       focusCircle.el.addEventListener("blur", () => { if (selected.value === pt) selected.value = null; });
@@ -158,21 +163,26 @@ export class MdAreaChartLC extends Diagram {
       focusDatum: (d) => { if (d) pointElements.get(d)?.focus(); },
     });
 
-    // Hover crosshair.
+    // Hover crosshair — x reads raw date (stable), y reads tweened value.
+    const hoverYVal = (p: Point) => {
+      const pid = p.id ?? String(p.date.getTime());
+      const yc = yCells.get(pid);
+      return yc ? yc.value : p.value;
+    };
     const hoverX = Vec.derive(() => {
       const p = hover.value;
       if (!p) return { x: -10, y: -10 };
-      return { x: ctx.xGet.value(p), y: ctx.plotY };
+      return { x: (ctx.xScale.value as any)(p.date), y: ctx.plotY };
     });
     const hoverBottom = Vec.derive(() => {
       const p = hover.value;
       if (!p) return { x: -10, y: -10 };
-      return { x: ctx.xGet.value(p), y: ctx.plotY + ctx.plotHeight };
+      return { x: (ctx.xScale.value as any)(p.date), y: ctx.plotY + ctx.plotHeight };
     });
     const hoverPoint = Vec.derive(() => {
       const p = hover.value;
       if (!p) return { x: -10, y: -10 };
-      return { x: ctx.xGet.value(p), y: ctx.yGet.value(p) };
+      return { x: (ctx.xScale.value as any)(p.date), y: (ctx.yScale.value as any)(hoverYVal(p)) };
     });
     const hoverOpacity = derive(() => (hover.value ? 1 : 0));
 
@@ -181,11 +191,11 @@ export class MdAreaChartLC extends Diagram {
       circle(hoverPoint, 4, { fill: "#7aaae8", stroke: "#fff", strokeWidth: 2, opacity: hoverOpacity }),
     );
 
-    // Selection marker.
+    // Selection marker — reads tweened value.
     const selPoint = Vec.derive(() => {
       const p = selected.value;
       if (!p) return { x: -10, y: -10 };
-      return { x: ctx.xGet.value(p), y: ctx.yGet.value(p) };
+      return { x: (ctx.xScale.value as any)(p.date), y: (ctx.yScale.value as any)(hoverYVal(p)) };
     });
     const selOpacity = derive(() => (selected.value ? 1 : 0));
 

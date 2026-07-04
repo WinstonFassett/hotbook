@@ -137,9 +137,19 @@ export class MdScatterChartLC extends Diagram {
     };
 
     // Draw dots with focusable support.
+    // Dot positions read from TWEEN cells (xc/yc) through the scale — NOT raw
+    // d.x/d.y. Raw values jump immediately on sort/reindex; tween cells animate.
+    // Without this, the gate tweens xc/yc to nowhere — dots read raw values and
+    // jump while the tween cells animate disconnected from rendering.
     const dotElements = new Map<Point, SVGCircleElement>();
-    for (const d of data.peek() as Point[]) {
-      const pos = Vec.derive(() => ({ x: ctx.xGet.value(d), y: ctx.yGet.value(d) }));
+    for (const d of points0) {
+      const pid = d.id ?? String(points0.indexOf(d));
+      const xc = xCells.get(pid);
+      const yc = yCells.get(pid);
+      const pos = Vec.derive(() => ({
+        x: (ctx.xScale.value as any)(xc ? xc.value : d.x),
+        y: (ctx.yScale.value as any)(yc ? yc.value : d.y),
+      }));
       const fill = derive(() =>
         selected.value === d ? "#fff" : hover.value === d ? "#a4c0f0" : COLOR
       );
@@ -148,7 +158,11 @@ export class MdScatterChartLC extends Diagram {
       // Make each dot individually focusable
       dot.el.setAttribute('tabindex', '0');
       dot.el.setAttribute('data-focusable', 'point');
-      dot.el.setAttribute('aria-label', `x: ${d.x.toFixed(1)}, y: ${d.y.toFixed(1)}`);
+      biEffect(() => {
+        const xv = xc ? xc.value : d.x;
+        const yv = yc ? yc.value : d.y;
+        dot.el.setAttribute('aria-label', `x: ${xv.toFixed(1)}, y: ${yv.toFixed(1)}`);
+      });
       dot.el.addEventListener("pointerenter", () => { hover.value = d; });
       dot.el.addEventListener("pointerleave", () => { if (hover.value === d) hover.value = null; });
       dot.el.addEventListener("click", () => { selected.value = selected.value === d ? null : d; });
@@ -165,11 +179,16 @@ export class MdScatterChartLC extends Diagram {
       focusDatum: (d) => { if (d) dotElements.get(d)?.focus(); },
     });
 
-    // Selection ring.
+    // Selection ring — reads tweened values (same as dots).
     const selPos = Vec.derive(() => {
       const p = selected.value;
       if (!p) return { x: -10, y: -10 };
-      return { x: ctx.xGet.value(p), y: ctx.yGet.value(p) };
+      const pid = p.id ?? String(points0.indexOf(p));
+      const xc = xCells.get(pid), yc = yCells.get(pid);
+      return {
+        x: (ctx.xScale.value as any)(xc ? xc.value : p.x),
+        y: (ctx.yScale.value as any)(yc ? yc.value : p.y),
+      };
     });
     const selOpacity = derive(() => (selected.value ? 1 : 0));
     s(
