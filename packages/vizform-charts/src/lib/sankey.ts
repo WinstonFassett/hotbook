@@ -435,13 +435,14 @@ export function sankeyScene(
     const groupLinks = isSink ? topology.inc[n]! : topology.out[n]!;
     if (groupLinks.length > 0) {
       const allCells = linkValues.map((lv) => lv.value as unknown as Writable<Num>);
-      // Group grip on the OPPOSITE face from lane grips, at the bar's bottom edge.
+      // Group grip at the bar's BOTTOM edge, CENTERED on the bar horizontally.
+      // Lane grips are on both sides of the bar (outbound right, inbound left),
+      // so the group grip sits at the center to stay clear of both.
       // Position is a PURE FUNCTION of the layout — no freezing. When values
       // change during drag, the layout recomputes and the grip moves with the bar.
       const gripPos = () => {
         const b = layout.value.nodes[n]!;
-        const gx = isSink ? b.x1 : b.x0;
-        return { x: gx, y: b.y1 };
+        return { x: (b.x0 + b.x1) / 2, y: b.y1 };
       };
       let startY = 0, startTot = 0, startVals: number[] = [];
       const lens = Vec.lens(
@@ -484,6 +485,7 @@ export function sankeyScene(
       grip.el.style.cursor = "ns-resize";
       grip.el.style.transition = "opacity 0.12s";
       grip.el.addEventListener("pointerenter", () => { nodeActive.value = true; });
+      grip.el.addEventListener("pointerleave", () => { nodeActive.value = false; });
       dragCancelable(grip, lens, allCells, {
         onStart: () => {
           nodeActive.value = true;
@@ -521,10 +523,10 @@ export function sankeyScene(
       const active = cell(false);
 
       // Position: bottom edge of link `li` on the source face = boundary with sibling.
-      // Offset OFF the rectangle by 6px so the grip sits beside the bar, not on it.
+      // Offset OFF the rectangle by 12px so the grip has room as a touch target.
       const boundaryPos = () => {
         const b = layout.value.links[li]!;
-        return { x: b.sx + 6, y: b.sy + b.width / 2 };
+        return { x: b.sx + 12, y: b.sy + b.width / 2 };
       };
       const gripVis = Vec.derive(boundaryPos);
 
@@ -569,16 +571,16 @@ export function sankeyScene(
         );
       }
 
-      const grip = s(circle(gripVis, 4, {
+      const grip = s(circle(gripVis, derive(() => active.value ? 6 : 4), {
         fill: "#0b0d12",
         stroke: derive(() => active.value ? "#fff" : (nodeColors.value[n] ?? "#6ab0f5")),
         strokeWidth: 2,
         opacity: derive(() => (active.value || hovered.value === li || focused.value === li) ? 1 : 0.5),
       }));
       grip.el.style.cursor = "ns-resize";
-      grip.el.style.transition = "opacity 0.12s";
+      grip.el.style.transition = "opacity 0.12s, r 0.12s";
       grip.el.addEventListener("pointerenter", () => { active.value = true; hovered.value = li; });
-      grip.el.addEventListener("pointerleave", () => { if (!active.value && hovered.value === li) hovered.value = null; });
+      grip.el.addEventListener("pointerleave", () => { active.value = false; if (hovered.value === li) hovered.value = null; });
       dragCancelable(grip, lens, allCells, {
         onStart: () => { active.value = true; focused.value = li; startAllVals = allCells.map((c) => c.value); },
         onEnd: () => { active.value = false; },
@@ -599,10 +601,10 @@ export function sankeyScene(
       const active = cell(false);
 
       // Position: bottom edge of link `li` on the target face = boundary with sibling.
-      // Offset OFF the rectangle by 6px to the LEFT so the grip sits beside the bar.
+      // Offset OFF the rectangle by 12px to the LEFT so the grip has room as a touch target.
       const boundaryPos = () => {
         const b = layout.value.links[li]!;
-        return { x: b.tx - 6, y: b.ty + b.width / 2 };
+        return { x: b.tx - 12, y: b.ty + b.width / 2 };
       };
       const gripVis = Vec.derive(boundaryPos);
 
@@ -647,16 +649,16 @@ export function sankeyScene(
         );
       }
 
-      const grip = s(circle(gripVis, 4, {
+      const grip = s(circle(gripVis, derive(() => active.value ? 6 : 4), {
         fill: "#0b0d12",
         stroke: derive(() => active.value ? "#fff" : (nodeColors.value[n] ?? "#6ab0f5")),
         strokeWidth: 2,
         opacity: derive(() => (active.value || hovered.value === li || focused.value === li) ? 1 : 0.5),
       }));
       grip.el.style.cursor = "ns-resize";
-      grip.el.style.transition = "opacity 0.12s";
+      grip.el.style.transition = "opacity 0.12s, r 0.12s";
       grip.el.addEventListener("pointerenter", () => { active.value = true; hovered.value = li; });
-      grip.el.addEventListener("pointerleave", () => { if (!active.value && hovered.value === li) hovered.value = null; });
+      grip.el.addEventListener("pointerleave", () => { active.value = false; if (hovered.value === li) hovered.value = null; });
       dragCancelable(grip, lens, allCells, {
         onStart: () => { active.value = true; focused.value = li; startAllVals = allCells.map((c) => c.value); },
         onEnd: () => { active.value = false; },
