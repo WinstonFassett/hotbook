@@ -339,7 +339,15 @@ export class DockView extends HTMLElement {
       // Same panel, tiles data changed — sync source data (syncFrom/applyData).
       // Skip when only dock changed (gutter drag) to avoid overwriting in-flight gesture edits.
       const tileRec = tiles.find(t => t.tile.id === active.tileId)
-      if (tileRec) this._syncChart(active.id, tileRec)
+      if (tileRec) {
+        this._syncChart(active.id, tileRec)
+        // Rebuild the tile header so dropdown closures capture the latest tile
+        // state. Without this, a dropdown change (e.g. measure) uses a stale
+        // `dash` from the original buildTileRecords call, losing properties set
+        // by other dropdowns (e.g. orientation reverting to default on measure
+        // change — WIN-140).
+        this._refreshPanelHeader(active.id, tileRec, tiles)
+      }
     }
 
     // Re-apply drop indicators for current drag state
@@ -546,6 +554,19 @@ export class DockView extends HTMLElement {
 
     strip.appendChild(actions)
     return strip
+  }
+
+  /** Rebuild the tile header in-place so dropdown closures capture the latest
+   *  tile state. Without this, dropdown event listeners hold stale `dash`
+   *  references from the original buildTileRecords call, and a measure change
+   *  can clobber orientation (WIN-140). */
+  private _refreshPanelHeader(panelId: string, tileRec: TileRecord, tiles: TileRecord[]) {
+    const ctrl = this._panelCtrls.get(panelId)
+    if (!ctrl?.wrap) return
+    const oldHeader = ctrl.wrap.querySelector<HTMLElement>('.tile-header')
+    if (!oldHeader) return
+    const newHeader = this._buildTileHeader(tileRec, tiles)
+    oldHeader.replaceWith(newHeader)
   }
 
   private _getPanelContent(panelId: string, tileId: string, tiles: TileRecord[]): HTMLElement | null {
