@@ -435,20 +435,18 @@ export function sankeyScene(
     const groupLinks = isSink ? topology.inc[n]! : topology.out[n]!;
     if (groupLinks.length > 0) {
       const allCells = linkValues.map((lv) => lv.value as unknown as Writable<Num>);
-      // Group grip on the OPPOSITE face from lane grips.
+      // Group grip on the OPPOSITE face from lane grips, at the bar's bottom edge.
+      // Position is a PURE FUNCTION of the layout — no freezing. When values
+      // change during drag, the layout recomputes and the grip moves with the bar.
       const gripPos = () => {
         const b = layout.value.nodes[n]!;
         const gx = isSink ? b.x1 : b.x0;
         return { x: gx, y: b.y1 };
       };
-      // frozenGripPos pins the grip to the capture position during the drag so
-      // it tracks the cursor at 1:1 (center-stacked bars move both edges at half
-      // rate). Must be a cell so clearing it in onEnd triggers re-derive.
-      const frozenGripPos = cell<{ x: number; y: number } | null>(null);
       let startY = 0, startTot = 0, startVals: number[] = [];
       const lens = Vec.lens(
         allCells,
-        () => frozenGripPos.value ?? gripPos(),
+        () => gripPos(),
         (target, _vals: readonly number[]) => {
           if (startTot <= 0) return _vals.slice();
           const wantTot = Math.max(LINK_MIN, startTot + (target.y - startY) / pxPerUnit);
@@ -473,14 +471,14 @@ export function sankeyScene(
           return newVals;
         },
       );
-      const gripVis = Vec.derive(() => frozenGripPos.value ?? gripPos());
+      const gripVis = Vec.derive(gripPos);
       const gripX = derive(() => gripVis.value.x - 7);
       const gripY = derive(() => gripVis.value.y - 2);
       const grip = s(rect(gripX, gripY, 14, 4, {
         fill: "#0b0d12",
         stroke: derive(() => nodeActive.value ? "#fff" : fill.value),
         strokeWidth: 1.5,
-        opacity: derive(() => nodeActive.value ? 1 : 0),
+        opacity: derive(() => nodeActive.value ? 1 : 0.5),
         corner: 2,
       }));
       grip.el.style.cursor = "ns-resize";
@@ -490,12 +488,11 @@ export function sankeyScene(
         onStart: () => {
           nodeActive.value = true;
           const p = gripPos();
-          frozenGripPos.value = p;
           startY = p.y;
           startVals = allCells.map((c) => c.value);
           startTot = groupLinks.reduce((a, li) => a + startVals[li]!, 0);
         },
-        onEnd: () => { frozenGripPos.value = null; nodeActive.value = false; },
+        onEnd: () => { nodeActive.value = false; },
       });
     }
 
@@ -523,9 +520,11 @@ export function sankeyScene(
       const sibling = k + 1 < outs.length ? outs[k + 1]! : -1;
       const active = cell(false);
 
+      // Position: bottom edge of link `li` on the source face = boundary with sibling.
+      // Offset OFF the rectangle by 6px so the grip sits beside the bar, not on it.
       const boundaryPos = () => {
         const b = layout.value.links[li]!;
-        return { x: b.sx, y: b.sy + b.width / 2 };
+        return { x: b.sx + 6, y: b.sy + b.width / 2 };
       };
       const gripVis = Vec.derive(boundaryPos);
 
@@ -574,7 +573,7 @@ export function sankeyScene(
         fill: "#0b0d12",
         stroke: derive(() => active.value ? "#fff" : (nodeColors.value[n] ?? "#6ab0f5")),
         strokeWidth: 2,
-        opacity: derive(() => (active.value || hovered.value === li || focused.value === li) ? 1 : 0),
+        opacity: derive(() => (active.value || hovered.value === li || focused.value === li) ? 1 : 0.5),
       }));
       grip.el.style.cursor = "ns-resize";
       grip.el.style.transition = "opacity 0.12s";
