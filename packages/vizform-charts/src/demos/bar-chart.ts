@@ -200,7 +200,7 @@ export class MdBarChartLC extends Diagram {
     const wheelConfig = {
       snapshot: (d: Bar) => { setGestureActive(true); return d.value; },
       restore: (d: Bar, v: number) => mutateDatum(d, v - d.value),
-      onEnd: () => { setGestureActive(false); hover.value = null; this.dispatchEvent(new CustomEvent("gesturecommit")); },
+      onEnd: (canceled: boolean) => { setGestureActive(false); hover.value = null; this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } })); },
     };
     let dragPointerId = -1;
     const dragConfig = {
@@ -211,12 +211,12 @@ export class MdBarChartLC extends Diagram {
         if (!t) return;
         mutateDatum(t, (ctx.yScale.value as any).invert(localPoint(pe).y) - t.value);
       },
-      onEnd: () => {
+      onEnd: (canceled: boolean) => {
         if (dragPointerId >= 0 && (this as any).hasPointerCapture?.(dragPointerId)) (this as any).releasePointerCapture(dragPointerId);
         dragPointerId = -1;
         (this as any).gestureActive = false;
         setGestureActive(false);
-        this.dispatchEvent(new CustomEvent("gesturecommit"));
+        this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } }));
       },
     };
 
@@ -484,7 +484,7 @@ export class MdBarChartLC extends Diagram {
     const wheelConfig = {
       snapshot: (d: Bar) => { setGestureActive(true); return d.value; },
       restore: (d: Bar, v: number) => mutateDatum(d, v - d.value),
-      onEnd: () => { setGestureActive(false); hover.value = null; this.dispatchEvent(new CustomEvent("gesturecommit")); },
+      onEnd: (canceled: boolean) => { setGestureActive(false); hover.value = null; this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } })); },
     };
     let dragPointerId = -1;
     const dragConfig = {
@@ -495,12 +495,12 @@ export class MdBarChartLC extends Diagram {
         if (!t) return;
         mutateDatum(t, (xLinear.value as any).invert(localPoint(pe).x) - t.value);
       },
-      onEnd: () => {
+      onEnd: (canceled: boolean) => {
         if (dragPointerId >= 0 && (this as any).hasPointerCapture?.(dragPointerId)) (this as any).releasePointerCapture(dragPointerId);
         dragPointerId = -1;
         (this as any).gestureActive = false;
         setGestureActive(false);
-        this.dispatchEvent(new CustomEvent("gesturecommit"));
+        this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } }));
       },
     };
 
