@@ -1,0 +1,16 @@
+# Netlify config for standalone sliceboard.netlify.app deployment
+# This builds sliceboard without a base path (served at root)
+
+[build]
+  base    = ""
+  command = "npm run build:sliceboard"
+  publish = "apps/sliceboard/dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# SPA fallback for sliceboard
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
+  status = 200
