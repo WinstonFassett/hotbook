@@ -208,12 +208,17 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
     // shapeKey excludes xKey/yKey — measure/key changes flow through applyData
     // (sets reactive measureKey + xKey cells) so the chart animates instead of remounting.
     const shapeKey = `${[...ids].sort().join(',')}`
+    const buildScatter = () => leaves.map((n, i) => ({ id: n.id, x: xKey === '_index' ? i : (n.measures[xKey] ?? 0), y: n.measures[yKey] ?? 0 }))
     return makeFlatSource<{ id: string; x: number; y: number }>({
       tag: 'v-br-scatter', ids, measureKey: yKey,
       values: leaves.map(n => n.measures[yKey] ?? 0),
       shapeKey,
-      build: () => leaves.map((n, i) => ({ id: n.id, x: xKey === '_index' ? i : (n.measures[xKey] ?? 0), y: n.measures[yKey] ?? 0 })),
-      mountProps: (el: any) => { el.xKey = xKey },
+      build: buildScatter,
+      // Rebuild data on same-shape updates so x values reflect the new xKey.
+      // applyData calls mountProps before writing y values, so the sequence is:
+      // 1. mountProps sets el.xKey + el.externalData (new x values, current y)
+      // 2. applyData writes y values from the store on top
+      mountProps: (el: any) => { el.xKey = xKey; el.externalData = buildScatter() },
       readValue: d => d.y, writeValue: (d, v) => { d.y = v }, idOf: d => d.id,
       reindex: xKey === '_index' ? (d, k) => { (d as any).x = k } : undefined,
       nodes: rawNodes, onUpdate,
