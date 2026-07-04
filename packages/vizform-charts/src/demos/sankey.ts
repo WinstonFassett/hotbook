@@ -33,8 +33,9 @@ export class MdSankeySimple extends Diagram {
 
   protected scene(s: Mount): void {
     const ext = this.externalData
-    const nodeIds = ext ? ext.nodes : SIMPLE_NODES
-    const linkDefs: LinkDef[] = ext ? ext.links.map(l => ({ source: l.source, target: l.target, init: l.value })) : SIMPLE_LINKS
+    const hasExt = ext && ext.nodes.length > 0 && ext.links.length > 0
+    const nodeIds = hasExt ? ext.nodes : SIMPLE_NODES
+    const linkDefs: LinkDef[] = hasExt ? ext.links.map(l => ({ source: l.source, target: l.target, init: l.value })) : SIMPLE_LINKS
     const nodePadding = ext ? Math.max(1, Math.min(6, Math.floor(300 / nodeIds.length))) : 6
     const W = 560, H = ext ? Math.max(340, nodeIds.length * (8 + nodePadding)) : 340;
     const view = this.view(W + 120, H + 48);
