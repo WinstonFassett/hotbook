@@ -127,9 +127,12 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
     const maxItems = tile.maxItems
     const leaves = leavesOfNodes(sorted)
     const ids = leaves.map(n => n.id)
-    const displayKey = `${orientation}|${colorMode}|${labelMode}|${valueMode}|${minBandSize}|${maxItems ?? 0}`
+    // shapeKey excludes orientation + mk — those now flow through applyData
+    // (sets reactive _orientationCell + _measureKeyCell) so the chart morphs
+    // instead of remounting (WIN-144 wave 2).
+    const displayKey = `${colorMode}|${labelMode}|${valueMode}|${minBandSize}|${maxItems ?? 0}`
     const maxProp = orientation === 'horizontal' ? 'maxBands' : 'maxBars'
-    const shapeKey = `${displayKey}|${mk}|${[...ids].sort().join(',')}|${[...leaves].sort((a,b)=>a.id<b.id?-1:1).map(n=>n.name).join(',')}`
+    const shapeKey = `${displayKey}|${[...ids].sort().join(',')}|${[...leaves].sort((a,b)=>a.id<b.id?-1:1).map(n=>n.name).join(',')}`
     return makeFlatSource<{ id: string; label: string; value: number }>({
       tag: 'v-br-bar', ids, measureKey: mk,
       values: leaves.map(n => n.measures[mk] ?? 0),
