@@ -6,10 +6,13 @@ import { fileURLToPath } from 'url';
 export default defineConfig({
   vite: {
     resolve: {
+      // 'node' condition resolves workspace packages (vizform-charts) to SOURCE
+      // (same mechanism as sliceboard) — live HMR, never a stale dist.
+      conditions: ['browser', 'node'],
+      // One bireactive instance across all modules — two copies silently kill
+      // cross-element reactivity.
+      dedupe: ['bireactive'],
       alias: {
-        // Force a single bireactive instance across all modules
-        // (vizform-charts dist imports "bireactive", our TS imports "bireactive" —
-        // without this, Vite resolves them to different URLs = two instances)
         bireactive: fileURLToPath(new URL('../../node_modules/bireactive/dist/index.js', import.meta.url)),
       },
     },
