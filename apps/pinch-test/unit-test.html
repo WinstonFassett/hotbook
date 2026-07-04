@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Wheel Controller Unit Test</title>
+<style>
+  body { font-family: monospace; background: #1a1a2e; color: #eee; padding: 2rem; }
+  #output { white-space: pre; }
+  .pass { color: #7ec87e; }
+  .fail { color: #e08888; font-weight: bold; }
+</style>
+</head>
+<body>
+<h1>Wheel Controller Pinch + Esc Test</h1>
+<div id="output"></div>
+<script type="module">
+  import { wheelController, realModifierDown } from '@winstonfassett/vizform-charts';
+
+  const out = document.getElementById('output');
+  function log(msg, cls = '') {
+    const div = document.createElement('div');
+    div.className = cls;
+    div.textContent = msg;
+    out.appendChild(div);
+  }
+
+  // Simple test target — just a number we can snapshot/restore/mutate
+  function makeTarget(initial) {
+    return {
+      value: initial,
+      snapshot() { return this.value; },
+      restore(snap) { this.value = snap; },
+    };
+  }
+
+  const results = [];
+  function assert(name, cond, detail = '') {
+    const status = cond ? 'PASS' : 'FAIL';
+    log(`${status}: ${name}${detail ? ' — ' + detail : ''}`, cond ? 'pass' : 'fail');
+    results.push(cond);
+  }
+
+  function sendWheel(ctrlKey, deltaY) {
+    const ev = new WheelEvent('wheel', {
+      bubbles: true, cancelable: true,
+      ctrlKey, deltaY,
+    });
+    window.dispatchEvent(ev);
+    return ev.defaultPrevented;
+  }
+
+  function sendKey(key) {
+    const ev = new KeyboardEvent('keydown', {
+      key, bubbles: true, cancelable: true,
+    });
+    window.dispatchEvent(ev);
+  }
+
+  async function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+  async function runTests() {
+    // ── Test 1: Pinch changes value ──────────────────────────────
+    // Simulate trackpad pinch: ctrlKey=true, no real Ctrl key down
+    const target = makeTarget(100);
+    const config = {
+      snapshot: (t) => t.snapshot(),
+      restore: (t, snap) => t.restore(snap),
+      onEnd: () => {},
+    };
+
+    // Start pinch
+    const t = wheelController.begin(target, config, { pinch: true });
+    assert('begin returns target', t === target);
+
+    // Send wheel events (pinch = ctrlKey true, no real key)
+    // The wheel handler in the chart would call applyDelta; here we
+    // simulate that by mutating target.value directly on each wheel
+    const onWheel = (e) => {
+      if (e.ctrlKey && wheelController.active) {
+        const tgt = wheelController.target;
+        if (tgt) tgt.value += e.deltaY < 0 ? 3 : -3;
+      }
+    };
+    window.addEventListener('wheel', onWheel);
+
+    sendWheel(true, -3);
+    sendWheel(true, -3);
+    sendWheel(true, -3);
+    sendWheel(true, -3);
+    sendWheel(true, -3);
+    assert('value changed during pinch', target.value > 100, `value=${target.value}`);
+    const changedValue = target.value;
+    log(`  value after pinch: ${target.value} (was 100)`);
+
+    // ── Test 2: Esc reverts to initial ────────────────────────────
+    sendKey('Escape');
+    assert('value reverted after Esc', target.value === 100, `value=${target.value}`);
+    log(`  value after Esc: ${target.value}`);
+
+    // ── Test 3: Continued wheel events do NOT change value ────────
+    // (suppression — same physical pinch, fingers still on trackpad)
+    sendWheel(true, -3);
+    sendWheel(true, -3);
+    sendWheel(true, -3);
+    assert('value stayed reverted during suppression', target.value === 100, `value=${target.value}`);
+    log(`  value after continued pinch: ${target.value}`);
+
+    // ── Test 4: After suppression lifts, pinch works again ────────
+    await sleep(250); // suppression timeout = 200ms
+    const t2 = wheelController.begin(target, config, { pinch: true });
+    assert('new gesture starts after suppression lifts', t2 === target);
+    if (t2) {
+      sendWheel(true, -3);
+      sendWheel(true, -3);
+      sendWheel(true, -3);
+      assert('value changes again after suppression', target.value > 100, `value=${target.value}`);
+      log(`  value after recovery pinch: ${target.value}`);
+    }
+
+    // Clean up
+    window.removeEventListener('wheel', onWheel);
+    wheelController.cancel();
+
+    // ── Test 5: Different target not suppressed ───────────────────
+    // Start pinch on target A, Esc, then immediately start pinch on target B
+    const targetA = makeTarget(50);
+    const targetB = makeTarget(200);
+    const configA = {
+      snapshot: (t) => t.snapshot(),
+      restore: (t, snap) => t.restore(snap),
+      onEnd: () => {},
+    };
+    const configB = {
+      snapshot: (t) => t.snapshot(),
+      restore: (t, snap) => t.restore(snap),
+      onEnd: () => {},
+    };
+
+    const onWheel2 = (e) => {
+      if (e.ctrlKey && wheelController.active) {
+        const tgt = wheelController.target;
+        if (tgt) tgt.value += e.deltaY < 0 ? 3 : -3;
+      }
+    };
+    window.addEventListener('wheel', onWheel2);
+
+    wheelController.begin(targetA, configA, { pinch: true });
+    sendWheel(true, -3);
+    sendWheel(true, -3);
+    assert('targetA changed', targetA.value > 50, `value=${targetA.value}`);
+
+    sendKey('Escape');
+    assert('targetA reverted', targetA.value === 50, `value=${targetA.value}`);
+
+    // Immediately start pinch on B — should work even though A is suppressed
+    const tB = wheelController.begin(targetB, configB, { pinch: true });
+    assert('targetB starts while A suppressed', tB === targetB);
+    if (tB) {
+      sendWheel(true, -3);
+      sendWheel(true, -3);
+      assert('targetB changed while A suppressed', targetB.value > 200, `value=${targetB.value}`);
+      log(`  targetB value: ${targetB.value} (A still at ${targetA.value})`);
+    }
+
+    window.removeEventListener('wheel', onWheel2);
+    wheelController.cancel();
+
+    // ── Summary ───────────────────────────────────────────────────
+    const passed = results.filter(r => r).length;
+    const total = results.length;
+    log(`\n${passed}/${total} passed`, passed === total ? 'pass' : 'fail');
+  }
+
+  // Expose for Playwright
+  window.__runTests = runTests;
+  window.__getResults = () => results;
+</script>
+</body>
+</html>
