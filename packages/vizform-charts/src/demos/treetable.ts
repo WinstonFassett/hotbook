@@ -2,6 +2,7 @@ import { leavesOf, effect } from "bireactive";
 import type { BiNode } from "../lib/tree";
 import { portfolio } from "../lib/portfolio";
 import { prefersReducedMotion, settleTransition } from "../lib/transitions";
+import { numberDrag } from "../lib/number-drag";
 
 const ROW_HEIGHT = 24;
 const INDENT_WIDTH = 14;
@@ -321,7 +322,7 @@ export class MdTreetableLC extends HTMLElement {
 
       // Build value cells for each visible column
       const valueCells = visibleColumns.map(col => {
-        const cellCursor = singleColumnMode ? 'pointer' : 'ew-resize';
+        const cellCursor = 'ew-resize';
         return `<div data-value-cell="${nodeId}:${col.key}" data-editable-value="${nodeId}:${col.key}" data-measure-key="${col.key}" style="width:${col.width ?? 80}px;text-align:right;color:oklch(0.7 0 0);font-variant-numeric:tabular-nums;cursor:${cellCursor};touch-action:none;"></div>`;
       }).join('');
 
@@ -346,7 +347,7 @@ export class MdTreetableLC extends HTMLElement {
         });
       }
 
-      // Set up reactive value display for each column
+      // Set up reactive value display + drag editing for each column
       for (const col of visibleColumns) {
         const valueCell = row.querySelector<HTMLElement>(`[data-value-cell="${nodeId}:${col.key}"]`);
         if (valueCell) {
@@ -366,6 +367,14 @@ export class MdTreetableLC extends HTMLElement {
           });
 
           this.valueEffectDisposers.set(effectKey, dispose);
+
+          // Attach numberDrag for drag-to-edit on this value cell
+          // Self-contained: no host wiring needed.
+          numberDrag(valueCell, {
+            get: () => measureValue.value,
+            set: (v: number) => { measureValue.value = v; },
+            pxPerUnit: 4,
+          });
         }
       }
 

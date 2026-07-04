@@ -13,7 +13,7 @@ export default defineConfig({
       fileName: 'vizform-charts',
     },
     rollupOptions: {
-      external: [],
+      external: ['bireactive'],
     },
   },
 })
