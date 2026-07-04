@@ -329,7 +329,7 @@ export class MdSunburstLC extends Diagram {
           : node.value.label;
       });
 
-      const nodeFill = depthFill(node.value.color, depth).toString();
+      const nodeFill = depthFill(node.value.color, depth);
       const lbl = label(labelPos, labelText, {
         size: isLeaf ? 11 : 10,
         align: Anchor.Center,
@@ -337,7 +337,9 @@ export class MdSunburstLC extends Diagram {
         bold: !isLeaf,
       });
 
-      return group(arc, lbl);
+      // group(opts, ...children): first arg is OPTS — passing the arc there
+      // silently swallowed it (labels-only sunburst). Return both shapes.
+      return [arc, lbl];
     }, { key: (n) => n.value.id });
 
     // Windowed handle rendering.
