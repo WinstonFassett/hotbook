@@ -103,6 +103,20 @@ class R2Harness:
     def _geo(self, tag: str):
         return self.page.evaluate(self._GEO_JS, tag)
 
+    def _wait_geo_stable(self, tag: str, quiet_ms: int = 100, timeout_ms: int = 2000):
+        """Block until the chart's geometry stops changing (two consecutive equal
+        samples `quiet_ms` apart), or `timeout_ms` elapses. Used to wait out a
+        mount/enter tween before baselining a value-immediate check."""
+        prev = self._geo(tag)
+        waited = 0
+        while waited < timeout_ms:
+            self.page.wait_for_timeout(quiet_ms)
+            waited += quiet_ms
+            cur = self._geo(tag)
+            if cur is not None and cur == prev:
+                return
+            prev = cur
+
     # ── cross-tile edit driver ────────────────────────────────────────────────
     def _drive_treetable_edit(self, target_id=None):
         """Drag a visible editable value cell in the treetable to change a shared
@@ -193,6 +207,12 @@ class R2Harness:
         if not both["a"]:
             self._fail(f"{short}: chart-under-test not mounted (dock issue)")
             return
+        # Wait out any MOUNT/ENTER animation before baselining. Re-activating a
+        # tab remounts the chart, and hier charts (treemap/pack) tween their tiles
+        # into place on enter — sampling during that settle would misread it as
+        # value settle-lag (false FAIL). Poll until geometry is stable across two
+        # consecutive frames (or give up after ~2s).
+        self._wait_geo_stable(tag)
         target_id = self._displayed_leaf_id(tag)
         base = self._geo(tag)
         if not self._drive_edit(driver, target_id):
@@ -227,29 +247,36 @@ class R2Harness:
 
     def check_structural_animates(self, tag: str, sort_select_label="br-lc-"):
         """Trigger a sort-by-value reorder on the chart-under-test and assert its
-        geometry animates (early != late). Chart must be mounted + have an Order
-        dropdown in its tile header."""
+        geometry animates (early != late).
+
+        Flips the chart element's own `sortBy` PROPERTY rather than hunting a
+        `<select>` on the page: the Order dropdown lives in a separate grid
+        header (not nested with the chart element), so `querySelectorAll('select')
+        [0]` grabbed the WRONG tile's dropdown when multiple tiles were mounted —
+        a false FAIL. The property drives the same code path deterministically.
+        Resets sortBy back to 'index' afterward so this check can't contaminate a
+        following value-immediate check on the same page session."""
         short = _short(tag)
         self._activate(f"br-lc-{short}")
-        # find this tile's Order select (index/value) in its header and flip to value
-        flipped = self.page.evaluate("""() => {
-          const sels = [...document.querySelectorAll('select')].filter(s => {
-            const opts = [...s.options].map(o=>o.value);
-            const r = s.getBoundingClientRect();
-            return opts.includes('index') && opts.includes('value') && r.width>0;
-          });
-          if (!sels.length) return false;
-          sels[0].value = 'value';
-          sels[0].dispatchEvent(new Event('change', {bubbles:true}));
-          return true;
-        }""")
-        if not flipped:
-            self._fail(f"{short}: no Order dropdown to trigger reorder")
+        prev = self.page.evaluate(
+            """(tag) => { const el = document.querySelector(tag);
+                 if (!el || !('sortBy' in el)) return null;
+                 const prev = el.sortBy; el.sortBy = 'value'; return prev; }""",
+            tag,
+        )
+        if prev is None:
+            self._fail(f"{short}: chart element has no sortBy property to trigger reorder")
             return
         self.page.wait_for_timeout(16)
         early = self._geo(tag)
         self.page.wait_for_timeout(300)
         late = self._geo(tag)
+        # Restore so a later value-immediate check runs from a clean, unsorted state.
+        self.page.evaluate(
+            "(a) => { const el = document.querySelector(a.tag); if (el) el.sortBy = a.prev; }",
+            {"tag": tag, "prev": prev},
+        )
+        self.page.wait_for_timeout(350)
         if early != late:
             self._pass(f"{short}: structural reorder animates (geometry moves over time)")
         else:
@@ -273,21 +300,25 @@ class R2Harness:
 
 
 if __name__ == "__main__":
-    # Self-test that the harness has TEETH: a known-good chart must PASS and a
-    # known-violator must FAIL. radar (PR #63) uses write-through → immediate.
-    # treemap uses a real bireactive tween() on x/y/w/h → genuine cross-tile lag.
-    # (Both are paired with a cross-dock editable tile so both panes are visible —
-    # the canonical "chart + editor side by side" arrangement; see WIN-134.)
-    print("— self-test: radar should PASS (write-through), treemap should FAIL (JS tween) —")
+    # Self-test that the harness has TEETH by proving it distinguishes the TWO
+    # LANES on the same chart — the whole point of the R2 sweep:
+    #   value_immediate  → a cross-tile value edit SNAPS (write-through, R2)
+    #   structural_animates → a sort reorder still TWEENS (R1)
+    # A harness that couldn't tell these apart would pass or fail both together.
+    # treemap (WIN-127) is the reference chart: post-fix it must pass BOTH.
+    # (Historically this self-test asserted treemap FAILED value_immediate — a
+    # genuine JS-tween lag on x/y/w/h — but WIN-127 fixed it, so the teeth are now
+    # demonstrated via the two-lane distinction rather than a known violator.)
+    print("— self-test: treemap must SNAP on value edit AND ANIMATE on sort (two lanes) —")
     with R2Harness() as h:
-        h.check_value_immediate("v-br-radar")
-        radar_ok = not h.failures
         h.check_value_immediate("v-br-treemap")
-        treemap_caught = len(h.failures) >= 1
-    ok = radar_ok and treemap_caught and not h.errors
+        value_immediate_ok = not h.failures
+        h.check_structural_animates("v-br-treemap")
+        structural_animates_ok = not h.failures
+    ok = value_immediate_ok and structural_animates_ok and not h.errors
     print(
-        f"\nself-test: radar_immediate={radar_ok}  treemap_lag_caught={treemap_caught}  "
-        f"page_errors={len(h.errors)}"
+        f"\nself-test: value_immediate={value_immediate_ok}  "
+        f"structural_animates={structural_animates_ok}  page_errors={len(h.errors)}"
     )
     print("HARNESS HAS TEETH ✓" if ok else "HARNESS SELF-TEST FAILED ✗")
     sys.exit(0 if ok else 1)

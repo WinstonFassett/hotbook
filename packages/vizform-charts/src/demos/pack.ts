@@ -244,21 +244,28 @@ export class MdPack extends Diagram {
       });
       let lcancel: (() => void) | null = null;
       let lInited = false;
+      let seenSortBy = untracked(() => this._sortByCell.value);
       biEffect(() => {
         const t = ltarget.value; // track layout (reacts to sort + value + size)
-        if (!lInited) { lInited = true; lx.value = t.x; ly.value = t.y; lr.value = t.r; return; }
-        // During an active gesture (drag/wheel): snap for real-time response.
-        // Otherwise (sort, measure change, value-source swap, commit): tween.
-        if (this.classList.contains(GESTURE_ACTIVE_CLASS)) {
-          lcancel?.(); lcancel = null;
-          lx.value = t.x; ly.value = t.y; lr.value = t.r;
-        } else {
+        const sortBy = this._sortByCell.value; // track sort key so a toggle re-fires this effect
+        if (!lInited) { lInited = true; seenSortBy = sortBy; lx.value = t.x; ly.value = t.y; lr.value = t.r; return; }
+        // Two-lane split. TWEEN only for a real reorder (sort key toggled) —
+        // circles slide to new pack positions. SNAP for everything else: active
+        // gesture (real-time drag), and — crucially — value edits / commits /
+        // resize, including REMOTE cross-tile edits that carry no gesture class
+        // (R2: value changes are write-through, no 250-350ms settle-lag).
+        const reordered = sortBy !== seenSortBy;
+        seenSortBy = sortBy;
+        if (reordered && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
           lcancel?.();
           lcancel = this.anim.start(
             tween(lx, t.x, SORT_SEC, easeOut),
             tween(ly, t.y, SORT_SEC, easeOut),
             tween(lr, t.r, SORT_SEC, easeOut),
           );
+        } else {
+          lcancel?.(); lcancel = null;
+          lx.value = t.x; ly.value = t.y; lr.value = t.r;
         }
       });
 
