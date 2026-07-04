@@ -4,38 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>vizform — Bidirectional Data Visualization</title>
-    <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <div id="app">
-      <header>
-        <h1>vizform</h1>
-        <p class="tagline">Bidirectional Data Visualization</p>
-      </header>
-
-      <section class="intro">
-        <h2>What is vizform?</h2>
-        <p>
-          vizform enables bidirectional data binding between visualizations and data views.
-          Drag a bar — see the table update. Edit a cell — see the chart move.
-        </p>
-      </section>
-
-      <nav class="demo-nav">
-        <h2>Demos</h2>
-        <ul>
-          <li><a href="/demos/bireactive-layercharts/">Bireactive LayerCharts</a> — Main adaptation in progress</li>
-          <li><a href="/demos/bireactive-native-layout/">Bireactive Native Layout</a> — Main layout engine in progress</li>
-          <li><a href="/sliceboard/">Sliceboard</a> — Interactive dashboard playground</li>
-          <li><a href="/sliceboard/#/demos">Individual Chart Demos</a> — Bar, line, area, pie, gantt, treemap, and more</li>
-          <li><a href="/demos/bireactive/">Bireactive Core</a> — Early experiments</li>
-        </ul>
-      </nav>
-
-      <footer>
-        <a href="https://github.com/WinstonFassett/vizform">GitHub</a>
-      </footer>
-    </div>
-    <script type="module" src="/src/main.ts"></script>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
