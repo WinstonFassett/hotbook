@@ -247,9 +247,12 @@ function makeWheelController(): WheelController {
   // After Esc cancels a pinch, the user's fingers are still on the trackpad
   // and wheel events keep coming. Without suppression, the very next event
   // starts a NEW gesture on the same element — Esc appears to do nothing.
-  // Suppression eats all ctrlKey wheel events (capture phase, so call sites
-  // never see them) until the pinch physically ends (200ms with no wheel).
-  let suppressed = false;
+  // Suppression is PER-TARGET: only the cancelled element is blocked. A
+  // different element can start a new gesture immediately. The suppression
+  // lifts 200ms after the last wheel event for the blocked element (i.e.
+  // when the physical pinch ends). No global wheel-eater — the call sites
+  // drive the timer via rejected begin() calls.
+  let suppressedTarget: unknown = null;
   let suppressTimer: ReturnType<typeof setTimeout> | null = null;
   const SUPPRESS_MS = 200;
 
@@ -265,12 +268,7 @@ function makeWheelController(): WheelController {
   const clearSuppress = () => { if (suppressTimer) { clearTimeout(suppressTimer); suppressTimer = null; } };
   const armSuppress = () => {
     clearSuppress();
-    suppressTimer = setTimeout(exitSuppression, SUPPRESS_MS);
-  };
-  const exitSuppression = () => {
-    clearSuppress();
-    if (teardown) { teardown(); teardown = null; }
-    suppressed = false;
+    suppressTimer = setTimeout(() => { suppressedTarget = null; }, SUPPRESS_MS);
   };
 
   // Remove the gesture-scoped listeners and clear the frame. Idempotent.
@@ -288,35 +286,20 @@ function makeWheelController(): WheelController {
     if (target === null || !cfg) return false;
     cfg.restore(target, snap);
     if (isPinchGesture) {
-      // Esc during pinch: revert values, then enter suppression so the
-      // remaining wheel events from the same physical pinch don't start a
-      // new gesture. The user sees the revert stick. Suppression lifts
-      // 200ms after the last ctrlKey wheel event (fingers lifted).
+      // Esc during pinch: revert values, then suppress THIS target only.
+      // The user's fingers are still on the trackpad; wheel events keep
+      // coming. We block re-lock on this specific element until the pinch
+      // physically ends (200ms with no wheel event for it). A different
+      // element can start a new gesture immediately.
+      const cancelledTarget = target;
       const onEnd = cfg.onEnd;
-      // Tear down gesture listeners, install suppression wheel-eater.
       if (teardown) { teardown(); teardown = null; }
       target = null;
       snap = undefined;
       cfg = null;
-      suppressed = true;
+      suppressedTarget = cancelledTarget;
       onEnd?.(true);
-      const onSuppressWheel = (e: WheelEvent) => {
-        if (e.ctrlKey) {
-          // Same physical pinch — eat it and reset the suppression timer.
-          e.preventDefault();
-          e.stopPropagation();
-          armSuppress();
-        } else {
-          // Non-ctrlKey wheel = user switched to scrolling = pinch is over.
-          exitSuppression();
-        }
-      };
-      window.addEventListener("wheel", onSuppressWheel, { capture: true });
       armSuppress();
-      teardown = () => {
-        clearSuppress();
-        window.removeEventListener("wheel", onSuppressWheel, { capture: true });
-      };
     } else {
       end(true);
     }
@@ -325,9 +308,23 @@ function makeWheelController(): WheelController {
 
   return {
     get target() { return target; },
-    get active() { return target !== null || suppressed; },
+    // active does NOT include suppression — other elements can start gestures.
+    get active() { return target !== null; },
     begin<T>(t: T | null, config: WheelConfig<T>, opts?: { pinch?: boolean }): T | null {
       if (target !== null || t == null) return target as T | null;
+      // If this specific target is suppressed (Esc-cancelled pinch still in
+      // progress), reject and reset the suppression timer. The call site
+      // sees null and returns without applying a delta. A different target
+      // is not suppressed — fall through and start a new gesture, lifting
+      // any prior suppression.
+      if (suppressedTarget !== null && t === suppressedTarget) {
+        armSuppress();
+        return null;
+      }
+      // Different target — clear any stale suppression.
+      clearSuppress();
+      suppressedTarget = null;
+
       target = t;
       cfg = config;
       snap = config.snapshot(t);
