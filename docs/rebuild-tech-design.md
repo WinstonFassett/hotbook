@@ -576,7 +576,7 @@ Consequences:
 | Chart mechanics (render/gesture/transition) | **~70% — PORTS** | ~7k LOC of d3 adapters, drill tweens, wheel/drag + `applyDelta`, Esc contract, `useHostSize`, touch. Survives as implementation behind the new interface. |
 | **Element contract (VizElement)** | **~10% — THE WORK** | No chart follows constructor-scope-cells + pure-scene (all `peek()` in `scene()`). No edit origin, no `editcommit` payload, no injectable SyncHub, `portfolio()` fallback everywhere, two data models (bar/line plain arrays, pie hybrid). Bar carries ~300-line orientation clone. |
 | Registry / define() | **~30%** | `metadata.ts` maturity exists; config schemas app-side; two duplicated TAG registries; no `define()`/tag constants. |
-| Motion policy | **removal work** | Gesture tracking already write-through; blanket `settleTransition` on values must die (WIN-94). |
+| Motion policy | **audited + sweep started** | Full R1–R5 scorecard done (**Appendix C**, 2026-07-04). Confirmed: R2 violation is **cross-tile** value settle-lag (own-gesture already suppressed); R1 reorder-slide already correct. Removal work per chart. radar fixed (PR #63, first two-lane proof). Remaining sweep tracked in **WIN-126** (+ WIN-127–130). WIN-94 (marked done, PR #40) only landed the own-gesture half. |
 | Contract test suite | **0%** | Nothing tests elements through their interface. |
 | Docs surface | **~70%** | Current branch IS the Astro+vanilla-harness shape; bar demo's fake wiring is the known failing case. |
 | Sliceboard rehost | **mostly deletion** | ~2,800+ lines scheduled to die: bindTile (599), tile-sources (373), BrLcCharts (504), app tree.ts (119), hud retry/echo, gen-1 chain, Svelte spike, zombie React charts. Dock decision (WIN-111) open but low-stakes post-P1. |
@@ -662,8 +662,10 @@ remote edits** while keeping the R1 reorder tween. Two-lane render path (§"Moti
 policy" implementation consequence): write-through for value, tween only for
 position/order/drill.
 
-**Suggested first PR** (proves the two-lane pattern on one chart, then sweep like the
-P1 lifecycle spike): **radar** (single inverted `tween` call — smallest, sharpest
-fix) or **bar/bands** (already has the sort-reorder regression fix landed nearby, and
-its settle is a clean `settleTransition` swap). treemap/pack are the highest-value but
-most involved (manual tween loop).
+**First PR — done:** **radar** (PR #63) proved the two-lane pattern — the single
+inverted `tween` call removed, value now write-through. Remaining sweep tracked in
+**WIN-126** and per-chart subtickets **WIN-127** (treemap/pack — highest-value, manual
+tween loop), **WIN-128** (sunburst/icicle/tree — layout-derive tween), **WIN-129**
+(bar/bands/gantt — clean `settleTransition` swap), **WIN-130** (concentric-arc —
+trivial `d 0.1s` removal). Sweep each like the P1 lifecycle spike: one chart, prove
+with an e2e fixture, then next.
