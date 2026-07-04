@@ -63,8 +63,14 @@ export interface ChartContextOpts<TData> {
 
 export interface ChartContext<TData> {
   data: Cell<readonly TData[]>;
-  xAcc: Cell<(d: TData) => any>;
-  yAcc: Cell<(d: TData) => any>;
+  /** Current x accessor function (reads from xAccCell.value). */
+  xAcc: (d: TData) => any;
+  /** Current y accessor function (reads from yAccCell.value). */
+  yAcc: (d: TData) => any;
+  /** Reactive x accessor cell — binding changes fire the tween gate. */
+  xAccCell: Cell<(d: TData) => any>;
+  /** Reactive y accessor cell — binding changes fire the tween gate. */
+  yAccCell: Cell<(d: TData) => any>;
   /** Snapshot width at context creation. */
   width: number;
   /** Snapshot height at context creation. */
@@ -263,10 +269,18 @@ export function chartContext<TData>(opts: ChartContextOpts<TData>): ChartContext
     };
   });
 
+  // xAcc/yAcc as plain functions (backward compat for spline.ts, area.ts,
+  // cartesian-gestures.ts which call ctx.xAcc(d) directly). Reads current
+  // value from the cell.
+  const xAccFn = (d: TData) => xAccCell.value(d);
+  const yAccFn = (d: TData) => yAccCell.value(d);
+
   return {
     data,
-    xAcc,
-    yAcc,
+    xAcc: xAccFn,
+    yAcc: yAccFn,
+    xAccCell,
+    yAccCell,
     width: wCell.value,
     height: hCell.value,
     padding,
