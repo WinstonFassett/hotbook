@@ -346,9 +346,38 @@ export function sankeyScene(
     const sy = vb && vb.height ? vb.height / r.height : 1;
     return { x: (e.clientX - r.left) * sx, y: (e.clientY - r.top) * sy };
   };
-  const tooltipText = cell("");
   const tooltipAt = cell({ x: 0, y: 0 });
   const tooltipVis = cell(false);
+  // When set, the tooltip text reactively tracks this link's live value (during drag).
+  const tooltipLinkIdx = cell<number | null>(null);
+  // When set, the tooltip text reactively tracks this node's live in/out (during drag).
+  const tooltipNodeIdx = cell<number | null>(null);
+
+  // Link tooltip text: "src → tgt: value"
+  const linkTooltip = (li: number) => {
+    const b = layout.value.links[li]!;
+    const sn = nodeIds[b.src] ?? String(b.src);
+    const tn = nodeIds[b.tgt] ?? String(b.tgt);
+    return `${sn} → ${tn}: ${b.value.toFixed(1)}`;
+  };
+
+  // Reactive tooltip text — updates live during drag when tooltipLinkIdx/tooltipNodeIdx is set.
+  const tooltipText = derive(() => {
+    if (tooltipLinkIdx.value !== null) return linkTooltip(tooltipLinkIdx.value);
+    if (tooltipNodeIdx.value !== null) {
+      const n = tooltipNodeIdx.value;
+      const name = nodeIds[n]!;
+      const ins = topology.inc[n]!;
+      const outs = topology.out[n]!;
+      const inSum = ins.reduce((a, li) => a + linkValues[li]!.value.value, 0);
+      const outSum = outs.reduce((a, li) => a + linkValues[li]!.value.value, 0);
+      const parts = [`${name}: ${Math.max(inSum, outSum).toFixed(1)}`];
+      if (ins.length > 0) parts.push(`in: ${inSum.toFixed(1)}`);
+      if (outs.length > 0) parts.push(`out: ${outSum.toFixed(1)}`);
+      return parts.join(" · ");
+    }
+    return "";
+  });
 
   // ── Ribbons ──────────────────────────────────────────────────────────────
   for (let i = 0; i < linkDefs.length; i++) {
@@ -418,19 +447,20 @@ export function sankeyScene(
     const isSink = topology.out[n]!.length === 0;
 
     const nodeActive = cell(false);
+    // Show bar tooltip: sets tooltipNodeIdx so the text reactively tracks live values.
+    const showBarTooltip = (e: PointerEvent) => {
+      tooltipLinkIdx.value = null;
+      tooltipNodeIdx.value = n;
+      tooltipAt.value = toSVG(e); tooltipVis.value = true;
+    };
     const tile = s(rect(x0, y0, nw, nh, {
       fill,
       stroke: derive(() => nodeActive.value ? "#fff" : "none"),
       strokeWidth: 1.5,
     }));
-    tile.el.addEventListener("pointerenter", (e) => {
-      nodeActive.value = true;
-      const v = layout.value.nodes[n]!.value;
-      tooltipText.value = `${name}: ${v.toFixed(1)}`;
-      tooltipAt.value = toSVG(e as PointerEvent); tooltipVis.value = true;
-    });
+    tile.el.addEventListener("pointerenter", (e) => { nodeActive.value = true; showBarTooltip(e as PointerEvent); });
     tile.el.addEventListener("pointermove", (e) => { tooltipAt.value = toSVG(e as PointerEvent); });
-    tile.el.addEventListener("pointerleave", () => { nodeActive.value = false; tooltipVis.value = false; });
+    tile.el.addEventListener("pointerleave", () => { nodeActive.value = false; tooltipVis.value = false; tooltipNodeIdx.value = null; });
 
     const groupLinks = isSink ? topology.inc[n]! : topology.out[n]!;
     if (groupLinks.length > 0) {
@@ -484,11 +514,13 @@ export function sankeyScene(
       }));
       grip.el.style.cursor = "ns-resize";
       grip.el.style.transition = "opacity 0.12s";
-      grip.el.addEventListener("pointerenter", () => { nodeActive.value = true; });
-      grip.el.addEventListener("pointerleave", () => { nodeActive.value = false; });
+      grip.el.addEventListener("pointerenter", (e) => { nodeActive.value = true; showBarTooltip(e as PointerEvent); });
+      grip.el.addEventListener("pointermove", (e) => { tooltipAt.value = toSVG(e as PointerEvent); });
+      grip.el.addEventListener("pointerleave", () => { nodeActive.value = false; tooltipVis.value = false; tooltipNodeIdx.value = null; });
       dragCancelable(grip, lens, allCells, {
         onStart: () => {
           nodeActive.value = true;
+          tooltipNodeIdx.value = n; tooltipVis.value = true;
           const p = gripPos();
           startY = p.y;
           startVals = allCells.map((c) => c.value);
@@ -579,10 +611,15 @@ export function sankeyScene(
       }));
       grip.el.style.cursor = "ns-resize";
       grip.el.style.transition = "opacity 0.12s, r 0.12s";
-      grip.el.addEventListener("pointerenter", () => { active.value = true; hovered.value = li; });
-      grip.el.addEventListener("pointerleave", () => { active.value = false; if (hovered.value === li) hovered.value = null; });
+      grip.el.addEventListener("pointerenter", (e) => {
+        active.value = true; hovered.value = li;
+        tooltipNodeIdx.value = null; tooltipLinkIdx.value = li;
+        tooltipAt.value = toSVG(e as PointerEvent); tooltipVis.value = true;
+      });
+      grip.el.addEventListener("pointermove", (e) => { tooltipAt.value = toSVG(e as PointerEvent); });
+      grip.el.addEventListener("pointerleave", () => { active.value = false; if (hovered.value === li) hovered.value = null; tooltipVis.value = false; tooltipLinkIdx.value = null; });
       dragCancelable(grip, lens, allCells, {
-        onStart: () => { active.value = true; focused.value = li; startAllVals = allCells.map((c) => c.value); },
+        onStart: () => { active.value = true; focused.value = li; tooltipLinkIdx.value = li; tooltipVis.value = true; startAllVals = allCells.map((c) => c.value); },
         onEnd: () => { active.value = false; },
       });
     }
@@ -657,10 +694,15 @@ export function sankeyScene(
       }));
       grip.el.style.cursor = "ns-resize";
       grip.el.style.transition = "opacity 0.12s, r 0.12s";
-      grip.el.addEventListener("pointerenter", () => { active.value = true; hovered.value = li; });
-      grip.el.addEventListener("pointerleave", () => { active.value = false; if (hovered.value === li) hovered.value = null; });
+      grip.el.addEventListener("pointerenter", (e) => {
+        active.value = true; hovered.value = li;
+        tooltipNodeIdx.value = null; tooltipLinkIdx.value = li;
+        tooltipAt.value = toSVG(e as PointerEvent); tooltipVis.value = true;
+      });
+      grip.el.addEventListener("pointermove", (e) => { tooltipAt.value = toSVG(e as PointerEvent); });
+      grip.el.addEventListener("pointerleave", () => { active.value = false; if (hovered.value === li) hovered.value = null; tooltipVis.value = false; tooltipLinkIdx.value = null; });
       dragCancelable(grip, lens, allCells, {
-        onStart: () => { active.value = true; focused.value = li; startAllVals = allCells.map((c) => c.value); },
+        onStart: () => { active.value = true; focused.value = li; tooltipLinkIdx.value = li; tooltipVis.value = true; startAllVals = allCells.map((c) => c.value); },
         onEnd: () => { active.value = false; },
       });
     }
