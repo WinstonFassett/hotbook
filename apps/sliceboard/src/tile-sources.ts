@@ -206,13 +206,14 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
     const leaves = leavesOfNodes(sorted)
     const ids = leaves.map(n => n.id)
     // shapeKey excludes xKey/yKey — measure/key changes flow through applyData
-    // (sets reactive measureKey cell) so the chart animates instead of remounting.
+    // (sets reactive measureKey + xKey cells) so the chart animates instead of remounting.
     const shapeKey = `${[...ids].sort().join(',')}`
     return makeFlatSource<{ id: string; x: number; y: number }>({
       tag: 'v-br-scatter', ids, measureKey: yKey,
       values: leaves.map(n => n.measures[yKey] ?? 0),
       shapeKey,
       build: () => leaves.map((n, i) => ({ id: n.id, x: xKey === '_index' ? i : (n.measures[xKey] ?? 0), y: n.measures[yKey] ?? 0 })),
+      mountProps: (el: any) => { el.xKey = xKey },
       readValue: d => d.y, writeValue: (d, v) => { d.y = v }, idOf: d => d.id,
       reindex: xKey === '_index' ? (d, k) => { (d as any).x = k } : undefined,
       nodes: rawNodes, onUpdate,
