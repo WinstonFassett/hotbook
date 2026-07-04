@@ -586,6 +586,84 @@ export function sankeyScene(
     }
   }
 
+  // ── Inbound lane grips (target-side face) ──────────────────────────────────
+  // Mirror of the outbound lane grips, but on the TARGET face of each ribbon.
+  // Redistributes between this link and its sibling coming INTO the same target
+  // node, so the node's incoming total stays fixed. The SOURCES' outgoing
+  // changed, so conservation propagation runs backward from each affected source.
+  for (let n = 0; n < nodeIds.length; n++) {
+    const incs = topology.inc[n]!;
+    for (let k = 0; k < incs.length; k++) {
+      const li = incs[k]!;
+      const sibling = k + 1 < incs.length ? incs[k + 1]! : -1;
+      const active = cell(false);
+
+      // Position: bottom edge of link `li` on the target face = boundary with sibling.
+      // Offset OFF the rectangle by 6px to the LEFT so the grip sits beside the bar.
+      const boundaryPos = () => {
+        const b = layout.value.links[li]!;
+        return { x: b.tx - 6, y: b.ty + b.width / 2 };
+      };
+      const gripVis = Vec.derive(boundaryPos);
+
+      const allCells = linkValues.map((lv) => lv.value as unknown as Writable<Num>);
+      let startAllVals: number[] = [];
+
+      let lens: Writable<Vec>;
+      if (sibling >= 0) {
+        // Boundary drag: move value between a and b, sum fixed at the target node.
+        // Source nodes' outgoing changed → propagate backward from each source.
+        lens = Vec.lens(
+          allCells,
+          () => boundaryPos(),
+          (target, _vals: readonly number[]) => {
+            const ba = layout.peek().links[li]!;
+            const top = ba.ty - ba.width / 2;
+            const sum = startAllVals[li]! + startAllVals[sibling]!;
+            const newA = Math.max(LINK_MIN, Math.min(sum - LINK_MIN, (target.y - top) / pxPerUnit));
+            const newVals = startAllVals.slice();
+            newVals[li] = newA;
+            newVals[sibling] = sum - newA;
+            propagateConservation(topology, newVals, topology.src[li]!, "backward");
+            propagateConservation(topology, newVals, topology.src[sibling]!, "backward");
+            return newVals;
+          },
+        );
+      } else {
+        // Last/only incoming link: absolute resize. Target incoming changed →
+        // propagate forward. Source outgoing changed → propagate backward.
+        lens = Vec.lens(
+          allCells,
+          () => boundaryPos(),
+          (target, _vals: readonly number[]) => {
+            const ba = layout.peek().links[li]!;
+            const top = ba.ty - ba.width / 2;
+            const newVals = startAllVals.slice();
+            newVals[li] = Math.max(LINK_MIN, (target.y - top) / pxPerUnit);
+            propagateConservation(topology, newVals, topology.tgt[li]!, "forward");
+            propagateConservation(topology, newVals, topology.src[li]!, "backward");
+            return newVals;
+          },
+        );
+      }
+
+      const grip = s(circle(gripVis, 4, {
+        fill: "#0b0d12",
+        stroke: derive(() => active.value ? "#fff" : (nodeColors.value[n] ?? "#6ab0f5")),
+        strokeWidth: 2,
+        opacity: derive(() => (active.value || hovered.value === li || focused.value === li) ? 1 : 0.5),
+      }));
+      grip.el.style.cursor = "ns-resize";
+      grip.el.style.transition = "opacity 0.12s";
+      grip.el.addEventListener("pointerenter", () => { active.value = true; hovered.value = li; });
+      grip.el.addEventListener("pointerleave", () => { if (!active.value && hovered.value === li) hovered.value = null; });
+      dragCancelable(grip, lens, allCells, {
+        onStart: () => { active.value = true; focused.value = li; startAllVals = allCells.map((c) => c.value); },
+        onEnd: () => { active.value = false; },
+      });
+    }
+  }
+
   // Tooltip overlay
   const tlbl = s(label(
     Vec.derive(() => ({ x: tooltipAt.value.x + 10, y: tooltipAt.value.y - 10 })),
