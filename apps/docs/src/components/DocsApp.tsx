@@ -13,14 +13,14 @@ export function DocsApp() {
   }, []);
 
   return (
-    <div class="layout">
+    <div className="layout">
       {/* TOC */}
-      <nav class="toc">
-        <div class="toc-header">
+      <nav className="toc">
+        <div className="toc-header">
           <h1>vizform</h1>
-          <p class="tagline">Bidirectional Data Visualization</p>
+          <p className="tagline">Bidirectional Data Visualization</p>
         </div>
-        <ul class="toc-list">
+        <ul className="toc-list">
           {examples.map((ex) => (
             <li key={ex.slug}>
               <a href={`#${ex.slug}`}>{ex.title}</a>
@@ -28,7 +28,7 @@ export function DocsApp() {
           ))}
           <li><a href="#getting-started">Getting Started</a></li>
         </ul>
-        <div class="toc-footer">
+        <div className="toc-footer">
           <a href="https://github.com/WinstonFassett/vizform">GitHub</a>
           <span>·</span>
           <a href="/sliceboard/">Sliceboard</a>
@@ -36,8 +36,8 @@ export function DocsApp() {
       </nav>
 
       {/* Main */}
-      <main class="main-content">
-        <section id="hero" class="hero">
+      <main className="main-content">
+        <section id="hero" className="hero">
           <h1>vizform</h1>
           <p>
             Framework-agnostic data visualization with true bidirectional binding.
@@ -47,27 +47,27 @@ export function DocsApp() {
         </section>
 
         {examples.map((ex) => (
-          <section key={ex.slug} id={ex.slug} class="example-section">
-            <div class="example-header">
+          <section key={ex.slug} id={ex.slug} className="example-section">
+            <div className="example-header">
               <h2>{ex.title}</h2>
-              <span class={`maturity-badge maturity-${ex.maturity}`}>{ex.maturity}</span>
+              <span className={`maturity-badge maturity-${ex.maturity}`}>{ex.maturity}</span>
             </div>
-            <p class="example-description">{ex.description}</p>
-            <div class="example-content">{ex.render()}</div>
+            <p className="example-description">{ex.description}</p>
+            <div className="example-content">{ex.render()}</div>
             {ex.source && (
-              <div class="example-source">
-                <button class="source-toggle" onClick={() => setShowSource(s => ({ ...s, [ex.slug]: !s[ex.slug] }))}>
+              <div className="example-source">
+                <button className="source-toggle" onClick={() => setShowSource(s => ({ ...s, [ex.slug]: !s[ex.slug] }))}>
                   {showSource[ex.slug] ? 'Hide source' : 'Show source'}
                 </button>
                 {showSource[ex.slug] && (
-                  <pre class="source-code"><code>{ex.source}</code></pre>
+                  <pre className="source-code"><code>{ex.source}</code></pre>
                 )}
               </div>
             )}
           </section>
         ))}
 
-        <section id="getting-started" class="getting-started">
+        <section id="getting-started" className="getting-started">
           <h2>Getting Started</h2>
           <p>Install the packages you need:</p>
           <pre><code>npm install @winstonfassett/vizform-react-d3 @winstonfassett/vizform-core bireactive</code></pre>
