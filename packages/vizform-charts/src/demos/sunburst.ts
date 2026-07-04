@@ -47,6 +47,10 @@ export class MdSunburstLC extends Diagram {
   get sortBy(): 'index' | 'value' { return this._sortByCell.value }
   set sortBy(v: 'index' | 'value') { this._sortByCell.value = v }
 
+  private _measureKeyCell = cell<string>('')
+  get measureKey(): string { return this._measureKeyCell.value }
+  set measureKey(v: string) { this._measureKeyCell.value = v }
+
   protected scene(s: Mount): void {
     const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
     const view = this.view(Wc, Hc);
@@ -260,18 +264,22 @@ export class MdSunburstLC extends Diagram {
       let lcancel: (() => void) | null = null;
       let lInited = false;
       let seenSortBy = untracked(() => this._sortByCell.value);
+      let seenMeasureKey = untracked(() => this._measureKeyCell.value);
       biEffect(() => {
         const t = ltarget.value; // track layout (reacts to sort + value + size)
         const sortBy = this._sortByCell.value; // track sort key so a toggle re-fires this effect
-        if (!lInited) { lInited = true; seenSortBy = sortBy; la0.value = t.x0; la1.value = t.x1; lr0.value = t.y0; lr1.value = t.y1; return; }
-        // Two-lane split. TWEEN only for a real reorder (sort key toggled) — arcs
-        // sweep to new angular slots. SNAP for everything else: active gesture
-        // (real-time drag), and — crucially — value edits / commits / resize,
-        // including REMOTE cross-tile edits that carry no gesture class (R2:
-        // value changes are write-through, no 250-350ms settle-lag).
+        const measureKey = untracked(() => this._measureKeyCell.value); // read untracked — effect fires on layout change (leaf writes), by which point measureKey is already set
+        if (!lInited) { lInited = true; seenSortBy = sortBy; seenMeasureKey = measureKey; la0.value = t.x0; la1.value = t.x1; lr0.value = t.y0; lr1.value = t.y1; return; }
+        // Two-lane split. TWEEN for a real reorder (sort key toggled) or measure
+        // swap — arcs sweep to new angular slots. SNAP for everything else: active
+        // gesture (real-time drag), and — crucially — value edits / commits /
+        // resize, including REMOTE cross-tile edits that carry no gesture class
+        // (R2: value changes are write-through, no 250-350ms settle-lag).
         const reordered = sortBy !== seenSortBy;
+        const measureSwapped = measureKey !== seenMeasureKey;
         seenSortBy = sortBy;
-        if (reordered && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
+        seenMeasureKey = measureKey;
+        if ((reordered || measureSwapped) && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
           lcancel?.();
           lcancel = this.anim.start(
             tween(la0, t.x0, SORT_SEC, easeOut),

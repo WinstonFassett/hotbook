@@ -430,6 +430,7 @@ interface ElWithRoot extends HTMLElement {
   showBreadcrumb?: boolean
   sortBy?: 'index' | 'value'
   orientation?: 'horizontal' | 'vertical'
+  measureKey?: string
 }
 
 export interface HierSpec {
@@ -543,6 +544,15 @@ export function makeHierSource(spec: HierSpec): TileSource {
       // Skip during active gestures — wheel/drag are editing the live cells right
       // now; overwriting them from the store would snap values back.
       if (gestureActive) return
+      const typedEl = el as ElWithRoot
+      // Sync measureKey and orientation BEFORE leaf value writes — the chart's
+      // two-lane gate reads these cells (untracked) to decide animate-vs-snap.
+      // The layout effect fires when leaf cells are written (tracked via ltarget);
+      // by that point these must already be updated so the gate classifies the
+      // change as structural (animate), not value edit (snap).
+      typedEl.measureKey = measureKeyRef.current
+      delete (typedEl as any).orientation;
+      if (orientationRef.current !== undefined) typedEl.orientation = orientationRef.current
       // Use peek() to avoid registering Num cells as deps of whichever bireactive
       // effect called applyData — DockView's biEffect calls this via _syncChart, and
       // accidentally tracking Num cells would make DockView re-render on every value
@@ -557,16 +567,13 @@ export function makeHierSource(spec: HierSpec): TileSource {
           lastRef.set(leaf.value.id, target)
         }
       }
-      const typedEl = el as ElWithRoot
       if (drillKeyRef.current !== undefined) typedEl.drillKey = drillKeyRef.current
       if (showBreadcrumbRef.current !== undefined) typedEl.showBreadcrumb = showBreadcrumbRef.current
       // Sync sortBy reactively — the chart's setter writes a reactive cell so
       // the layout re-derives and tweens to the new order (no remount).
-      typedEl.sortBy = sortByRef.current
-      // Delete any own property that shadows the prototype getter/setter,
-      // then assign — this ensures the reactive setter fires.
-      delete (typedEl as any).orientation;
-      if (orientationRef.current !== undefined) typedEl.orientation = orientationRef.current
+      // Guard: only write if changed, so a measureKey-only swap doesn't re-fire
+      // the layout effect (sortBy is tracked) and overwrite the gate's measureSwapped.
+      if (typedEl.sortBy !== sortByRef.current) typedEl.sortBy = sortByRef.current
       // Push drillNodeId so Esc/breadcrumb drill changes reach the chart element.
       if (drillNodeIdRef.current !== undefined && typedEl.drillNodeId !== drillNodeIdRef.current) {
         typedEl.drillNodeId = drillNodeIdRef.current
