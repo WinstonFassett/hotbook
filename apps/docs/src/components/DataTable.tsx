@@ -1,10 +1,10 @@
-import { useState } from 'react';
-import type { Writable } from 'bireactive';
+import { useEffect, useState } from 'react';
+import { effect, type Writable } from 'bireactive';
 
 export interface DataRow {
   id: string;
   label: string;
-  value: Writable<number>;
+  value: Writable<Cell<number>>;
 }
 
 interface DataTableProps {
@@ -14,10 +14,15 @@ interface DataTableProps {
 export function DataTable({ rows }: DataTableProps) {
   const [, forceUpdate] = useState({});
 
-  // Subscribe to changes in all values
-  rows.forEach(row => {
-    row.value.listen(() => forceUpdate({}));
-  });
+  // Subscribe to changes in all values via bireactive effect.
+  // Reading .value inside effect() auto-tracks deps; no manual .listen.
+  useEffect(() => {
+    const dispose = effect(() => {
+      rows.forEach(row => { void row.value.value; });
+      forceUpdate({});
+    });
+    return dispose;
+  }, [rows]);
 
   return (
     <div className="data-table">
@@ -35,10 +40,10 @@ export function DataTable({ rows }: DataTableProps) {
               <td>
                 <input
                   type="number"
-                  value={row.value()}
+                  value={row.value.value}
                   onChange={(e) => {
                     const newVal = parseFloat(e.target.value) || 0;
-                    row.value(newVal);
+                    row.value.value = newVal;
                   }}
                   style={{ width: '80px' }}
                 />
