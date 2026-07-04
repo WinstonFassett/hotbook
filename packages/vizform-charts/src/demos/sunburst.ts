@@ -24,7 +24,7 @@ import { portfolio, walkWithDepth } from "../lib/portfolio";
 import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { dragCancelable } from "../lib/esc-contract";
-import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, settleTransition } from "../lib/transitions";
+import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS } from "../lib/transitions";
 import type { ElementWithBridge } from "../lib/hud-bridge";
 
 const W = 480;
@@ -294,7 +294,6 @@ export class MdSunburstLC extends Diagram {
       });
       arc.el.dataset.id = node.value.id ?? "";
       arc.el.style.cursor = "pointer";
-      arc.el.style.transition = settleTransition("d");
       arc.el.setAttribute('tabindex', '0');
       arc.el.setAttribute('data-focusable', 'arc');
       biEffect(() => {
@@ -454,7 +453,6 @@ export class MdSunburstLC extends Diagram {
       strokeWidth: 1,
     }));
     hub.el.style.cursor = "pointer";
-    hub.el.style.transition = settleTransition("r");
     hub.el.addEventListener("dblclick", (e: MouseEvent) => {
       e.stopPropagation();
       if (!this._drillIdCell.value) return;
