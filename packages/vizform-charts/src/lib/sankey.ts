@@ -1,5 +1,6 @@
 import {
   Anchor,
+  batch,
   cell,
   circle,
   derive,
@@ -24,6 +25,70 @@ import {
   type SankeyLayout,
   type SankeyTopology,
 } from "./sankey-layout";
+
+// ---------------------------------------------------------------------------
+// Conservation propagation — the "form fill"
+// ---------------------------------------------------------------------------
+// When a link value changes, in≠out at the affected nodes. This restores
+// conservation by propagating the delta through the graph: scale the
+// unbalanced side to match the changed side, then cascade to neighbors.
+// Structure is fixed (layered DAG), so backward propagation terminates at
+// sources and forward propagation terminates at sinks.
+
+/**
+ * Restore in=out at every node after a value change.
+ * @param topology  fixed graph structure
+ * @param values    mutable array of link values (modified in place)
+ * @param startNode the node whose balance was disrupted
+ * @param direction "backward" = outgoing changed (scale incoming → cascade to
+ *                  predecessors); "forward" = incoming changed (scale outgoing
+ *                  → cascade to successors)
+ */
+function propagateConservation(
+  topology: SankeyTopology,
+  values: number[],
+  startNode: number,
+  direction: "backward" | "forward",
+): void {
+  const queue: { node: number; dir: "backward" | "forward" }[] =
+    [{ node: startNode, dir: direction }];
+
+  while (queue.length > 0) {
+    const { node: n, dir } = queue.shift()!;
+
+    if (dir === "backward") {
+      // This node's OUTGOING changed. Scale INCOMING to match.
+      const inLinks = topology.inc[n]!;
+      if (inLinks.length === 0) continue; // source — boundary, nothing to scale
+      const outSum = topology.out[n]!.reduce((a, li) => a + values[li]!, 0);
+      const inSum = inLinks.reduce((a, li) => a + values[li]!, 0);
+      if (inSum < 1e-9) continue;
+      const k = outSum / inSum;
+      for (const li of inLinks) {
+        values[li] = Math.max(LINK_MIN, values[li]! * k);
+      }
+      // Predecessors' outgoing changed → propagate backward from them
+      for (const li of inLinks) {
+        queue.push({ node: topology.src[li]!, dir: "backward" });
+      }
+    } else {
+      // This node's INCOMING changed. Scale OUTGOING to match.
+      const outLinks = topology.out[n]!;
+      if (outLinks.length === 0) continue; // sink — boundary, nothing to scale
+      const inSum = topology.inc[n]!.reduce((a, li) => a + values[li]!, 0);
+      const outSum = outLinks.reduce((a, li) => a + values[li]!, 0);
+      if (outSum < 1e-9) continue;
+      const k = inSum / outSum;
+      for (const li of outLinks) {
+        values[li] = Math.max(LINK_MIN, values[li]! * k);
+      }
+      // Successors' incoming changed → propagate forward from them
+      for (const li of outLinks) {
+        queue.push({ node: topology.tgt[li]!, dir: "forward" });
+      }
+    }
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Color helpers
@@ -100,25 +165,6 @@ function initialPxPerUnit(
   return isFinite(ppu) && ppu > 0 ? ppu : 1;
 }
 
-/**
- * Viewer side of the decoupling: reactively frame the diagram's announced bounds
- * into the host SVG via the viewBox. As the figure grows/shrinks (editing flows)
- * the viewBox tracks its bounds — a pure transform, never a geometry recompute.
- * `preserveAspectRatio` keeps it centered and uniformly scaled. The SVG's CSS box
- * is whatever the host/tile gives it (auto-height in the spike, a fixed resizable
- * tile in sliceboard); the viewBox maps data-space → that box either way.
- */
-function fitHostToBounds(host: Diagram, layout: { value: { bounds: { x: number; y: number; w: number; h: number } } }): void {
-  const svg = (host as any).svg as SVGSVGElement;
-  const PAD = 8;
-  biEffect(() => {
-    const b = layout.value.bounds;
-    const x = b.x - PAD, y = b.y - PAD, w = b.w + PAD * 2, h = b.h + PAD * 2;
-    svg.setAttribute("viewBox", `${x} ${y} ${w} ${h}`);
-    svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
-  });
-}
-
 export function sankeyScene(
   host: Diagram,
   s: Mount,
@@ -172,14 +218,9 @@ export function sankeyScene(
   const layout = derive<SankeyLayout>(() =>
     computeLayout(topology, linkValues.map((l) => l.value.value), dims)
   );
-
-  // Viewer policy (decoupled from geometry): frame the diagram's announced
-  // bounds into the host. The diagram reports its size; the viewBox transform
-  // fits it — a GPU transform, never a geometry recompute. Reactive, so as the
-  // figure grows/shrinks the framing tracks it without reflowing anything.
-  // (Spike demos: this auto-fits the growing figure. Sliceboard's fixed tile
-  //  simply imposes its own box on the same element — same diagram, two viewers.)
-  fitHostToBounds(host, layout);
+  // NOTE: fitHostToBounds was removed — it reactively overrode the fixed viewBox
+  // set by view(), causing captions (color controls, help text) to move and scale
+  // with the diagram during edits. The fixed viewBox from view() is correct.
 
   const nodeColors = derive(() =>
     nodeColorScale(topology.layer, nodeColorProp.value, interp)
@@ -193,10 +234,13 @@ export function sankeyScene(
   const ribbonEls = new Map<Element, number>();
   const ribbonElements: SVGPathElement[] = []; // Track elements by index for focus management
 
-  // Wheel edits a link by index; snapshot/restore the one link cell's value.
+  // Wheel edits a link by index. Snapshot/restore ALL link values because
+  // conservation propagation changes cells beyond the directly-edited one.
   const wheelConfig = {
-    snapshot: (idx: number) => linkValues[idx]!.value.value,
-    restore: (idx: number, v: number) => { linkValues[idx]!.value.value = v; },
+    snapshot: (_idx: number) => linkValues.map((lv) => lv.value.value),
+    restore: (_idx: number, snap: number[]) => {
+      batch(() => { linkValues.forEach((lv, i) => { lv.value.value = snap[i]!; }); });
+    },
     onEnd: () => { wheelLocked.value = null; hovered.value = null; tooltipVis.value = false; },
   };
 
@@ -223,6 +267,15 @@ export function sankeyScene(
     const v = linkValues[idx]!.value;
     const step = stepFn(v.value, e.shiftKey);
     v.value = Math.max(LINK_MIN, v.value + (e.deltaY < 0 ? +step : -step));
+    // Propagate conservation: the edited link disrupted in=out at its source
+    // (outgoing changed → propagate backward) and target (incoming changed →
+    // propagate forward).
+    const allVals = linkValues.map((lv) => lv.value.value);
+    propagateConservation(topology, allVals, topology.src[idx]!, "backward");
+    propagateConservation(topology, allVals, topology.tgt[idx]!, "forward");
+    batch(() => {
+      linkValues.forEach((lv, i) => { lv.value.value = allVals[i]!; });
+    });
     const b = layout.value.links[idx]!;
     const sn = nodeIds[b.src] ?? String(b.src);
     const tn = nodeIds[b.tgt] ?? String(b.tgt);
@@ -269,9 +322,38 @@ export function sankeyScene(
     const sy = vb && vb.height ? vb.height / r.height : 1;
     return { x: (e.clientX - r.left) * sx, y: (e.clientY - r.top) * sy };
   };
-  const tooltipText = cell("");
   const tooltipAt = cell({ x: 0, y: 0 });
   const tooltipVis = cell(false);
+  // When set, the tooltip text reactively tracks this link's live value (during drag).
+  const tooltipLinkIdx = cell<number | null>(null);
+  // When set, the tooltip text reactively tracks this node's live in/out (during drag).
+  const tooltipNodeIdx = cell<number | null>(null);
+
+  // Link tooltip text: "src → tgt: value"
+  const linkTooltip = (li: number) => {
+    const b = layout.value.links[li]!;
+    const sn = nodeIds[b.src] ?? String(b.src);
+    const tn = nodeIds[b.tgt] ?? String(b.tgt);
+    return `${sn} → ${tn}: ${b.value.toFixed(1)}`;
+  };
+
+  // Reactive tooltip text — updates live during drag when tooltipLinkIdx/tooltipNodeIdx is set.
+  const tooltipText = derive(() => {
+    if (tooltipLinkIdx.value !== null) return linkTooltip(tooltipLinkIdx.value);
+    if (tooltipNodeIdx.value !== null) {
+      const n = tooltipNodeIdx.value;
+      const name = nodeIds[n]!;
+      const ins = topology.inc[n]!;
+      const outs = topology.out[n]!;
+      const inSum = ins.reduce((a, li) => a + linkValues[li]!.value.value, 0);
+      const outSum = outs.reduce((a, li) => a + linkValues[li]!.value.value, 0);
+      const parts = [`${name}: ${Math.max(inSum, outSum).toFixed(1)}`];
+      if (ins.length > 0) parts.push(`in: ${inSum.toFixed(1)}`);
+      if (outs.length > 0) parts.push(`out: ${outSum.toFixed(1)}`);
+      return parts.join(" · ");
+    }
+    return "";
+  });
 
   // ── Ribbons ──────────────────────────────────────────────────────────────
   for (let i = 0; i < linkDefs.length; i++) {
@@ -322,6 +404,14 @@ export function sankeyScene(
   // ── Node bars + GROUP grip ─────────────────────────────────────────────────
   // Dragging a node's bar scales every outgoing link from that node
   // proportionally (a node with no outgoing links scales its incoming instead).
+  // Conservation propagation then adjusts all other links to maintain in=out
+  // at every node — the "form fill." ALL link cells are lens sources so
+  // dragCancelable snapshots/restores the entire value array on Esc.
+  //
+  // The group grip sits on the OPPOSITE face from the lane grips:
+  //   non-sink: lane grips on right face (outgoing), group grip on LEFT face
+  //   sink:     lane grips on left face (incoming),  group grip on RIGHT face
+  // Horizontal separation. Drawn BEFORE lane grips so lane grips win hit-test.
   for (let n = 0; n < nodeIds.length; n++) {
     const name = nodeIds[n]!;
     const nb = derive(() => layout.value.nodes[n]!);
@@ -333,81 +423,86 @@ export function sankeyScene(
     const isSink = topology.out[n]!.length === 0;
 
     const nodeActive = cell(false);
+    // Show bar tooltip: sets tooltipNodeIdx so the text reactively tracks live values.
+    const showBarTooltip = (e: PointerEvent) => {
+      tooltipLinkIdx.value = null;
+      tooltipNodeIdx.value = n;
+      tooltipAt.value = toSVG(e); tooltipVis.value = true;
+    };
     const tile = s(rect(x0, y0, nw, nh, {
       fill,
       stroke: derive(() => nodeActive.value ? "#fff" : "none"),
       strokeWidth: 1.5,
     }));
-    tile.el.addEventListener("pointerenter", (e) => {
-      nodeActive.value = true;
-      const v = layout.value.nodes[n]!.value;
-      tooltipText.value = `${name}: ${v.toFixed(1)}`;
-      tooltipAt.value = toSVG(e as PointerEvent); tooltipVis.value = true;
-    });
+    tile.el.addEventListener("pointerenter", (e) => { nodeActive.value = true; showBarTooltip(e as PointerEvent); });
     tile.el.addEventListener("pointermove", (e) => { tooltipAt.value = toSVG(e as PointerEvent); });
-    tile.el.addEventListener("pointerleave", () => { nodeActive.value = false; tooltipVis.value = false; });
+    tile.el.addEventListener("pointerleave", () => { nodeActive.value = false; tooltipVis.value = false; tooltipNodeIdx.value = null; });
 
-    // Group grip: scale ALL the node's links proportionally (outgoing if any,
-    // else incoming) — the inspo `scaleHandle` move. It rides the node's BOTTOM
-    // edge; dragging it down grows the node, up shrinks it. The pivot is the
-    // node's TOP edge captured at gesture start (a fixed reference for the drag,
-    // so the grip doesn't chase the node's own recentering — Rule 2).
-    // Single (boundary) grips sit on the node's FLOW face (right for sources,
-    // left for sinks). Put the GROUP grip on the OPPOSITE face so the two never
-    // overlap or fight the hit-test — and at the node's vertical center, clear of
-    // the stacked ribbon boundaries.
     const groupLinks = isSink ? topology.inc[n]! : topology.out[n]!;
     if (groupLinks.length > 0) {
-      const sources: Writable<Num>[] = groupLinks.map((li) => linkValues[li]!.value as unknown as Writable<Num>);
-      // Group grip on the node BAR (its x-center), at the bar's bottom edge so it
-      // tracks the cursor as the node grows. The bar center x differs from the
-      // flow-face x where single grips sit, so they don't collide; the grip is
-      // also drawn after the single grips (below), winning the hit-test on the bar.
+      const allCells = linkValues.map((lv) => lv.value as unknown as Writable<Num>);
+      // Group grip at the bar's BOTTOM edge, CENTERED on the bar horizontally.
+      // Lane grips are on both sides of the bar (outbound right, inbound left),
+      // so the group grip sits at the center to stay clear of both.
+      // Position is a PURE FUNCTION of the layout — no freezing. When values
+      // change during drag, the layout recomputes and the grip moves with the bar.
       const gripPos = () => {
         const b = layout.value.nodes[n]!;
         return { x: (b.x0 + b.x1) / 2, y: b.y1 };
       };
-      // Nodes are center-stacked, so BOTH edges move when a node resizes — no edge
-      // is a stable absolute reference. frozenGripPos pins the lens getter to the
-      // capture position for the duration of the drag so the grip tracks the cursor
-      // at 1:1 (without freezing, the bottom edge moves at half the drag rate
-      // because growth splits evenly between top and bottom).
-      let frozenGripPos: { x: number; y: number } | null = null;
       let startY = 0, startTot = 0, startVals: number[] = [];
       const lens = Vec.lens(
-        sources,
-        () => frozenGripPos ?? gripPos(),
-        (target, vals: readonly number[]) => {
-          if (startTot <= 0) return vals.slice();
+        allCells,
+        () => gripPos(),
+        (target, _vals: readonly number[]) => {
+          if (startTot <= 0) return _vals.slice();
           const wantTot = Math.max(LINK_MIN, startTot + (target.y - startY) / pxPerUnit);
           const k = wantTot / startTot;
-          // Scale from the gesture-START values (not the live ones) so repeated
-          // moves don't compound. startVals aligns with `sources`/`vals` order.
-          return startVals.map((v) => Math.max(LINK_MIN, v * k));
+          // Build new values from gesture-START values (no compounding).
+          const newVals = startVals.slice();
+          for (const li of groupLinks) {
+            newVals[li] = Math.max(LINK_MIN, startVals[li]! * k);
+          }
+          // Propagate conservation in both directions from the edited node.
+          if (!isSink) {
+            propagateConservation(topology, newVals, n, "backward");
+            for (const li of topology.out[n]!) {
+              propagateConservation(topology, newVals, topology.tgt[li]!, "forward");
+            }
+          } else {
+            propagateConservation(topology, newVals, n, "forward");
+            for (const li of topology.inc[n]!) {
+              propagateConservation(topology, newVals, topology.src[li]!, "backward");
+            }
+          }
+          return newVals;
         },
       );
-      const gripVis = Vec.derive(() => frozenGripPos ?? gripPos());
+      const gripVis = Vec.derive(gripPos);
       const gripX = derive(() => gripVis.value.x - 7);
       const gripY = derive(() => gripVis.value.y - 2);
       const grip = s(rect(gripX, gripY, 14, 4, {
         fill: "#0b0d12",
         stroke: derive(() => nodeActive.value ? "#fff" : fill.value),
         strokeWidth: 1.5,
-        opacity: derive(() => nodeActive.value ? 1 : 0),
+        opacity: derive(() => nodeActive.value ? 1 : 0.5),
         corner: 2,
       }));
       grip.el.style.cursor = "ns-resize";
       grip.el.style.transition = "opacity 0.12s";
-      grip.el.addEventListener("pointerenter", () => { nodeActive.value = true; });
-      dragCancelable(grip, lens, sources, {
+      grip.el.addEventListener("pointerenter", (e) => { nodeActive.value = true; showBarTooltip(e as PointerEvent); });
+      grip.el.addEventListener("pointermove", (e) => { tooltipAt.value = toSVG(e as PointerEvent); });
+      grip.el.addEventListener("pointerleave", () => { nodeActive.value = false; tooltipVis.value = false; tooltipNodeIdx.value = null; });
+      dragCancelable(grip, lens, allCells, {
         onStart: () => {
           nodeActive.value = true;
-          frozenGripPos = gripPos();
-          startY = frozenGripPos.y;
-          startVals = sources.map((c) => c.value);
-          startTot = startVals.reduce((a, v) => a + v, 0);
+          tooltipNodeIdx.value = n; tooltipVis.value = true;
+          const p = gripPos();
+          startY = p.y;
+          startVals = allCells.map((c) => c.value);
+          startTot = groupLinks.reduce((a, li) => a + startVals[li]!, 0);
         },
-        onEnd: () => { frozenGripPos = null; nodeActive.value = false; },
+        onEnd: () => { nodeActive.value = false; },
       });
     }
 
@@ -423,67 +518,167 @@ export function sankeyScene(
   // ── Single grip per ribbon ─────────────────────────────────────────────────
   // A grip at each ribbon's source-side face. It redistributes between this link
   // and its NEXT sibling out of the same node (the boundary between them), so the
-  // node's outgoing total stays fixed — stable, no reflow (cf. the pie boundary
-  // knob). For a node's last/only outgoing link the grip resizes it absolutely.
+  // node's outgoing total stays fixed. But the TARGETS' incoming changed, so
+  // conservation propagation runs forward from each affected target.
+  // For a node's last/only outgoing link the grip resizes it absolutely, and
+  // propagation runs backward from the source AND forward from the target.
+  // Drawn AFTER group grips so lane grips win any residual hit-test overlap.
   for (let n = 0; n < nodeIds.length; n++) {
     const outs = topology.out[n]!;
     for (let k = 0; k < outs.length; k++) {
       const li = outs[k]!;
       const sibling = k + 1 < outs.length ? outs[k + 1]! : -1;
-      const aCell = linkValues[li]!.value as unknown as Writable<Num>;
       const active = cell(false);
 
       // Position: bottom edge of link `li` on the source face = boundary with sibling.
+      // Offset OFF the rectangle by 12px so the grip has room as a touch target.
       const boundaryPos = () => {
         const b = layout.value.links[li]!;
-        return { x: b.sx, y: b.sy + b.width / 2 };
+        return { x: b.sx + 12, y: b.sy + b.width / 2 };
       };
       const gripVis = Vec.derive(boundaryPos);
 
+      const allCells = linkValues.map((lv) => lv.value as unknown as Writable<Num>);
+      let startAllVals: number[] = [];
+
       let lens: Writable<Vec>;
-      let lensSources: Writable<Num>[];
       if (sibling >= 0) {
-        const bCell = linkValues[sibling]!.value as unknown as Writable<Num>;
-        lensSources = [aCell, bCell];
-        // Boundary drag: move value between a and b, sum fixed (pie pattern).
+        // Boundary drag: move value between a and b, sum fixed at the source node.
+        // Target nodes' incoming changed → propagate forward from each target.
         lens = Vec.lens(
-          [aCell, bCell] as const,
+          allCells,
           () => boundaryPos(),
-          (target, [va, vb]: readonly [number, number]) => {
+          (target, _vals: readonly number[]) => {
             const ba = layout.peek().links[li]!;
-            const top = ba.sy - ba.width / 2;       // top of link a's source face
-            const sum = va + vb;
+            const top = ba.sy - ba.width / 2;
+            const sum = startAllVals[li]! + startAllVals[sibling]!;
             const newA = Math.max(LINK_MIN, Math.min(sum - LINK_MIN, (target.y - top) / pxPerUnit));
-            return [newA, sum - newA];
+            const newVals = startAllVals.slice();
+            newVals[li] = newA;
+            newVals[sibling] = sum - newA;
+            propagateConservation(topology, newVals, topology.tgt[li]!, "forward");
+            propagateConservation(topology, newVals, topology.tgt[sibling]!, "forward");
+            return newVals;
           },
         );
       } else {
-        lensSources = [aCell];
-        // Last/only outgoing link: absolute resize from the boundary y.
+        // Last/only outgoing link: absolute resize. Source outgoing changed →
+        // propagate backward. Target incoming changed → propagate forward.
         lens = Vec.lens(
-          [aCell] as const,
+          allCells,
           () => boundaryPos(),
-          (target, [va]: readonly [number]) => {
+          (target, _vals: readonly number[]) => {
             const ba = layout.peek().links[li]!;
             const top = ba.sy - ba.width / 2;
-            void va;
-            return [Math.max(LINK_MIN, (target.y - top) / pxPerUnit)];
+            const newVals = startAllVals.slice();
+            newVals[li] = Math.max(LINK_MIN, (target.y - top) / pxPerUnit);
+            propagateConservation(topology, newVals, topology.src[li]!, "backward");
+            propagateConservation(topology, newVals, topology.tgt[li]!, "forward");
+            return newVals;
           },
         );
       }
 
-      const grip = s(circle(gripVis, 4, {
+      const grip = s(circle(gripVis, derive(() => active.value ? 6 : 4), {
         fill: "#0b0d12",
         stroke: derive(() => active.value ? "#fff" : (nodeColors.value[n] ?? "#6ab0f5")),
         strokeWidth: 2,
-        opacity: derive(() => (active.value || hovered.value === li || focused.value === li) ? 1 : 0),
+        opacity: derive(() => (active.value || hovered.value === li || focused.value === li) ? 1 : 0.5),
       }));
       grip.el.style.cursor = "ns-resize";
-      grip.el.style.transition = "opacity 0.12s";
-      grip.el.addEventListener("pointerenter", () => { active.value = true; hovered.value = li; });
-      grip.el.addEventListener("pointerleave", () => { if (!active.value && hovered.value === li) hovered.value = null; });
-      dragCancelable(grip, lens, lensSources, {
-        onStart: () => { active.value = true; focused.value = li; },
+      grip.el.style.transition = "opacity 0.12s, r 0.12s";
+      grip.el.addEventListener("pointerenter", (e) => {
+        active.value = true; hovered.value = li;
+        tooltipNodeIdx.value = null; tooltipLinkIdx.value = li;
+        tooltipAt.value = toSVG(e as PointerEvent); tooltipVis.value = true;
+      });
+      grip.el.addEventListener("pointermove", (e) => { tooltipAt.value = toSVG(e as PointerEvent); });
+      grip.el.addEventListener("pointerleave", () => { active.value = false; if (hovered.value === li) hovered.value = null; tooltipVis.value = false; tooltipLinkIdx.value = null; });
+      dragCancelable(grip, lens, allCells, {
+        onStart: () => { active.value = true; focused.value = li; tooltipLinkIdx.value = li; tooltipVis.value = true; startAllVals = allCells.map((c) => c.value); },
+        onEnd: () => { active.value = false; },
+      });
+    }
+  }
+
+  // ── Inbound lane grips (target-side face) ──────────────────────────────────
+  // Mirror of the outbound lane grips, but on the TARGET face of each ribbon.
+  // Redistributes between this link and its sibling coming INTO the same target
+  // node, so the node's incoming total stays fixed. The SOURCES' outgoing
+  // changed, so conservation propagation runs backward from each affected source.
+  for (let n = 0; n < nodeIds.length; n++) {
+    const incs = topology.inc[n]!;
+    for (let k = 0; k < incs.length; k++) {
+      const li = incs[k]!;
+      const sibling = k + 1 < incs.length ? incs[k + 1]! : -1;
+      const active = cell(false);
+
+      // Position: bottom edge of link `li` on the target face = boundary with sibling.
+      // Offset OFF the rectangle by 12px to the LEFT so the grip has room as a touch target.
+      const boundaryPos = () => {
+        const b = layout.value.links[li]!;
+        return { x: b.tx - 12, y: b.ty + b.width / 2 };
+      };
+      const gripVis = Vec.derive(boundaryPos);
+
+      const allCells = linkValues.map((lv) => lv.value as unknown as Writable<Num>);
+      let startAllVals: number[] = [];
+
+      let lens: Writable<Vec>;
+      if (sibling >= 0) {
+        // Boundary drag: move value between a and b, sum fixed at the target node.
+        // Source nodes' outgoing changed → propagate backward from each source.
+        lens = Vec.lens(
+          allCells,
+          () => boundaryPos(),
+          (target, _vals: readonly number[]) => {
+            const ba = layout.peek().links[li]!;
+            const top = ba.ty - ba.width / 2;
+            const sum = startAllVals[li]! + startAllVals[sibling]!;
+            const newA = Math.max(LINK_MIN, Math.min(sum - LINK_MIN, (target.y - top) / pxPerUnit));
+            const newVals = startAllVals.slice();
+            newVals[li] = newA;
+            newVals[sibling] = sum - newA;
+            propagateConservation(topology, newVals, topology.src[li]!, "backward");
+            propagateConservation(topology, newVals, topology.src[sibling]!, "backward");
+            return newVals;
+          },
+        );
+      } else {
+        // Last/only incoming link: absolute resize. Target incoming changed →
+        // propagate forward. Source outgoing changed → propagate backward.
+        lens = Vec.lens(
+          allCells,
+          () => boundaryPos(),
+          (target, _vals: readonly number[]) => {
+            const ba = layout.peek().links[li]!;
+            const top = ba.ty - ba.width / 2;
+            const newVals = startAllVals.slice();
+            newVals[li] = Math.max(LINK_MIN, (target.y - top) / pxPerUnit);
+            propagateConservation(topology, newVals, topology.tgt[li]!, "forward");
+            propagateConservation(topology, newVals, topology.src[li]!, "backward");
+            return newVals;
+          },
+        );
+      }
+
+      const grip = s(circle(gripVis, derive(() => active.value ? 6 : 4), {
+        fill: "#0b0d12",
+        stroke: derive(() => active.value ? "#fff" : (nodeColors.value[n] ?? "#6ab0f5")),
+        strokeWidth: 2,
+        opacity: derive(() => (active.value || hovered.value === li || focused.value === li) ? 1 : 0.5),
+      }));
+      grip.el.style.cursor = "ns-resize";
+      grip.el.style.transition = "opacity 0.12s, r 0.12s";
+      grip.el.addEventListener("pointerenter", (e) => {
+        active.value = true; hovered.value = li;
+        tooltipNodeIdx.value = null; tooltipLinkIdx.value = li;
+        tooltipAt.value = toSVG(e as PointerEvent); tooltipVis.value = true;
+      });
+      grip.el.addEventListener("pointermove", (e) => { tooltipAt.value = toSVG(e as PointerEvent); });
+      grip.el.addEventListener("pointerleave", () => { active.value = false; if (hovered.value === li) hovered.value = null; tooltipVis.value = false; tooltipLinkIdx.value = null; });
+      dragCancelable(grip, lens, allCells, {
+        onStart: () => { active.value = true; focused.value = li; tooltipLinkIdx.value = li; tooltipVis.value = true; startAllVals = allCells.map((c) => c.value); },
         onEnd: () => { active.value = false; },
       });
     }
@@ -505,29 +700,39 @@ export function sankeyScene(
 // ---------------------------------------------------------------------------
 
 export function renderColorControls(
-  s: Mount,
-  view: { bottom: { up: (n: number) => any } },
+  host: Diagram,
   nodeColorProp: ReturnType<typeof cell<NodeColorProp>>,
   linkColorMode: ReturnType<typeof cell<LinkColorMode>>,
 ) {
   const NODE_PROPS: NodeColorProp[] = ["layer", "depth", "height", "index"];
   const LINK_MODES: LinkColorMode[] = ["source", "target", "static"];
 
-  const ncText = derive(() => `node: ${NODE_PROPS.map(p => p === nodeColorProp.value ? `[${p}]` : p).join("  ")}`);
-  const lcText = derive(() => `link: ${LINK_MODES.map(m => m === linkColorMode.value ? `[${m}]` : m).join("  ")}`);
+  const root = host.shadowRoot ?? (host as any).shadow;
+  if (!root) return;
 
-  const ncLbl = s(label(view.bottom.up(28), ncText, { size: 9, align: Anchor.Center, fill: "#9aa0a8" }));
-  const lcLbl = s(label(view.bottom.up(14), lcText, { size: 9, align: Anchor.Center, fill: "#9aa0a8" }));
+  const container = document.createElement("div");
+  container.style.cssText = "text-align:center; font-size:9px; color:#9aa0a8; padding:4px 0; cursor:pointer; user-select:none; line-height:1.6;";
 
-  ncLbl.el.style.cursor = "pointer";
-  lcLbl.el.style.cursor = "pointer";
+  const ncSpan = document.createElement("div");
+  const lcSpan = document.createElement("div");
+  container.appendChild(ncSpan);
+  container.appendChild(lcSpan);
 
-  ncLbl.el.addEventListener("click", () => {
+  biEffect(() => {
+    ncSpan.textContent = `node: ${NODE_PROPS.map(p => p === nodeColorProp.value ? `[${p}]` : p).join("  ")}`;
+  });
+  biEffect(() => {
+    lcSpan.textContent = `link: ${LINK_MODES.map(m => m === linkColorMode.value ? `[${m}]` : m).join("  ")}`;
+  });
+
+  ncSpan.addEventListener("click", () => {
     const cur = NODE_PROPS.indexOf(nodeColorProp.value);
     nodeColorProp.value = NODE_PROPS[(cur + 1) % NODE_PROPS.length]!;
   });
-  lcLbl.el.addEventListener("click", () => {
+  lcSpan.addEventListener("click", () => {
     const cur = LINK_MODES.indexOf(linkColorMode.value);
     linkColorMode.value = LINK_MODES[(cur + 1) % LINK_MODES.length]!;
   });
+
+  root.appendChild(container);
 }
