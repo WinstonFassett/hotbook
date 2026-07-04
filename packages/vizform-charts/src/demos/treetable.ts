@@ -307,13 +307,8 @@ export class MdTreetableLC extends HTMLElement {
       const isCollapsed = this.collapsed.has(nodeId);
       const color = node.value.color;
 
-<<<<<<< HEAD
-      const valueTransition = transitionsOn ? settleTransition('color') : 'none';
-      row.innerHTML = `
-=======
       // Build name cell
       const nameCell = `
->>>>>>> origin/main
         <div style="flex:1;display:flex;align-items:center;gap:4px;padding-left:${indent}px;min-width:0;">
           ${hasKids
             ? `<button data-twist="${nodeId}" style="all:unset;cursor:pointer;width:14px;text-align:center;color:oklch(0.5 0 0);font-size:10px;flex-shrink:0;">${isCollapsed ? '▸' : '▾'}</button>`
@@ -322,10 +317,6 @@ export class MdTreetableLC extends HTMLElement {
           <span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;"></span>
           <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:oklch(0.88 0 0);">${node.value.label}</span>
         </div>
-<<<<<<< HEAD
-        <div data-value-cell="${nodeId}" data-editable-value="${nodeId}" style="width:60px;text-align:right;color:oklch(0.7 0 0);font-variant-numeric:tabular-nums;transition:${valueTransition};cursor:ew-resize;touch-action:none;"></div>
-=======
->>>>>>> origin/main
       `;
 
       // Build value cells for each visible column
