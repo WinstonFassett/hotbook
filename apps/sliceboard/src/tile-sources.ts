@@ -249,9 +249,9 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
   }
   if (kind in hierTags) {
     const tag = hierTags[kind]!
-    const orientationProp = kind === 'br-lc-icicle' ? tile.orientation : undefined
+    // Orientation excluded from shapeKey (like sortBy) so it can transition smoothly
+    const orientationProp = kind === 'br-lc-icicle' ? (tile.orientation ?? 'horizontal') : undefined
     const shapeKey = hierShapeKey(tag, sortedWithIndex, mk, depth, sortBy)
-      + (orientationProp ? `|${orientationProp}` : '')
     const valueKey = hierValueKey(sortedWithIndex, mk)
     // Enable numberDrag for treetable
     const enableNumberDrag = kind === 'br-lc-treetable'
