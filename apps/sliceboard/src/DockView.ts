@@ -1120,10 +1120,13 @@ export class DockView extends HTMLElement {
       const r = bodyEl.getBoundingClientRect()
       const xFrac = (clientX - r.left) / r.width
       const yFrac = (clientY - r.top) / r.height
+      const isMobile = window.innerWidth <= 640
       if (yFrac < 0.33) return { kind: 'edge', groupId, edge: 'up' }
       if (yFrac > 0.67) return { kind: 'edge', groupId, edge: 'down' }
-      if (xFrac < 0.33) return { kind: 'edge', groupId, edge: 'left' }
-      if (xFrac > 0.67) return { kind: 'edge', groupId, edge: 'right' }
+      if (!isMobile) {
+        if (xFrac < 0.33) return { kind: 'edge', groupId, edge: 'left' }
+        if (xFrac > 0.67) return { kind: 'edge', groupId, edge: 'right' }
+      }
       return { kind: 'tab', groupId, index: -1 }
     }
 
