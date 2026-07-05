@@ -463,7 +463,7 @@ function showTilePicker(x: number, y: number, onPick: (kind: TileKind) => void) 
 
   const menu = document.createElement('div')
   menu.className = 'sb-tile-picker'
-  menu.style.cssText = `position:fixed;left:${x}px;top:${y}px;z-index:9999;background:#1a1a1a;border:1px solid #333;border-radius:6px;padding:4px;box-shadow:0 4px 12px rgba(0,0,0,0.4);display:flex;flex-direction:column;gap:2px;min-width:140px`
+  menu.style.cssText = `position:fixed;z-index:9999;background:#1a1a1a;border:1px solid #333;border-radius:6px;padding:4px;box-shadow:0 4px 12px rgba(0,0,0,0.4);display:flex;flex-direction:column;gap:2px;min-width:140px;visibility:hidden`
 
   TILE_KINDS.forEach(k => {
     const item = document.createElement('button')
@@ -479,7 +479,49 @@ function showTilePicker(x: number, y: number, onPick: (kind: TileKind) => void) 
     menu.appendChild(item)
   })
 
+  // Append hidden to measure dimensions
   document.body.appendChild(menu)
+  const menuRect = menu.getBoundingClientRect()
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  const gap = 8  // spacing from viewport edge
+
+  // Calculate horizontal position — anchor left by default, flip to right edge if needed
+  let left = x
+  let right = 'auto'
+  if (left + menuRect.width > vw - gap) {
+    // Not enough space on the right — align right edge to anchor or viewport edge
+    const spaceOnLeft = x
+    if (spaceOnLeft >= menuRect.width) {
+      // Flip to open leftward from anchor
+      left = x - menuRect.width
+    } else {
+      // Insufficient space on either side — pin to right viewport edge
+      left = vw - menuRect.width - gap
+    }
+  }
+  // Keep within left edge
+  if (left < gap) left = gap
+
+  // Calculate vertical position — anchor top by default, flip upward if needed
+  let top = y
+  if (top + menuRect.height > vh - gap) {
+    // Not enough space below — try opening above the anchor
+    const spaceAbove = y - menuRect.height - gap
+    if (spaceAbove >= gap) {
+      top = y - menuRect.height
+    } else {
+      // Insufficient space above or below — pin to bottom
+      top = vh - menuRect.height - gap
+    }
+  }
+  // Keep within top edge
+  if (top < gap) top = gap
+
+  // Apply final position and make visible
+  menu.style.left = `${left}px`
+  menu.style.top = `${top}px`
+  menu.style.visibility = 'visible'
 
   const outsideHandler = (ev: MouseEvent) => {
     if (!menu.contains(ev.target as Node)) {
