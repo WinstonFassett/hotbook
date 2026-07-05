@@ -150,8 +150,10 @@ export class MdGantt extends Diagram {
       // Task body
       const bx = derive(() => xOf(t.range.value.lo));
       const bw = derive(() => xOf(t.range.value.hi) - xOf(t.range.value.lo));
+      const MIN_VISUAL_WIDTH = 12; // Minimum visual width in pixels
+      const bw_visual = derive(() => Math.max(MIN_VISUAL_WIDTH, bw.value));
       const body = s(
-        rect(bx, y - rowH / 2 + 4, bw, rowH - 8, {
+        rect(bx, y - rowH / 2 + 4, bw_visual, rowH - 8, {
           fill: t.def.color,
           corner: 4,
           opacity: 0.9,
@@ -232,6 +234,7 @@ export class MdGantt extends Diagram {
       );
 
       // Endpoint handles (resize)
+      // CRITICAL: Render RIGHT handle LAST so it's on top when handles overlap
       const loHandle = Vec.lens(
         [t.range] as const,
         ([r]: readonly [Range]) => ({ x: xOf((r as Range).lo), y }),
@@ -240,26 +243,41 @@ export class MdGantt extends Diagram {
           return [{ lo: newLo, hi: (r as Range).hi }] as never;
         },
       );
+
+      // Visual-aware lens for right handle
+      // When min-width is active, the visual handle is offset from data position
+      // Getter returns VISUAL position, setter adjusts target by visual offset
       const hiHandle = Vec.lens(
         [t.range] as const,
-        ([r]: readonly [Range]) => ({ x: xOf((r as Range).hi), y }),
+        ([r]: readonly [Range]) => {
+          const dataX = xOf((r as Range).hi);
+          const dataWidth = xOf((r as Range).hi) - xOf((r as Range).lo);
+          const visualOffset = Math.max(0, MIN_VISUAL_WIDTH - dataWidth);
+          return { x: dataX + visualOffset, y };
+        },
         (target, [r]) => {
-          const newHi = Math.max((r as Range).lo + 1, dOf(target.x));
+          // Account for visual offset when converting drag position to data
+          const dataWidth = xOf((r as Range).hi) - xOf((r as Range).lo);
+          const visualOffset = Math.max(0, MIN_VISUAL_WIDTH - dataWidth);
+          const targetDataX = target.x - visualOffset;
+          const newHi = Math.max((r as Range).lo + 1, dOf(targetDataX));
           return [{ lo: (r as Range).lo, hi: newHi }] as never;
         },
       );
+
+      // Handle positions - use VISUAL width so handles are at edges of visible rect
+      const loHandleX = derive(() => xOf(t.range.value.lo));
+      const hiHandleX = derive(() => {
+        const dataX = xOf(t.range.value.hi);
+        const visualX = loHandleX.value + bw_visual.value;
+        // Use visual edge if wider than data edge
+        return bw_visual.value > bw.value ? visualX : dataX;
+      });
+
+      // Left handle - render FIRST (lower z-index)
       const loH = s(
         rect(
-          Num.derive(() => loHandle.value.x - 4),
-          y - rowH / 2 + 4,
-          8,
-          rowH - 8,
-          { fill: "#0b0d12", stroke: "white", thin: true, corner: 2 },
-        ),
-      );
-      const hiH = s(
-        rect(
-          Num.derive(() => hiHandle.value.x - 4),
+          Num.derive(() => loHandleX.value - 4),
           y - rowH / 2 + 4,
           8,
           rowH - 8,
@@ -267,10 +285,21 @@ export class MdGantt extends Diagram {
         ),
       );
       drag(loH, loHandle);
-      drag(hiH, hiHandle);
       loH.el.style.cursor = "ew-resize";
-      hiH.el.style.cursor = "ew-resize";
       loH.el.addEventListener("pointerup", () => propagate());
+
+      // Right handle - render LAST (higher z-index, clickable when overlapping)
+      const hiH = s(
+        rect(
+          Num.derive(() => hiHandleX.value - 4),
+          y - rowH / 2 + 4,
+          8,
+          rowH - 8,
+          { fill: "#0b0d12", stroke: "white", thin: true, corner: 2 },
+        ),
+      );
+      drag(hiH, hiHandle);
+      hiH.el.style.cursor = "ew-resize";
       hiH.el.addEventListener("pointerup", () => propagate());
     });
 
