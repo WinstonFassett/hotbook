@@ -48,8 +48,12 @@ export class MdTreemapLC extends Diagram {
     }
   `
   externalRoot?: BiNode
-  maxDepth?: number
   drillKey?: string
+
+  // Reactive so the levels dropdown drives enter/exit fades instead of a remount.
+  private _maxDepthCell = cell<number | undefined>(undefined)
+  get maxDepth(): number | undefined { return this._maxDepthCell.value }
+  set maxDepth(v: number | undefined) { this._maxDepthCell.value = v }
 
   private _drillIdCell = cell<string | null>(null)
   get drillNodeId(): string | null { return this._drillIdCell.value }
@@ -159,7 +163,7 @@ export class MdTreemapLC extends Diagram {
     type TileGeo = { cx: ReturnType<typeof num>; cy: ReturnType<typeof num>; cw: ReturnType<typeof num>; ch: ReturnType<typeof num> };
     const tileGeo = new Map<BiNode, TileGeo>();
 
-    const maxD = this.maxDepth;
+    const maxDepthCell = this._maxDepthCell;
 
     // Drill effect: tween every live tile's geometry cells toward the new focus.
     let drillInited = false;
@@ -267,7 +271,8 @@ export class MdTreemapLC extends Diagram {
     const windowTarget = derive((): readonly BiNode[] => {
       const fd = focusDepth.value;
       const id = this._drillIdCell.value;
-      const maxWindow = maxD !== undefined ? fd + maxD : totalDepth;
+      const maxD = maxDepthCell.value;
+      const maxWindow = maxD !== undefined && maxD > 0 ? fd + maxD : totalDepth;
       const result: BiNode[] = [];
       const focusNode = id ? nodeById.get(id) : null;
       const startNode = focusNode ?? root;

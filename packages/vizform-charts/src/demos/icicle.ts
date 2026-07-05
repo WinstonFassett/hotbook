@@ -149,7 +149,8 @@ export class MdIcicleLC extends Diagram {
     // tiles start at 0. For horizontal, partition's x (sibling) → canvas y and
     // partition's y (depth) → canvas x; for vertical, no swap needed.
     const layout = derive(() => {
-      const maxD = this._maxDepthCell.value;
+      const rawMaxD = this._maxDepthCell.value;
+      const maxD = rawMaxD !== undefined && rawMaxD > 0 ? rawMaxD : undefined;
       const h = buildHierarchy(rootCell.value, this._sortByCell.value);
       const td = h.height; // levels below root
       const visibleDepth = maxD !== undefined ? Math.min(maxD, td) : td;
@@ -204,7 +205,8 @@ export class MdIcicleLC extends Diagram {
       const fd = focusDepth.value;
       const id = this._drillIdCell.value;
       const { root, nodeById, totalDepth } = structure.value;
-      const maxD = this._maxDepthCell.value;
+      const rawMaxD = this._maxDepthCell.value;
+      const maxD = rawMaxD !== undefined && rawMaxD > 0 ? rawMaxD : undefined;
       const maxWindow = maxD !== undefined ? fd + maxD : totalDepth;
       const result: BiNode[] = [];
       const focusNode = id ? nodeById.get(id) : null;
@@ -241,7 +243,8 @@ export class MdIcicleLC extends Diagram {
       void Wc.value; void Hc.value; // track resize
       void isHoriz.value; // track orientation
       const { nodeById, nodeDepth, totalDepth } = structure.value; // track data swap
-      const maxD = this._maxDepthCell.value;
+      const rawMaxD = this._maxDepthCell.value;
+      const maxD = rawMaxD !== undefined && rawMaxD > 0 ? rawMaxD : undefined;
       const W0 = Wc.value, H0 = Hc.value;
       const depthCanvas = isHoriz.value ? W0 : H0;
       const sibCanvas = isHoriz.value ? H0 : W0;
@@ -482,7 +485,8 @@ export class MdIcicleLC extends Diagram {
       const handleWindow = derive((): readonly HandleItem[] => {
         const fd = focusDepth.value;
         const { nodeDepth, totalDepth } = structure.value;
-        const maxD = this._maxDepthCell.value;
+        const rawMaxD = this._maxDepthCell.value;
+      const maxD = rawMaxD !== undefined && rawMaxD > 0 ? rawMaxD : undefined;
         const maxWindow = maxD !== undefined ? fd + maxD : totalDepth;
         const items: HandleItem[] = [];
         for (const n of renderedSet.value) {

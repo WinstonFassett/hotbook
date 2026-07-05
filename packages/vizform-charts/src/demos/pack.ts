@@ -36,8 +36,12 @@ const SORT_SEC = 0.35; // s — sort/reorder tween duration
 export class MdPack extends Diagram {
   static styles = `:host { overflow: hidden; }text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}[data-focusable]:focus { outline: 2px solid #4a9eff; outline-offset: 2px; } [data-focusable]:focus:not(:focus-visible) { outline: none; }`
   externalRoot?: BiNode
-  maxDepth?: number
   drillKey?: string
+
+  // Reactive so the levels dropdown drives enter/exit fades instead of a remount.
+  private _maxDepthCell = cell<number | undefined>(undefined)
+  get maxDepth(): number | undefined { return this._maxDepthCell.value }
+  set maxDepth(v: number | undefined) { this._maxDepthCell.value = v }
 
   // Internal reactive cell updated by the drillNodeId setter.
   private _drillIdCell = cell<string | null>(null)
@@ -122,7 +126,8 @@ export class MdPack extends Diagram {
         if (lnode) {
           // Viewport = union bounding box of all descendants of the drilled node.
           const fd = nodeDepth.get(biNode!) ?? 0;
-          const maxWindow = maxD !== undefined ? fd + maxD : totalDepth;
+          const maxD = untracked(() => maxDepthCell.value);
+          const maxWindow = maxD !== undefined && maxD > 0 ? fd + maxD : totalDepth;
           let minX0 = Infinity, minY0 = Infinity, maxX1 = -Infinity, maxY1 = -Infinity;
           for (const { node, depth: relDepth } of walkWithDepth(biNode!)) {
             const absDepth = fd + relDepth;
@@ -184,7 +189,7 @@ export class MdPack extends Diagram {
       }, DRILL_DURATION + 60);
     });
 
-    const maxD = this.maxDepth;
+    const maxDepthCell = this._maxDepthCell;
 
     // Window: when drilled (fd > 0) include focus node as context circle + descendants.
     // Walk focus subtree only so off-screen sibling circles don't leak into the canvas.
@@ -192,7 +197,8 @@ export class MdPack extends Diagram {
     const windowTarget = derive((): readonly BiNode[] => {
       const fd = focusDepth.value;
       const id = this._drillIdCell.value;
-      const maxWindow = maxD !== undefined ? fd + maxD : totalDepth;
+      const maxD = maxDepthCell.value;
+      const maxWindow = maxD !== undefined && maxD > 0 ? fd + maxD : totalDepth;
       const result: BiNode[] = [];
       const focusNode = id ? nodeById.get(id) : null;
       const startNode = focusNode ?? root;

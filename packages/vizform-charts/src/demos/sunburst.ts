@@ -37,8 +37,12 @@ const SORT_SEC = 0.35; // s — sort/reorder tween duration
 export class MdSunburstLC extends Diagram {
   static styles = `:host { overflow: hidden; }text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}:host(.vf-gesture-active) circle[r="5"] { opacity: 0; } circle[r="5"] { transition: opacity 0.3s ease; }[data-focusable]:focus { outline: 2px solid #4a9eff; outline-offset: 2px; } [data-focusable]:focus:not(:focus-visible) { outline: none; }`
   externalRoot?: BiNode
-  maxDepth?: number
   drillKey?: string
+
+  // Reactive so the levels dropdown drives enter/exit fades instead of a remount.
+  private _maxDepthCell = cell<number | undefined>(undefined)
+  get maxDepth(): number | undefined { return this._maxDepthCell.value }
+  set maxDepth(v: number | undefined) { this._maxDepthCell.value = v }
 
   private _drillIdCell = cell<string | null>(null)
   get drillNodeId(): string | null { return this._drillIdCell.value }
@@ -81,7 +85,7 @@ export class MdSunburstLC extends Diagram {
       if (depth > totalDepth) totalDepth = depth;
     }
 
-    const maxD = this.maxDepth;
+    const maxDepthCell = this._maxDepthCell;
 
     const Rfull = derive(() => Math.min(Wc.value, Hc.value) / 2 - 4);
 
@@ -115,7 +119,8 @@ export class MdSunburstLC extends Diagram {
     const windowTarget = derive((): readonly BiNode[] => {
       const fd = focusDepth.value;
       const id = this._drillIdCell.value;
-      const maxWindow = maxD !== undefined ? fd + maxD : totalDepth;
+      const maxD = maxDepthCell.value;
+      const maxWindow = maxD !== undefined && maxD > 0 ? fd + maxD : totalDepth;
       const result: BiNode[] = [];
       const focusNode = id ? nodeById.get(id) : null;
       for (const { node, depth: relDepth } of walkWithDepth(focusNode ?? root)) {
@@ -149,7 +154,8 @@ export class MdSunburstLC extends Diagram {
         const lnode = biNode ? lmap.get(biNode) : null;
         if (lnode) {
           const fd = nodeDepth.get(biNode!) ?? 0;
-          const maxWindow = maxD !== undefined ? fd + maxD : totalDepth;
+          const maxD = untracked(() => maxDepthCell.value);
+          const maxWindow = maxD !== undefined && maxD > 0 ? fd + maxD : totalDepth;
           // Walk only the focus subtree to find the deepest rendered ring.
           let maxR1 = lnode.y1;
           for (const { node, depth: relDepth } of walkWithDepth(biNode!)) {
@@ -167,7 +173,8 @@ export class MdSunburstLC extends Diagram {
         // At root: map [root.y1, maxRendered.y1] → [0, Rfull].
         const rootLayout = lmap.get(root);
         tr0 = rootLayout ? rootLayout.y1 : 0;
-        const maxWindow = maxD !== undefined ? maxD : totalDepth;
+        const maxD = untracked(() => maxDepthCell.value);
+        const maxWindow = maxD !== undefined && maxD > 0 ? maxD : totalDepth;
         let maxR1 = rfull;
         for (const { node, depth } of walkWithDepth(root)) {
           if (depth > 0 && depth <= maxWindow) {
@@ -368,7 +375,8 @@ export class MdSunburstLC extends Diagram {
       type HandleItem = { parent: BiNode; i: number; aNode: BiNode; bNode: BiNode };
       const handleWindow = derive((): readonly HandleItem[] => {
         const fd = focusDepth.value;
-        const maxWindow = maxD !== undefined ? fd + maxD : totalDepth;
+        const maxD = maxDepthCell.value;
+        const maxWindow = maxD !== undefined && maxD > 0 ? fd + maxD : totalDepth;
         const items: HandleItem[] = [];
         for (const n of renderedSet.value) {
           const d = nodeDepth.get(n) ?? 0;
