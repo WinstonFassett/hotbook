@@ -103,10 +103,6 @@ export class MdBarChartLC extends Diagram {
     this.tabIndex = -1; // Container not directly focusable, items are
     this.style.outline = "none";
 
-    // Rule 14: touch is a first-class gesture surface. Claim touch gesture
-    // from the browser so drag-edit doesn't lose to page scroll on mobile.
-    this.style.touchAction = "none";
-
     const data = this.dataCell;
     const rows0 = data.peek() as Bar[];
 
@@ -137,6 +133,12 @@ export class MdBarChartLC extends Diagram {
     const svgEl = (this as any).svg as SVGSVGElement;
     biEffect(() => {
       const om = overflowMode.value, iv = isVert.value;
+      // Rule 14: touch is a first-class gesture surface. In overflow mode, allow
+      // panning along the scroll axis so users can still reach hidden bars; otherwise
+      // block page scroll so drag-edit doesn't lose to page scroll on mobile.
+      // The touchstart handler still prevents default when a bar is touched, so
+      // dragging a bar never scrolls.
+      this.style.touchAction = om ? (iv ? 'pan-x' : 'pan-y') : 'none';
       if (om) {
         svgEl.style.width = iv ? viewW.value + 'px' : '100%';
         svgEl.style.height = iv ? '100%' : viewH.value + 'px';
