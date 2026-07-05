@@ -69,6 +69,10 @@ export class MdBarChartLC extends Diagram {
   private _measureKeyCell = cell<string>('')
   get measureKey(): string { return this._measureKeyCell.value }
   set measureKey(v: string) { this._measureKeyCell.value = v }
+  // Axis-binding model (WIN-144): valueBinding replaces measureKey.
+  // Backward compat: measureKey setter maps to valueBinding.
+  get valueBinding(): string { return this.measureKey }
+  set valueBinding(v: string) { this.measureKey = v }
 
   colorMode: 'single' | 'palette' = 'single';
   labelMode: 'axis' | 'inside' | 'both' = 'axis';
@@ -421,12 +425,17 @@ export class MdBarChartLC extends Diagram {
         return isVert.value ? Math.max(0, plotBottom.value - (valueScale.value as any)(d.value)) : bandScale.value.bandwidth();
       });
 
-      // Tweened cells — gate: tween on orientation/measure/sort, snap on value edit.
+      // Tweened cells — gate: tween on orientation/measure/sort, snap position on value edit.
+      // Position (x, w) snaps; value (y, h) tweens. During a cross-tile drag (scatter
+      // editing a shared value), the dragged bar's value changes every frame but
+      // sort order only changes sometimes. On value edit: snap position directly,
+      // restart value tween to new target. This prevents the value tween from
+      // being cancelled mid-animation (which would cause a jump).
       const barX = num(barXTarget.value);
       const barY = num(barYTarget.value);
       const barW = num(barWTarget.value);
       const barH = num(barHTarget.value);
-      let cancel: (() => void) | null = null;
+      let valCancel: (() => void) | null = null;
       let inited = false;
       let seenOrient = untracked(() => this._orientationCell.value);
       let seenMeasureKey = untracked(() => this._measureKeyCell.value);
@@ -444,16 +453,25 @@ export class MdBarChartLC extends Diagram {
         const structural = orient !== seenOrient || measureKey !== seenMeasureKey || order !== seenOrder;
         seenOrient = orient; seenMeasureKey = measureKey; seenOrder = order;
         if (structural && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
-          cancel?.();
-          cancel = this.anim.start(
-            tween(barX, xt, SORT_SEC, easeInOut) as any,
+          valCancel?.();
+          valCancel = this.anim.start(
             tween(barY, yt, SORT_SEC, easeInOut) as any,
-            tween(barW, wt, SORT_SEC, easeInOut) as any,
             tween(barH, ht, SORT_SEC, easeInOut) as any,
           );
-        } else {
-          cancel?.(); cancel = null;
+          barX.value = xt; barW.value = wt;
+        } else if (this.classList.contains(GESTURE_ACTIVE_CLASS)) {
+          // This bar is being directly gestured — snap everything.
+          valCancel?.(); valCancel = null;
           barX.value = xt; barY.value = yt; barW.value = wt; barH.value = ht;
+        } else {
+          // Value edit (not structural, not gesturing): snap position directly,
+          // restart value tween to new target.
+          valCancel?.();
+          valCancel = this.anim.start(
+            tween(barY, yt, SORT_SEC, easeInOut) as any,
+            tween(barH, ht, SORT_SEC, easeInOut) as any,
+          );
+          barX.value = xt; barW.value = wt;
         }
       });
 

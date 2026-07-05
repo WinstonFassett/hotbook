@@ -78,6 +78,9 @@ export class MdConcentricArcLC extends Diagram {
   private _measureKeyCell = cell<string>('')
   get measureKey(): string { return this._measureKeyCell.value }
   set measureKey(v: string) { this._measureKeyCell.value = v }
+  // Axis-binding model (WIN-144): valueBinding replaces measureKey.
+  get valueBinding(): string { return this.measureKey }
+  set valueBinding(v: string) { this.measureKey = v }
 
   set externalData(v: { label: string; value: number }[] | undefined) {
     if (v) this.dataCell.value = (v as unknown as Ring[]).slice(0, this._maxRingsCell.peek());

@@ -1,18 +1,19 @@
 // AreaChart — vanilla-TS port of LayerChart's AreaChart wrapper.
+//
+// Axis-binding model (WIN-144 redesign): yBinding is a reactive accessor
+// cell. x is always date (static). Changing yBinding fires the tween gate
+// in chartContext — area animates to new values. No manual tween cells.
 
-import { Anchor, cell, circle, derive, Diagram, easeOut, effect as biEffect, label, line, type Mount, num, tween, untracked, Vec } from "bireactive";
-import { curveMonotoneX } from "d3-shape";
+import { cell, circle, derive, Diagram, label, line, type Mount, Vec } from "bireactive";
 import { area } from "../lib/area";
 import { axis } from "../lib/axis";
 import { chartContext } from "../lib/chart-context";
 import { attachCartesianGestures, makeBisectFinder } from "../lib/cartesian-gestures";
 import { spline } from "../lib/spline";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
-import { GESTURE_ACTIVE_CLASS } from "../lib/transitions";
 
 const W = 720;
 const H = 360;
-const SORT_SEC = 0.35; // s — measure-swap tween duration
 
 interface Point {
   id?: string;
@@ -46,9 +47,23 @@ export class MdAreaChartLC extends Diagram {
   `
   readonly dataCell = cell<readonly Point[]>(makeSeries());
 
-  private _measureKeyCell = cell<string>('')
-  get measureKey(): string { return this._measureKeyCell.value }
-  set measureKey(v: string) { this._measureKeyCell.value = v }
+  // Y binding — reactive accessor cell. x is always date (static).
+  private _yBindingCell = cell<(d: Point) => number>((d) => d.value);
+
+  get yBinding(): string { return (this as any)._yBindingName ?? 'value' }
+  set yBinding(v: string) {
+    const prev = (this as any)._yBindingName
+    ;(this as any)._yBindingName = v;
+    // Only create a new accessor reference when the binding name actually
+    // changes. applyData sets el.measureKey (→ yBinding) on EVERY call.
+    if (prev !== v) {
+      this._yBindingCell.value = (d: Point) => d.value;
+    }
+  }
+
+  // Backward compat: measureKey maps to yBinding
+  get measureKey(): string { return this.yBinding }
+  set measureKey(v: string) { this.yBinding = v }
 
   set externalData(v: { date: Date; value: number }[] | undefined) {
     if (v) this.dataCell.value = v as Point[];
@@ -56,69 +71,30 @@ export class MdAreaChartLC extends Diagram {
   get externalData(): { date: Date; value: number }[] | undefined {
     return this.dataCell.value as Point[];
   }
+
   protected scene(s: Mount): void {
     const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
     this.view(Wc, Hc);
-    this.tabIndex = -1; // Container not directly focusable, items are
+    this.tabIndex = -1;
     this.style.outline = "none";
 
     const data = this.dataCell;
 
-    // Per-point tweened y-value cells — TWEEN on measure swap (animate area
-    // to new values), SNAP on value edits / gestures (write-through, no lag).
-    // Same two-lane gate pattern as hier charts (WIN-143).
-    const points0 = data.peek() as Point[];
-    const yCells = new Map<string, ReturnType<typeof num>>();
-    for (const pt of points0) {
-      const pid = pt.id ?? String(pt.date.getTime());
-      const yTarget = derive(() => { void data.value; return pt.value; });
-      const yc = num(yTarget.value);
-      yCells.set(pid, yc);
-      let ycCancel: (() => void) | null = null;
-      let ycInited = false;
-      let seenMeasureKey = untracked(() => this._measureKeyCell.value);
-      biEffect(() => {
-        const target = yTarget.value;
-        const measureKey = untracked(() => this._measureKeyCell.value);
-        if (!ycInited) { ycInited = true; seenMeasureKey = measureKey; yc.value = target; return; }
-        const measureSwapped = measureKey !== seenMeasureKey;
-        seenMeasureKey = measureKey;
-        if (measureSwapped && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
-          ycCancel?.();
-          ycCancel = this.anim.start(tween(yc, target, SORT_SEC, easeOut));
-        } else {
-          ycCancel?.(); ycCancel = null;
-          yc.value = target;
-        }
-      });
-    }
-    // Tweened data cell — replaces raw values with tweened values for rendering.
-    // Gestures still mutate raw data; tween cells snap to follow.
-    // Sort points by date so the area always draws left-to-right regardless of
-    // array order (sort-by-value reorders the array but the area shape is
-    // date-based, not order-based — sort is a visual no-op for area charts).
-    const tweenedData = derive(() => {
-      void data.value; // track data changes (reorder, add/remove)
-      return (data.peek() as Point[])
-        .map(pt => {
-          const pid = pt.id ?? String(pt.date.getTime());
-          const yc = yCells.get(pid);
-          return yc ? { ...pt, value: yc.value } : pt;
-        })
-        .sort((a, b) => a.date.getTime() - b.date.getTime());
-    });
-
     const ctx = chartContext<Point>({
-      width: Wc, height: Hc, data: tweenedData,
-      x: (d) => d.date, y: (d) => d.value,
+      width: Wc, height: Hc, data,
+      x: (d) => d.date,
+      y: this._yBindingCell as any,
+      idOf: (d) => d.id ?? String(d.date.getTime()),
+      host: this,
+      anim: this.anim,
       padding: { top: 16, right: 24, bottom: 36, left: 56 },
       yNice: true, yBaseline: 0,
     });
 
     axis(s, ctx, { placement: "bottom" });
     axis(s, ctx, { placement: "left" });
-    s(area(ctx, { fill: "#7aaae8", fillOpacity: 0.25, curve: curveMonotoneX }));
-    s(spline(ctx, { stroke: "#7aaae8", strokeWidth: 2, curve: curveMonotoneX }));
+    s(area(ctx, { fill: "#7aaae8", fillOpacity: 0.3, stroke: "none" }));
+    s(spline(ctx, { stroke: "#7aaae8", strokeWidth: 2 }));
 
     const hover = cell<Point | null>(null);
     const selected = cell<Point | null>(null);
@@ -131,21 +107,16 @@ export class MdAreaChartLC extends Diagram {
       data.value = [...data.value];
     };
 
-    // Create focusable invisible circles for each point
+    // Focus circles — read through ctx.xGet/ctx.yGet (tween layer).
+    const points0 = data.peek() as Point[];
     const pointElements = new Map<Point, SVGCircleElement>();
-    for (let i = 0; i < points0.length; i++) {
-      const pt = points0[i]!;
-      const pid = pt.id ?? String(pt.date.getTime());
-      const yc = yCells.get(pid);
-      const pos = Vec.derive(() => ({
-        x: (ctx.xScale.value as any)(pt.date),
-        y: (ctx.yScale.value as any)(yc ? yc.value : pt.value),
-      }));
+    for (const pt of points0) {
+      const pos = Vec.derive(() => ({ x: ctx.xGet.value(pt), y: ctx.yGet.value(pt) }));
       const focusCircle = s(circle(pos, 8, { fill: "transparent", stroke: "none" }));
       pointElements.set(pt, focusCircle.el as SVGCircleElement);
       focusCircle.el.setAttribute('tabindex', '0');
       focusCircle.el.setAttribute('data-focusable', 'point');
-      biEffect(() => { focusCircle.el.setAttribute('aria-label', `${pt.date.toLocaleDateString()}: ${Math.round(yc ? yc.value : pt.value)}`); });
+      focusCircle.el.setAttribute('aria-label', `${pt.date.toLocaleDateString()}: ${Math.round(pt.value)}`);
       focusCircle.el.style.cursor = "pointer";
       focusCircle.el.addEventListener("focus", () => { selected.value = pt; });
       focusCircle.el.addEventListener("blur", () => { if (selected.value === pt) selected.value = null; });
@@ -163,26 +134,21 @@ export class MdAreaChartLC extends Diagram {
       focusDatum: (d) => { if (d) pointElements.get(d)?.focus(); },
     });
 
-    // Hover crosshair — x reads raw date (stable), y reads tweened value.
-    const hoverYVal = (p: Point) => {
-      const pid = p.id ?? String(p.date.getTime());
-      const yc = yCells.get(pid);
-      return yc ? yc.value : p.value;
-    };
+    // Hover crosshair — reads through ctx.xGet/ctx.yGet (tween layer).
     const hoverX = Vec.derive(() => {
       const p = hover.value;
       if (!p) return { x: -10, y: -10 };
-      return { x: (ctx.xScale.value as any)(p.date), y: ctx.plotY };
+      return { x: ctx.xGet.value(p), y: ctx.plotY };
     });
     const hoverBottom = Vec.derive(() => {
       const p = hover.value;
       if (!p) return { x: -10, y: -10 };
-      return { x: (ctx.xScale.value as any)(p.date), y: ctx.plotY + ctx.plotHeight };
+      return { x: ctx.xGet.value(p), y: ctx.plotY + ctx.plotHeight };
     });
     const hoverPoint = Vec.derive(() => {
       const p = hover.value;
       if (!p) return { x: -10, y: -10 };
-      return { x: (ctx.xScale.value as any)(p.date), y: (ctx.yScale.value as any)(hoverYVal(p)) };
+      return { x: ctx.xGet.value(p), y: ctx.yGet.value(p) };
     });
     const hoverOpacity = derive(() => (hover.value ? 1 : 0));
 
@@ -191,11 +157,11 @@ export class MdAreaChartLC extends Diagram {
       circle(hoverPoint, 4, { fill: "#7aaae8", stroke: "#fff", strokeWidth: 2, opacity: hoverOpacity }),
     );
 
-    // Selection marker — reads tweened value.
+    // Selection marker — reads through ctx.xGet/ctx.yGet.
     const selPoint = Vec.derive(() => {
       const p = selected.value;
       if (!p) return { x: -10, y: -10 };
-      return { x: (ctx.xScale.value as any)(p.date), y: (ctx.yScale.value as any)(hoverYVal(p)) };
+      return { x: ctx.xGet.value(p), y: ctx.yGet.value(p) };
     });
     const selOpacity = derive(() => (selected.value ? 1 : 0));
 
@@ -208,10 +174,11 @@ export class MdAreaChartLC extends Diagram {
       Vec.derive(() => ({ x: Wc.value / 2, y: 12 })),
       derive(() => {
         const p = selected.value ?? hover.value;
-        if (!p) return "AreaChart — hover · click to select · ←/→ navigate · ↑/↓ edit · cmd+wheel · drag";
-        return `${p.date.toLocaleDateString()}  $${p.value.toFixed(2)}`;
+        if (!p) return "AreaChart — hover · click to select · ←/→ navigate · ↑/↓ edit · cmd+wheel · drag marker";
+        return `${p.date.toLocaleDateString()}: ${Math.round(p.value)}`;
       }),
-      { size: 11, align: Anchor.Center, opacity: 0.7 },
     ));
   }
 }
+
+customElements.define("v-br-area", MdAreaChartLC);
