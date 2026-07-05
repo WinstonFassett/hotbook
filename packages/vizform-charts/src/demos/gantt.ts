@@ -544,10 +544,24 @@ export class MdGanttChartLC extends Diagram {
       const ex = (xScale.value as any)(t.end);
       const EDGE = 6;
       let kind: DragKind;
-      if (Math.abs(x - sx) <= EDGE) kind = 'start';
-      else if (Math.abs(x - ex) <= EDGE) kind = 'end';
-      else if (x >= sx && x <= ex) kind = 'move';
-      else return;
+
+      // Check which edge is closer when both are within EDGE distance
+      // This fixes the bug where narrow tasks always detect 'start' because it's checked first
+      const distToStart = Math.abs(x - sx);
+      const distToEnd = Math.abs(x - ex);
+
+      if (distToStart <= EDGE && distToEnd <= EDGE) {
+        // Both edges are within range - choose the closer one
+        kind = distToStart < distToEnd ? 'start' : 'end';
+      } else if (distToStart <= EDGE) {
+        kind = 'start';
+      } else if (distToEnd <= EDGE) {
+        kind = 'end';
+      } else if (x >= sx && x <= ex) {
+        kind = 'move';
+      } else {
+        return;
+      }
 
       dragPointerId = pe.pointerId;
       selected.value = t;
