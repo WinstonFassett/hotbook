@@ -64,6 +64,10 @@ export class MdRadarChartLC extends Diagram {
     this.tabIndex = -1; // Container not directly focusable, items are
     this.style.outline = "none";
 
+    // Rule 14: touch is a first-class gesture surface. Claim touch gesture
+    // from the browser so drag-edit doesn't lose to page scroll on mobile.
+    this.style.touchAction = "none";
+
     const cx = derive(() => Wc.value / 2);
     const cy = derive(() => Hc.value / 2);
     const rMax = derive(() => Math.min(Wc.value, Hc.value) / 2 - 50);
@@ -355,13 +359,14 @@ export class MdRadarChartLC extends Diagram {
       const { x, y } = localPt(pe);
       const spoke = hover.value ?? findNearestSpoke(x, y);
       if (!spoke) return;
-      // Check if close to the dot.
+      // Check if close to the dot - Touch-friendly hit tolerance: 28px for touch/pen, 20px for mouse
+      const hitTolerance = pe.pointerType === "mouse" ? 20 : 28;
       const spIdx = (data.value as Spoke[]).indexOf(spoke);
       const a = angle(spIdx);
       const r = yScale.value(spoke.value);
       const dx = x - (cx.peek() + Math.cos(a) * r);
       const dy = y - (cy.peek() + Math.sin(a) * r);
-      if (Math.sqrt(dx*dx + dy*dy) > 20) return;
+      if (Math.sqrt(dx*dx + dy*dy) > hitTolerance) return;
       dragPointerId = pe.pointerId;
       setGestureActive(true);
       selected.value = spoke;
@@ -403,6 +408,21 @@ export class MdRadarChartLC extends Diagram {
       if (ke.key === "ArrowUp") { mutateDatum(cur, +step); ke.preventDefault(); }
       else if (ke.key === "ArrowDown") { mutateDatum(cur, -step); ke.preventDefault(); }
     });
+
+    // Additional touchstart handler to aggressively prevent scrolling during
+    // touch-based gestures, as touch-action:none alone can be insufficient on
+    // some mobile browsers.
+    this.addEventListener("touchstart", (e) => {
+      const te = e as TouchEvent;
+      if (te.touches.length > 0) {
+        const touch = te.touches[0]!;
+        const { x, y } = localPt({ clientX: touch.clientX, clientY: touch.clientY } as PointerEvent);
+        const spoke = findNearestSpoke(x, y);
+        if (spoke) {
+          te.preventDefault();
+        }
+      }
+    }, { passive: false });
 
     s(label(
       Vec.derive(() => ({ x: Wc.value / 2, y: 20 })),

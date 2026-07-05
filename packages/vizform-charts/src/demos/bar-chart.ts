@@ -102,6 +102,11 @@ export class MdBarChartLC extends Diagram {
     const { w: Wc, h: Hc } = size;
     this.tabIndex = -1; // Container not directly focusable, items are
     this.style.outline = "none";
+
+    // Rule 14: touch is a first-class gesture surface. Claim touch gesture
+    // from the browser so drag-edit doesn't lose to page scroll on mobile.
+    this.style.touchAction = "none";
+
     const data = this.dataCell;
     const rows0 = data.peek() as Bar[];
 
@@ -326,9 +331,11 @@ export class MdBarChartLC extends Diagram {
       const pt = findAtPixel(x, y);
       if (!pt) return;
       // Hit-test: near the bar's value-end (top for vertical, right for horizontal).
+      // Touch-friendly hit tolerance: 24px for touch/pen, 12px for mouse
+      const hitTolerance = pe.pointerType === "mouse" ? 12 : 24;
       const valPos = (valueScale.value as any)(pt.value);
       const dist = isVert.value ? Math.abs(y - valPos) : Math.abs(x - valPos);
-      if (dist > 12) return;
+      if (dist > hitTolerance) return;
       dragPointerId = pe.pointerId;
       selected.value = pt;
       setGestureActive(true);
@@ -341,6 +348,20 @@ export class MdBarChartLC extends Diagram {
       const { x, y } = localPoint(e as PointerEvent);
       hover.value = findAtPixel(x, y);
     });
+
+    // Additional touchstart handler to aggressively prevent scrolling during
+    // touch-based gestures, as touch-action:none alone can be insufficient on
+    // some mobile browsers.
+    this.addEventListener("touchstart", e => {
+      const te = e as TouchEvent;
+      if (te.touches.length > 0) {
+        const touch = te.touches[0]!;
+        const { x, y } = localPoint({ clientX: touch.clientX, clientY: touch.clientY } as PointerEvent);
+        if (findAtPixel(x, y)) {
+          te.preventDefault();
+        }
+      }
+    }, { passive: false });
 
     // ─── Highlight rect (column/row hover background) ─────────────────────
     const hlTarget = derive(() => hover.value ?? selected.value);
