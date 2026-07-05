@@ -433,10 +433,11 @@ sb-dock-view {
    surfaces. Elements that own a drag gesture (tabs, gutters, tile headers,
    number-drag cells) must claim the touch gesture from the browser via
    `touch-action: none`; otherwise iOS/Android start scrolling on the first
-   pointermove and never send us the drag events. Tabstrip and tabs area keep
-   `pan-x` so horizontal swipe still scrolls hidden overflow tabs.
+   pointermove and never send us the drag events. Tabs allow `pan-x` and
+   distinguish scroll from reorder via directional threshold detection in JS
+   (see _startTabDrag). Tabstrip background keeps `none` to enable group drag.
    ─────────────────────────────────────────────────────────────────────────── */
-.dv-tab { touch-action: none; }
+.dv-tab { touch-action: pan-x; }
 .dv-tabs { touch-action: pan-x; }
 .dv-tabstrip { touch-action: none; }
 .dv-gutter { touch-action: none; }
