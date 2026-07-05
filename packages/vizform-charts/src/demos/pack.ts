@@ -24,6 +24,7 @@ import { portfolio, walkWithDepth } from "../lib/portfolio";
 import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS } from "../lib/transitions";
+import { withExitDelay, membershipCell } from "../lib/mark-lifecycle";
 
 const W = 480;
 const H = 480;
@@ -203,31 +204,22 @@ export class MdPack extends Diagram {
       return result;
     });
 
-    // Rendered set: current window + departing nodes kept briefly for value-change animations.
-    // On drill: discard leavers immediately — they remap to off-canvas positions.
-    // On value-change: keep leavers for DRILL_DURATION so circles animate out gracefully.
-    const renderedSet = cell<readonly BiNode[]>([]);
-    let leaveTimer: ReturnType<typeof setTimeout> | null = null;
-    let lastDrillId_rs: string | null = null;
-    biEffect(() => {
-      const newTarget = windowTarget.value;
-      const currentDrillId = untracked(() => this._drillIdCell.value);
-      const drillChanged = currentDrillId !== lastDrillId_rs;
-      lastDrillId_rs = currentDrillId;
-      const prevRendered = untracked(() => renderedSet.value);
-      const targetSet = new Set(newTarget);
-      const leavers = prevRendered.filter(n => !targetSet.has(n));
-      if (leaveTimer) { clearTimeout(leaveTimer); leaveTimer = null; }
-      if (leavers.length > 0 && !drillChanged) {
-        renderedSet.value = [...newTarget, ...leavers];
-        leaveTimer = setTimeout(() => {
-          leaveTimer = null;
-          renderedSet.value = windowTarget.value;
-        }, DRILL_DURATION + 50);
-      } else {
-        renderedSet.value = newTarget;
-      }
+    // Rendered set (WIN-155): current window + departing nodes held briefly so
+    // the exit CSS fade can play. On drill, held leavers would remap off-canvas
+    // and ghost the pack layout, so `immediate` flushes them.
+    let lastDrillIdSeen_rs: string | null | undefined = undefined;
+    const drillFlushSignal = derive(() => {
+      const id = this._drillIdCell.value;
+      const changed = lastDrillIdSeen_rs !== undefined && lastDrillIdSeen_rs !== id;
+      lastDrillIdSeen_rs = id;
+      return changed;
     });
+    const renderedSet = withExitDelay(windowTarget, {
+      key: (n) => n,
+      exitMs: DRILL_DURATION,
+      immediate: drillFlushSignal,
+    });
+    const windowMembership = membershipCell(windowTarget, (n) => n);
 
     // Windowed node rendering.
     const nodeLayer = s(group());
@@ -315,9 +307,19 @@ export class MdPack extends Diagram {
         strokeWidth,
       });
       disc.el.dataset.id = node.value.id ?? "";
-      biEffect(() => {
-        disc.el.style.opacity = (nd === 0 || isContextNode.value) ? '0.18' : '1';
-      });
+      // WIN-155: compose lifecycle (enter/exit) with context-dim opacity in a
+      // single effect. Start at 0 pre-frame, then RAF to composed opacity so
+      // the enter fade plays over the CSS transition.
+      const discPresent = derive(() => windowMembership.value.has(node));
+      disc.el.style.transition = `opacity 200ms cubic-bezier(0.4,0,0.2,1)`;
+      disc.el.style.opacity = '0';
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        biEffect(() => {
+          const present = discPresent.value;
+          const dim = (nd === 0 || isContextNode.value) ? 0.18 : 1;
+          disc.el.style.opacity = present ? String(dim) : '0';
+        });
+      }));
       disc.el.style.cursor = "pointer";
       // No CSS transition on cx/cy/r — the viewport tween (vx0..vy1) drives
       // these via derive(), and a CSS transition would double-animate, chasing

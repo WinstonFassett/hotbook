@@ -25,6 +25,7 @@ import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { dragCancelable } from "../lib/esc-contract";
 import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, settleTransition } from "../lib/transitions";
+import { withExitDelay, membershipCell } from "../lib/mark-lifecycle";
 import type { ElementWithBridge } from "../lib/hud-bridge";
 
 const W = 720;
@@ -216,32 +217,22 @@ export class MdIcicleLC extends Diagram {
       return result;
     });
 
-    // Rendered set: current window + departing nodes kept briefly for
-    // value-change animations. On drill: discard leavers immediately — they
-    // remap through the viewport tween and would ghost at wrong positions.
-    const renderedSet = cell<readonly BiNode[]>([]);
-    let leaveTimer: ReturnType<typeof setTimeout> | null = null;
-    let lastDrillId_rs: string | null = null;
-    this._trackScene(() => { if (leaveTimer) { clearTimeout(leaveTimer); leaveTimer = null; } });
-    this._trackScene(biEffect(() => {
-      const newTarget = windowTarget.value;
-      const currentDrillId = untracked(() => this._drillIdCell.value);
-      const drillChanged = currentDrillId !== lastDrillId_rs;
-      lastDrillId_rs = currentDrillId;
-      const prevRendered = untracked(() => renderedSet.value);
-      const targetSet = new Set(newTarget);
-      const leavers = prevRendered.filter(n => !targetSet.has(n));
-      if (leaveTimer) { clearTimeout(leaveTimer); leaveTimer = null; }
-      if (leavers.length > 0 && !drillChanged) {
-        renderedSet.value = [...newTarget, ...leavers];
-        leaveTimer = setTimeout(() => {
-          leaveTimer = null;
-          renderedSet.value = windowTarget.value;
-        }, DRILL_DURATION + 50);
-      } else {
-        renderedSet.value = newTarget;
-      }
-    }));
+    // Rendered set (WIN-155): current window + departing nodes held briefly so
+    // the exit CSS fade can play. On drill, held leavers would ghost at wrong
+    // positions after the viewport tween, so `immediate` flushes them.
+    let lastDrillIdSeen_rs: string | null | undefined = undefined;
+    const drillFlushSignal = derive(() => {
+      const id = this._drillIdCell.value;
+      const changed = lastDrillIdSeen_rs !== undefined && lastDrillIdSeen_rs !== id;
+      lastDrillIdSeen_rs = id;
+      return changed;
+    });
+    const renderedSet = withExitDelay(windowTarget, {
+      key: (n) => n,
+      exitMs: DRILL_DURATION,
+      immediate: drillFlushSignal,
+    });
+    const windowMembership = membershipCell(windowTarget, (n) => n);
 
     // Drill viewport tween: compute target viewport from focus node bounds and
     // tween all 4 cells. Uses untracked for layout reads so value changes don't
@@ -427,9 +418,18 @@ export class MdIcicleLC extends Diagram {
       tile.el.style.cursor = "pointer";
       tile.el.setAttribute('tabindex', '0');
       tile.el.setAttribute('data-focusable', 'tile');
-      biEffect(() => {
-        tile.el.style.opacity = isContextNode.value ? '0.35' : '1';
-      });
+      // WIN-155: compose lifecycle (enter/exit) with context dim in a single
+      // opacity effect so the two don't fight. Start at 0, RAF to lifecycle
+      // opacity for the enter fade.
+      const tilePresent = derive(() => windowMembership.value.has(node));
+      tile.el.style.opacity = '0';
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        biEffect(() => {
+          const present = tilePresent.value;
+          const dim = isContextNode.value ? 0.35 : 1;
+          tile.el.style.opacity = present ? String(dim) : '0';
+        });
+      }));
       biEffect(() => {
         tile.el.setAttribute('aria-label', `${node.value.label}: ${node.value.total.value.toFixed(0)}`);
       });

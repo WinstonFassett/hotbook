@@ -25,6 +25,7 @@ import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { dragCancelable } from "../lib/esc-contract";
 import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS } from "../lib/transitions";
+import { withExitDelay, enterExitFade, membershipCell } from "../lib/mark-lifecycle";
 import type { ElementWithBridge } from "../lib/hud-bridge";
 
 const W = 480;
@@ -124,31 +125,24 @@ export class MdSunburstLC extends Diagram {
       return result;
     });
 
-    // Rendered set: current window + departing nodes kept briefly for value-change animations.
-    // On drill: discard leavers immediately — they remap to degenerate arcs outside the viewport.
-    // On value-change: keep leavers for DRILL_DURATION so arcs animate out gracefully.
-    const renderedSet = cell<readonly BiNode[]>([]);
-    let leaveTimer: ReturnType<typeof setTimeout> | null = null;
-    let lastDrillId_rs: string | null = null;
-    biEffect(() => {
-      const newTarget = windowTarget.value;
-      const currentDrillId = untracked(() => this._drillIdCell.value);
-      const drillChanged = currentDrillId !== lastDrillId_rs;
-      lastDrillId_rs = currentDrillId;
-      const prevRendered = untracked(() => renderedSet.value);
-      const targetSet = new Set(newTarget);
-      const leavers = prevRendered.filter(n => !targetSet.has(n));
-      if (leaveTimer) { clearTimeout(leaveTimer); leaveTimer = null; }
-      if (leavers.length > 0 && !drillChanged) {
-        renderedSet.value = [...newTarget, ...leavers];
-        leaveTimer = setTimeout(() => {
-          leaveTimer = null;
-          renderedSet.value = windowTarget.value;
-        }, DRILL_DURATION + 50);
-      } else {
-        renderedSet.value = newTarget;
-      }
+    // Rendered set (WIN-155): current window + departing nodes held briefly so
+    // the exit CSS fade can play. On drill, held leavers would remap to
+    // degenerate arcs outside the viewport, so `immediate` flushes them.
+    // drillFlushSignal is a derive whose closure captures the last drill id
+    // seen — reading it during a drill-triggered update returns true.
+    let lastDrillIdSeen: string | null | undefined = undefined;
+    const drillFlushSignal = derive(() => {
+      const id = this._drillIdCell.value;
+      const changed = lastDrillIdSeen !== undefined && lastDrillIdSeen !== id;
+      lastDrillIdSeen = id;
+      return changed;
     });
+    const renderedSet = withExitDelay(windowTarget, {
+      key: (n) => n,
+      exitMs: DRILL_DURATION,
+      immediate: drillFlushSignal,
+    });
+    const windowMembership = membershipCell(windowTarget, (n) => n);
 
     let drillInited = false;
     let lastDrillId: string | null = null;
@@ -313,6 +307,11 @@ export class MdSunburstLC extends Diagram {
       arc.el.style.cursor = "pointer";
       arc.el.setAttribute('tabindex', '0');
       arc.el.setAttribute('data-focusable', 'arc');
+
+      // WIN-155 enter/exit fade — arc fades in on mount, fades out when the
+      // node leaves the drill window (held in renderedSet by withExitDelay).
+      const arcPresent = derive(() => windowMembership.value.has(node));
+      enterExitFade(arc.el, { present: arcPresent });
       biEffect(() => {
         arc.el.setAttribute('aria-label', `${node.value.label}: ${node.value.total.value.toFixed(0)}`);
       });
