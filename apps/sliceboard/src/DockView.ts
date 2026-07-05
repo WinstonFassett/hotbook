@@ -959,21 +959,40 @@ export class DockView extends HTMLElement {
   // ─── Tab drag ────────────────────────────────────────────────────────────
 
   private _startTabDrag(e: PointerEvent, group: DockGroup, panelId: string, tileId: string, label: string) {
-    // Prevent the browser from claiming the gesture for page scroll on touch
-    // and keep pointermove flowing to us after the tabstrip re-renders.
-    e.preventDefault()
+    // Smart gesture detection: distinguish horizontal pan (scrolling) from
+    // vertical/cross-axis drag (reorder). Only claim the gesture when movement
+    // is primarily non-horizontal. This allows horizontal scrolling to work on
+    // mobile while still enabling tab reorder gestures.
     const tabEl = e.currentTarget as HTMLElement
-    try { tabEl.setPointerCapture(e.pointerId) } catch { /* ok */ }
     const startX = e.clientX
     const startY = e.clientY
     let dragging = false
+    let gestureDecided = false
 
     const onMove = (ev: PointerEvent) => {
-      if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 6) return
-      dragging = true
-      window.removeEventListener('pointermove', onMove)
-      window.removeEventListener('pointerup', onUp)
-      this._beginDrag({ kind: 'panel', panelId, sourceGroupId: group.id, tileId, x: ev.clientX, y: ev.clientY, label, over: null })
+      const dx = Math.abs(ev.clientX - startX)
+      const dy = Math.abs(ev.clientY - startY)
+      const dist = Math.hypot(dx, dy)
+
+      // Wait until movement exceeds threshold before deciding gesture type
+      if (dist < 6) return
+
+      if (!gestureDecided) {
+        gestureDecided = true
+        // Primarily horizontal movement = scrolling intent, let browser handle it
+        if (dx > dy * 1.5) {
+          window.removeEventListener('pointermove', onMove)
+          window.removeEventListener('pointerup', onUp)
+          return
+        }
+        // Vertical or cross-axis = reorder intent, claim the gesture
+        dragging = true
+        e.preventDefault()
+        try { tabEl.setPointerCapture(e.pointerId) } catch { /* ok */ }
+        window.removeEventListener('pointermove', onMove)
+        window.removeEventListener('pointerup', onUp)
+        this._beginDrag({ kind: 'panel', panelId, sourceGroupId: group.id, tileId, x: ev.clientX, y: ev.clientY, label, over: null })
+      }
     }
     const onUp = () => {
       window.removeEventListener('pointermove', onMove)
