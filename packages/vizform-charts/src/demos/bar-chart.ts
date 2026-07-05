@@ -425,19 +425,17 @@ export class MdBarChartLC extends Diagram {
         return isVert.value ? Math.max(0, plotBottom.value - (valueScale.value as any)(d.value)) : bandScale.value.bandwidth();
       });
 
-      // Tweened cells — gate: tween on orientation/measure/sort, snap on value edit.
-      // Position (x, w) and value (y, h) have SEPARATE tween cancellations.
+      // Tweened cells — gate: tween on orientation/measure/sort, restart tween on value edit.
       // During a cross-tile drag (scatter editing a shared value), the dragged
       // bar's value changes every frame but sort order only changes sometimes.
-      // A single combined tween would snap ALL properties on non-structural
-      // frames, killing the position tween mid-animation (jump). Splitting
-      // lets the position tween survive value-only snaps.
+      // On value edit (non-structural), restart the tween from current to new target
+      // instead of snapping. This prevents the position tween from being cancelled
+      // mid-animation (which would cause a jump).
       const barX = num(barXTarget.value);
       const barY = num(barYTarget.value);
       const barW = num(barWTarget.value);
       const barH = num(barHTarget.value);
-      let posCancel: (() => void) | null = null;
-      let valCancel: (() => void) | null = null;
+      let cancel: (() => void) | null = null;
       let inited = false;
       let seenOrient = untracked(() => this._orientationCell.value);
       let seenMeasureKey = untracked(() => this._measureKeyCell.value);
@@ -455,30 +453,27 @@ export class MdBarChartLC extends Diagram {
         const structural = orient !== seenOrient || measureKey !== seenMeasureKey || order !== seenOrder;
         seenOrient = orient; seenMeasureKey = measureKey; seenOrder = order;
         if (structural && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
-          posCancel?.();
-          valCancel?.();
-          posCancel = this.anim.start(
+          cancel?.();
+          cancel = this.anim.start(
             tween(barX, xt, SORT_SEC, easeInOut) as any,
-            tween(barW, wt, SORT_SEC, easeInOut) as any,
-          );
-          valCancel = this.anim.start(
             tween(barY, yt, SORT_SEC, easeInOut) as any,
+            tween(barW, wt, SORT_SEC, easeInOut) as any,
             tween(barH, ht, SORT_SEC, easeInOut) as any,
           );
         } else if (this.classList.contains(GESTURE_ACTIVE_CLASS)) {
           // This bar is being directly gestured — snap everything.
-          posCancel?.(); posCancel = null;
-          valCancel?.(); valCancel = null;
+          cancel?.(); cancel = null;
           barX.value = xt; barY.value = yt; barW.value = wt; barH.value = ht;
         } else {
-          // Value edit (not structural, not gesturing): snap value props,
-          // let position tween continue. Without this split, the snap would
-          // cancel the position tween mid-animation, causing the dragged
-          // bar to jump while other bars (whose gates only fire on sort
-          // changes) tween smoothly.
-          valCancel?.(); valCancel = null;
-          barY.value = yt; barH.value = ht;
-          if (!posCancel) { barX.value = xt; barW.value = wt; }
+          // Value edit (not structural, not gesturing): restart tween from current
+          // to new target. This keeps the animation alive instead of snapping.
+          cancel?.();
+          cancel = this.anim.start(
+            tween(barX, xt, SORT_SEC, easeInOut) as any,
+            tween(barY, yt, SORT_SEC, easeInOut) as any,
+            tween(barW, wt, SORT_SEC, easeInOut) as any,
+            tween(barH, ht, SORT_SEC, easeInOut) as any,
+          );
         }
       });
 
