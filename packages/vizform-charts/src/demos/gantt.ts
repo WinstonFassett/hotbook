@@ -541,11 +541,7 @@ export class MdGanttChartLC extends Diagram {
       if (!t) return;
 
       const sx = (xScale.value as any)(t.start);
-      const ex_data = (xScale.value as any)(t.end);
-      // Use VISUAL end position for handle detection when min-width is active
-      const dataWidth = ex_data - sx;
-      const ex = dataWidth < MIN_VISUAL_WIDTH ? sx + MIN_VISUAL_WIDTH : ex_data;
-
+      const ex = (xScale.value as any)(t.end);
       const EDGE = 6;
       let kind: DragKind;
       if (Math.abs(x - sx) <= EDGE) kind = 'start';
@@ -747,11 +743,7 @@ export class MdGanttChartLC extends Diagram {
       const barCY = rowCenterY(idx);
       const xS = derive(() => { const d = di(); return d ? (xScale.value as any)(d.start) as number : 0; });
       const xE = derive(() => { const d = di(); return d ? (xScale.value as any)(d.end)   as number : 0; });
-      const MIN_VISUAL_WIDTH = 12;
-      const barW_data = derive(() => xE.value - xS.value);
-      const barW = derive(() => Math.max(MIN_VISUAL_WIDTH, barW_data.value));
-      // Visual end position for handle placement
-      const xE_visual = derive(() => barW.value > barW_data.value ? xS.value + barW.value : xE.value);
+      const barW = derive(() => Math.max(0, xE.value - xS.value));
       const fill = derive(() => {
         const d = di();
         return selected.value === d ? "#fff" : hover.value === d ? hoverColor : base;
@@ -776,7 +768,7 @@ export class MdGanttChartLC extends Diagram {
         return (hover.value === d || selected.value === d) ? 1 : 0;
       });
       s(label(
-        Vec.derive(() => ({ x: xE_visual.value + 6, y: barCY })),
+        Vec.derive(() => ({ x: xE.value + 6, y: barCY })),
         derive(() => {
           const d = di(); if (!d) return "";
           const days = Math.round((d.end.getTime() - d.start.getTime()) / DAY_MS);
@@ -786,7 +778,6 @@ export class MdGanttChartLC extends Diagram {
       ));
 
       // Resize handles at edges — visible on hover/selected.
-      // CRITICAL: Use visual positions so handles align with visible rect edges
       const handleR = derive(() => { const d = di(); return selected.value === d ? 5 : 4; });
       const handleOpacity = derive(() => {
         const d = di();
@@ -794,7 +785,6 @@ export class MdGanttChartLC extends Diagram {
       });
       const handleFill = derive(() => { const d = di(); return selected.value === d ? "#fff" : hoverColor; });
 
-      // Start handle at left edge
       const startHandle = s(circle(
         Vec.derive(() => ({ x: xS.value, y: barCY })),
         handleR,
@@ -803,9 +793,8 @@ export class MdGanttChartLC extends Diagram {
       startHandle.el.style.cursor = "ew-resize";
       startHandle.el.style.transition = hoverTransition("opacity");
 
-      // End handle at VISUAL right edge (not data edge when min-width is applied)
       const endHandle = s(circle(
-        Vec.derive(() => ({ x: xE_visual.value, y: barCY })),
+        Vec.derive(() => ({ x: xE.value, y: barCY })),
         handleR,
         { fill: handleFill, stroke: "#0b0d12", strokeWidth: 1.5, opacity: handleOpacity },
       ));
