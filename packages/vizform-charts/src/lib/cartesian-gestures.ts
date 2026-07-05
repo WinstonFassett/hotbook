@@ -168,7 +168,9 @@ export function attachCartesianGestures<TData>(
     if (x < ctx.plotX || x > ctx.plotX + ctx.rPlotWidth.value) return;
     const pt = findAtPixel(x);
     if (!pt) return;
-    if (Math.abs(y - yPixel(pt)) > 12) return;
+    // Touch-friendly hit tolerance: 24px for touch/pen, 12px for mouse
+    const hitTolerance = pe.pointerType === "mouse" ? 12 : 24;
+    if (Math.abs(y - yPixel(pt)) > hitTolerance) return;
     gestureOrder = order();
     dragPointerId = pe.pointerId;
     dragStartY = y;
@@ -189,14 +191,38 @@ export function attachCartesianGestures<TData>(
     if (x < ctx.plotX || x > ctx.plotX + ctx.rPlotWidth.value) { state.hover.value = null; host.style.cursor = ""; return; }
     const pt = findAtPixel(x);
     state.hover.value = pt;
-    host.style.cursor = pt && Math.abs(y - yPixel(pt)) <= 12 ? "ns-resize" : "";
+    // Touch-friendly hit tolerance: 24px for touch/pen, 12px for mouse
+    const hitTolerance = pe.pointerType === "mouse" ? 12 : 24;
+    host.style.cursor = pt && Math.abs(y - yPixel(pt)) <= hitTolerance ? "ns-resize" : "";
   };
 
   // Rule 14: touch is a first-class gesture surface. Claim the touch gesture
   // from the browser so vertical drag-edit doesn't lose to page scroll on
-  // mobile. Restored on dispose.
+  // mobile. Restored on dispose. Apply to both host and SVG to ensure full
+  // coverage and prevent any scrolling during gestures.
   const prevTouchAction = host.style.touchAction;
+  const prevSvgTouchAction = svgEl.style.touchAction;
   host.style.touchAction = "none";
+  svgEl.style.touchAction = "none";
+
+  // Additional touchstart handler to aggressively prevent scrolling during
+  // touch-based gestures, as touch-action:none alone can be insufficient on
+  // some mobile browsers. This ensures touch interactions within the plot area
+  // don't trigger page scroll.
+  const onTouchStart = (e: Event) => {
+    const te = e as TouchEvent;
+    if (te.touches.length > 0) {
+      const touch = te.touches[0];
+      const rect = svgEl.getBoundingClientRect();
+      const vb = svgEl.viewBox?.baseVal;
+      const sx = vb && vb.width ? vb.width / rect.width : 1;
+      const x = (touch.clientX - rect.left) * sx;
+      // Only prevent default if touch is in the plot area
+      if (x >= ctx.plotX && x <= ctx.plotX + ctx.rPlotWidth.value) {
+        te.preventDefault();
+      }
+    }
+  };
 
   host.addEventListener("pointerleave", onPointerLeave);
   host.addEventListener("click", onClick);
@@ -204,6 +230,7 @@ export function attachCartesianGestures<TData>(
   host.addEventListener("keydown", onKeydown);
   host.addEventListener("pointerdown", onPointerDown);
   host.addEventListener("pointermove", onPointerMove);
+  host.addEventListener("touchstart", onTouchStart, { passive: false });
 
   // ── Cross-tile sync bridge ──────────────────────────────────────────────
   // Flat datums carry no PNode id, so the bridge keys on the datum's index in
@@ -236,12 +263,14 @@ export function attachCartesianGestures<TData>(
 
   return () => {
     host.style.touchAction = prevTouchAction;
+    svgEl.style.touchAction = prevSvgTouchAction;
     host.removeEventListener("pointerleave", onPointerLeave);
     host.removeEventListener("click", onClick);
     host.removeEventListener("wheel", onWheel);
     host.removeEventListener("keydown", onKeydown);
     host.removeEventListener("pointerdown", onPointerDown);
     host.removeEventListener("pointermove", onPointerMove);
+    host.removeEventListener("touchstart", onTouchStart);
     // If this host's drag is the live one, revert+tear it down. (The shared
     // wheel commits on modifier-release/blur; nothing host-local to clean up.)
     if (dragPointerId !== -1) dragController.cancel();
