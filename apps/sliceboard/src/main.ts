@@ -83,6 +83,7 @@ let ws: Workspace = initWorkspace()
 const dockView = document.createElement('sb-dock-view') as DockView
 
 let drillPersistDebounce: ReturnType<typeof setTimeout> | null = null
+let lastHydratedDashId = ''
 
 function commit(next: Workspace) {
   ws = next
@@ -190,11 +191,19 @@ function render() {
   const dash = activeDashboard(ws)
   const ds = dash ? ws.datasets.find(d => d.id === dash.datasetId) : activeDataset(ws)
 
-  // Sync drill: hydrate store from persisted dashboard state on dash switch
-  const persistedDrills = dash?.drills ?? (dash?.drillNodeId ? { default: dash.drillNodeId } : {})
-  const currentDrills = hudStore.getSnapshot().drills
-  if (JSON.stringify(currentDrills) !== JSON.stringify(persistedDrills)) {
-    hudStore.hydrateDrills(persistedDrills)
+  // Sync drill: hydrate store from persisted dashboard state ON DASH SWITCH ONLY.
+  // Running this on every render clobbers live drill state: the hudStore subscriber
+  // that persists drills to dash.drills is debounced 16ms, so a synchronous commit
+  // (e.g. onDepthChange) triggers render() before the debounce fires — dash.drills
+  // is stale, hydrateDrills wipes the just-set drill, and the chart snaps to root.
+  const dashId = dash?.id ?? ''
+  if (dashId !== lastHydratedDashId) {
+    lastHydratedDashId = dashId
+    const persistedDrills = dash?.drills ?? (dash?.drillNodeId ? { default: dash.drillNodeId } : {})
+    const currentDrills = hudStore.getSnapshot().drills
+    if (JSON.stringify(currentDrills) !== JSON.stringify(persistedDrills)) {
+      hudStore.hydrateDrills(persistedDrills)
+    }
   }
 
   // Dock tree
