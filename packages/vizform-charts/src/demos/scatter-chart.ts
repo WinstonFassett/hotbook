@@ -1,6 +1,11 @@
 // ScatterChart — vanilla-TS port of LayerChart's ScatterChart wrapper.
+//
+// Axis-binding model (WIN-144 redesign): xBinding + yBinding are reactive
+// accessor cells. Changing either fires the tween gate in chartContext —
+// dots animate to new positions. No manual tween cells, no orderHash, no
+// measureKey. Marks read through ctx.xGet/ctx.yGet which read tween cells.
 
-import { Anchor, cell, circle, derive, Diagram, label, type Mount, Vec, vec } from "bireactive";
+import { cell, circle, derive, Diagram, label, type Mount, Vec } from "bireactive";
 import { axis } from "../lib/axis";
 import { chartContext } from "../lib/chart-context";
 import { attachCartesianGestures, makeBisectFinder } from "../lib/cartesian-gestures";
@@ -37,23 +42,62 @@ export class MdScatterChartLC extends Diagram {
     }
   `
   readonly dataCell = cell<readonly Point[]>(makeData());
+
+  // Axis bindings — reactive accessor cells. The gate in chartContext
+  // detects binding changes and tweens. Replaces measureKey + xKey.
+  private _xBindingCell = cell<(d: Point) => number>((d) => d.x);
+  private _yBindingCell = cell<(d: Point) => number>((d) => d.y);
+
+  get xBinding(): string { return (this as any)._xBindingName ?? 'x' }
+  set xBinding(v: string) {
+    const prev = (this as any)._xBindingName
+    ;(this as any)._xBindingName = v;
+    // Only create a new accessor reference when the binding name actually
+    // changes. applyData sets el.measureKey (→ yBinding) on EVERY call, so
+    // creating a new reference each time would make the chartContext gate
+    // see structural=true on every applyData, causing spurious tweens.
+    if (prev !== v) {
+      this._xBindingCell.value = (d: Point) => d.x;
+    }
+  }
+
+  get yBinding(): string { return (this as any)._yBindingName ?? 'y' }
+  set yBinding(v: string) {
+    const prev = (this as any)._yBindingName
+    ;(this as any)._yBindingName = v;
+    if (prev !== v) {
+      this._yBindingCell.value = (d: Point) => d.y;
+    }
+  }
+
+  // Backward compat: measureKey maps to yBinding, xKey maps to xBinding
+  get measureKey(): string { return this.yBinding }
+  set measureKey(v: string) { this.yBinding = v }
+  get xKey(): string { return this.xBinding }
+  set xKey(v: string) { this.xBinding = v }
+
   set externalData(v: { x: number; y: number }[] | undefined) {
     if (v) this.dataCell.value = v as Point[];
   }
   get externalData(): { x: number; y: number }[] | undefined {
     return this.dataCell.value as Point[];
   }
+
   protected scene(s: Mount): void {
     const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
     this.view(Wc, Hc);
-    this.tabIndex = -1; // Container not directly focusable, items are
+    this.tabIndex = -1;
     this.style.outline = "none";
 
     const data = this.dataCell;
 
     const ctx = chartContext<Point>({
       width: Wc, height: Hc, data,
-      x: (d) => d.x, y: (d) => d.y,
+      x: this._xBindingCell as any,
+      y: this._yBindingCell as any,
+      idOf: (d) => d.id ?? String(data.peek().indexOf(d)),
+      host: this,
+      anim: this.anim,
       padding: { top: 16, right: 24, bottom: 36, left: 48 },
       xNice: true, yNice: true, yBaseline: 0,
     });
@@ -72,16 +116,17 @@ export class MdScatterChartLC extends Diagram {
       data.value = [...data.value];
     };
 
-    // Draw dots with focusable support.
+    // Draw dots — positions read through ctx.xGet/ctx.yGet (tween layer).
+    // No manual tween cells. The context handles tween vs snap.
+    const points0 = data.peek() as Point[];
     const dotElements = new Map<Point, SVGCircleElement>();
-    for (const d of data.peek() as Point[]) {
+    for (const d of points0) {
       const pos = Vec.derive(() => ({ x: ctx.xGet.value(d), y: ctx.yGet.value(d) }));
       const fill = derive(() =>
         selected.value === d ? "#fff" : hover.value === d ? "#a4c0f0" : COLOR
       );
       const dot = s(circle(pos, 5, { fill, stroke: "#0b0d12", strokeWidth: 1 }));
       dotElements.set(d, dot.el as SVGCircleElement);
-      // Make each dot individually focusable
       dot.el.setAttribute('tabindex', '0');
       dot.el.setAttribute('data-focusable', 'point');
       dot.el.setAttribute('aria-label', `x: ${d.x.toFixed(1)}, y: ${d.y.toFixed(1)}`);
@@ -101,7 +146,7 @@ export class MdScatterChartLC extends Diagram {
       focusDatum: (d) => { if (d) dotElements.get(d)?.focus(); },
     });
 
-    // Selection ring.
+    // Selection ring — reads through ctx.xGet/ctx.yGet (tween layer).
     const selPos = Vec.derive(() => {
       const p = selected.value;
       if (!p) return { x: -10, y: -10 };
@@ -114,12 +159,9 @@ export class MdScatterChartLC extends Diagram {
 
     s(label(
       Vec.derive(() => ({ x: Wc.value / 2, y: 12 })),
-      derive(() => {
-        const p = selected.value ?? hover.value;
-        if (!p) return "ScatterChart — hover · click · ←/→ navigate · ↑/↓ edit y · cmd+wheel · drag";
-        return `x: ${p.x.toFixed(1)}  y: ${p.y.toFixed(1)}`;
-      }),
-      { size: 11, align: Anchor.Center, opacity: 0.7 },
+      "Scatter",
     ));
   }
 }
+
+customElements.define("v-br-scatter", MdScatterChartLC);

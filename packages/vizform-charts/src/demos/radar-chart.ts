@@ -2,15 +2,17 @@
 // Mirrors LC's radial Chart + scaleBand for x (angle per category).
 // Grid: polygon rings at radius ticks + spoke lines. Points on polygon are clickable/editable.
 
-import { Anchor, cell, circle, derive, Diagram, effect as biEffect, label, type Mount, num, pathD, Vec } from "bireactive";
+import { Anchor, cell, circle, derive, Diagram, easeOut, effect as biEffect, label, type Mount, num, pathD, tween, untracked, Vec } from "bireactive";
 import { scaleLinear } from "d3-scale";
 import { extent, ticks as d3Ticks } from "d3-array";
 import { wheelController, dragController, dynamicWheelStep, realModifierDown } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
+import { GESTURE_ACTIVE_CLASS } from "../lib/transitions";
 
 const W = 640;
 const H = 640;
+const SORT_SEC = 0.35; // s — measure-swap tween duration
 
 const COLOR = "#7aaae8";
 
@@ -42,6 +44,14 @@ export class MdRadarChartLC extends Diagram {
   `
   readonly dataCell = cell<readonly Spoke[]>(makeData());
   tickCount = 4;
+
+  private _measureKeyCell = cell<string>('')
+  get measureKey(): string { return this._measureKeyCell.value }
+  set measureKey(v: string) { this._measureKeyCell.value = v }
+  // Axis-binding model (WIN-144): valueBinding replaces measureKey.
+  get valueBinding(): string { return this.measureKey }
+  set valueBinding(v: string) { this.measureKey = v }
+
   set externalData(v: { label: string; value: number }[] | undefined) {
     if (v) this.dataCell.value = v as unknown as Spoke[];
   }
@@ -67,11 +77,13 @@ export class MdRadarChartLC extends Diagram {
       data.value = [...data.value];
     };
 
+    const setGestureActive = (on: boolean) => { this.classList.toggle(GESTURE_ACTIVE_CLASS, on); (this as any).gestureActive = on; };
+
     // Config handed to the SHARED wheel controller (app-wide singleton).
     const wheelConfig = {
-      snapshot: (d: Spoke) => { (this as any).gestureActive = true; return d.value; },
+      snapshot: (d: Spoke) => { setGestureActive(true); return d.value; },
       restore: (d: Spoke, v: number) => mutateDatum(d, v - d.value),
-      onEnd: () => { (this as any).gestureActive = false; hover.value = null; this.dispatchEvent(new CustomEvent("gesturecommit")); },
+      onEnd: (canceled: boolean) => { setGestureActive(false); hover.value = null; this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } })); },
     };
 
     // y: scaleLinear 0–100 → radius 0–R_MAX
@@ -167,17 +179,13 @@ export class MdRadarChartLC extends Diagram {
       s(label(lblPos, lblText, { size: 11, align: Anchor.Center, fill: "#aaa" }));
     }
 
-    // Per-slot radius cells — write-through, no tween (motion policy R2).
+    // Per-slot radius cells — two-lane gate (WIN-144).
     //
-    // Radar has NO structural transition class: spoke order is fixed by the data
-    // array (no reorder — R1 N/A), no orientation/mode toggle (R3 N/A), fixed spoke
-    // pool (R4 N/A). So every change to a spoke's radius is a VALUE change, which R2
-    // says must be immediate. The previous code tweened rPx toward target for 250ms
-    // whenever `!gestureActive` — which is exactly the remote/cross-tile edit case
-    // the policy calls out as settle-lag ("tween toward where the user already put
-    // it reads as lag"). The local-gesture case was already write-through via the
-    // gestureActive branch; this makes the remote case match it. Two-lane, degenerate
-    // form: value lane only, because radar has nothing on the structural lane.
+    // Radar renders by slot (index), so sort changes which value is at each
+    // spoke — the polygon morphs. Measure swap also changes all radii. Both
+    // are structural: tween. Value edits (drag, wheel, keyboard, remote
+    // cross-tile) stay write-through (snap) per R2.
+    const orderHash = derive(() => (data.value as Spoke[]).map(d => d.id ?? d.name).join(','));
     const rPxCells: ReturnType<typeof num>[] = [];
     for (let i = 0; i < MAX_SPOKES; i++) {
       const rTarget = derive(() => {
@@ -187,7 +195,28 @@ export class MdRadarChartLC extends Diagram {
       });
       const rPx = num(rTarget.value);
       rPxCells.push(rPx);
-      biEffect(() => { rPx.value = rTarget.value; });
+      let rCancel: (() => void) | null = null;
+      let rInited = false;
+      let seenMeasureKey = untracked(() => this._measureKeyCell.value);
+      let seenOrder = untracked(() => orderHash.value);
+      biEffect(() => {
+        const target = rTarget.value;
+        const measureKey = untracked(() => this._measureKeyCell.value);
+        const order = orderHash.value;
+        if (!rInited) { rInited = true; seenMeasureKey = measureKey; seenOrder = order; rPx.value = target; return; }
+        // Structural = measure swap OR sort (order change). Radar renders by
+        // slot, so sort changes which value is at each spoke — the polygon
+        // morphs. Value edits (same datum, different value) snap per R2.
+        const structural = measureKey !== seenMeasureKey || order !== seenOrder;
+        seenMeasureKey = measureKey; seenOrder = order;
+        if (structural && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
+          rCancel?.();
+          rCancel = this.anim.start(tween(rPx, target, SORT_SEC, easeOut) as any);
+        } else {
+          rCancel?.(); rCancel = null;
+          rPx.value = target;
+        }
+      });
     }
 
     // Filled polygon (value area) — reads from the write-through radius cells.
@@ -311,13 +340,13 @@ export class MdRadarChartLC extends Diagram {
       snapshot: (d: Spoke) => d.value,
       restore: (d: Spoke, v: number) => mutateDatum(d, v - d.value),
       onMove: onDragMove,
-      onEnd: () => {
+      onEnd: (canceled: boolean) => {
         if (dragPointerId >= 0 && (this as any).hasPointerCapture?.(dragPointerId)) {
           (this as any).releasePointerCapture(dragPointerId);
         }
         dragPointerId = -1;
-        (this as any).gestureActive = false;
-        this.dispatchEvent(new CustomEvent("gesturecommit"));
+        setGestureActive(false);
+        this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } }));
       },
     };
     this.addEventListener("pointerdown", (e) => {
@@ -334,7 +363,7 @@ export class MdRadarChartLC extends Diagram {
       const dy = y - (cy.peek() + Math.sin(a) * r);
       if (Math.sqrt(dx*dx + dy*dy) > 20) return;
       dragPointerId = pe.pointerId;
-      (this as any).gestureActive = true;
+      setGestureActive(true);
       selected.value = spoke;
       (this as any).setPointerCapture(pe.pointerId);
       dragController.begin(spoke, dragConfig); // controller owns move/up/Esc from here

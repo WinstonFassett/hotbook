@@ -5,7 +5,7 @@
 
 import type { Num, Writable } from 'bireactive'
 import type { PNode, PEdge, Tile, Dataset } from './persistence'
-import { makeFlatSource, makeHierSource, hierShapeKey, hierValueKey } from './viz/br/bindTile'
+import { makeFlatSource, makeHierSource, makeHierRootFlatSource, hierShapeKey, hierValueKey } from './viz/br/bindTile'
 import type { TileSource } from './viz/br/bindTile'
 import { hudStore } from './store'
 import { applyGroupBy } from './persistence'
@@ -63,6 +63,27 @@ for (const [tag, cls] of TAGS) {
 
 function leavesOfNodes(nodes: PNode[]): PNode[] {
   return nodes.filter(n => !nodes.some(m => m.parentId === n.id))
+}
+
+function rootsOfNodes(nodes: PNode[]): PNode[] {
+  return nodes.filter(n => !n.parentId)
+}
+
+/** Sum of a measure across all descendant leaves of a root — used ONLY to
+ *  order roots for sortBy:'value' display. A root PNode's own `measures` is
+ *  always empty (only leaves carry measures), so sorting roots by their raw
+ *  measures would compare 0 against 0. The actual redistributable values
+ *  rendered/edited by the chart come from the live BiNode lens tree built
+ *  inside makeHierRootFlatSource — this is a plain, disposable sum for order only. */
+function sumMeasureToRoot(nodes: PNode[], rootId: string, measureKey: string): number {
+  let sum = 0
+  const queue = nodes.filter(n => n.parentId === rootId)
+  while (queue.length) {
+    const cur = queue.shift()!
+    sum += cur.measures[measureKey] ?? 0
+    for (const n of nodes) if (n.parentId === cur.id) queue.push(n)
+  }
+  return sum
 }
 
 function colorByGroup(nodes: PNode[]): PNode[] {
@@ -127,9 +148,12 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
     const maxItems = tile.maxItems
     const leaves = leavesOfNodes(sorted)
     const ids = leaves.map(n => n.id)
-    const displayKey = `${orientation}|${colorMode}|${labelMode}|${valueMode}|${minBandSize}|${maxItems ?? 0}`
+    // shapeKey excludes orientation + mk — those now flow through applyData
+    // (sets reactive _orientationCell + _measureKeyCell) so the chart morphs
+    // instead of remounting (WIN-144 wave 2).
+    const displayKey = `${colorMode}|${labelMode}|${valueMode}|${minBandSize}|${maxItems ?? 0}`
     const maxProp = orientation === 'horizontal' ? 'maxBands' : 'maxBars'
-    const shapeKey = `${displayKey}|${mk}|${[...ids].sort().join(',')}|${[...leaves].sort((a,b)=>a.id<b.id?-1:1).map(n=>n.name).join(',')}`
+    const shapeKey = `${displayKey}|${[...ids].sort().join(',')}|${[...leaves].sort((a,b)=>a.id<b.id?-1:1).map(n=>n.name).join(',')}`
     return makeFlatSource<{ id: string; label: string; value: number }>({
       tag: 'v-br-bar', ids, measureKey: mk,
       values: leaves.map(n => n.measures[mk] ?? 0),
@@ -149,7 +173,9 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
   if (kind === 'br-lc-pie') {
     const leaves = leavesOfNodes(sorted)
     const ids = leaves.map(n => n.id)
-    const shapeKey = `${mk}|${[...ids].sort().join(',')}|${[...leaves].sort((a,b)=>a.id<b.id?-1:1).map(n=>n.name).join(',')}`
+    // shapeKey excludes mk — measure changes flow through applyData (sets
+    // reactive measureKey cell) so the chart animates instead of remounting.
+    const shapeKey = `${[...ids].sort().join(',')}|${[...leaves].sort((a,b)=>a.id<b.id?-1:1).map(n=>n.name).join(',')}`
     return makeFlatSource<{ id: string; label: string; value: Writable<Num> }>({
       tag: 'v-br-pie', ids, measureKey: mk,
       values: leaves.map(n => n.measures[mk] ?? 0),
@@ -161,15 +187,40 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
   }
 
   if (kind === 'br-lc-radar') {
+    // For hierarchical datasets, render/edit root-level (top-level category)
+    // totals instead of dozens of task-level leaves. Backed by a live BiNode
+    // tree (makeHierRootFlatSource) so a root's value is a real Num.lens over
+    // its descendants — editing a spoke redistributes proportionally down the
+    // tree instead of requiring a manual aggregate-then-writeback loop.
+    if (ds.shape === 'tree') {
+      const roots = rootsOfNodes(rawNodes)
+      // Root PNodes carry no measure of their own (only leaves do) — sort by
+      // each root's aggregate leaf sum, not raw n.measures[mk] (always 0).
+      const displayRoots = sortBy === 'value'
+        ? [...roots].sort((a, b) => sumMeasureToRoot(rawNodes, b.id, mk) - sumMeasureToRoot(rawNodes, a.id, mk))
+        : roots
+      const ids = displayRoots.map(n => n.id)
+      // shapeKey excludes mk/sortBy — both flow through applyData (reactive
+      // measureKey cell + reordered array) so the chart tweens instead of
+      // remounting, matching makeFlatSource/makeHierSource.
+      const shapeKey = `v-br-radar|${[...ids].sort().join(',')}|${[...roots].sort((a,b)=>a.id<b.id?-1:1).map(n=>n.name).join(',')}`
+      return makeHierRootFlatSource({
+        tag: 'v-br-radar', nodes: rawNodes, measureKey: mk, shapeKey, ids,
+        onUpdate, onUpdateMany,
+      })
+    }
+
     const leaves = leavesOfNodes(sorted)
     const ids = leaves.map(n => n.id)
-    const shapeKey = `${mk}|${[...ids].sort().join(',')}|${[...leaves].sort((a,b)=>a.id<b.id?-1:1).map(n=>n.name).join(',')}`
+    // shapeKey excludes mk — measure changes flow through applyData (sets
+    // reactive measureKey cell) so the chart animates instead of remounting.
+    const shapeKey = `${[...ids].sort().join(',')}|${[...leaves].sort((a,b)=>a.id<b.id?-1:1).map(n=>n.name).join(',')}`
     return makeFlatSource<{ id: string; name: string; value: number }>({
       tag: 'v-br-radar', ids, measureKey: mk,
       values: leaves.map(n => n.measures[mk] ?? 0),
       shapeKey,
       build: () => leaves.map(n => ({ id: n.id, name: n.name, value: n.measures[mk] ?? 1 })),
-      readValue: d => d.value, writeValue: (d, v) => { d.value = v }, idOf: d => d.id,
+      readValue: d => d.value, writeValue: (d, v) => { d.value = v; onUpdate(d.id, { [mk]: v }) }, idOf: d => d.id,
       nodes: rawNodes, onUpdate,
     })
   }
@@ -179,7 +230,9 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
     const ids = leaves.map(n => n.id)
     const maxItems = tile.maxItems
     const palette = ['#e05c5c', '#f0a742', '#4cba6e', '#5b8def', '#b76de0', '#44c4c4']
-    const shapeKey = `${mk}|${maxItems ?? ''}|${[...ids].sort().join(',')}|${[...leaves].sort((a,b)=>a.id<b.id?-1:1).map(n=>n.name).join(',')}`
+    // shapeKey excludes mk and maxItems — measure/ring-count changes flow through
+    // applyData (sets reactive cells) so the chart animates instead of remounting.
+    const shapeKey = `${[...ids].sort().join(',')}|${[...leaves].sort((a,b)=>a.id<b.id?-1:1).map(n=>n.name).join(',')}`
     return makeFlatSource<{ id: string; label: string; color: string; value: number }>({
       tag: 'v-br-concentric-arc', ids, measureKey: mk,
       values: leaves.map(n => Math.min(100, n.measures[mk] ?? 0)),
@@ -196,12 +249,32 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
     const yKey = tile.yKey ?? mk
     const leaves = leavesOfNodes(sorted)
     const ids = leaves.map(n => n.id)
-    const shapeKey = `${xKey}|${yKey}|${[...ids].sort().join(',')}`
+    // shapeKey excludes xKey/yKey — measure/key changes flow through applyData
+    // (sets reactive measureKey + xKey cells) so the chart animates instead of remounting.
+    const shapeKey = `${[...ids].sort().join(',')}`
+    const nodeById = new Map(leaves.map(n => [n.id, n] as const))
     return makeFlatSource<{ id: string; x: number; y: number }>({
       tag: 'v-br-scatter', ids, measureKey: yKey,
       values: leaves.map(n => n.measures[yKey] ?? 0),
       shapeKey,
       build: () => leaves.map((n, i) => ({ id: n.id, x: xKey === '_index' ? i : (n.measures[xKey] ?? 0), y: n.measures[yKey] ?? 0 })),
+      // Write new x values IN PLACE on existing datum objects. The tween cells
+      // capture pt references at scene init; replacing the array with new
+      // objects would orphan them. applyData does the same for y values.
+      // DON'T trigger dataCell here — applyData's own dataCell.value = newArr
+      // at the end is the single reactivity trigger. A premature trigger makes
+      // the gate fire before reindex writes new x values, causing a snap.
+      mountProps: (el: any) => {
+        el.xKey = xKey
+        const arr = el.dataCell?.peek() as { id: string; x: number; y: number }[] | undefined
+        if (arr) {
+          for (let i = 0; i < arr.length; i++) {
+            const d = arr[i]!
+            const node = nodeById.get(d.id)
+            if (node) d.x = xKey === '_index' ? i : (node.measures[xKey] ?? 0)
+          }
+        }
+      },
       readValue: d => d.y, writeValue: (d, v) => { d.y = v }, idOf: d => d.id,
       reindex: xKey === '_index' ? (d, k) => { (d as any).x = k } : undefined,
       nodes: rawNodes, onUpdate,
@@ -211,14 +284,18 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
   if (kind === 'br-lc-line') {
     const leaves = leavesOfNodes(sorted)
     const ids = leaves.map(n => n.id)
-    const shapeKey = `${mk}|${[...ids].sort().join(',')}`
+    // shapeKey excludes mk — measure changes flow through applyData (sets
+    // reactive measureKey cell) so the chart animates instead of remounting.
+    const shapeKey = `${[...ids].sort().join(',')}`
     return makeFlatSource<{ id: string; date: Date; value: number }>({
       tag: 'v-br-line', ids, measureKey: mk,
       values: leaves.map(n => n.measures[mk] ?? 0),
       shapeKey,
       build: () => leaves.map((n, i) => ({ id: n.id, date: new Date(SERIES_START + i * DAY_MS), value: n.measures[mk] ?? 0 })),
       readValue: d => d.value, writeValue: (d, v) => { d.value = v }, idOf: d => d.id,
-      reindex: (d, k) => { d.date = new Date(SERIES_START + k * DAY_MS) },
+      // No reindex — dates are the x-axis and must stay stable. Sort reorders
+      // the array but the line always renders left-to-right by date (tweenedData
+      // sorts by date). Reindexing dates would make points jump x positions.
       nodes: rawNodes, onUpdate,
     })
   }
@@ -226,14 +303,16 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
   if (kind === 'br-lc-area') {
     const leaves = leavesOfNodes(sorted)
     const ids = leaves.map(n => n.id)
-    const shapeKey = `${mk}|${[...ids].sort().join(',')}`
+    // shapeKey excludes mk — measure changes flow through applyData (sets
+    // reactive measureKey cell) so the chart animates instead of remounting.
+    const shapeKey = `${[...ids].sort().join(',')}`
     return makeFlatSource<{ id: string; date: Date; value: number }>({
       tag: 'v-br-area', ids, measureKey: mk,
       values: leaves.map(n => n.measures[mk] ?? 0),
       shapeKey,
       build: () => leaves.map((n, i) => ({ id: n.id, date: new Date(SERIES_START + i * DAY_MS), value: n.measures[mk] ?? 0 })),
       readValue: d => d.value, writeValue: (d, v) => { d.value = v }, idOf: d => d.id,
-      reindex: (d, k) => { d.date = new Date(SERIES_START + k * DAY_MS) },
+      // No reindex — dates are the x-axis and must stay stable (same as line).
       nodes: rawNodes, onUpdate,
     })
   }

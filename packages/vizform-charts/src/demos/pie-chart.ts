@@ -1,13 +1,15 @@
-import { Anchor, annularSector, cell, circle, derive, Diagram, effect as biEffect, label, type Mount, Num, num, Vec, type Writable } from "bireactive";
+import { Anchor, annularSector, cell, circle, derive, Diagram, easeOut, effect as biEffect, label, type Mount, Num, num, tween, untracked, Vec, type Writable } from "bireactive";
 import { pie } from "d3-shape";
 import { wheelController, dynamicWheelStep, realModifierDown } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { dragCancelable } from "../lib/esc-contract";
+import { GESTURE_ACTIVE_CLASS } from "../lib/transitions";
 
 const W = 640;
 const H = 640;
 const R_INNER = 0;
+const SORT_SEC = 0.35; // s — measure-swap tween duration
 
 const PALETTE = ['#e08888', '#d4a86c', '#ccc060', '#7ec87e', '#60c4c0', '#7aaae8', '#b090e0', '#8899b4'];
 
@@ -41,6 +43,14 @@ export class MdPieChartLC extends Diagram {
     }
   `
   readonly dataCell = cell<readonly Slice[]>(makeData());
+
+  private _measureKeyCell = cell<string>('')
+  get measureKey(): string { return this._measureKeyCell.value }
+  set measureKey(v: string) { this._measureKeyCell.value = v }
+  // Axis-binding model (WIN-144): valueBinding replaces measureKey.
+  get valueBinding(): string { return this.measureKey }
+  set valueBinding(v: string) { this.measureKey = v }
+
   set externalData(v: { id?: string; label: string; value: number }[] | undefined) {
     if (v) this.dataCell.value = v.map((d) => ({ id: d.id, label: d.label, value: num(d.value) }));
   }
@@ -68,18 +78,60 @@ export class MdPieChartLC extends Diagram {
       d.value.value = Math.max(1, d.value.value + delta);
     };
 
+    const setGestureActive = (on: boolean) => { this.classList.toggle(GESTURE_ACTIVE_CLASS, on); (this as any).gestureActive = on; };
+
     // Config handed to the SHARED wheel controller (app-wide singleton).
     const wheelConfig = {
-      snapshot: (d: Slice) => { (this as any).gestureActive = true; return d.value.value; },
+      snapshot: (d: Slice) => { setGestureActive(true); return d.value.value; },
       restore: (d: Slice, v: number) => { d.value.value = Math.max(1, v); },
-      onEnd: () => { (this as any).gestureActive = false; hover.value = null; this.dispatchEvent(new CustomEvent("gesturecommit")); },
+      onEnd: (canceled: boolean) => { setGestureActive(false); hover.value = null; this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } })); },
     };
 
-    // Pie layout (reactive). Reads each slice's value CELL so the layout
-    // recomputes whenever any value changes (drag, wheel, keyboard).
+    // Per-slice tweened value cells — TWEEN on measure swap (animate arcs to
+    // new values), SNAP on value edits / gestures (write-through, no lag).
+    // Same two-lane gate pattern as hier charts (WIN-143).
+    const slices0 = data.peek() as Slice[];
+    const tweenedValues = new Map<string, Writable<Num>>();
+    for (const d of slices0) {
+      const sid = d.id ?? d.label;
+      const vTarget = derive(() => { void data.value; return d.value.value; });
+      const tv = num(vTarget.value);
+      tweenedValues.set(sid, tv);
+      let tvCancel: (() => void) | null = null;
+      let tvInited = false;
+      let seenMeasureKey = untracked(() => this._measureKeyCell.value);
+      biEffect(() => {
+        const target = vTarget.value;
+        const measureKey = untracked(() => this._measureKeyCell.value);
+        if (!tvInited) { tvInited = true; seenMeasureKey = measureKey; tv.value = target; return; }
+        const measureSwapped = measureKey !== seenMeasureKey;
+        seenMeasureKey = measureKey;
+        if (measureSwapped && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
+          tvCancel?.();
+          tvCancel = this.anim.start(tween(tv, target, SORT_SEC, easeOut));
+        } else {
+          tvCancel?.(); tvCancel = null;
+          tv.value = target;
+        }
+      });
+    }
+    // Tweened data for the pie layout — replaces raw values with tweened values.
+    // Boundary knobs still write to raw value cells; tween cells snap to follow.
+    const tweenedData = derive(() => {
+      void data.value; // track data changes (reorder, add/remove)
+      return (data.peek() as Slice[]).map(d => {
+        const sid = d.id ?? d.label;
+        const tv = tweenedValues.get(sid);
+        return tv ? { ...d, value: tv } : d;
+      });
+    });
+
+    // Pie layout (reactive). Reads each slice's tweened value CELL so the
+    // layout recomputes whenever any value changes (drag, wheel, keyboard,
+    // measure swap) — and tweens on measure swap, snaps on value edits.
     const arcs = derive(() => {
       const layout = pie<Slice>().value((d) => d.value.value).sort(null);
-      return layout(data.value as Slice[]);
+      return layout(tweenedData.value as Slice[]);
     });
 
     // Draw slices.
@@ -87,14 +139,45 @@ export class MdPieChartLC extends Diagram {
     const focusDatum = (d: Slice | null) => {
       if (d) sliceElements.get(d)?.focus();
     };
-    const slices0 = data.peek() as Slice[]
+    // Order hash — detects sort (reorder) vs value edit. When the id sequence
+    // changes, it's a sort; the arc angles need to tween (slices rotate).
+    const orderHash = derive(() => (data.value as Slice[]).map(d => d.id ?? d.label).join(','));
     for (let i = 0; i < slices0.length; i++) {
       const d = slices0[i]!;
       const color = PALETTE[i % PALETTE.length]!;
 
       const arcDatum = derive(() => arcs.value[i]);
-      const a0 = derive(() => arcDatum.value?.startAngle ?? 0);
-      const a1 = derive(() => arcDatum.value?.endAngle ?? 0);
+      const a0Target = derive(() => arcDatum.value?.startAngle ?? 0);
+      const a1Target = derive(() => arcDatum.value?.endAngle ?? 0);
+
+      // Tweened arc angles — TWEEN on sort (order change) or measure swap,
+      // SNAP on value edits / gestures. Sort rotates slices to new positions;
+      // measure swap changes slice sizes. Both are structural.
+      const a0 = num(a0Target.value);
+      const a1 = num(a1Target.value);
+      let aCancel: (() => void) | null = null;
+      let aInited = false;
+      let seenMeasureKey = untracked(() => this._measureKeyCell.value);
+      let seenOrder = untracked(() => orderHash.value);
+      biEffect(() => {
+        const t0 = a0Target.value, t1 = a1Target.value;
+        const measureKey = untracked(() => this._measureKeyCell.value);
+        const order = orderHash.value;
+        if (!aInited) { aInited = true; seenMeasureKey = measureKey; seenOrder = order; a0.value = t0; a1.value = t1; return; }
+        const structural = measureKey !== seenMeasureKey || order !== seenOrder;
+        seenMeasureKey = measureKey; seenOrder = order;
+        if (structural && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
+          aCancel?.();
+          aCancel = this.anim.start(
+            tween(a0, t0, SORT_SEC, easeOut) as any,
+            tween(a1, t1, SORT_SEC, easeOut) as any,
+          );
+        } else {
+          aCancel?.(); aCancel = null;
+          a0.value = t0; a1.value = t1;
+        }
+      });
+
       const r = derive(() =>
         selected.value === d ? rOuter.value + 8 : hover.value === d ? rOuter.value + 4 : rOuter.value
       );
@@ -118,9 +201,7 @@ export class MdPieChartLC extends Diagram {
       sector.el.addEventListener("blur", () => { if (selected.value === d) selected.value = null; });
 
       const labelPos = Vec.derive(() => {
-        const arc = arcDatum.value;
-        if (!arc) return { x: -100, y: -100 };
-        const mid = (arc.startAngle + arc.endAngle) / 2;
+        const mid = (a0.value + a1.value) / 2;
         const r = rOuter.value * 0.65;
         return { x: cx.value + Math.cos(mid) * r, y: cy.value + Math.sin(mid) * r };
       });
@@ -198,8 +279,8 @@ export class MdPieChartLC extends Diagram {
         // there is no sort-order concern here.
         dragCancelable(dot, knob, [a, b], {
           host: this,
-          onStart: () => { active.value = true; (this as any).gestureActive = true; dot.el.style.cursor = "grabbing"; },
-          onEnd: () => { active.value = false; (this as any).gestureActive = false; dot.el.style.cursor = "grab"; this.dispatchEvent(new CustomEvent("gesturecommit")); },
+          onStart: () => { active.value = true; setGestureActive(true); dot.el.style.cursor = "grabbing"; },
+          onEnd: (canceled: boolean) => { active.value = false; setGestureActive(false); dot.el.style.cursor = "grab"; this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } })); },
         });
         dot.el.style.cursor = "grab";
         dot.el.addEventListener("pointerenter", () => { active.value = true; });

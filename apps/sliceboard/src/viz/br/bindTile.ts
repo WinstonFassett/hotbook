@@ -327,6 +327,12 @@ export function makeFlatSource<D>(spec: FlatSpec<D>): TileSource {
       const typedEl = el as ElWithDataCell<D>
       if (!typedEl.dataCell) return
       const s = specRef.current
+      // Sync measureKey and re-apply settings (orientation, maxRings, etc.)
+      // BEFORE data writes — charts with a reactive measureKey cell read it
+      // untracked in their gate to classify the change as structural (animate)
+      // vs value edit (snap). Same pattern as hier charts (WIN-143).
+      ;(typedEl as any).measureKey = s.measureKey
+      s.mountProps?.(el)
       // Use peek() to avoid registering dataCell as a bireactive dependency of
       // whatever effect called applyData. If we used .value here, the DockView
       // biEffect (which calls _syncChart → applyData) would re-fire on every
@@ -618,6 +624,184 @@ export function makeHierSource(spec: HierSpec): TileSource {
       showBreadcrumbRef.current = nextSpec.showBreadcrumb
       sortByRef.current = nextSpec.sortBy ?? 'index'
       orientationRef.current = nextSpec.orientation
+    },
+  }
+
+  ;(source as any)._spec = spec
+
+  return source
+}
+
+// ─── makeHierRootFlatSource ────────────────────────────────────────────────────
+//
+// For flat-array charts (radar) that want to render/edit GROUP totals from a
+// hierarchical dataset instead of leaves. Builds a live BiNode tree once (same
+// buildBiTree used by treemap/pack/icicle) so a root's `total` is a real
+// Num.lens over its descendants: writing it redistributes proportionally down
+// the tree, reading it sums back up — no manual aggregate-then-writeback loop.
+//
+// Mirrors makeHierSource's echo-suppression pattern (near() + lastRef) but
+// walks ALL leaf descendants (not just direct children) since radar edits a
+// root that may sit several levels above its leaves.
+
+interface FlatDatum { id: string; name: string; value: number }
+
+export interface HierRootFlatSpec {
+  tag: string
+  nodes: PNode[]
+  measureKey: string
+  shapeKey: string
+  /** Desired display order of root ids — e.g. sorted by aggregate value.
+   *  Radar renders by slot/index, so this drives which spoke gets which root
+   *  (order change = structural, per the chart's two-lane gate). */
+  ids: string[]
+  mountProps?: (el: HTMLElement) => void
+  onUpdate?: (nodeId: string, measures: PNode['measures']) => void
+  onUpdateMany?: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
+}
+
+export function makeHierRootFlatSource(spec: HierRootFlatSpec): TileSource {
+  const nodesRef = { current: spec.nodes }
+  const onUpdateRef = { current: spec.onUpdate }
+  const onUpdateManyRef = { current: spec.onUpdateMany }
+  const measureKeyRef = { current: spec.measureKey }
+  const idsRef = { current: spec.ids }
+  const rootsRef = { current: [] as BiNode[] }
+  // All leaf descendants per root, precomputed once per tree build — write-out
+  // walks these to emit the full set of leaves the lens redistributed into.
+  const leavesByRootRef = { current: new Map<string, BiNode[]>() }
+
+  const source: TileSource = {
+    tag: spec.tag,
+    shapeKey: spec.shapeKey,
+    hudStore,
+
+    mountProps(el: HTMLElement) {
+      const root = buildBiTree(nodesRef.current, measureKeyRef.current)
+      const roots: BiNode[] = root ? (root.value.id === '__root__' ? [...root.children] as BiNode[] : [root]) : []
+      rootsRef.current = roots
+      leavesByRootRef.current = new Map(roots.map(r => [r.value.id, leavesOf(r) as BiNode[]]))
+      const typedEl = el as ElWithDataCell<FlatDatum>
+      typedEl.measureKey = measureKeyRef.current
+      const byId = new Map(roots.map(r => [r.value.id, r]))
+      typedEl.externalData = idsRef.current
+        .map(id => byId.get(id))
+        .filter((r): r is BiNode => !!r)
+        .map(r => ({ id: r.value.id, name: r.value.label, value: r.value.total.peek() }))
+      spec.mountProps?.(el)
+    },
+
+    initialLast(_el: HTMLElement): Map<string, number> {
+      // Seed BOTH root ids (applyData's echo check against store measures) and
+      // leaf ids (bindEditOut's per-leaf change detection) — disjoint keyspaces
+      // sharing one map, since a root is never also a leaf under itself.
+      const last = new Map<string, number>()
+      for (const r of rootsRef.current) {
+        last.set(r.value.id, r.value.total.peek())
+        for (const leaf of leavesByRootRef.current.get(r.value.id) ?? []) {
+          last.set(leaf.value.id, leaf.value.total.peek())
+        }
+      }
+      return last
+    },
+
+    applyData(el: HTMLElement, { gestureActive, lastRef }) {
+      // Apply external store changes into the live LEAF cells (same as
+      // makeHierSource) — group/root PNodes never carry the aggregate measure
+      // themselves (only leaves do), so the only correct source of truth for
+      // "did the store change externally" is each leaf's own measure. Writing
+      // leaves lets the lens recompute root totals naturally; comparing/writing
+      // root totals directly against node.measures[mk] would compare against
+      // 0 (roots have no own measure) and clobber the lens-derived value.
+      if (gestureActive) return
+      const typedEl = el as ElWithDataCell<FlatDatum>
+      // Sync measureKey BEFORE data writes — the chart's two-lane gate reads
+      // this cell (untracked) to classify a measure swap as structural (tween)
+      // vs a value edit (snap). Same requirement as makeFlatSource/makeHierSource.
+      typedEl.measureKey = measureKeyRef.current
+      const byId = new Map(nodesRef.current.map(n => [n.id, n]))
+      for (const [, leaves] of leavesByRootRef.current) {
+        for (const leaf of leaves) {
+          const node = byId.get(leaf.value.id)
+          if (!node) continue
+          const target = node.measures[measureKeyRef.current] ?? 0
+          if (!near(leaf.value.total.peek(), target)) {
+            leaf.value.total.value = target
+            lastRef.set(leaf.value.id, target)
+          }
+        }
+      }
+      // Rebuild in display order (same datum objects, per makeFlatSource's
+      // idle/commit branch) so a sort change moves values between slots —
+      // radar's orderHash (derived from data.value's id sequence) picks this
+      // up and the chart's gate tweens the reorder instead of snapping.
+      if (!typedEl.dataCell) return
+      const rootById = new Map(rootsRef.current.map(r => [r.value.id, r]))
+      const arr = typedEl.dataCell.peek() as FlatDatum[]
+      const datumById = new Map(arr.map(d => [d.id, d]))
+      let touched = false
+      let orderChanged = false
+      const newArr: FlatDatum[] = []
+      for (let k = 0; k < idsRef.current.length; k++) {
+        const id = idsRef.current[k]!
+        const r = rootById.get(id)
+        const d = datumById.get(id)
+        if (!r || !d) continue
+        const v = r.value.total.peek()
+        if (!near(d.value, v)) { touched = true; lastRef.set(id, v) }
+        if (arr[k] !== d) orderChanged = true
+        newArr.push(near(d.value, v) ? d : { ...d, value: v })
+      }
+      if (touched || orderChanged || newArr.length !== arr.length) typedEl.dataCell.value = newArr
+    },
+
+    bindEditOut(el: HTMLElement, lastRef: Map<string, number>): () => void {
+      const typedEl = el as ElWithDataCell<FlatDatum>
+      const dispose = biEffect(() => {
+        const arr = typedEl.dataCell?.value as FlatDatum[]
+        if (!arr) return
+        const cb = onUpdateRef.current
+        const cbMany = onUpdateManyRef.current
+        const byId = new Map(nodesRef.current.map(n => [n.id, n]))
+        const pending: Array<{ id: string; measures: PNode['measures'] }> = []
+        for (const d of arr) {
+          const r = rootsRef.current.find(x => x.value.id === d.id)
+          if (!r) continue
+          // Reading d.value (written by the chart's mutateDatum) and comparing
+          // to the lens's own total picks up the edit; write it into the lensed
+          // cell so Num.lens redistributes to descendants.
+          if (!near(d.value, r.value.total.peek())) {
+            r.value.total.value = d.value
+          }
+          // Walk every leaf under this root — the lens just redistributed the
+          // edit across all of them — and emit any whose value actually moved.
+          const leaves = leavesByRootRef.current.get(r.value.id) ?? []
+          for (const leaf of leaves) {
+            const v = leaf.value.total.value
+            const prev = lastRef.get(leaf.value.id)
+            if (prev === undefined || !near(v, prev)) {
+              lastRef.set(leaf.value.id, v)
+              const node = byId.get(leaf.value.id)
+              if (node && (cb || cbMany)) pending.push({ id: node.id, measures: { ...node.measures, [measureKeyRef.current]: v } })
+            }
+          }
+        }
+        if (pending.length) queueMicrotask(() => {
+          if (cbMany) cbMany(pending)
+          else if (cb) for (const p of pending) cb(p.id, p.measures)
+        })
+      })
+      return dispose
+    },
+
+    syncFrom(next: TileSource) {
+      const nextSpec = (next as any)._spec as HierRootFlatSpec | undefined
+      if (!nextSpec) return
+      nodesRef.current = nextSpec.nodes
+      onUpdateRef.current = nextSpec.onUpdate
+      onUpdateManyRef.current = nextSpec.onUpdateMany
+      measureKeyRef.current = nextSpec.measureKey
+      idsRef.current = nextSpec.ids
     },
   }
 
