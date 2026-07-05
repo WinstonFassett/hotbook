@@ -52,9 +52,13 @@ export class MdAreaChartLC extends Diagram {
 
   get yBinding(): string { return (this as any)._yBindingName ?? 'value' }
   set yBinding(v: string) {
-    (this as any)._yBindingName = v;
-    // tile-sources writes the correct value to d.value in place.
-    this._yBindingCell.value = (d: Point) => d.value;
+    const prev = (this as any)._yBindingName
+    ;(this as any)._yBindingName = v;
+    // Only create a new accessor reference when the binding name actually
+    // changes. applyData sets el.measureKey (→ yBinding) on EVERY call.
+    if (prev !== v) {
+      this._yBindingCell.value = (d: Point) => d.value;
+    }
   }
 
   // Backward compat: measureKey maps to yBinding
