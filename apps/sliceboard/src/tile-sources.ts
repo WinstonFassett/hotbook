@@ -5,7 +5,7 @@
 
 import type { Num, Writable } from 'bireactive'
 import type { PNode, PEdge, Tile, Dataset } from './persistence'
-import { makeFlatSource, makeHierSource, hierShapeKey, hierValueKey } from './viz/br/bindTile'
+import { makeFlatSource, makeHierSource, makeHierRootFlatSource, hierShapeKey, hierValueKey } from './viz/br/bindTile'
 import type { TileSource } from './viz/br/bindTile'
 import { hudStore } from './store'
 import { applyGroupBy } from './persistence'
@@ -63,6 +63,27 @@ for (const [tag, cls] of TAGS) {
 
 function leavesOfNodes(nodes: PNode[]): PNode[] {
   return nodes.filter(n => !nodes.some(m => m.parentId === n.id))
+}
+
+function rootsOfNodes(nodes: PNode[]): PNode[] {
+  return nodes.filter(n => !n.parentId)
+}
+
+/** Sum of a measure across all descendant leaves of a root — used ONLY to
+ *  order roots for sortBy:'value' display. A root PNode's own `measures` is
+ *  always empty (only leaves carry measures), so sorting roots by their raw
+ *  measures would compare 0 against 0. The actual redistributable values
+ *  rendered/edited by the chart come from the live BiNode lens tree built
+ *  inside makeHierRootFlatSource — this is a plain, disposable sum for order only. */
+function sumMeasureToRoot(nodes: PNode[], rootId: string, measureKey: string): number {
+  let sum = 0
+  const queue = nodes.filter(n => n.parentId === rootId)
+  while (queue.length) {
+    const cur = queue.shift()!
+    sum += cur.measures[measureKey] ?? 0
+    for (const n of nodes) if (n.parentId === cur.id) queue.push(n)
+  }
+  return sum
 }
 
 function colorByGroup(nodes: PNode[]): PNode[] {
@@ -166,6 +187,29 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
   }
 
   if (kind === 'br-lc-radar') {
+    // For hierarchical datasets, render/edit root-level (top-level category)
+    // totals instead of dozens of task-level leaves. Backed by a live BiNode
+    // tree (makeHierRootFlatSource) so a root's value is a real Num.lens over
+    // its descendants — editing a spoke redistributes proportionally down the
+    // tree instead of requiring a manual aggregate-then-writeback loop.
+    if (ds.shape === 'tree') {
+      const roots = rootsOfNodes(rawNodes)
+      // Root PNodes carry no measure of their own (only leaves do) — sort by
+      // each root's aggregate leaf sum, not raw n.measures[mk] (always 0).
+      const displayRoots = sortBy === 'value'
+        ? [...roots].sort((a, b) => sumMeasureToRoot(rawNodes, b.id, mk) - sumMeasureToRoot(rawNodes, a.id, mk))
+        : roots
+      const ids = displayRoots.map(n => n.id)
+      // shapeKey excludes mk/sortBy — both flow through applyData (reactive
+      // measureKey cell + reordered array) so the chart tweens instead of
+      // remounting, matching makeFlatSource/makeHierSource.
+      const shapeKey = `v-br-radar|${[...ids].sort().join(',')}|${[...roots].sort((a,b)=>a.id<b.id?-1:1).map(n=>n.name).join(',')}`
+      return makeHierRootFlatSource({
+        tag: 'v-br-radar', nodes: rawNodes, measureKey: mk, shapeKey, ids,
+        onUpdate, onUpdateMany,
+      })
+    }
+
     const leaves = leavesOfNodes(sorted)
     const ids = leaves.map(n => n.id)
     // shapeKey excludes mk — measure changes flow through applyData (sets
@@ -176,7 +220,7 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
       values: leaves.map(n => n.measures[mk] ?? 0),
       shapeKey,
       build: () => leaves.map(n => ({ id: n.id, name: n.name, value: n.measures[mk] ?? 1 })),
-      readValue: d => d.value, writeValue: (d, v) => { d.value = v }, idOf: d => d.id,
+      readValue: d => d.value, writeValue: (d, v) => { d.value = v; onUpdate(d.id, { [mk]: v }) }, idOf: d => d.id,
       nodes: rawNodes, onUpdate,
     })
   }
