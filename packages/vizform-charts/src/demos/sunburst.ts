@@ -141,11 +141,16 @@ export class MdSunburstLC extends Diagram {
 
     let drillInited = false;
     let lastDrillId: string | null = null;
+    let lastMaxDepthSeen: number | undefined = undefined;
     let drillCancel: (() => void) | null = null;
     let drillClassTimer: ReturnType<typeof setTimeout> | null = null;
     biEffect(() => {
       const id = this._drillIdCell.value;
       const rfull = Rfull.value;
+      // Track maxDepth so the levels dropdown re-tweens the viewport — inner
+      // rings expand to fill the space vacated by the outer rings, and vice
+      // versa when levels are added back (WIN-155 relayout).
+      const maxDTracked = maxDepthCell.value;
       let ta0: number, ta1: number, tr0: number, tr1: number;
 
       const lmap = untracked(() => layout.value);
@@ -154,7 +159,7 @@ export class MdSunburstLC extends Diagram {
         const lnode = biNode ? lmap.get(biNode) : null;
         if (lnode) {
           const fd = nodeDepth.get(biNode!) ?? 0;
-          const maxD = untracked(() => maxDepthCell.value);
+          const maxD = maxDTracked;
           const maxWindow = maxD !== undefined && maxD > 0 ? fd + maxD : totalDepth;
           // Walk only the focus subtree to find the deepest rendered ring.
           let maxR1 = lnode.y1;
@@ -173,27 +178,42 @@ export class MdSunburstLC extends Diagram {
         // At root: map [root.y1, maxRendered.y1] → [0, Rfull].
         const rootLayout = lmap.get(root);
         tr0 = rootLayout ? rootLayout.y1 : 0;
-        const maxD = untracked(() => maxDepthCell.value);
-        const maxWindow = maxD !== undefined && maxD > 0 ? maxD : totalDepth;
-        let maxR1 = rfull;
-        for (const { node, depth } of walkWithDepth(root)) {
-          if (depth > 0 && depth <= maxWindow) {
-            const ln = lmap.get(node);
-            if (ln && ln.y1 > maxR1) maxR1 = ln.y1;
+        const maxD = maxDTracked;
+        // WIN-155: when depth is capped, walk the tree to find the outer y1
+        // of the deepest RENDERED ring, so the viewport tween shrinks vr1 and
+        // the surviving inner rings expand radially. Without a cap we use the
+        // full natural radius. Prior code initialized maxR1 = rfull and only
+        // expanded via `>`, so depth caps never shrank the viewport.
+        let maxR1: number;
+        if (maxD !== undefined && maxD > 0) {
+          const maxWindow = maxD;
+          maxR1 = 0;
+          for (const { node, depth } of walkWithDepth(root)) {
+            if (depth > 0 && depth <= maxWindow) {
+              const ln = lmap.get(node);
+              if (ln && ln.y1 > maxR1) maxR1 = ln.y1;
+            }
           }
+          if (maxR1 === 0) maxR1 = rfull; // fallback if walk found nothing
+        } else {
+          maxR1 = rfull;
         }
         ta0 = 0; ta1 = 2 * Math.PI; tr1 = maxR1;
       }
 
       const drillChanged = id !== lastDrillId;
+      const depthChanged = maxDTracked !== lastMaxDepthSeen;
       lastDrillId = id;
+      lastMaxDepthSeen = maxDTracked;
       if (!drillInited) {
         va0.value = ta0; va1.value = ta1; vr0.value = tr0; vr1.value = tr1;
         drillInited = true;
         return;
       }
       if (!drillChanged) {
-        // Resize-only (e.g. breadcrumb appeared): re-tween from current to new target.
+        // Resize or depth-only change: re-tween from current to new target.
+        // WIN-155 relayout — when the levels dropdown drops or adds rings, the
+        // inner rings expand or contract to fill the space via this tween.
         drillCancel?.();
         drillCancel = this.anim.start(
           tween(va0, ta0, DRILL_SEC, easeOut),
@@ -201,6 +221,9 @@ export class MdSunburstLC extends Diagram {
           tween(vr0, tr0, DRILL_SEC, easeOut),
           tween(vr1, tr1, DRILL_SEC, easeOut),
         );
+        // Note: depth changes intentionally do NOT toggle GESTURE_ACTIVE_CLASS
+        // — that suppresses ALL descendant transitions, which would kill the
+        // per-arc enter/exit opacity fade this ticket adds.
         return;
       }
       // Cancel any in-flight drill tween before starting a new one.

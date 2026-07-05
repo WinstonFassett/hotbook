@@ -354,25 +354,29 @@ export class MdIcicleLC extends Diagram {
       let seenSortBy = untracked(() => this._sortByCell.value);
       let seenMeasureKey = untracked(() => this._measureKeyCell.value);
       let seenOrientation = untracked(() => this._orientationCell.value);
+      let seenMaxDepth = untracked(() => this._maxDepthCell.value);
       biEffect(() => {
-        const t = ltarget.value; // track layout (reacts to sort + value + size + orientation)
+        const t = ltarget.value; // track layout (reacts to sort + value + size + orientation + depth)
         const sortBy = this._sortByCell.value; // track sort key so a toggle re-fires this effect
         const measureKey = untracked(() => this._measureKeyCell.value); // read untracked — effect fires on layout change (leaf writes), by which point measureKey is already set
         const orientation = untracked(() => this._orientationCell.value); // read untracked — same reason
-        if (!lInited) { lInited = true; seenSortBy = sortBy; seenMeasureKey = measureKey; seenOrientation = orientation; lx0.value = t.x0; ly0.value = t.y0; lx1.value = t.x1; ly1.value = t.y1; return; }
+        const maxDepth = this._maxDepthCell.value; // WIN-155: track so a levels dropdown change tweens the surviving tiles into the reclaimed space instead of snapping.
+        if (!lInited) { lInited = true; seenSortBy = sortBy; seenMeasureKey = measureKey; seenOrientation = orientation; seenMaxDepth = maxDepth; lx0.value = t.x0; ly0.value = t.y0; lx1.value = t.x1; ly1.value = t.y1; return; }
         // Two-lane split. TWEEN for a real reorder (sort key toggled), measure
-        // swap, or orientation toggle — partitions slide to new slots/axes.
-        // SNAP for everything else: active gesture (real-time drag), and —
-        // crucially — value edits / commits / resize, including REMOTE cross-tile
-        // edits that carry no gesture class (R2: value changes are write-through,
-        // no 250-350ms settle-lag).
+        // swap, orientation toggle, or depth change — partitions slide to new
+        // slots/axes/extents. SNAP for everything else: active gesture (real-
+        // time drag), and — crucially — value edits / commits / resize,
+        // including REMOTE cross-tile edits that carry no gesture class (R2:
+        // value changes are write-through, no 250-350ms settle-lag).
         const reordered = sortBy !== seenSortBy;
         const measureSwapped = measureKey !== seenMeasureKey;
         const orientationChanged = orientation !== seenOrientation;
+        const depthChanged = maxDepth !== seenMaxDepth;
         seenSortBy = sortBy;
         seenMeasureKey = measureKey;
         seenOrientation = orientation;
-        if ((reordered || measureSwapped || orientationChanged) && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
+        seenMaxDepth = maxDepth;
+        if ((reordered || measureSwapped || orientationChanged || depthChanged) && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
           lcancel?.();
           lcancel = this.anim.start(
             tween(lx0, t.x0, SORT_SEC, easeOut),
