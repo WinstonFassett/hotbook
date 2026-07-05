@@ -425,21 +425,28 @@ export class MdBarChartLC extends Diagram {
         return isVert.value ? Math.max(0, plotBottom.value - (valueScale.value as any)(d.value)) : bandScale.value.bandwidth();
       });
 
-      // Tweened cells — gate: tween on orientation/measure/sort, snap position on value edit.
-      // Position (x, w) snaps; value (y, h) tweens. During a cross-tile drag (scatter
-      // editing a shared value), the dragged bar's value changes every frame but
-      // sort order only changes sometimes. On value edit: snap position directly,
-      // restart value tween to new target. This prevents the value tween from
-      // being cancelled mid-animation (which would cause a jump).
+      // Tweened cells. Two roles, gated independently: POSITION (band
+      // placement — moves on sort) and VALUE (measure length — moves on
+      // measure swap/edit). Which literal cell pair plays which role trades
+      // places with orientation: vertical → position=(x,w), value=(y,h);
+      // horizontal → the reverse. Earlier revisions hardcoded (y,h)=value,
+      // (x,w)=position, which only tweened correctly in vertical mode — sort
+      // in horizontal and reorder-in-vertical both silently snapped.
       const barX = num(barXTarget.value);
       const barY = num(barYTarget.value);
       const barW = num(barWTarget.value);
       const barH = num(barHTarget.value);
-      let valCancel: (() => void) | null = null;
+      let animCancel: (() => void) | null = null;
       let inited = false;
       let seenOrient = untracked(() => this._orientationCell.value);
       let seenMeasureKey = untracked(() => this._measureKeyCell.value);
       let seenOrder = untracked(() => orderHash.value);
+      // Apply a target to a (a, b) cell pair — tweened together if `animate`,
+      // snapped instantly otherwise. Returns the two tweens to run, if any.
+      const applyPair = (a: ReturnType<typeof num>, b: ReturnType<typeof num>, at: number, bt: number, animate: boolean) => {
+        if (!animate) { a.value = at; b.value = bt; return []; }
+        return [tween(a, at, SORT_SEC, easeInOut), tween(b, bt, SORT_SEC, easeInOut)];
+      };
       biEffect(() => {
         const xt = barXTarget.value, yt = barYTarget.value, wt = barWTarget.value, ht = barHTarget.value;
         const orient = this._orientationCell.value;
@@ -450,29 +457,30 @@ export class MdBarChartLC extends Diagram {
           barX.value = xt; barY.value = yt; barW.value = wt; barH.value = ht;
           return;
         }
-        const structural = orient !== seenOrient || measureKey !== seenMeasureKey || order !== seenOrder;
+        const orientChanged = orient !== seenOrient;
+        const orderChanged = order !== seenOrder;
+        const measureChanged = measureKey !== seenMeasureKey;
         seenOrient = orient; seenMeasureKey = measureKey; seenOrder = order;
-        if (structural && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
-          valCancel?.();
-          valCancel = this.anim.start(
-            tween(barY, yt, SORT_SEC, easeInOut) as any,
-            tween(barH, ht, SORT_SEC, easeInOut) as any,
-          );
-          barX.value = xt; barW.value = wt;
-        } else if (this.classList.contains(GESTURE_ACTIVE_CLASS)) {
+        if (this.classList.contains(GESTURE_ACTIVE_CLASS)) {
           // This bar is being directly gestured — snap everything.
-          valCancel?.(); valCancel = null;
+          animCancel?.(); animCancel = null;
           barX.value = xt; barY.value = yt; barW.value = wt; barH.value = ht;
-        } else {
-          // Value edit (not structural, not gesturing): snap position directly,
-          // restart value tween to new target.
-          valCancel?.();
-          valCancel = this.anim.start(
-            tween(barY, yt, SORT_SEC, easeInOut) as any,
-            tween(barH, ht, SORT_SEC, easeInOut) as any,
-          );
-          barX.value = xt; barW.value = wt;
+          return;
         }
+        const vertical = orient === 'vertical';
+        const [posA, posB, posAt, posBt] = vertical ? [barX, barW, xt, wt] as const : [barY, barH, yt, ht] as const;
+        const [valA, valB, valAt, valBt] = vertical ? [barY, barH, yt, ht] as const : [barX, barW, xt, wt] as const;
+        // Orientation swap morphs both roles at once. Sort moves position
+        // only; measure swap (or a plain value edit — the drag/wheel/cross-
+        // tile case) moves value only.
+        const tweenPos = orientChanged || orderChanged;
+        const tweenVal = orientChanged || measureChanged || !orderChanged;
+        animCancel?.();
+        const tweens = [
+          ...applyPair(posA, posB, posAt, posBt, tweenPos),
+          ...applyPair(valA, valB, valAt, valBt, tweenVal),
+        ];
+        animCancel = tweens.length ? this.anim.start(...(tweens as any)) : null;
       });
 
       const fill = derive(() => { const d = di(); return selected.value === d ? "#fff" : hover.value === d ? hoverColor : base; });
