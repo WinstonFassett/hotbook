@@ -138,7 +138,9 @@ export class MdBarChartLC extends Diagram {
       // block page scroll so drag-edit doesn't lose to page scroll on mobile.
       // The touchstart handler still prevents default when a bar is touched, so
       // dragging a bar never scrolls.
-      this.style.touchAction = om ? (iv ? 'pan-x' : 'pan-y') : 'none';
+      const pan = om ? (iv ? 'pan-x' : 'pan-y') : 'none';
+      this.style.touchAction = pan;
+      svgEl.style.touchAction = pan;
       if (om) {
         svgEl.style.width = iv ? viewW.value + 'px' : '100%';
         svgEl.style.height = iv ? '100%' : viewH.value + 'px';
