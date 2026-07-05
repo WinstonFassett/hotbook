@@ -47,6 +47,9 @@ export class MdPieChartLC extends Diagram {
   private _measureKeyCell = cell<string>('')
   get measureKey(): string { return this._measureKeyCell.value }
   set measureKey(v: string) { this._measureKeyCell.value = v }
+  // Axis-binding model (WIN-144): valueBinding replaces measureKey.
+  get valueBinding(): string { return this.measureKey }
+  set valueBinding(v: string) { this.measureKey = v }
 
   set externalData(v: { id?: string; label: string; value: number }[] | undefined) {
     if (v) this.dataCell.value = v.map((d) => ({ id: d.id, label: d.label, value: num(d.value) }));

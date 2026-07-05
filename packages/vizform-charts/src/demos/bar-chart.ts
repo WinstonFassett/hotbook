@@ -69,6 +69,10 @@ export class MdBarChartLC extends Diagram {
   private _measureKeyCell = cell<string>('')
   get measureKey(): string { return this._measureKeyCell.value }
   set measureKey(v: string) { this._measureKeyCell.value = v }
+  // Axis-binding model (WIN-144): valueBinding replaces measureKey.
+  // Backward compat: measureKey setter maps to valueBinding.
+  get valueBinding(): string { return this.measureKey }
+  set valueBinding(v: string) { this.measureKey = v }
 
   colorMode: 'single' | 'palette' = 'single';
   labelMode: 'axis' | 'inside' | 'both' = 'axis';
