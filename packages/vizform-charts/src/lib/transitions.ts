@@ -11,8 +11,8 @@ export const TRANSITION_EASING = "cubic-bezier(0.4, 0.0, 0.2, 1)"; // ease-in-ou
  *  fade window, not a rhythm role. Charts fade marks in from opacity 0 on first
  *  render (CSS) and hold them visible for EXIT_MS on removal via
  *  `withExitDelay` before evicting. */
-export const ENTER_MS = 200;
-export const EXIT_MS = 200;
+export const ENTER_MS = 400;
+export const EXIT_MS = 400;
 
 // Role multipliers. Keep these as multipliers (not raw ms) so the base rhythm
 // can be tuned in one place. Names match interaction-principles.md vocabulary.

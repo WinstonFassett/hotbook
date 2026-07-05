@@ -218,19 +218,10 @@ export class MdIcicleLC extends Diagram {
     });
 
     // Rendered set (WIN-155): current window + departing nodes held briefly so
-    // the exit CSS fade can play. On drill, held leavers would ghost at wrong
-    // positions after the viewport tween, so `immediate` flushes them.
-    let lastDrillIdSeen_rs: string | null | undefined = undefined;
-    const drillFlushSignal = derive(() => {
-      const id = this._drillIdCell.value;
-      const changed = lastDrillIdSeen_rs !== undefined && lastDrillIdSeen_rs !== id;
-      lastDrillIdSeen_rs = id;
-      return changed;
-    });
+    // the exit CSS fade can play — including on drill. Exiting tiles freeze
+    // their tween cells so they don't ghost through the viewport tween.
     const renderedSet = withExitDelay(windowTarget, {
       key: (n) => n,
-      exitMs: DRILL_DURATION,
-      immediate: drillFlushSignal,
     });
     const windowMembership = membershipCell(windowTarget, (n) => n);
 
@@ -392,10 +383,21 @@ export class MdIcicleLC extends Diagram {
         }
       });
 
-      const x = derive(() => remapX(lx0.value));
-      const y = derive(() => remapY(ly0.value));
-      const w = derive(() => Math.max(0, remapX(lx1.value) - remapX(lx0.value)));
-      const h = derive(() => Math.max(0, remapY(ly1.value) - remapY(ly0.value)));
+      // WIN-155: freeze remapped geometry for exiting tiles so the fade plays
+      // in place instead of ghosting through the drill viewport tween.
+      let frozenGeom: { x: number; y: number; w: number; h: number } | null = null;
+      const xRaw = derive(() => remapX(lx0.value));
+      const yRaw = derive(() => remapY(ly0.value));
+      const wRaw = derive(() => Math.max(0, remapX(lx1.value) - remapX(lx0.value)));
+      const hRaw = derive(() => Math.max(0, remapY(ly1.value) - remapY(ly0.value)));
+      const x = derive(() => {
+        if (windowMembership.value.has(node)) { frozenGeom = null; return xRaw.value; }
+        if (!frozenGeom) frozenGeom = { x: xRaw.peek(), y: yRaw.peek(), w: wRaw.peek(), h: hRaw.peek() };
+        return frozenGeom.x;
+      });
+      const y = derive(() => (frozenGeom ? frozenGeom.y : yRaw.value));
+      const w = derive(() => (frozenGeom ? frozenGeom.w : wRaw.value));
+      const h = derive(() => (frozenGeom ? frozenGeom.h : hRaw.value));
 
       const stroke = derive(() =>
         state.focused.value === node ? "#fff"

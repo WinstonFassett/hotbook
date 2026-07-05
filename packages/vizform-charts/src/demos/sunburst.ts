@@ -126,21 +126,11 @@ export class MdSunburstLC extends Diagram {
     });
 
     // Rendered set (WIN-155): current window + departing nodes held briefly so
-    // the exit CSS fade can play. On drill, held leavers would remap to
-    // degenerate arcs outside the viewport, so `immediate` flushes them.
-    // drillFlushSignal is a derive whose closure captures the last drill id
-    // seen — reading it during a drill-triggered update returns true.
-    let lastDrillIdSeen: string | null | undefined = undefined;
-    const drillFlushSignal = derive(() => {
-      const id = this._drillIdCell.value;
-      const changed = lastDrillIdSeen !== undefined && lastDrillIdSeen !== id;
-      lastDrillIdSeen = id;
-      return changed;
-    });
+    // the exit CSS fade can play — including on drill. Exiting arcs freeze
+    // their layout cells below so they don't remap to degenerate geometry as
+    // the viewport tweens.
     const renderedSet = withExitDelay(windowTarget, {
       key: (n) => n,
-      exitMs: DRILL_DURATION,
-      immediate: drillFlushSignal,
     });
     const windowMembership = membershipCell(windowTarget, (n) => n);
 
@@ -263,6 +253,10 @@ export class MdSunburstLC extends Diagram {
         const t = ltarget.value; // track layout (reacts to sort + value + size)
         const sortBy = this._sortByCell.value; // track sort key so a toggle re-fires this effect
         const measureKey = untracked(() => this._measureKeyCell.value); // read untracked — effect fires on layout change (leaf writes), by which point measureKey is already set
+        // WIN-155: freeze layout for arcs that have left the window so their
+        // exit fade plays at the last visible position instead of remapping
+        // through the drill viewport tween.
+        if (lInited && !untracked(() => windowMembership.value.has(node))) return;
         if (!lInited) { lInited = true; seenSortBy = sortBy; seenMeasureKey = measureKey; la0.value = t.x0; la1.value = t.x1; lr0.value = t.y0; lr1.value = t.y1; return; }
         // Two-lane split. TWEEN for a real reorder (sort key toggled) or measure
         // swap — arcs sweep to new angular slots. SNAP for everything else: active
@@ -287,10 +281,22 @@ export class MdSunburstLC extends Diagram {
         }
       });
 
-      const a0 = derive(() => remapAngle(la0.value));
-      const a1 = derive(() => remapAngle(la1.value));
-      const rIn = derive(() => Math.max(0, remapRadius(lr0.value)));
-      const rOut = derive(() => Math.max(0, remapRadius(lr1.value)));
+      // WIN-155: while an arc is exiting, freeze its remapped geometry to the
+      // last visible snapshot so the fade-out plays in place instead of
+      // sliding through the drill viewport tween.
+      let frozenGeom: { a0: number; a1: number; rIn: number; rOut: number } | null = null;
+      const a0Raw = derive(() => remapAngle(la0.value));
+      const a1Raw = derive(() => remapAngle(la1.value));
+      const rInRaw = derive(() => Math.max(0, remapRadius(lr0.value)));
+      const rOutRaw = derive(() => Math.max(0, remapRadius(lr1.value)));
+      const a0 = derive(() => {
+        if (windowMembership.value.has(node)) { frozenGeom = null; return a0Raw.value; }
+        if (!frozenGeom) frozenGeom = { a0: a0Raw.peek(), a1: a1Raw.peek(), rIn: rInRaw.peek(), rOut: rOutRaw.peek() };
+        return frozenGeom.a0;
+      });
+      const a1 = derive(() => (frozenGeom ? frozenGeom.a1 : a1Raw.value));
+      const rIn = derive(() => (frozenGeom ? frozenGeom.rIn : rInRaw.value));
+      const rOut = derive(() => (frozenGeom ? frozenGeom.rOut : rOutRaw.value));
       const stroke = derive(() =>
         state.focused.value === node ? "#fff"
         : hoverCell.value === node ? "#c8cdd6"

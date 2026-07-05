@@ -23,7 +23,7 @@ import { buildParentIndex, type BiNode } from "../lib/tree";
 import { portfolio, walkWithDepth } from "../lib/portfolio";
 import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
-import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS } from "../lib/transitions";
+import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, ENTER_MS } from "../lib/transitions";
 import { withExitDelay, membershipCell } from "../lib/mark-lifecycle";
 
 const W = 720;
@@ -173,7 +173,12 @@ export class MdTreemapLC extends Diagram {
       drillCancel = null;
       if (drillSnapTimer) { clearTimeout(drillSnapTimer); drillSnapTimer = null; }
       const gens: ReturnType<typeof tween>[] = [];
+      // WIN-155: only retarget tiles still in the drill window. Exiting tiles
+      // are held by withExitDelay for their fade — leave their geometry frozen
+      // at the last visible position so the fade plays in place.
+      const inWindow = untracked(() => windowMembership.value);
       for (const [node, g] of tileGeo) {
+        if (!inWindow.has(node)) continue;
         const t = targetRect(node, id);
         if (animate) {
           gens.push(
@@ -275,19 +280,10 @@ export class MdTreemapLC extends Diagram {
     });
 
     // Rendered set (WIN-155): current window + departing nodes held briefly so
-    // the exit CSS fade can play. On drill, held leavers would remap off-canvas
-    // and re-flow the treemap, so `immediate` flushes them.
-    let lastDrillIdSeen_rs: string | null | undefined = undefined;
-    const drillFlushSignal = derive(() => {
-      const id = this._drillIdCell.value;
-      const changed = lastDrillIdSeen_rs !== undefined && lastDrillIdSeen_rs !== id;
-      lastDrillIdSeen_rs = id;
-      return changed;
-    });
+    // the exit CSS fade can play — including on drill. Exiting tiles freeze
+    // their tile-geometry cells below so they don't ghost through the drill.
     const renderedSet = withExitDelay(windowTarget, {
       key: (n) => n,
-      exitMs: DRILL_DURATION,
-      immediate: drillFlushSignal,
     });
     const windowMembership = membershipCell(windowTarget, (n) => n);
 
@@ -350,7 +346,7 @@ export class MdTreemapLC extends Diagram {
       // a single effect so they don't fight. Start at 0 pre-frame, then RAF to
       // the composed opacity so the enter fade plays over the CSS transition.
       const tilePresent = derive(() => windowMembership.value.has(node));
-      tile.el.style.transition = `opacity 200ms cubic-bezier(0.4,0,0.2,1)`;
+      tile.el.style.transition = `opacity ${ENTER_MS}ms cubic-bezier(0.4,0,0.2,1)`;
       tile.el.style.opacity = '0';
       requestAnimationFrame(() => requestAnimationFrame(() => {
         biEffect(() => {
