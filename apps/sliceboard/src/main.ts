@@ -110,6 +110,16 @@ hudStore.subscribe(() => {
 // ─── TileRecord builders ──────────────────────────────────────────────────────
 
 function buildTileRecords(dash: Dashboard, ds: Dataset): TileRecord[] {
+  // Helper: update one tile's properties in the CURRENT dashboard (read from
+  // ws at call time, not the captured dash). The captured dash goes stale when
+  // a drill debounce writes drills to ws after buildTileRecords ran — using the
+  // stale dash in `{ ...dash, tiles: ... }` would overwrite those drills.
+  const updateTile = (tileId: string, patch: Partial<Tile>) => {
+    const curDash = ws.dashboards.find(d => d.id === dash.id)
+    if (!curDash) return ws
+    return updateDashboard(ws, { ...curDash, tiles: curDash.tiles.map(t => t.id === tileId ? { ...t, ...patch } : t) })
+  }
+
   return dash.tiles.map(tile => ({
     tile,
     ds,
@@ -128,25 +138,25 @@ function buildTileRecords(dash: Dashboard, ds: Dataset): TileRecord[] {
       commit(removeTile(ws, dash.id, tile.id))
     },
     onMeasureChange: (key: string) => {
-      commit(updateDashboard(ws, { ...dash, tiles: dash.tiles.map(t => t.id === tile.id ? { ...t, measureKey: key } : t) }))
+      commit(updateTile(tile.id, { measureKey: key }))
     },
     onXKeyChange: (key: string) => {
-      commit(updateDashboard(ws, { ...dash, tiles: dash.tiles.map(t => t.id === tile.id ? { ...t, xKey: key } : t) }))
+      commit(updateTile(tile.id, { xKey: key }))
     },
     onYKeyChange: (key: string) => {
-      commit(updateDashboard(ws, { ...dash, tiles: dash.tiles.map(t => t.id === tile.id ? { ...t, yKey: key } : t) }))
+      commit(updateTile(tile.id, { yKey: key }))
     },
     onDepthChange: (depth: number) => {
-      commit(updateDashboard(ws, { ...dash, tiles: dash.tiles.map(t => t.id === tile.id ? { ...t, depth } : t) }))
+      commit(updateTile(tile.id, { depth }))
     },
     onSortChange: (sortBy: 'index' | 'value') => {
-      commit(updateDashboard(ws, { ...dash, tiles: dash.tiles.map(t => t.id === tile.id ? { ...t, sortBy } : t) }))
+      commit(updateTile(tile.id, { sortBy }))
     },
     onOrientationChange: (orientation: 'vertical' | 'horizontal') => {
-      commit(updateDashboard(ws, { ...dash, tiles: dash.tiles.map(t => t.id === tile.id ? { ...t, orientation } : t) }))
+      commit(updateTile(tile.id, { orientation }))
     },
     onGroupByChange: (groupBy: string | undefined) => {
-      commit(updateDashboard(ws, { ...dash, tiles: dash.tiles.map(t => t.id === tile.id ? { ...t, groupBy } : t) }))
+      commit(updateTile(tile.id, { groupBy }))
     },
   }))
 }
