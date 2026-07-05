@@ -172,6 +172,7 @@ export class MdTreemapLC extends Diagram {
     let drillClassTimer: ReturnType<typeof setTimeout> | null = null;
     let drillSnapTimer: ReturnType<typeof setTimeout> | null = null;
     let pendingDrillId: string | null | undefined = undefined;
+    let windowMembershipRef: { value: Set<unknown> } | null = null;
     const retargetTiles = (id: string | null, animate: boolean) => {
       drillCancel?.();
       drillCancel = null;
@@ -179,10 +180,13 @@ export class MdTreemapLC extends Diagram {
       const gens: ReturnType<typeof tween>[] = [];
       // WIN-155: only retarget tiles still in the drill window. Exiting tiles
       // are held by withExitDelay for their fade — leave their geometry frozen
-      // at the last visible position so the fade plays in place.
-      const inWindow = untracked(() => windowMembership.value);
+      // at the last visible position so the fade plays in place. Guard against
+      // TDZ on initial fire — windowMembership is declared below.
+      const inWindow: Set<unknown> | null = windowMembershipRef
+        ? untracked(() => windowMembershipRef!.value)
+        : null;
       for (const [node, g] of tileGeo) {
-        if (!inWindow.has(node)) continue;
+        if (inWindow && !inWindow.has(node)) continue;
         const t = targetRect(node, id);
         if (animate) {
           gens.push(
@@ -291,6 +295,7 @@ export class MdTreemapLC extends Diagram {
       key: (n) => n,
     });
     const windowMembership = membershipCell(windowTarget, (n) => n);
+    windowMembershipRef = windowMembership;
 
     // Flush a pending drill animation once forEach has populated tileGeo.
     // Uses requestAnimationFrame to defer past the forEach commit — the biEffect

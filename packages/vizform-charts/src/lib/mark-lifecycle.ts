@@ -91,20 +91,23 @@ export function enterExitFade(
   const props = ["opacity", ...(opts.extra ?? [])];
   // Set opacity 0 pre-frame so the first render has the pre-transition value.
   el.style.opacity = "0";
-  // Set the enter transition immediately; swap to the exit duration when leaving.
   const enterTransition = props.map(p => `${p} ${enterMs}ms ${TRANSITION_EASING}`).join(", ");
   const exitTransition = props.map(p => `${p} ${exitMs}ms ${TRANSITION_EASING}`).join(", ");
   el.style.transition = enterTransition;
 
-  // Kick opacity → 1 after the browser has painted the initial 0.
+  // Kick opacity → 1 after the browser has painted the initial 0, THEN register
+  // the reactive effect that mirrors `present`. Registering it earlier would
+  // fire synchronously with present=true and clobber the initial opacity=0
+  // before the CSS transition ever ran — killing the enter fade.
   requestAnimationFrame(() => {
-    requestAnimationFrame(() => { el.style.opacity = "1"; });
-  });
-
-  effect(() => {
-    const present = readNow(opts.present);
-    el.style.transition = present ? enterTransition : exitTransition;
-    el.style.opacity = present ? "1" : "0";
+    requestAnimationFrame(() => {
+      el.style.opacity = "1";
+      effect(() => {
+        const present = readNow(opts.present);
+        el.style.transition = present ? enterTransition : exitTransition;
+        el.style.opacity = present ? "1" : "0";
+      });
+    });
   });
 }
 
