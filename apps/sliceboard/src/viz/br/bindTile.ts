@@ -471,6 +471,7 @@ export function makeHierSource(spec: HierSpec): TileSource {
   const sortByRef = { current: spec.sortBy ?? 'index' }
   const orientationRef = { current: spec.orientation }
   const enableNumberDragRef = { current: spec.enableNumberDrag }
+  const depthRef = { current: spec.depth }
 
   const source: TileSource = {
     tag: spec.tag,
@@ -580,6 +581,9 @@ export function makeHierSource(spec: HierSpec): TileSource {
       // Guard: only write if changed, so a measureKey-only swap doesn't re-fire
       // the layout effect (sortBy is tracked) and overwrite the gate's measureSwapped.
       if (typedEl.sortBy !== sortByRef.current) typedEl.sortBy = sortByRef.current
+      // WIN-155: sync depth reactively so the levels dropdown drives per-mark
+      // enter/exit fades instead of a full remount (see hierShapeKey).
+      if (typedEl.maxDepth !== depthRef.current) typedEl.maxDepth = depthRef.current
       // Push drillNodeId so Esc/breadcrumb drill changes reach the chart element.
       if (drillNodeIdRef.current !== undefined && typedEl.drillNodeId !== drillNodeIdRef.current) {
         typedEl.drillNodeId = drillNodeIdRef.current
@@ -624,6 +628,7 @@ export function makeHierSource(spec: HierSpec): TileSource {
       showBreadcrumbRef.current = nextSpec.showBreadcrumb
       sortByRef.current = nextSpec.sortBy ?? 'index'
       orientationRef.current = nextSpec.orientation
+      depthRef.current = nextSpec.depth
     },
   }
 
@@ -816,9 +821,11 @@ export function hierValueKey(nodes: PNode[], measureKey: string): string {
   return nodes.map(n => `${n.id}:${vkey(n.measures[measureKey] ?? 0)}`).sort().join(',')
 }
 
-export function hierShapeKey(tag: string, nodes: PNode[], _measureKey: string, depth?: number): string {
-  // NOTE: sortBy and measureKey are intentionally excluded — sort and measure
+export function hierShapeKey(tag: string, nodes: PNode[], _measureKey: string, _depth?: number): string {
+  // NOTE: sortBy, measureKey, and depth are intentionally excluded — those
   // changes flow through the same-shape syncFrom/applyData path so the chart
-  // can animate the reorder/value-swap instead of remounting and snapping.
-  return `${tag}|${depth ?? 'all'}|${nodes.map(n => `${n.id}:${n.parentId ?? ''}`).sort().join(',')}`
+  // can animate reorder/value-swap/level enter+exit instead of remounting
+  // and snapping. WIN-155: depth needs to be reactive so raising/lowering
+  // the levels dropdown triggers per-mark enter/exit fades.
+  return `${tag}|${nodes.map(n => `${n.id}:${n.parentId ?? ''}`).sort().join(',')}`
 }

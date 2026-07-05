@@ -23,7 +23,8 @@ import { buildParentIndex, type BiNode } from "../lib/tree";
 import { portfolio, walkWithDepth } from "../lib/portfolio";
 import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
-import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS } from "../lib/transitions";
+import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, ENTER_MS } from "../lib/transitions";
+import { withExitDelay, membershipCell } from "../lib/mark-lifecycle";
 
 const W = 720;
 const H = 360;
@@ -47,8 +48,12 @@ export class MdTreemapLC extends Diagram {
     }
   `
   externalRoot?: BiNode
-  maxDepth?: number
   drillKey?: string
+
+  // Reactive so the levels dropdown drives enter/exit fades instead of a remount.
+  private _maxDepthCell = cell<number | undefined>(undefined)
+  get maxDepth(): number | undefined { return this._maxDepthCell.value }
+  set maxDepth(v: number | undefined) { this._maxDepthCell.value = v }
 
   private _drillIdCell = cell<string | null>(null)
   get drillNodeId(): string | null { return this._drillIdCell.value }
@@ -158,7 +163,7 @@ export class MdTreemapLC extends Diagram {
     type TileGeo = { cx: ReturnType<typeof num>; cy: ReturnType<typeof num>; cw: ReturnType<typeof num>; ch: ReturnType<typeof num> };
     const tileGeo = new Map<BiNode, TileGeo>();
 
-    const maxD = this.maxDepth;
+    const maxDepthCell = this._maxDepthCell;
 
     // Drill effect: tween every live tile's geometry cells toward the new focus.
     let drillInited = false;
@@ -167,12 +172,21 @@ export class MdTreemapLC extends Diagram {
     let drillClassTimer: ReturnType<typeof setTimeout> | null = null;
     let drillSnapTimer: ReturnType<typeof setTimeout> | null = null;
     let pendingDrillId: string | null | undefined = undefined;
+    let windowMembershipRef: { value: Set<unknown> } | null = null;
     const retargetTiles = (id: string | null, animate: boolean) => {
       drillCancel?.();
       drillCancel = null;
       if (drillSnapTimer) { clearTimeout(drillSnapTimer); drillSnapTimer = null; }
       const gens: ReturnType<typeof tween>[] = [];
+      // WIN-155: only retarget tiles still in the drill window. Exiting tiles
+      // are held by withExitDelay for their fade — leave their geometry frozen
+      // at the last visible position so the fade plays in place. Guard against
+      // TDZ on initial fire — windowMembership is declared below.
+      const inWindow: Set<unknown> | null = windowMembershipRef
+        ? untracked(() => windowMembershipRef!.value)
+        : null;
       for (const [node, g] of tileGeo) {
+        if (inWindow && !inWindow.has(node)) continue;
         const t = targetRect(node, id);
         if (animate) {
           gens.push(
@@ -261,7 +275,8 @@ export class MdTreemapLC extends Diagram {
     const windowTarget = derive((): readonly BiNode[] => {
       const fd = focusDepth.value;
       const id = this._drillIdCell.value;
-      const maxWindow = maxD !== undefined ? fd + maxD : totalDepth;
+      const maxD = maxDepthCell.value;
+      const maxWindow = maxD !== undefined && maxD > 0 ? fd + maxD : totalDepth;
       const result: BiNode[] = [];
       const focusNode = id ? nodeById.get(id) : null;
       const startNode = focusNode ?? root;
@@ -273,31 +288,14 @@ export class MdTreemapLC extends Diagram {
       return result;
     });
 
-    // Rendered set: current window + departing nodes kept briefly for value-change animations.
-    // On drill: discard leavers immediately — they remap to off-canvas positions.
-    // On value-change: keep leavers for DRILL_DURATION so tiles animate out gracefully.
-    const renderedSet = cell<readonly BiNode[]>([]);
-    let leaveTimer: ReturnType<typeof setTimeout> | null = null;
-    let lastDrillId_rs: string | null = null;
-    biEffect(() => {
-      const newTarget = windowTarget.value;
-      const currentDrillId = untracked(() => this._drillIdCell.value);
-      const drillChanged = currentDrillId !== lastDrillId_rs;
-      lastDrillId_rs = currentDrillId;
-      const prevRendered = untracked(() => renderedSet.value);
-      const targetSet = new Set(newTarget);
-      const leavers = prevRendered.filter(n => !targetSet.has(n));
-      if (leaveTimer) { clearTimeout(leaveTimer); leaveTimer = null; }
-      if (leavers.length > 0 && !drillChanged) {
-        renderedSet.value = [...newTarget, ...leavers];
-        leaveTimer = setTimeout(() => {
-          leaveTimer = null;
-          renderedSet.value = windowTarget.value;
-        }, DRILL_DURATION + 50);
-      } else {
-        renderedSet.value = newTarget;
-      }
+    // Rendered set (WIN-155): current window + departing nodes held briefly so
+    // the exit CSS fade can play — including on drill. Exiting tiles freeze
+    // their tile-geometry cells below so they don't ghost through the drill.
+    const renderedSet = withExitDelay(windowTarget, {
+      key: (n) => n,
     });
+    const windowMembership = membershipCell(windowTarget, (n) => n);
+    windowMembershipRef = windowMembership;
 
     // Flush a pending drill animation once forEach has populated tileGeo.
     // Uses requestAnimationFrame to defer past the forEach commit — the biEffect
@@ -354,9 +352,19 @@ export class MdTreemapLC extends Diagram {
         corner: 3,
       });
       tile.el.dataset.id = node.value.id ?? "";
-      biEffect(() => {
-        tile.el.style.opacity = (nd === 0 || isContextNode.value) ? '0.18' : '1';
-      });
+      // WIN-155: compose lifecycle (enter/exit) with the context-dim opacity in
+      // a single effect so they don't fight. Start at 0 pre-frame, then RAF to
+      // the composed opacity so the enter fade plays over the CSS transition.
+      const tilePresent = derive(() => windowMembership.value.has(node));
+      tile.el.style.transition = `opacity ${ENTER_MS}ms cubic-bezier(0.4,0,0.2,1)`;
+      tile.el.style.opacity = '0';
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        biEffect(() => {
+          const present = tilePresent.value;
+          const dim = (nd === 0 || isContextNode.value) ? 0.18 : 1;
+          tile.el.style.opacity = present ? String(dim) : '0';
+        });
+      }));
       tile.el.style.cursor = "pointer";
       tile.el.setAttribute('tabindex', '0');
       tile.el.setAttribute('data-focusable', 'tile');

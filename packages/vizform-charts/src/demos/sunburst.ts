@@ -25,6 +25,7 @@ import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { dragCancelable } from "../lib/esc-contract";
 import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS } from "../lib/transitions";
+import { withExitDelay, enterExitFade, membershipCell } from "../lib/mark-lifecycle";
 import type { ElementWithBridge } from "../lib/hud-bridge";
 
 const W = 480;
@@ -36,8 +37,12 @@ const SORT_SEC = 0.35; // s — sort/reorder tween duration
 export class MdSunburstLC extends Diagram {
   static styles = `:host { overflow: hidden; }text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}:host(.vf-gesture-active) circle[r="5"] { opacity: 0; } circle[r="5"] { transition: opacity 0.3s ease; }[data-focusable]:focus { outline: 2px solid #4a9eff; outline-offset: 2px; } [data-focusable]:focus:not(:focus-visible) { outline: none; }`
   externalRoot?: BiNode
-  maxDepth?: number
   drillKey?: string
+
+  // Reactive so the levels dropdown drives enter/exit fades instead of a remount.
+  private _maxDepthCell = cell<number | undefined>(undefined)
+  get maxDepth(): number | undefined { return this._maxDepthCell.value }
+  set maxDepth(v: number | undefined) { this._maxDepthCell.value = v }
 
   private _drillIdCell = cell<string | null>(null)
   get drillNodeId(): string | null { return this._drillIdCell.value }
@@ -80,7 +85,7 @@ export class MdSunburstLC extends Diagram {
       if (depth > totalDepth) totalDepth = depth;
     }
 
-    const maxD = this.maxDepth;
+    const maxDepthCell = this._maxDepthCell;
 
     const Rfull = derive(() => Math.min(Wc.value, Hc.value) / 2 - 4);
 
@@ -114,7 +119,8 @@ export class MdSunburstLC extends Diagram {
     const windowTarget = derive((): readonly BiNode[] => {
       const fd = focusDepth.value;
       const id = this._drillIdCell.value;
-      const maxWindow = maxD !== undefined ? fd + maxD : totalDepth;
+      const maxD = maxDepthCell.value;
+      const maxWindow = maxD !== undefined && maxD > 0 ? fd + maxD : totalDepth;
       const result: BiNode[] = [];
       const focusNode = id ? nodeById.get(id) : null;
       for (const { node, depth: relDepth } of walkWithDepth(focusNode ?? root)) {
@@ -124,39 +130,27 @@ export class MdSunburstLC extends Diagram {
       return result;
     });
 
-    // Rendered set: current window + departing nodes kept briefly for value-change animations.
-    // On drill: discard leavers immediately — they remap to degenerate arcs outside the viewport.
-    // On value-change: keep leavers for DRILL_DURATION so arcs animate out gracefully.
-    const renderedSet = cell<readonly BiNode[]>([]);
-    let leaveTimer: ReturnType<typeof setTimeout> | null = null;
-    let lastDrillId_rs: string | null = null;
-    biEffect(() => {
-      const newTarget = windowTarget.value;
-      const currentDrillId = untracked(() => this._drillIdCell.value);
-      const drillChanged = currentDrillId !== lastDrillId_rs;
-      lastDrillId_rs = currentDrillId;
-      const prevRendered = untracked(() => renderedSet.value);
-      const targetSet = new Set(newTarget);
-      const leavers = prevRendered.filter(n => !targetSet.has(n));
-      if (leaveTimer) { clearTimeout(leaveTimer); leaveTimer = null; }
-      if (leavers.length > 0 && !drillChanged) {
-        renderedSet.value = [...newTarget, ...leavers];
-        leaveTimer = setTimeout(() => {
-          leaveTimer = null;
-          renderedSet.value = windowTarget.value;
-        }, DRILL_DURATION + 50);
-      } else {
-        renderedSet.value = newTarget;
-      }
+    // Rendered set (WIN-155): current window + departing nodes held briefly so
+    // the exit CSS fade can play — including on drill. Exiting arcs freeze
+    // their layout cells below so they don't remap to degenerate geometry as
+    // the viewport tweens.
+    const renderedSet = withExitDelay(windowTarget, {
+      key: (n) => n,
     });
+    const windowMembership = membershipCell(windowTarget, (n) => n);
 
     let drillInited = false;
     let lastDrillId: string | null = null;
+    let lastMaxDepthSeen: number | undefined = undefined;
     let drillCancel: (() => void) | null = null;
     let drillClassTimer: ReturnType<typeof setTimeout> | null = null;
     biEffect(() => {
       const id = this._drillIdCell.value;
       const rfull = Rfull.value;
+      // Track maxDepth so the levels dropdown re-tweens the viewport — inner
+      // rings expand to fill the space vacated by the outer rings, and vice
+      // versa when levels are added back (WIN-155 relayout).
+      const maxDTracked = maxDepthCell.value;
       let ta0: number, ta1: number, tr0: number, tr1: number;
 
       const lmap = untracked(() => layout.value);
@@ -165,7 +159,8 @@ export class MdSunburstLC extends Diagram {
         const lnode = biNode ? lmap.get(biNode) : null;
         if (lnode) {
           const fd = nodeDepth.get(biNode!) ?? 0;
-          const maxWindow = maxD !== undefined ? fd + maxD : totalDepth;
+          const maxD = maxDTracked;
+          const maxWindow = maxD !== undefined && maxD > 0 ? fd + maxD : totalDepth;
           // Walk only the focus subtree to find the deepest rendered ring.
           let maxR1 = lnode.y1;
           for (const { node, depth: relDepth } of walkWithDepth(biNode!)) {
@@ -183,26 +178,42 @@ export class MdSunburstLC extends Diagram {
         // At root: map [root.y1, maxRendered.y1] → [0, Rfull].
         const rootLayout = lmap.get(root);
         tr0 = rootLayout ? rootLayout.y1 : 0;
-        const maxWindow = maxD !== undefined ? maxD : totalDepth;
-        let maxR1 = rfull;
-        for (const { node, depth } of walkWithDepth(root)) {
-          if (depth > 0 && depth <= maxWindow) {
-            const ln = lmap.get(node);
-            if (ln && ln.y1 > maxR1) maxR1 = ln.y1;
+        const maxD = maxDTracked;
+        // WIN-155: when depth is capped, walk the tree to find the outer y1
+        // of the deepest RENDERED ring, so the viewport tween shrinks vr1 and
+        // the surviving inner rings expand radially. Without a cap we use the
+        // full natural radius. Prior code initialized maxR1 = rfull and only
+        // expanded via `>`, so depth caps never shrank the viewport.
+        let maxR1: number;
+        if (maxD !== undefined && maxD > 0) {
+          const maxWindow = maxD;
+          maxR1 = 0;
+          for (const { node, depth } of walkWithDepth(root)) {
+            if (depth > 0 && depth <= maxWindow) {
+              const ln = lmap.get(node);
+              if (ln && ln.y1 > maxR1) maxR1 = ln.y1;
+            }
           }
+          if (maxR1 === 0) maxR1 = rfull; // fallback if walk found nothing
+        } else {
+          maxR1 = rfull;
         }
         ta0 = 0; ta1 = 2 * Math.PI; tr1 = maxR1;
       }
 
       const drillChanged = id !== lastDrillId;
+      const depthChanged = maxDTracked !== lastMaxDepthSeen;
       lastDrillId = id;
+      lastMaxDepthSeen = maxDTracked;
       if (!drillInited) {
         va0.value = ta0; va1.value = ta1; vr0.value = tr0; vr1.value = tr1;
         drillInited = true;
         return;
       }
       if (!drillChanged) {
-        // Resize-only (e.g. breadcrumb appeared): re-tween from current to new target.
+        // Resize or depth-only change: re-tween from current to new target.
+        // WIN-155 relayout — when the levels dropdown drops or adds rings, the
+        // inner rings expand or contract to fill the space via this tween.
         drillCancel?.();
         drillCancel = this.anim.start(
           tween(va0, ta0, DRILL_SEC, easeOut),
@@ -210,6 +221,9 @@ export class MdSunburstLC extends Diagram {
           tween(vr0, tr0, DRILL_SEC, easeOut),
           tween(vr1, tr1, DRILL_SEC, easeOut),
         );
+        // Note: depth changes intentionally do NOT toggle GESTURE_ACTIVE_CLASS
+        // — that suppresses ALL descendant transitions, which would kill the
+        // per-arc enter/exit opacity fade this ticket adds.
         return;
       }
       // Cancel any in-flight drill tween before starting a new one.
@@ -269,6 +283,10 @@ export class MdSunburstLC extends Diagram {
         const t = ltarget.value; // track layout (reacts to sort + value + size)
         const sortBy = this._sortByCell.value; // track sort key so a toggle re-fires this effect
         const measureKey = untracked(() => this._measureKeyCell.value); // read untracked — effect fires on layout change (leaf writes), by which point measureKey is already set
+        // WIN-155: freeze layout for arcs that have left the window so their
+        // exit fade plays at the last visible position instead of remapping
+        // through the drill viewport tween.
+        if (lInited && !untracked(() => windowMembership.value.has(node))) return;
         if (!lInited) { lInited = true; seenSortBy = sortBy; seenMeasureKey = measureKey; la0.value = t.x0; la1.value = t.x1; lr0.value = t.y0; lr1.value = t.y1; return; }
         // Two-lane split. TWEEN for a real reorder (sort key toggled) or measure
         // swap — arcs sweep to new angular slots. SNAP for everything else: active
@@ -293,10 +311,22 @@ export class MdSunburstLC extends Diagram {
         }
       });
 
-      const a0 = derive(() => remapAngle(la0.value));
-      const a1 = derive(() => remapAngle(la1.value));
-      const rIn = derive(() => Math.max(0, remapRadius(lr0.value)));
-      const rOut = derive(() => Math.max(0, remapRadius(lr1.value)));
+      // WIN-155: while an arc is exiting, freeze its remapped geometry to the
+      // last visible snapshot so the fade-out plays in place instead of
+      // sliding through the drill viewport tween.
+      let frozenGeom: { a0: number; a1: number; rIn: number; rOut: number } | null = null;
+      const a0Raw = derive(() => remapAngle(la0.value));
+      const a1Raw = derive(() => remapAngle(la1.value));
+      const rInRaw = derive(() => Math.max(0, remapRadius(lr0.value)));
+      const rOutRaw = derive(() => Math.max(0, remapRadius(lr1.value)));
+      const a0 = derive(() => {
+        if (windowMembership.value.has(node)) { frozenGeom = null; return a0Raw.value; }
+        if (!frozenGeom) frozenGeom = { a0: a0Raw.peek(), a1: a1Raw.peek(), rIn: rInRaw.peek(), rOut: rOutRaw.peek() };
+        return frozenGeom.a0;
+      });
+      const a1 = derive(() => (frozenGeom ? frozenGeom.a1 : a1Raw.value));
+      const rIn = derive(() => (frozenGeom ? frozenGeom.rIn : rInRaw.value));
+      const rOut = derive(() => (frozenGeom ? frozenGeom.rOut : rOutRaw.value));
       const stroke = derive(() =>
         state.focused.value === node ? "#fff"
         : hoverCell.value === node ? "#c8cdd6"
@@ -313,6 +343,11 @@ export class MdSunburstLC extends Diagram {
       arc.el.style.cursor = "pointer";
       arc.el.setAttribute('tabindex', '0');
       arc.el.setAttribute('data-focusable', 'arc');
+
+      // WIN-155 enter/exit fade — arc fades in on mount, fades out when the
+      // node leaves the drill window (held in renderedSet by withExitDelay).
+      const arcPresent = derive(() => windowMembership.value.has(node));
+      enterExitFade(arc.el, { present: arcPresent });
       biEffect(() => {
         arc.el.setAttribute('aria-label', `${node.value.label}: ${node.value.total.value.toFixed(0)}`);
       });
@@ -363,7 +398,8 @@ export class MdSunburstLC extends Diagram {
       type HandleItem = { parent: BiNode; i: number; aNode: BiNode; bNode: BiNode };
       const handleWindow = derive((): readonly HandleItem[] => {
         const fd = focusDepth.value;
-        const maxWindow = maxD !== undefined ? fd + maxD : totalDepth;
+        const maxD = maxDepthCell.value;
+        const maxWindow = maxD !== undefined && maxD > 0 ? fd + maxD : totalDepth;
         const items: HandleItem[] = [];
         for (const n of renderedSet.value) {
           const d = nodeDepth.get(n) ?? 0;

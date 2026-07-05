@@ -23,7 +23,8 @@ import { buildParentIndex, type BiNode } from "../lib/tree";
 import { portfolio, walkWithDepth } from "../lib/portfolio";
 import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
-import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS } from "../lib/transitions";
+import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, ENTER_MS } from "../lib/transitions";
+import { withExitDelay, membershipCell } from "../lib/mark-lifecycle";
 
 const W = 480;
 const H = 480;
@@ -35,8 +36,12 @@ const SORT_SEC = 0.35; // s — sort/reorder tween duration
 export class MdPack extends Diagram {
   static styles = `:host { overflow: hidden; }text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}[data-focusable]:focus { outline: 2px solid #4a9eff; outline-offset: 2px; } [data-focusable]:focus:not(:focus-visible) { outline: none; }`
   externalRoot?: BiNode
-  maxDepth?: number
   drillKey?: string
+
+  // Reactive so the levels dropdown drives enter/exit fades instead of a remount.
+  private _maxDepthCell = cell<number | undefined>(undefined)
+  get maxDepth(): number | undefined { return this._maxDepthCell.value }
+  set maxDepth(v: number | undefined) { this._maxDepthCell.value = v }
 
   // Internal reactive cell updated by the drillNodeId setter.
   private _drillIdCell = cell<string | null>(null)
@@ -121,7 +126,8 @@ export class MdPack extends Diagram {
         if (lnode) {
           // Viewport = union bounding box of all descendants of the drilled node.
           const fd = nodeDepth.get(biNode!) ?? 0;
-          const maxWindow = maxD !== undefined ? fd + maxD : totalDepth;
+          const maxD = untracked(() => maxDepthCell.value);
+          const maxWindow = maxD !== undefined && maxD > 0 ? fd + maxD : totalDepth;
           let minX0 = Infinity, minY0 = Infinity, maxX1 = -Infinity, maxY1 = -Infinity;
           for (const { node, depth: relDepth } of walkWithDepth(biNode!)) {
             const absDepth = fd + relDepth;
@@ -183,7 +189,7 @@ export class MdPack extends Diagram {
       }, DRILL_DURATION + 60);
     });
 
-    const maxD = this.maxDepth;
+    const maxDepthCell = this._maxDepthCell;
 
     // Window: when drilled (fd > 0) include focus node as context circle + descendants.
     // Walk focus subtree only so off-screen sibling circles don't leak into the canvas.
@@ -191,7 +197,8 @@ export class MdPack extends Diagram {
     const windowTarget = derive((): readonly BiNode[] => {
       const fd = focusDepth.value;
       const id = this._drillIdCell.value;
-      const maxWindow = maxD !== undefined ? fd + maxD : totalDepth;
+      const maxD = maxDepthCell.value;
+      const maxWindow = maxD !== undefined && maxD > 0 ? fd + maxD : totalDepth;
       const result: BiNode[] = [];
       const focusNode = id ? nodeById.get(id) : null;
       const startNode = focusNode ?? root;
@@ -203,31 +210,13 @@ export class MdPack extends Diagram {
       return result;
     });
 
-    // Rendered set: current window + departing nodes kept briefly for value-change animations.
-    // On drill: discard leavers immediately — they remap to off-canvas positions.
-    // On value-change: keep leavers for DRILL_DURATION so circles animate out gracefully.
-    const renderedSet = cell<readonly BiNode[]>([]);
-    let leaveTimer: ReturnType<typeof setTimeout> | null = null;
-    let lastDrillId_rs: string | null = null;
-    biEffect(() => {
-      const newTarget = windowTarget.value;
-      const currentDrillId = untracked(() => this._drillIdCell.value);
-      const drillChanged = currentDrillId !== lastDrillId_rs;
-      lastDrillId_rs = currentDrillId;
-      const prevRendered = untracked(() => renderedSet.value);
-      const targetSet = new Set(newTarget);
-      const leavers = prevRendered.filter(n => !targetSet.has(n));
-      if (leaveTimer) { clearTimeout(leaveTimer); leaveTimer = null; }
-      if (leavers.length > 0 && !drillChanged) {
-        renderedSet.value = [...newTarget, ...leavers];
-        leaveTimer = setTimeout(() => {
-          leaveTimer = null;
-          renderedSet.value = windowTarget.value;
-        }, DRILL_DURATION + 50);
-      } else {
-        renderedSet.value = newTarget;
-      }
+    // Rendered set (WIN-155): current window + departing nodes held briefly so
+    // the exit CSS fade can play — including on drill. Exiting circles freeze
+    // their remapped geometry below so they don't ghost through the drill zoom.
+    const renderedSet = withExitDelay(windowTarget, {
+      key: (n) => n,
     });
+    const windowMembership = membershipCell(windowTarget, (n) => n);
 
     // Windowed node rendering.
     const nodeLayer = s(group());
@@ -279,27 +268,37 @@ export class MdPack extends Diagram {
 
       // Uniform scale — pack circles must stay circular or they overlap.
       // Use min(Wc/spanW, Hc/spanH) so the content fits and stays proportional.
-      const cx = derive(() => {
+      const cxRaw = derive(() => {
         const spanW = vx1.value - vx0.value;
         const spanH = vy1.value - vy0.value;
         if (spanW === 0 || spanH === 0) return 0;
         const scale = Math.min(Wc.value / spanW, Hc.value / spanH);
         return (lx.value - vx0.value) * scale + (Wc.value - spanW * scale) / 2;
       });
-      const cy = derive(() => {
+      const cyRaw = derive(() => {
         const spanW = vx1.value - vx0.value;
         const spanH = vy1.value - vy0.value;
         if (spanW === 0 || spanH === 0) return 0;
         const scale = Math.min(Wc.value / spanW, Hc.value / spanH);
         return (ly.value - vy0.value) * scale + (Hc.value - spanH * scale) / 2;
       });
-      const r = derive(() => {
+      const rRaw = derive(() => {
         const spanW = vx1.value - vx0.value;
         const spanH = vy1.value - vy0.value;
         if (spanW === 0 || spanH === 0) return 0;
         const scale = Math.min(Wc.value / spanW, Hc.value / spanH);
         return lr.value * scale;
       });
+      // WIN-155: freeze remapped geometry for exiting circles so the fade
+      // plays in place instead of ghosting through the drill viewport tween.
+      let frozenGeom: { cx: number; cy: number; r: number } | null = null;
+      const cx = derive(() => {
+        if (windowMembership.value.has(node)) { frozenGeom = null; return cxRaw.value; }
+        if (!frozenGeom) frozenGeom = { cx: cxRaw.peek(), cy: cyRaw.peek(), r: rRaw.peek() };
+        return frozenGeom.cx;
+      });
+      const cy = derive(() => (frozenGeom ? frozenGeom.cy : cyRaw.value));
+      const r = derive(() => (frozenGeom ? frozenGeom.r : rRaw.value));
       const stroke = derive(() =>
         state.focused.value === node ? "#fff"
         : hoverCell.value === node ? "#c8cdd6"
@@ -315,9 +314,19 @@ export class MdPack extends Diagram {
         strokeWidth,
       });
       disc.el.dataset.id = node.value.id ?? "";
-      biEffect(() => {
-        disc.el.style.opacity = (nd === 0 || isContextNode.value) ? '0.18' : '1';
-      });
+      // WIN-155: compose lifecycle (enter/exit) with context-dim opacity in a
+      // single effect. Start at 0 pre-frame, then RAF to composed opacity so
+      // the enter fade plays over the CSS transition.
+      const discPresent = derive(() => windowMembership.value.has(node));
+      disc.el.style.transition = `opacity ${ENTER_MS}ms cubic-bezier(0.4,0,0.2,1)`;
+      disc.el.style.opacity = '0';
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        biEffect(() => {
+          const present = discPresent.value;
+          const dim = (nd === 0 || isContextNode.value) ? 0.18 : 1;
+          disc.el.style.opacity = present ? String(dim) : '0';
+        });
+      }));
       disc.el.style.cursor = "pointer";
       // No CSS transition on cx/cy/r — the viewport tween (vx0..vy1) drives
       // these via derive(), and a CSS transition would double-animate, chasing

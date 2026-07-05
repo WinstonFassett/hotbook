@@ -25,6 +25,7 @@ import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { dragCancelable } from "../lib/esc-contract";
 import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, settleTransition } from "../lib/transitions";
+import { withExitDelay, membershipCell } from "../lib/mark-lifecycle";
 import type { ElementWithBridge } from "../lib/hud-bridge";
 
 const W = 720;
@@ -148,7 +149,8 @@ export class MdIcicleLC extends Diagram {
     // tiles start at 0. For horizontal, partition's x (sibling) → canvas y and
     // partition's y (depth) → canvas x; for vertical, no swap needed.
     const layout = derive(() => {
-      const maxD = this._maxDepthCell.value;
+      const rawMaxD = this._maxDepthCell.value;
+      const maxD = rawMaxD !== undefined && rawMaxD > 0 ? rawMaxD : undefined;
       const h = buildHierarchy(rootCell.value, this._sortByCell.value);
       const td = h.height; // levels below root
       const visibleDepth = maxD !== undefined ? Math.min(maxD, td) : td;
@@ -203,7 +205,8 @@ export class MdIcicleLC extends Diagram {
       const fd = focusDepth.value;
       const id = this._drillIdCell.value;
       const { root, nodeById, totalDepth } = structure.value;
-      const maxD = this._maxDepthCell.value;
+      const rawMaxD = this._maxDepthCell.value;
+      const maxD = rawMaxD !== undefined && rawMaxD > 0 ? rawMaxD : undefined;
       const maxWindow = maxD !== undefined ? fd + maxD : totalDepth;
       const result: BiNode[] = [];
       const focusNode = id ? nodeById.get(id) : null;
@@ -216,32 +219,13 @@ export class MdIcicleLC extends Diagram {
       return result;
     });
 
-    // Rendered set: current window + departing nodes kept briefly for
-    // value-change animations. On drill: discard leavers immediately — they
-    // remap through the viewport tween and would ghost at wrong positions.
-    const renderedSet = cell<readonly BiNode[]>([]);
-    let leaveTimer: ReturnType<typeof setTimeout> | null = null;
-    let lastDrillId_rs: string | null = null;
-    this._trackScene(() => { if (leaveTimer) { clearTimeout(leaveTimer); leaveTimer = null; } });
-    this._trackScene(biEffect(() => {
-      const newTarget = windowTarget.value;
-      const currentDrillId = untracked(() => this._drillIdCell.value);
-      const drillChanged = currentDrillId !== lastDrillId_rs;
-      lastDrillId_rs = currentDrillId;
-      const prevRendered = untracked(() => renderedSet.value);
-      const targetSet = new Set(newTarget);
-      const leavers = prevRendered.filter(n => !targetSet.has(n));
-      if (leaveTimer) { clearTimeout(leaveTimer); leaveTimer = null; }
-      if (leavers.length > 0 && !drillChanged) {
-        renderedSet.value = [...newTarget, ...leavers];
-        leaveTimer = setTimeout(() => {
-          leaveTimer = null;
-          renderedSet.value = windowTarget.value;
-        }, DRILL_DURATION + 50);
-      } else {
-        renderedSet.value = newTarget;
-      }
-    }));
+    // Rendered set (WIN-155): current window + departing nodes held briefly so
+    // the exit CSS fade can play — including on drill. Exiting tiles freeze
+    // their tween cells so they don't ghost through the viewport tween.
+    const renderedSet = withExitDelay(windowTarget, {
+      key: (n) => n,
+    });
+    const windowMembership = membershipCell(windowTarget, (n) => n);
 
     // Drill viewport tween: compute target viewport from focus node bounds and
     // tween all 4 cells. Uses untracked for layout reads so value changes don't
@@ -259,7 +243,8 @@ export class MdIcicleLC extends Diagram {
       void Wc.value; void Hc.value; // track resize
       void isHoriz.value; // track orientation
       const { nodeById, nodeDepth, totalDepth } = structure.value; // track data swap
-      const maxD = this._maxDepthCell.value;
+      const rawMaxD = this._maxDepthCell.value;
+      const maxD = rawMaxD !== undefined && rawMaxD > 0 ? rawMaxD : undefined;
       const W0 = Wc.value, H0 = Hc.value;
       const depthCanvas = isHoriz.value ? W0 : H0;
       const sibCanvas = isHoriz.value ? H0 : W0;
@@ -369,25 +354,29 @@ export class MdIcicleLC extends Diagram {
       let seenSortBy = untracked(() => this._sortByCell.value);
       let seenMeasureKey = untracked(() => this._measureKeyCell.value);
       let seenOrientation = untracked(() => this._orientationCell.value);
+      let seenMaxDepth = untracked(() => this._maxDepthCell.value);
       biEffect(() => {
-        const t = ltarget.value; // track layout (reacts to sort + value + size + orientation)
+        const t = ltarget.value; // track layout (reacts to sort + value + size + orientation + depth)
         const sortBy = this._sortByCell.value; // track sort key so a toggle re-fires this effect
         const measureKey = untracked(() => this._measureKeyCell.value); // read untracked — effect fires on layout change (leaf writes), by which point measureKey is already set
         const orientation = untracked(() => this._orientationCell.value); // read untracked — same reason
-        if (!lInited) { lInited = true; seenSortBy = sortBy; seenMeasureKey = measureKey; seenOrientation = orientation; lx0.value = t.x0; ly0.value = t.y0; lx1.value = t.x1; ly1.value = t.y1; return; }
+        const maxDepth = this._maxDepthCell.value; // WIN-155: track so a levels dropdown change tweens the surviving tiles into the reclaimed space instead of snapping.
+        if (!lInited) { lInited = true; seenSortBy = sortBy; seenMeasureKey = measureKey; seenOrientation = orientation; seenMaxDepth = maxDepth; lx0.value = t.x0; ly0.value = t.y0; lx1.value = t.x1; ly1.value = t.y1; return; }
         // Two-lane split. TWEEN for a real reorder (sort key toggled), measure
-        // swap, or orientation toggle — partitions slide to new slots/axes.
-        // SNAP for everything else: active gesture (real-time drag), and —
-        // crucially — value edits / commits / resize, including REMOTE cross-tile
-        // edits that carry no gesture class (R2: value changes are write-through,
-        // no 250-350ms settle-lag).
+        // swap, orientation toggle, or depth change — partitions slide to new
+        // slots/axes/extents. SNAP for everything else: active gesture (real-
+        // time drag), and — crucially — value edits / commits / resize,
+        // including REMOTE cross-tile edits that carry no gesture class (R2:
+        // value changes are write-through, no 250-350ms settle-lag).
         const reordered = sortBy !== seenSortBy;
         const measureSwapped = measureKey !== seenMeasureKey;
         const orientationChanged = orientation !== seenOrientation;
+        const depthChanged = maxDepth !== seenMaxDepth;
         seenSortBy = sortBy;
         seenMeasureKey = measureKey;
         seenOrientation = orientation;
-        if ((reordered || measureSwapped || orientationChanged) && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
+        seenMaxDepth = maxDepth;
+        if ((reordered || measureSwapped || orientationChanged || depthChanged) && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
           lcancel?.();
           lcancel = this.anim.start(
             tween(lx0, t.x0, SORT_SEC, easeOut),
@@ -401,10 +390,21 @@ export class MdIcicleLC extends Diagram {
         }
       });
 
-      const x = derive(() => remapX(lx0.value));
-      const y = derive(() => remapY(ly0.value));
-      const w = derive(() => Math.max(0, remapX(lx1.value) - remapX(lx0.value)));
-      const h = derive(() => Math.max(0, remapY(ly1.value) - remapY(ly0.value)));
+      // WIN-155: freeze remapped geometry for exiting tiles so the fade plays
+      // in place instead of ghosting through the drill viewport tween.
+      let frozenGeom: { x: number; y: number; w: number; h: number } | null = null;
+      const xRaw = derive(() => remapX(lx0.value));
+      const yRaw = derive(() => remapY(ly0.value));
+      const wRaw = derive(() => Math.max(0, remapX(lx1.value) - remapX(lx0.value)));
+      const hRaw = derive(() => Math.max(0, remapY(ly1.value) - remapY(ly0.value)));
+      const x = derive(() => {
+        if (windowMembership.value.has(node)) { frozenGeom = null; return xRaw.value; }
+        if (!frozenGeom) frozenGeom = { x: xRaw.peek(), y: yRaw.peek(), w: wRaw.peek(), h: hRaw.peek() };
+        return frozenGeom.x;
+      });
+      const y = derive(() => (frozenGeom ? frozenGeom.y : yRaw.value));
+      const w = derive(() => (frozenGeom ? frozenGeom.w : wRaw.value));
+      const h = derive(() => (frozenGeom ? frozenGeom.h : hRaw.value));
 
       const stroke = derive(() =>
         state.focused.value === node ? "#fff"
@@ -427,9 +427,18 @@ export class MdIcicleLC extends Diagram {
       tile.el.style.cursor = "pointer";
       tile.el.setAttribute('tabindex', '0');
       tile.el.setAttribute('data-focusable', 'tile');
-      biEffect(() => {
-        tile.el.style.opacity = isContextNode.value ? '0.35' : '1';
-      });
+      // WIN-155: compose lifecycle (enter/exit) with context dim in a single
+      // opacity effect so the two don't fight. Start at 0, RAF to lifecycle
+      // opacity for the enter fade.
+      const tilePresent = derive(() => windowMembership.value.has(node));
+      tile.el.style.opacity = '0';
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        biEffect(() => {
+          const present = tilePresent.value;
+          const dim = isContextNode.value ? 0.35 : 1;
+          tile.el.style.opacity = present ? String(dim) : '0';
+        });
+      }));
       biEffect(() => {
         tile.el.setAttribute('aria-label', `${node.value.label}: ${node.value.total.value.toFixed(0)}`);
       });
@@ -480,7 +489,8 @@ export class MdIcicleLC extends Diagram {
       const handleWindow = derive((): readonly HandleItem[] => {
         const fd = focusDepth.value;
         const { nodeDepth, totalDepth } = structure.value;
-        const maxD = this._maxDepthCell.value;
+        const rawMaxD = this._maxDepthCell.value;
+      const maxD = rawMaxD !== undefined && rawMaxD > 0 ? rawMaxD : undefined;
         const maxWindow = maxD !== undefined ? fd + maxD : totalDepth;
         const items: HandleItem[] = [];
         for (const n of renderedSet.value) {
