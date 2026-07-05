@@ -353,20 +353,6 @@ export class MdBarChartLC extends Diagram {
       hover.value = findAtPixel(x, y);
     });
 
-    // Additional touchstart handler to aggressively prevent scrolling during
-    // touch-based gestures, as touch-action:none alone can be insufficient on
-    // some mobile browsers.
-    this.addEventListener("touchstart", e => {
-      const te = e as TouchEvent;
-      if (te.touches.length > 0) {
-        const touch = te.touches[0]!;
-        const { x, y } = localPoint({ clientX: touch.clientX, clientY: touch.clientY } as PointerEvent);
-        if (findAtPixel(x, y)) {
-          te.preventDefault();
-        }
-      }
-    }, { passive: false });
-
     // ─── Highlight rect (column/row hover background) ─────────────────────
     const hlTarget = derive(() => hover.value ?? selected.value);
     const hlPos = Vec.derive(() => {
@@ -512,6 +498,7 @@ export class MdBarChartLC extends Diagram {
       const labelFill = derive(() => { const d = di(); return selected.value === d ? base : "#fff"; });
 
       const tile = s(rect(barX, barY, barW, barH, { fill, corner: 2 }));
+      tile.el.style.touchAction = "none";
       tileElements.set(datumId, tile.el);
       biEffect(() => { tile.el.style.cursor = isVert.value ? "ns-resize" : "ew-resize"; });
       tile.el.setAttribute('tabindex', '0');
@@ -617,6 +604,7 @@ export class MdBarChartLC extends Diagram {
         stroke: "#0b0d12", strokeWidth: 1.5, opacity: handleOpacity,
       }));
       handle.el.style.transition = hoverTransition("opacity");
+      handle.el.style.touchAction = "none";
       biEffect(() => { handle.el.style.cursor = isVert.value ? "ns-resize" : "ew-resize"; });
       handle.el.addEventListener("pointerenter", () => { const d = di(); if (!wheelController.active && d) hover.value = d; });
       handle.el.addEventListener("pointerleave", () => { const d = di(); if (!wheelController.active && d && hover.value === d) hover.value = null; });

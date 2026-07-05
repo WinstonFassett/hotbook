@@ -236,6 +236,7 @@ export class MdConcentricArcLC extends Diagram {
         derive(() => visible.value && rInner.value >= 1 ? arcD(rOuter.value, rInner.value, START, START + TWO_PI, corner.value) : ""),
         { fill: slotColor, opacity: derive(() => { const d = di(); return hover.value === d || selected.value === d ? 0.25 : 0.18; }) }
       ));
+      trackEl.el.style.touchAction = "none";
       ringElementsById.set(datumId, trackEl.el);
       // Make each ring individually focusable
       trackEl.el.setAttribute('tabindex', '0');
@@ -292,6 +293,7 @@ export class MdConcentricArcLC extends Diagram {
       const valueStroke = derive(() => { const d = di(); return selected.value === d ? "#fff" : hover.value === d ? (d?.color ?? "none") : "none"; });
       const valueStrokeW = derive(() => { const d = di(); return selected.value === d ? 1.5 : hover.value === d ? 3 : 0; });
       const valueEl = gs(pathD(valueD, { fill: slotColor, stroke: valueStroke, strokeWidth: valueStrokeW }));
+      valueEl.el.style.touchAction = "none";
       valueEl.el.addEventListener("pointerenter", () => { const d = di(); if (d && !wheelController.active && !dragController.active) hover.value = d; });
       valueEl.el.addEventListener("pointerleave", () => { const d = di(); if (d && !wheelController.active && !dragController.active && hover.value === d) hover.value = null; });
       valueEl.el.addEventListener("click", () => { const d = di(); if (!d) return; selected.value = selected.value === d ? null : d; this.focus(); });
@@ -380,19 +382,6 @@ export class MdConcentricArcLC extends Diagram {
       hover.value = null;
       // Keep lastRing until gesture release so wheel still works just after leaving.
     });
-
-    // Additional touchstart handler to aggressively prevent scrolling during
-    // touch-based gestures, as touch-action:none alone can be insufficient on
-    // some mobile browsers.
-    this.addEventListener("touchstart", (e) => {
-      const te = e as TouchEvent;
-      if (te.touches.length === 0) return;
-      const touch = te.touches[0]!;
-      const { x, y } = localPt({ clientX: touch.clientX, clientY: touch.clientY } as PointerEvent);
-      if (findRingAtLocal(x, y)) {
-        te.preventDefault();
-      }
-    }, { passive: false });
 
     this.addEventListener("keydown", (e) => {
       const ke = e as KeyboardEvent;

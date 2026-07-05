@@ -589,19 +589,6 @@ export class MdGanttChartLC extends Diagram {
       selected.value = selected.value === t ? null : t;
     });
 
-    // Additional touchstart handler to aggressively prevent scrolling during
-    // touch-based gestures, as touch-action:none alone can be insufficient on
-    // some mobile browsers.
-    this.addEventListener("touchstart", (e) => {
-      const te = e as TouchEvent;
-      if (te.touches.length === 0) return;
-      const touch = te.touches[0]!;
-      const { x, y } = localPoint({ clientX: touch.clientX, clientY: touch.clientY } as PointerEvent);
-      if (x >= plotX && x <= plotX + plotW.value && y >= plotY && y <= plotY + plotH.value) {
-        te.preventDefault();
-      }
-    }, { passive: false });
-
     // ─── Wheel — ctrl/cmd+wheel resizes the hovered/selected task's end ───
     // Shared wheelController gives us Esc-revert + meta-keyup commit for free.
     const wheelConfig = {
@@ -783,6 +770,7 @@ export class MdGanttChartLC extends Diagram {
 
       const tile = s(rect(xS, barY, barW, ROW_H, { fill, corner: 3 }));
       tile.el.style.cursor = "grab";
+      tile.el.style.touchAction = "none";
       // Value geometry (x/width = task start/duration) is write-through — no settle.
 
       // Inside label (task name) — shown when bar wide enough.
@@ -824,6 +812,7 @@ export class MdGanttChartLC extends Diagram {
       ));
       startHandle.el.style.cursor = "ew-resize";
       startHandle.el.style.transition = hoverTransition("opacity");
+      startHandle.el.style.touchAction = "none";
 
       const endHandle = s(circle(
         Vec.derive(() => ({ x: xE.value, y: barCY })),
@@ -832,6 +821,7 @@ export class MdGanttChartLC extends Diagram {
       ));
       endHandle.el.style.cursor = "ew-resize";
       endHandle.el.style.transition = hoverTransition("opacity");
+      endHandle.el.style.touchAction = "none";
     }
 
     // ─── Dependency connectors ────────────────────────────────────────────

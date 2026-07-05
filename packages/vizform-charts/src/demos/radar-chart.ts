@@ -276,6 +276,7 @@ export class MdRadarChartLC extends Diagram {
       const dot = s(circle(dotPos, dotR, { fill: COLOR, stroke: dotStroke, strokeWidth: dotStrokeW }));
       spokeElements[i] = dot.el as SVGCircleElement;
       dot.el.style.cursor = "ns-resize";
+      dot.el.style.touchAction = "none";
       // Make each spoke individually focusable
       dot.el.setAttribute('tabindex', '0');
       dot.el.setAttribute('data-focusable', 'spoke');
@@ -408,21 +409,6 @@ export class MdRadarChartLC extends Diagram {
       if (ke.key === "ArrowUp") { mutateDatum(cur, +step); ke.preventDefault(); }
       else if (ke.key === "ArrowDown") { mutateDatum(cur, -step); ke.preventDefault(); }
     });
-
-    // Additional touchstart handler to aggressively prevent scrolling during
-    // touch-based gestures, as touch-action:none alone can be insufficient on
-    // some mobile browsers.
-    this.addEventListener("touchstart", (e) => {
-      const te = e as TouchEvent;
-      if (te.touches.length > 0) {
-        const touch = te.touches[0]!;
-        const { x, y } = localPt({ clientX: touch.clientX, clientY: touch.clientY } as PointerEvent);
-        const spoke = findNearestSpoke(x, y);
-        if (spoke) {
-          te.preventDefault();
-        }
-      }
-    }, { passive: false });
 
     s(label(
       Vec.derive(() => ({ x: Wc.value / 2, y: 20 })),
