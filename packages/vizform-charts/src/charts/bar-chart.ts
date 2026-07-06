@@ -356,7 +356,7 @@ export class MdBarChartLC extends Diagram {
       const bs = bandScale.value;
       const bp = bs(String(i)) ?? 0;
       const pad = (bs.step() - bs.bandwidth()) / 2;
-      if (isVert.value) return { x: bp - pad, y: plotY.value };
+      if (isVert.value) return { x: bp - pad, y: plotBottom.value - effPlotH.value };
       return { x: plotX.value, y: bp - pad };
     });
     const hlW = derive(() => {
