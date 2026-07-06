@@ -44,6 +44,7 @@ import {
   GESTURE_SUPPRESSION_CSS,
   hoverTransition,
 } from "../lib/transitions";
+import { lightenHex } from "../lib/color-utils";
 
 const W = 720;
 const H = 360;
@@ -69,14 +70,6 @@ export interface GanttTask {
   /** Dependencies with optional lag. Finish-to-start relationships.
    *  Can be string[] for backward compatibility or GanttDependency[] for lag support. */
   deps?: Array<string | GanttDependency>;
-}
-
-function lightenHex(hex: string, t: number): string {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  const m = (c: number) => Math.round(c + (255 - c) * t).toString(16).padStart(2, '0');
-  return `#${m(r)}${m(g)}${m(b)}`;
 }
 
 // Helper functions for working with flexible dependency format
