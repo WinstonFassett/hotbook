@@ -367,18 +367,21 @@ export class MdTreeChart extends Diagram {
         const collapsedSuffix = isCollapsedNode.value && hasChildren ? ' (collapsed)' : '';
         nodeShape.el.setAttribute('aria-label', `${node.value.label}: ${node.value.total.value.toFixed(0)}${collapsedSuffix}`);
       });
+      // Disable pointer events on hidden nodes so they don't block clicks on visible parents
+      biEffect(() => {
+        const isHidden = isInsideCollapsed(node);
+        nodeShape.el.style.pointerEvents = isHidden ? 'none' : '';
+      });
       nodeShape.el.addEventListener("click", () => {
-        // Inner non-root nodes toggle their collapsed state on click.
-        // Leaves and root only update focus.
-        if (hasChildren && depth > 0) toggleCollapsed(node);
+        // Nodes with children toggle their collapsed state on click.
+        // Leaves only update focus.
+        if (hasChildren) toggleCollapsed(node);
         state.focused.value = node;
       });
       nodeShape.el.addEventListener("dblclick", (e) => {
-        // Double-tap/click on a node toggles (rather than drilling via the
-        // shared chart host handler). Stop propagation so the host drill
-        // handler never fires.
+        // Double-tap/click on a node toggles via the click handler.
+        // Stop propagation so the host drill handler never fires.
         e.stopPropagation();
-        if (hasChildren && depth > 0) toggleCollapsed(node);
       });
       nodeShape.el.addEventListener("focus", () => { state.focused.value = node; });
       nodeShape.el.addEventListener("blur", () => { if (state.focused.value === node) state.focused.value = null; });
