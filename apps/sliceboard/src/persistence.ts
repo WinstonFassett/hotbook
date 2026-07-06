@@ -126,18 +126,45 @@ export interface Dashboard {
   dockTree?: DockNode | null
 }
 
+// ─── Page stack ───────────────────────────────────────────────────────────────
+//
+// Phase C introduces a per-dataset PageStack: an ordered list of Pages, each
+// referencing one Dashboard. Today's UI still renders a single active dashboard;
+// the stack is the data-model seat for Stage 2's stacked rendering. A stack is
+// single-dataset (see Q2 in WIN-84 / Phase C notes).
+
+export interface Page {
+  id: string
+  dashboardId: string
+  heightPx: number
+}
+
+export interface PageStack {
+  id: string
+  datasetId: string
+  pages: Page[]
+  activePageIndex: number
+}
+
 // ─── Workspace ────────────────────────────────────────────────────────────────
 
 export interface Workspace {
   datasets: Dataset[]
   dashboards: Dashboard[]
+  pageStacks: PageStack[]
   activeDatasetId: string
   activeDashboardId: string
+  activePageStackId: string
 }
 
 // ─── Storage ──────────────────────────────────────────────────────────────────
 
-const LS_KEY = 'sb:workspace:v11'
+const LS_KEY = 'sb:workspace:v13'
+const LEGACY_KEYS = ['sb:workspace:v12', 'sb:workspace:v11', 'sb:workspace:v10']
+
+function defaultPageHeightPx(): number {
+  return typeof window !== 'undefined' && window.innerHeight > 0 ? window.innerHeight : 800
+}
 
 function genId(): string {
   return Math.random().toString(36).slice(2, 10)
@@ -632,8 +659,10 @@ function buildSeedWorkspace(): Workspace {
       { id: 'dash-supply',  datasetId: supply.id,  name: 'Supply chain',     createdAt: NOW, layout: supplyLayout,     tiles: supplyTiles,      measureKey: 'value' },
       { id: 'dash-gantt',   datasetId: gantt.id,   name: 'Project schedule', createdAt: NOW, layout: ganttLayout,      tiles: ganttTiles,       measureKey: 'start' },
     ],
+    pageStacks: [],
     activeDatasetId: life.id,
     activeDashboardId: 'dash-life',
+    activePageStackId: '',
   }
 }
 
@@ -649,51 +678,96 @@ const VALID_TILE_KINDS = new Set<TileKind>([
   'treetable', // retired but still renders via vanilla treetable
 ])
 
+// Drop tiles with unknown kinds so old persisted dashboards don't render broken.
+function sanitizeTiles(ws: Workspace): void {
+  ws.dashboards.forEach(dash => {
+    const before = dash.tiles.length
+    dash.tiles = dash.tiles.filter(tile => {
+      const valid = VALID_TILE_KINDS.has(tile.kind)
+      if (!valid) {
+        console.warn(`[persistence] Dropped tile ${tile.id} with unknown kind: ${tile.kind}`)
+      }
+      return valid
+    })
+    if (dash.tiles.length < before) {
+      console.warn(`[persistence] Dropped ${before - dash.tiles.length} invalid tiles from dashboard ${dash.id}`)
+    }
+  })
+}
+
+// v10 → v11+ drill migration: fold legacy single-scope drillNodeId into drills['default'].
+function migrateDrills(ws: Workspace): void {
+  ws.dashboards.forEach(dash => {
+    if (dash.drillNodeId != null && dash.drills == null) {
+      dash.drills = { default: dash.drillNodeId }
+    }
+    delete dash.drillNodeId
+  })
+}
+
+// v11/v12 → v13: introduce PageStack per dataset that owns dashboards, seeded with
+// the currently-selected dashboard for that dataset (workspace active if it lives
+// in this dataset, else the first). Preserves existing stacks if already present
+// (e.g. a partial v13 payload) rather than clobbering user height edits.
+export function normalizePageStacks(ws: Workspace): Workspace {
+  const existingByDataset = new Map<string, PageStack>()
+  for (const s of ws.pageStacks ?? []) existingByDataset.set(s.datasetId, s)
+
+  const stacks: PageStack[] = []
+  for (const ds of ws.datasets) {
+    const dsDashboards = ws.dashboards.filter(d => d.datasetId === ds.id)
+    if (dsDashboards.length === 0) continue
+
+    const existing = existingByDataset.get(ds.id)
+    const dsDashboardIds = new Set(dsDashboards.map(d => d.id))
+    const validPages = (existing?.pages ?? []).filter(p => dsDashboardIds.has(p.dashboardId))
+
+    if (validPages.length === 0) {
+      const activeInDs = dsDashboards.find(d => d.id === ws.activeDashboardId) ?? dsDashboards[0]!
+      stacks.push({
+        id: existing?.id ?? genId(),
+        datasetId: ds.id,
+        pages: [{ id: genId(), dashboardId: activeInDs.id, heightPx: defaultPageHeightPx() }],
+        activePageIndex: 0,
+      })
+    } else {
+      const activeIdx = Math.max(0, Math.min(validPages.length - 1, existing?.activePageIndex ?? 0))
+      stacks.push({
+        id: existing?.id ?? genId(),
+        datasetId: ds.id,
+        pages: validPages,
+        activePageIndex: activeIdx,
+      })
+    }
+  }
+
+  const activeStack = stacks.find(s => s.datasetId === ws.activeDatasetId) ?? stacks[0]
+  return { ...ws, pageStacks: stacks, activePageStackId: activeStack?.id ?? '' }
+}
+
+function readLegacy(): Workspace | null {
+  for (const key of LEGACY_KEYS) {
+    const raw = localStorage.getItem(key)
+    if (!raw) continue
+    const ws = JSON.parse(raw) as Workspace
+    migrateDrills(ws)
+    sanitizeTiles(ws)
+    return ws
+  }
+  return null
+}
+
 function load(): Workspace | null {
   try {
     const raw = localStorage.getItem(LS_KEY)
     if (raw) {
       const ws = JSON.parse(raw) as Workspace
-      // Guard: filter out tiles with unknown kinds
-      ws.dashboards.forEach(dash => {
-        const before = dash.tiles.length
-        dash.tiles = dash.tiles.filter(tile => {
-          const valid = VALID_TILE_KINDS.has(tile.kind)
-          if (!valid) {
-            console.warn(`[persistence] Dropped tile ${tile.id} with unknown kind: ${tile.kind}`)
-          }
-          return valid
-        })
-        if (dash.tiles.length < before) {
-          console.warn(`[persistence] Dropped ${before - dash.tiles.length} invalid tiles from dashboard ${dash.id}`)
-        }
-      })
-      return ws
+      sanitizeTiles(ws)
+      return normalizePageStacks(ws)
     }
-
-    // One-shot migration from v10
-    const legacy = localStorage.getItem('sb:workspace:v10')
+    const legacy = readLegacy()
     if (!legacy) return null
-    const ws = JSON.parse(legacy) as Workspace
-    ws.dashboards.forEach(dash => {
-      if (dash.drillNodeId != null && dash.drills == null) {
-        dash.drills = { default: dash.drillNodeId }
-      }
-      delete dash.drillNodeId
-      // Guard: filter out tiles with unknown kinds (also for migrated data)
-      const before = dash.tiles.length
-      dash.tiles = dash.tiles.filter(tile => {
-        const valid = VALID_TILE_KINDS.has(tile.kind)
-        if (!valid) {
-          console.warn(`[persistence] Dropped tile ${tile.id} with unknown kind: ${tile.kind}`)
-        }
-        return valid
-      })
-      if (dash.tiles.length < before) {
-        console.warn(`[persistence] Dropped ${before - dash.tiles.length} invalid tiles from dashboard ${dash.id}`)
-      }
-    })
-    return ws
+    return normalizePageStacks(legacy)
   } catch (e) {
     console.error('[persistence] Failed to load workspace:', e)
     return null
@@ -707,15 +781,21 @@ function save(ws: Workspace): void {
 }
 
 export function initWorkspace(): Workspace {
+  const hadV13 = localStorage.getItem(LS_KEY) != null
   const stored = load()
-  if (stored) return stored
-  const ws = buildSeedWorkspace()
+  if (stored) {
+    // If we migrated from a legacy key, persist the v13 payload immediately so
+    // a subsequent reload hits v13 directly instead of re-running migration.
+    if (!hadV13) save(stored)
+    return stored
+  }
+  const ws = normalizePageStacks(buildSeedWorkspace())
   save(ws)
   return ws
 }
 
 export function saveWorkspace(ws: Workspace): void {
-  save(ws)
+  save(normalizePageStacks(ws))
 }
 
 // ─── GroupBy helper ───────────────────────────────────────────────────────────
