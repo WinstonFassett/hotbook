@@ -419,8 +419,12 @@ export class MdTreemapLC extends Diagram {
       const id = this._drillIdCell.value;
       return id ? (nodeById.get(id)?.value.label ?? "") : "";
     });
+    const ctxLabelPos = derive(() => ({
+      x: Wc.value / 2,
+      y: ctxLabelText.value ? 10 : -100
+    }));
     s(label(
-      Vec.derive(() => ({ x: Wc.value / 2, y: ctxLabelText.value ? 10 : -100 })),
+      ctxLabelPos,
       ctxLabelText,
       { size: 10, align: Anchor.Center, fill: "#e0e0e0", bold: true },
     ));
