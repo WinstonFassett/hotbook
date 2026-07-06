@@ -1,4 +1,4 @@
-import { type Cell, num, tween, easeOut } from "bireactive";
+import { num, tween, easeOut, type Diagram } from "bireactive";
 import { GESTURE_ACTIVE_CLASS } from "./transitions";
 
 export interface ViewerBounds {
@@ -7,7 +7,7 @@ export interface ViewerBounds {
 }
 
 export interface ViewerOpts {
-  anim: { start: (...gens: Generator[]) => () => void };  // this.anim
+  anim: Diagram["anim"];       // this.anim from bireactive Diagram
   host: HTMLElement;           // for gesture-active class
   gestureClassMs?: number;     // default: DRILL_DURATION + 60
   ease?: typeof easeOut;       // default: easeOut
@@ -15,10 +15,10 @@ export interface ViewerOpts {
 
 export class Viewer {
   /** Reactive bounds cells. Charts read these in their remap functions. */
-  readonly a0: Cell<number>;
-  readonly a1: Cell<number>;
-  readonly b0: Cell<number>;
-  readonly b1: Cell<number>;
+  readonly a0: ReturnType<typeof num>;
+  readonly a1: ReturnType<typeof num>;
+  readonly b0: ReturnType<typeof num>;
+  readonly b1: ReturnType<typeof num>;
 
   private _anim: ViewerOpts["anim"];
   private _host: HTMLElement;
