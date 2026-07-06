@@ -9,7 +9,7 @@ import { makeFlatSource, makeHierSource, makeHierRootFlatSource, hierShapeKey, h
 import type { TileSource } from './viz/br/bindTile'
 import { hudStore } from './store'
 import { applyGroupBy } from './persistence'
-import { colorFor } from '@winstonfassett/vizform-core'
+import { colorFor, leavesOf } from '@winstonfassett/vizform-core'
 import { mountTreetable } from '@winstonfassett/vizform-vanilla-d3'
 
 import {
@@ -62,7 +62,7 @@ for (const [tag, cls] of TAGS) {
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
 function leavesOfNodes(nodes: PNode[]): PNode[] {
-  return nodes.filter(n => !nodes.some(m => m.parentId === n.id))
+  return leavesOf(nodes)
 }
 
 function rootsOfNodes(nodes: PNode[]): PNode[] {
