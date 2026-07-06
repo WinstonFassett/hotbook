@@ -3,22 +3,31 @@ R2 motion-policy e2e harness — the shared acceptance bar for the WIN-126 sweep
 
 Two assertions every chart in the sweep must pass:
 
-  value_is_immediate(chart_tag, ...)
-      A value edit driven from ANOTHER tile (real cross-tile path through the
-      shared store — NOT a synthetic cell poke) must reach final geometry within
-      ~1 frame. Samples the chart-under-test's mark geometry at t≈16ms and
-      t≈300ms; PASS if they match (no ~250ms settle morph). This is R2.
+  check_value_immediate(chart_tag, ...)
+      A value edit committed through the SAME store path a UI numberDrag would
+      hit (window.__vizform.setCell → commit(updateRow(...))) must reach final
+      geometry within ~1 frame on the chart-under-test. Dense-samples early
+      frames + a settled sample; PASS if every early frame already equals the
+      final (no ~250ms settle morph). This is R2.
 
-  structural_animates(chart_tag, ...)
+  check_structural_animates(chart_tag, ...)
       A STRUCTURAL change (sort-by-value reorder) must animate: geometry differs
-      between an early and a late sample. This guards against over-removal — the
+      between an early and a late sample. Guards against over-removal — the
       two-lane fix must keep the structural tween while killing the value settle.
       (R1; opt-in per chart since not every chart reorders.)
 
-Dock constraint (discovered building this): only the ACTIVE tab in each dock is
-mounted. treetable is a LEFT-dock tile, so it can only co-mount with RIGHT-dock
-charts. For a LEFT-dock chart-under-test, a right-dock editable driver (scatter)
-is used instead. pick_driver() encodes this.
+Value-edit driver: `window.__vizform.setCell(dsId, rowId, measureKey, v)` is
+registered by apps/sliceboard/src/main.ts (DEV builds only) and takes the exact
+same code path as a treetable numberDrag commit — `commit(updateRow(ws, ...))`.
+This retires the earlier driver-tile approach (numberDrag scrubber on a
+co-mounted treetable/scatter), which was blocked by:
+  * dock split — treetable+chart-under-test needed to share a dock, forcing
+    per-chart driver selection (pick_driver);
+  * measure mismatch — gantt reads start/end, but the driver only wrote est/act;
+  * pointer flakiness — synthetic PointerEvent timing failed intermittently.
+The hook removes all three by talking to the workspace directly. Nothing about
+the reactive/render path being tested changes — only the pointer choreography
+does.
 
 Usage from a per-chart fixture:
 
@@ -28,8 +37,11 @@ Usage from a per-chart fixture:
         # h.check_structural_animates("v-br-bar")  # only charts that reorder
     h.report_and_exit()
 
-Run directly to self-test against radar (already R2-fixed, PR #63):
+Run directly to self-test against treemap (WIN-127 fix landed):
     uv run --with playwright python tests/e2e/r2_harness.py
+
+Env: BASE_URL (default http://sliceboard.localhost:1355). Point at a Netlify
+deploy preview to verify a PR without a local dev server.
 """
 
 import os
@@ -38,13 +50,6 @@ from playwright.sync_api import sync_playwright
 
 BASE = os.environ.get("BASE_URL", "http://sliceboard.localhost:1355")
 URL = f"{BASE}/sliceboard/"
-
-# Which dock each chart tab lives in (from the seed board layout). Used to pick a
-# cross-dock editable driver so the driver + chart-under-test co-mount.
-LEFT_DOCK = {"pack", "treemap", "treetable", "icicle", "sunburst", "bar", "bands"}
-# everything else (line, area, scatter, pie, radar, concentric-arc, sankey,
-# sankey-flow, tree, gantt) is RIGHT dock.
-
 
 def _short(tag: str) -> str:
     return tag.replace("v-br-", "")
@@ -101,12 +106,17 @@ class R2Harness:
         self.page.wait_for_timeout(500)
         return ok
 
-    def pick_driver(self, chart_short: str) -> str:
-        """Return the tab label of a cross-dock editable tile to drive edits from.
-        treetable (left) drives right-dock charts; scatter (right) drives left-dock."""
-        if chart_short in LEFT_DOCK:
-            return "br-lc-scatter"  # right-dock editable driver
-        return "br-lc-treetable"    # left-dock canonical editor
+    def _require_hook(self):
+        """Fail loudly if the DEV-only __vizform hook is missing (production build
+        or old commit). Every value_immediate check depends on it."""
+        ok = self.page.evaluate(
+            "() => typeof window.__vizform === 'object' && typeof window.__vizform.setCell === 'function'"
+        )
+        if not ok:
+            raise RuntimeError(
+                "window.__vizform.setCell is not available — is this a DEV build of sliceboard? "
+                "The hook is registered in apps/sliceboard/src/main.ts under `if (import.meta.env.DEV)`."
+            )
 
     # ── geometry sampling ─────────────────────────────────────────────────────
     _GEO_JS = """(tag) => {
@@ -140,72 +150,10 @@ class R2Harness:
                 return
             prev = cur
 
-    # ── cross-tile edit driver ────────────────────────────────────────────────
-    def _drive_treetable_edit(self, target_id=None):
-        """Drag a visible editable value cell in the treetable to change a shared
-        leaf's value. If target_id is given, edit that node's row (so the edit
-        lands on a leaf the chart-under-test actually displays). Returns True if
-        an edit was driven."""
-        cell = self.page.evaluate("""(targetId) => {
-          const tt = document.querySelector('v-br-treetable');
-          if (!tt) return null;
-          const root = tt.shadowRoot || tt;
-          let cs = [...root.querySelectorAll('[data-editable-value]')]
-            .map(c => ({c, key: c.getAttribute('data-editable-value'), r: c.getBoundingClientRect()}))
-            .filter(o => o.r.width>0 && o.r.y>60 && o.r.y<900);
-          if (targetId) {
-            const match = cs.filter(o => o.key.split(':')[0] === targetId);
-            if (match.length) cs = match;
-          }
-          if (!cs.length) return null;
-          const o = cs[0];
-          return {x: o.r.x + o.r.width/2, y: o.r.y + o.r.height/2, key: o.key};
-        }""", target_id)
-        if not cell:
-            return False
-        # numberDrag is a HORIZONTAL scrubber (right = +, pxPerUnit≈4). Drag right
-        # ~120px to raise the value by ~30 units. Uses pointer events via the shared
-        # dragController — Playwright mouse synthesizes matching pointer events.
-        self.page.mouse.move(cell["x"], cell["y"])
-        self.page.mouse.down()
-        for dx in range(0, 120, 10):
-            self.page.mouse.move(cell["x"] + dx, cell["y"])
-            self.page.wait_for_timeout(8)
-        self.page.mouse.up()
-        return True
-
-    def _drive_scatter_edit(self):
-        """Drag a scatter point up to change its y-value (cross-tile driver for
-        left-dock charts-under-test)."""
-        pt = self.page.evaluate("""() => {
-          const el = document.querySelector('v-br-scatter');
-          if (!el) return null;
-          const root = el.shadowRoot || el;
-          const cs = [...root.querySelectorAll('circle')]
-            .map(c => ({c, r: c.getBoundingClientRect()}))
-            .filter(o => o.r.width>0 && o.r.y>60 && o.r.y<900);
-          if (!cs.length) return null;
-          const o = cs[Math.min(5, cs.length-1)];
-          return {x: o.r.x + o.r.width/2, y: o.r.y + o.r.height/2};
-        }""")
-        if not pt:
-            return False
-        self.page.mouse.move(pt["x"], pt["y"])
-        self.page.mouse.down()
-        for dy in range(0, 80, 8):
-            self.page.mouse.move(pt["x"], pt["y"] - dy)
-            self.page.wait_for_timeout(8)
-        self.page.mouse.up()
-        return True
-
-    def _drive_edit(self, driver_label: str, target_id=None):
-        if "treetable" in driver_label:
-            return self._drive_treetable_edit(target_id)
-        return self._drive_scatter_edit()
-
+    # ── hook-driven edit ──────────────────────────────────────────────────────
     def _displayed_leaf_id(self, tag: str):
-        """A leaf id the chart-under-test actually renders (so a cross-tile edit to
-        it is observable). Reads the element's data cell; returns None if absent."""
+        """A leaf id the chart-under-test actually renders — so the edit lands on a
+        row this chart is subscribed to and the geometry change is observable."""
         return self.page.evaluate("""(tag) => {
           const el = document.querySelector(tag);
           const dc = el && (el.dataCell || el.__data);
@@ -215,20 +163,80 @@ class R2Harness:
           return d.id ?? d.name ?? null;
         }""", tag)
 
+    def _chart_measure_key(self, tag: str):
+        """The chart's currently-rendered measure key (each chart exposes this as
+        a property on the custom element)."""
+        return self.page.evaluate(
+            "(tag) => { const el = document.querySelector(tag); return el ? (el.measureKey ?? null) : null; }",
+            tag,
+        )
+
+    def _drive_edit(self, tag: str):
+        """Commit a value edit via the DEV hook — same code path a UI numberDrag
+        takes (commit → updateRow → render). Returns True on success, False if
+        the chart-under-test's row/measure can't be identified.
+
+        Row picking order (first that works):
+          1. el.dataCell / el.__data — bireactive charts expose their data cell.
+          2. DOM data-id — the chart element has [data-id] marks (treemap, pack,
+             sunburst, icicle, hier charts).
+          3. window.__vizform.rowIds(dsId) — first row of the active dataset;
+             works for any chart that renders every dataset row.
+        Measure key picking order:
+          1. el.measureKey property (all sliceboard charts expose this).
+          2. window.__vizform.measureKeys(dsId)[0] — first numeric measure.
+        """
+        info = self.page.evaluate(
+            """(tag) => {
+              const el = document.querySelector(tag);
+              if (!el) return {ok:false, reason:'no element'};
+              const dsId = window.__vizform.activeDatasetId();
+              if (!dsId) return {ok:false, reason:'no active dataset'};
+              const measureKey = el.measureKey || window.__vizform.measureKeys(dsId)[0];
+              if (!measureKey) return {ok:false, reason:'no measureKey'};
+              const allIds = window.__vizform.rowIds(dsId);
+              // Row candidates, most-preferred first:
+              //   1. Rows the chart renders via DOM [data-id] marks.
+              //   2. Rows the chart's data cell / __data exposes.
+              //   3. Every dataset row.
+              // Then filter to ones that already have the target measure (i.e.
+              // are LEAVES the chart layouts against, not group aggregates that
+              // ignore direct writes) — writing to a group row that recomputes
+              // its measure from children produces no geometry change.
+              const seen = new Set();
+              const candidates = [];
+              const add = (id) => { if (id && !seen.has(id) && allIds.includes(id)) { seen.add(id); candidates.push(id); } };
+              const root = el.shadowRoot || el;
+              root.querySelectorAll('[data-id]').forEach(m => add(m.getAttribute('data-id')));
+              const dc = el.dataCell || el.__data;
+              const arr = dc && (dc.peek ? dc.peek() : dc.value);
+              if (arr) for (const d of arr) add(d.id ?? d.name);
+              allIds.forEach(add);
+              let rowId = null;
+              let cur = 0;
+              for (const cand of candidates) {
+                const v = window.__vizform.getCell(dsId, cand, measureKey);
+                if (typeof v === 'number' && v !== 0) { rowId = cand; cur = v; break; }
+              }
+              if (!rowId && candidates.length) rowId = candidates[0];
+              if (!rowId) return {ok:false, reason:'no candidate rows in dataset'};
+              const next = cur + Math.max(30, Math.abs(cur) * 0.5 || 30);
+              window.__vizform.setCell(dsId, rowId, measureKey, next);
+              return {ok:true, rowId, measureKey, from: cur, to: next, candidateCount: candidates.length};
+            }""",
+            tag,
+        )
+        return bool(info and info.get("ok"))
+
     # ── assertions ────────────────────────────────────────────────────────────
     def check_value_immediate(self, tag: str):
         short = _short(tag)
-        driver = self.pick_driver(short)
-        # Mount driver + chart-under-test in their respective docks.
-        self._activate(driver)
+        self._require_hook()
+        # Mount the chart-under-test. No driver tile needed — the hook writes
+        # directly to the workspace, so dock layout doesn't matter.
         self._activate(f"br-lc-{short}")
-        # Re-activate driver's dock partner is automatic (different dock). Confirm both mounted.
-        both = self.page.evaluate(
-            "(a,b)=>({a: !!document.querySelector(a), b: !!document.querySelector(b)})",
-            tag,
-        )
-        if not both["a"]:
-            self._fail(f"{short}: chart-under-test not mounted (dock issue)")
+        if not self.page.evaluate("(t) => !!document.querySelector(t)", tag):
+            self._fail(f"{short}: chart-under-test not mounted (tab not found?)")
             return
         # Wait out any MOUNT/ENTER animation before baselining. Re-activating a
         # tab remounts the chart, and hier charts (treemap/pack) tween their tiles
@@ -236,10 +244,9 @@ class R2Harness:
         # value settle-lag (false FAIL). Poll until geometry is stable across two
         # consecutive frames (or give up after ~2s).
         self._wait_geo_stable(tag)
-        target_id = self._displayed_leaf_id(tag)
         base = self._geo(tag)
-        if not self._drive_edit(driver, target_id):
-            self._fail(f"{short}: could not drive a cross-tile edit via {driver}")
+        if not self._drive_edit(tag):
+            self._fail(f"{short}: could not commit a hook-driven edit (missing rowId / measureKey / dataset)")
             return
         # Sample a dense early window + a settled sample. A value change is IMMEDIATE
         # iff the geometry at the FIRST frame after the edit already equals the final
