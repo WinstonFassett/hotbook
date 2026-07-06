@@ -233,6 +233,7 @@ export function sankeyScene(
   const wheelLocked = cell<number | null>(null);
   const ribbonEls = new Map<Element, number>();
   const ribbonElements: SVGPathElement[] = []; // Track elements by index for focus management
+  const groupNodeEls = new Map<Element, number>(); // Track group grip elements to node indices
 
   // Wheel edits a link by index. Snapshot/restore ALL link values because
   // conservation propagation changes cells beyond the directly-edited one.
@@ -254,8 +255,61 @@ export function sankeyScene(
     return parent !== undefined ? parent : null;
   };
 
+  const hitTestGroupNode = (clientX: number, clientY: number): number | null => {
+    const shadow = (host as any).shadowRoot as ShadowRoot | null;
+    const el = shadow ? shadow.elementFromPoint(clientX, clientY) : document.elementFromPoint(clientX, clientY);
+    if (!el) return null;
+    const direct = groupNodeEls.get(el);
+    if (direct !== undefined) return direct;
+    const parent = groupNodeEls.get(el.parentElement as Element);
+    return parent !== undefined ? parent : null;
+  };
+
   host.addEventListener("wheel", ((e: WheelEvent) => {
     if (!e.ctrlKey) return;
+    
+    // First try to hit a group node (takes precedence over ribbons)
+    const groupNodeIdx = hitTestGroupNode(e.clientX, e.clientY);
+    if (groupNodeIdx !== null) {
+      e.preventDefault();
+      const groupLinks = topology.out[groupNodeIdx]!.length === 0 ? topology.inc[groupNodeIdx]! : topology.out[groupNodeIdx]!;
+      if (groupLinks.length === 0) return;
+      
+      // Apply proportional scaling to all group links
+      const allVals = linkValues.map((lv) => lv.value.value);
+      const startTot = groupLinks.reduce((a, li) => a + allVals[li]!, 0);
+      if (startTot <= 0) return;
+      
+      const step = stepFn(startTot, e.shiftKey);
+      const wantTot = Math.max(LINK_MIN * groupLinks.length, startTot + (e.deltaY < 0 ? +step : -step));
+      const k = wantTot / startTot;
+      
+      // Scale all group links proportionally
+      for (const li of groupLinks) {
+        allVals[li] = Math.max(LINK_MIN, allVals[li]! * k);
+      }
+      
+      // Propagate conservation from the edited node
+      const isSink = topology.out[groupNodeIdx]!.length === 0;
+      if (!isSink) {
+        propagateConservation(topology, allVals, groupNodeIdx, "backward");
+        for (const li of topology.out[groupNodeIdx]!) {
+          propagateConservation(topology, allVals, topology.tgt[li]!, "forward");
+        }
+      } else {
+        propagateConservation(topology, allVals, groupNodeIdx, "forward");
+        for (const li of topology.inc[groupNodeIdx]!) {
+          propagateConservation(topology, allVals, topology.src[li]!, "backward");
+        }
+      }
+      
+      batch(() => {
+        linkValues.forEach((lv, i) => { lv.value.value = allVals[i]!; });
+      });
+      return;
+    }
+    
+    // Fall back to ribbon wheel handling
     const idx = wheelController.begin(
       hovered.value ?? focused.value ?? hitTestRibbon(e.clientX, e.clientY),
       wheelConfig,
@@ -493,6 +547,10 @@ export function sankeyScene(
       grip.el.addEventListener("pointerenter", (e) => { nodeActive.value = true; showBarTooltip(e as PointerEvent); });
       grip.el.addEventListener("pointermove", (e) => { tooltipAt.value = toSVG(e as PointerEvent); });
       grip.el.addEventListener("pointerleave", () => { nodeActive.value = false; tooltipVis.value = false; tooltipNodeIdx.value = null; });
+      
+      // Register group grip for wheel hit-testing
+      groupNodeEls.set(grip.el, n);
+      if (grip.el.firstElementChild) groupNodeEls.set(grip.el.firstElementChild, n);
       dragCancelable(grip, lens, allCells, {
         onStart: () => {
           nodeActive.value = true;
