@@ -54,8 +54,14 @@ for (const e of experiments) {
       customElements.define(e.tag, e.ctor as any);
     } catch (err) {
       // Constructor already registered by another module (e.g., when loaded in sliceboard).
-      // Safe to skip — the element is available under a different tag name.
-      if (!(err instanceof DOMException && err.name === 'NotSupportedError')) throw err;
+      // Create a wrapper class that extends the original so we can register under our tag.
+      if (err instanceof DOMException && err.name === 'NotSupportedError') {
+        // Dynamic wrapper class — each one unique so the registry accepts it.
+        const WrapperClass = class extends (e.ctor as any) {};
+        customElements.define(e.tag, WrapperClass as any);
+      } else {
+        throw err;
+      }
     }
   }
 }
