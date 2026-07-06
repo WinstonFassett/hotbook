@@ -125,6 +125,9 @@ export class MdGanttChartLC extends Diagram {
     const size = useHostSize(this, { width: W, height: H });
     this.tabIndex = 0;
     this.style.outline = "none";
+    // Rule 14: touch is a first-class gesture surface. Claim the touch gesture
+    // from the browser so drag-edit on Gantt bars doesn't lose to page scroll.
+    this.style.touchAction = "none";
     this.#draw(s, size);
   }
 
@@ -167,6 +170,7 @@ export class MdGanttChartLC extends Diagram {
     const selected = cell<GanttTask | null>(null);
 
     const svgEl = (this as any).svg as SVGSVGElement;
+    svgEl.style.touchAction = "none";
     const localPoint = (e: PointerEvent) => {
       const r = svgEl.getBoundingClientRect();
       const vb = svgEl.viewBox?.baseVal;
@@ -542,20 +546,21 @@ export class MdGanttChartLC extends Diagram {
 
       const sx = (xScale.value as any)(t.start);
       const ex = (xScale.value as any)(t.end);
-      const EDGE = 6;
+      // Larger hit tolerance for touch/pen so the resize handles are grabbable.
+      const edgeTol = pe.pointerType === "mouse" ? 6 : 24;
       let kind: DragKind;
 
-      // Check which edge is closer when both are within EDGE distance
+      // Check which edge is closer when both are within edge distance
       // This fixes the bug where narrow tasks always detect 'start' because it's checked first
       const distToStart = Math.abs(x - sx);
       const distToEnd = Math.abs(x - ex);
 
-      if (distToStart <= EDGE && distToEnd <= EDGE) {
+      if (distToStart <= edgeTol && distToEnd <= edgeTol) {
         // Both edges are within range - choose the closer one
         kind = distToStart < distToEnd ? 'start' : 'end';
-      } else if (distToStart <= EDGE) {
+      } else if (distToStart <= edgeTol) {
         kind = 'start';
-      } else if (distToEnd <= EDGE) {
+      } else if (distToEnd <= edgeTol) {
         kind = 'end';
       } else if (x >= sx && x <= ex) {
         kind = 'move';
@@ -765,6 +770,7 @@ export class MdGanttChartLC extends Diagram {
 
       const tile = s(rect(xS, barY, barW, ROW_H, { fill, corner: 3 }));
       tile.el.style.cursor = "grab";
+      tile.el.style.touchAction = "none";
       // Value geometry (x/width = task start/duration) is write-through — no settle.
 
       // Inside label (task name) — shown when bar wide enough.
@@ -806,6 +812,7 @@ export class MdGanttChartLC extends Diagram {
       ));
       startHandle.el.style.cursor = "ew-resize";
       startHandle.el.style.transition = hoverTransition("opacity");
+      startHandle.el.style.touchAction = "none";
 
       const endHandle = s(circle(
         Vec.derive(() => ({ x: xE.value, y: barCY })),
@@ -814,6 +821,7 @@ export class MdGanttChartLC extends Diagram {
       ));
       endHandle.el.style.cursor = "ew-resize";
       endHandle.el.style.transition = hoverTransition("opacity");
+      endHandle.el.style.touchAction = "none";
     }
 
     // ─── Dependency connectors ────────────────────────────────────────────

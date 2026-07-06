@@ -93,6 +93,9 @@ export class MdConcentricArcLC extends Diagram {
     this.view(Wc, Hc);
     this.tabIndex = -1; // Container not directly focusable, items are
     this.style.outline = "none";
+    // Rule 14: touch is a first-class gesture surface. Claim the touch gesture
+    // from the browser so drag-edit on ring handles doesn't lose to page scroll.
+    this.style.touchAction = "none";
 
     const cx = derive(() => Wc.value / 2);
     const cy = derive(() => Hc.value / 2);
@@ -137,6 +140,7 @@ export class MdConcentricArcLC extends Diagram {
     let lastRing: Ring | null = null;
 
     const svgEl = (this as any).svg as SVGSVGElement;
+    svgEl.style.touchAction = "none";
     // Pointer → diagram-local coords (CX/CY origin at center, SVG-space angles).
     const localPt = (e: PointerEvent) => {
       const r = svgEl.getBoundingClientRect();
@@ -144,6 +148,16 @@ export class MdConcentricArcLC extends Diagram {
       const sx = vb && vb.width ? vb.width / r.width : 1;
       const sy = vb && vb.height ? vb.height / r.height : 1;
       return { x: (e.clientX - r.left) * sx - cx.peek(), y: (e.clientY - r.top) * sy - cy.peek() };
+    };
+    const findRingAtLocal = (lx: number, ly: number): Ring | null => {
+      const dist = Math.sqrt(lx * lx + ly * ly);
+      const rows = data.value as Ring[];
+      for (let rank = 0; rank < rows.length; rank++) {
+        const ro = rOuterStart.peek() - rank * ringStep.peek();
+        const ri = ro - ringThickness.peek();
+        if (dist >= ri - 4 && dist <= ro + 4) return rows[rank]!;
+      }
+      return null;
     };
     // Pointer angle → ring value (0–100). d3Arc angle 0 = top, clockwise; SVG
     // atan2 is 0 = right, so add π/2. Unwrap into [0, 2π).
@@ -222,6 +236,7 @@ export class MdConcentricArcLC extends Diagram {
         derive(() => visible.value && rInner.value >= 1 ? arcD(rOuter.value, rInner.value, START, START + TWO_PI, corner.value) : ""),
         { fill: slotColor, opacity: derive(() => { const d = di(); return hover.value === d || selected.value === d ? 0.25 : 0.18; }) }
       ));
+      trackEl.el.style.touchAction = "none";
       ringElementsById.set(datumId, trackEl.el);
       // Make each ring individually focusable
       trackEl.el.setAttribute('tabindex', '0');
@@ -278,6 +293,7 @@ export class MdConcentricArcLC extends Diagram {
       const valueStroke = derive(() => { const d = di(); return selected.value === d ? "#fff" : hover.value === d ? (d?.color ?? "none") : "none"; });
       const valueStrokeW = derive(() => { const d = di(); return selected.value === d ? 1.5 : hover.value === d ? 3 : 0; });
       const valueEl = gs(pathD(valueD, { fill: slotColor, stroke: valueStroke, strokeWidth: valueStrokeW }));
+      valueEl.el.style.touchAction = "none";
       valueEl.el.addEventListener("pointerenter", () => { const d = di(); if (d && !wheelController.active && !dragController.active) hover.value = d; });
       valueEl.el.addEventListener("pointerleave", () => { const d = di(); if (d && !wheelController.active && !dragController.active && hover.value === d) hover.value = null; });
       valueEl.el.addEventListener("click", () => { const d = di(); if (!d) return; selected.value = selected.value === d ? null : d; this.focus(); });
@@ -300,6 +316,7 @@ export class MdConcentricArcLC extends Diagram {
         opacity: handleOpacity,
       }));
       handleEl.el.style.cursor = "grab";
+      handleEl.el.style.touchAction = "none";
       handleEl.el.style.transition = "opacity 0.12s";
       handleEl.el.addEventListener("pointerenter", () => { const d = di(); if (!dragController.active && d) hover.value = d; });
       handleEl.el.addEventListener("pointerleave", () => { const d = di(); if (!dragController.active && d && hover.value === d) hover.value = null; });
@@ -356,22 +373,8 @@ export class MdConcentricArcLC extends Diagram {
     this.addEventListener("pointermove", (e) => {
       if (dragController.active || wheelController.active) return;
       const pe = e as PointerEvent;
-      const r = svgEl.getBoundingClientRect();
-      const vb = svgEl.viewBox?.baseVal;
-      const sx = vb && vb.width ? vb.width / r.width : 1;
-      const sy = vb && vb.height ? vb.height / r.height : 1;
-      const lx = (pe.clientX - r.left) * sx - cx.peek();
-      const ly = (pe.clientY - r.top) * sy - cy.peek();
-      const dist = Math.sqrt(lx * lx + ly * ly);
-      // Find which ring the pointer is over by radius. data.value is already in
-      // display (rank) order — position is the radius rank.
-      const rows = data.value as Ring[];
-      let hit: Ring | null = null;
-      for (let rank = 0; rank < rows.length; rank++) {
-        const ro = rOuterStart.peek() - rank * ringStep.peek();
-        const ri = ro - ringThickness.peek();
-        if (dist >= ri - 4 && dist <= ro + 4) { hit = rows[rank]!; break; }
-      }
+      const { x, y } = localPt(pe);
+      const hit = findRingAtLocal(x, y);
       if (!selected.value) hover.value = hit;
       lastRing = hit;
     });

@@ -102,6 +102,7 @@ export class MdBarChartLC extends Diagram {
     const { w: Wc, h: Hc } = size;
     this.tabIndex = -1; // Container not directly focusable, items are
     this.style.outline = "none";
+
     const data = this.dataCell;
     const rows0 = data.peek() as Bar[];
 
@@ -132,6 +133,14 @@ export class MdBarChartLC extends Diagram {
     const svgEl = (this as any).svg as SVGSVGElement;
     biEffect(() => {
       const om = overflowMode.value, iv = isVert.value;
+      // Rule 14: touch is a first-class gesture surface. In overflow mode, allow
+      // panning along the scroll axis so users can still reach hidden bars; otherwise
+      // block page scroll so drag-edit doesn't lose to page scroll on mobile.
+      // The touchstart handler still prevents default when a bar is touched, so
+      // dragging a bar never scrolls.
+      const pan = om ? (iv ? 'pan-x' : 'pan-y') : 'none';
+      this.style.touchAction = pan;
+      svgEl.style.touchAction = pan;
       if (om) {
         svgEl.style.width = iv ? viewW.value + 'px' : '100%';
         svgEl.style.height = iv ? '100%' : viewH.value + 'px';
@@ -326,9 +335,11 @@ export class MdBarChartLC extends Diagram {
       const pt = findAtPixel(x, y);
       if (!pt) return;
       // Hit-test: near the bar's value-end (top for vertical, right for horizontal).
+      // Touch-friendly hit tolerance: 24px for touch/pen, 12px for mouse
+      const hitTolerance = pe.pointerType === "mouse" ? 12 : 24;
       const valPos = (valueScale.value as any)(pt.value);
       const dist = isVert.value ? Math.abs(y - valPos) : Math.abs(x - valPos);
-      if (dist > 12) return;
+      if (dist > hitTolerance) return;
       dragPointerId = pe.pointerId;
       selected.value = pt;
       setGestureActive(true);
@@ -487,6 +498,7 @@ export class MdBarChartLC extends Diagram {
       const labelFill = derive(() => { const d = di(); return selected.value === d ? base : "#fff"; });
 
       const tile = s(rect(barX, barY, barW, barH, { fill, corner: 2 }));
+      tile.el.style.touchAction = "none";
       tileElements.set(datumId, tile.el);
       biEffect(() => { tile.el.style.cursor = isVert.value ? "ns-resize" : "ew-resize"; });
       tile.el.setAttribute('tabindex', '0');
@@ -592,6 +604,7 @@ export class MdBarChartLC extends Diagram {
         stroke: "#0b0d12", strokeWidth: 1.5, opacity: handleOpacity,
       }));
       handle.el.style.transition = hoverTransition("opacity");
+      handle.el.style.touchAction = "none";
       biEffect(() => { handle.el.style.cursor = isVert.value ? "ns-resize" : "ew-resize"; });
       handle.el.addEventListener("pointerenter", () => { const d = di(); if (!wheelController.active && d) hover.value = d; });
       handle.el.addEventListener("pointerleave", () => { const d = di(); if (!wheelController.active && d && hover.value === d) hover.value = null; });

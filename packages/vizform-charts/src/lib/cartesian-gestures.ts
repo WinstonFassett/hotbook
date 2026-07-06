@@ -168,7 +168,9 @@ export function attachCartesianGestures<TData>(
     if (x < ctx.plotX || x > ctx.plotX + ctx.rPlotWidth.value) return;
     const pt = findAtPixel(x);
     if (!pt) return;
-    if (Math.abs(y - yPixel(pt)) > 12) return;
+    // Touch-friendly hit tolerance: 24px for touch/pen, 12px for mouse
+    const hitTolerance = pe.pointerType === "mouse" ? 12 : 24;
+    if (Math.abs(y - yPixel(pt)) > hitTolerance) return;
     gestureOrder = order();
     dragPointerId = pe.pointerId;
     dragStartY = y;
@@ -189,14 +191,20 @@ export function attachCartesianGestures<TData>(
     if (x < ctx.plotX || x > ctx.plotX + ctx.rPlotWidth.value) { state.hover.value = null; host.style.cursor = ""; return; }
     const pt = findAtPixel(x);
     state.hover.value = pt;
-    host.style.cursor = pt && Math.abs(y - yPixel(pt)) <= 12 ? "ns-resize" : "";
+    // Touch-friendly hit tolerance: 24px for touch/pen, 12px for mouse
+    const hitTolerance = pe.pointerType === "mouse" ? 12 : 24;
+    host.style.cursor = pt && Math.abs(y - yPixel(pt)) <= hitTolerance ? "ns-resize" : "";
   };
 
   // Rule 14: touch is a first-class gesture surface. Claim the touch gesture
   // from the browser so vertical drag-edit doesn't lose to page scroll on
-  // mobile. Restored on dispose.
+  // mobile. touch-action:none on the host/SVG is sufficient — the browser
+  // won't start scroll on elements marked none, so we don't need an additional
+  // non-passive touchstart listener. Restored on dispose.
   const prevTouchAction = host.style.touchAction;
+  const prevSvgTouchAction = svgEl.style.touchAction;
   host.style.touchAction = "none";
+  svgEl.style.touchAction = "none";
 
   host.addEventListener("pointerleave", onPointerLeave);
   host.addEventListener("click", onClick);
@@ -236,6 +244,7 @@ export function attachCartesianGestures<TData>(
 
   return () => {
     host.style.touchAction = prevTouchAction;
+    svgEl.style.touchAction = prevSvgTouchAction;
     host.removeEventListener("pointerleave", onPointerLeave);
     host.removeEventListener("click", onClick);
     host.removeEventListener("wheel", onWheel);
