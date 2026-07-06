@@ -113,12 +113,12 @@ export class MdBarChartLC extends Diagram {
 
     // ─── Overflow mode (direction depends on orientation) ─────────────────
     const overflowMode = derive(() => {
-      const n = rows0.length;
+      const n = (data.value as Bar[]).length;
       return isVert.value ? (this.maxBars > 0 && n > this.maxBars) : (this.maxBands > 0 && n > this.maxBands);
     });
     const STEP = derive(() => isVert.value ? V_BAR_STEP : H_BAND_STEP);
-    const neededBand = derive(() => PAD.value.left + PAD.value.right + rows0.length * STEP.value); // vertical: width
-    const neededOrtho = derive(() => PAD.value.top + PAD.value.bottom + rows0.length * STEP.value); // horizontal: height
+    const neededBand = derive(() => PAD.value.left + PAD.value.right + (data.value as Bar[]).length * STEP.value); // vertical: width
+    const neededOrtho = derive(() => PAD.value.top + PAD.value.bottom + (data.value as Bar[]).length * STEP.value); // horizontal: height
 
     const viewW = derive(() => overflowMode.value && isVert.value ? neededBand.value : Wc.value);
     const viewH = derive(() => overflowMode.value && !isVert.value ? neededOrtho.value : Hc.value);
@@ -159,7 +159,7 @@ export class MdBarChartLC extends Diagram {
         ? [plotX.value, plotX.value + effPlotW.value]
         : [plotY.value, plotY.value + effPlotH.value];
       return scaleBand<string>()
-        .domain(rows0.map((_, i) => String(i)))
+        .domain((data.value as Bar[]).map((_, i) => String(i)))
         .range(range)
         .padding(isV ? 0.25 : 0.15);
     });
@@ -350,7 +350,8 @@ export class MdBarChartLC extends Diagram {
     const hlTarget = derive(() => hover.value ?? selected.value);
     const hlPos = Vec.derive(() => {
       const t = hlTarget.value; if (!t) return { x: -9999, y: -9999 };
-      const i = (data.value as Bar[]).indexOf(t);
+      const targetId = t.id ?? t.label;
+      const i = (data.value as Bar[]).findIndex(d => (d.id ?? d.label) === targetId);
       if (i < 0) return { x: -9999, y: -9999 };
       const bs = bandScale.value;
       const bp = bs(String(i)) ?? 0;
@@ -361,13 +362,15 @@ export class MdBarChartLC extends Diagram {
     const hlW = derive(() => {
       if (!isVert.value) return plotW.value;
       const t = hlTarget.value; if (!t) return 0;
-      const i = (data.value as Bar[]).indexOf(t);
+      const targetId = t.id ?? t.label;
+      const i = (data.value as Bar[]).findIndex(d => (d.id ?? d.label) === targetId);
       return i < 0 ? 0 : bandScale.value.step();
     });
     const hlH = derive(() => {
       if (isVert.value) return effPlotH.value;
       const t = hlTarget.value; if (!t) return 0;
-      const i = (data.value as Bar[]).indexOf(t);
+      const targetId = t.id ?? t.label;
+      const i = (data.value as Bar[]).findIndex(d => (d.id ?? d.label) === targetId);
       return i < 0 ? 0 : bandScale.value.step();
     });
     const hlRect = s(rect(hlPos, hlW, hlH, {
