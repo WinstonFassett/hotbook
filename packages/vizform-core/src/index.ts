@@ -6,3 +6,5 @@ export type {
   VizConfigSchema, ScalingMode,
 } from './types'
 export { PALETTE, pickColor, colorFor } from './colors'
+export { buildTree, applyView, drillPath, leavesOf } from './data-ops'
+export type { TreeNode } from './data-ops'
