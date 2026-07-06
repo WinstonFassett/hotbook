@@ -6,9 +6,12 @@
  *
  * Example URLs:
  *   ?layout=treetable|bar              → two-pane split (treetable left, bar right)
- *   ?layout=scatter,treemap            → two-pane split (scatter left, treemap right)
- *   ?layout=(bar+line)|scatter         → left group has bar+line tabs, right has scatter
- *   ?layout=bar|(scatter+treemap)      → right group has scatter+treemap tabs
+ *   ?layout=(bar%2Bline)|scatter       → left group has bar+line tabs, right has scatter
+ *   ?layout=bar|(scatter%2Btreemap)    → right group has scatter+treemap tabs
+ *
+ * NOTE: The `+` character MUST be URL-encoded as `%2B` in query strings,
+ * otherwise browsers decode it as a space. Use encodeURIComponent() when
+ * programmatically constructing URLs.
  *
  * Grammar (simplified):
  *   layout   := pane ( '|' pane )*     # horizontal split
@@ -65,6 +68,7 @@ function serializeGroup(group: DockGroup, tileMap: Map<string, Tile>): string {
 function expandShorthand(kindStr: string): TileKind {
   // Common shorthands
   const shorthands: Record<string, TileKind> = {
+    'treetable': 'br-lc-treetable',
     'bar': 'br-lc-bar',
     'line': 'br-lc-line',
     'area': 'br-lc-area',
