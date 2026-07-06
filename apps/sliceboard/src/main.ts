@@ -564,13 +564,28 @@ dockView.addEventListener('dockchange', (e: Event) => {
 })
 
 let layoutSyncDebounce: ReturnType<typeof setTimeout> | null = null
+let lastWrittenLayoutStr: string | null = null
 function syncLayoutToURL(dock: DockNode | null) {
   if (layoutSyncDebounce) clearTimeout(layoutSyncDebounce)
   layoutSyncDebounce = setTimeout(() => {
     const dash = activeDashboard(ws)
     if (!dash) return
     const layoutStr = serializeLayout(dock, dash.tiles)
+    // Skip when the tree serializes identically to the default — clicking a
+    // tab, for instance, only changes the group's activeId, which
+    // serializeLayout does NOT encode; writing it anyway would drop a giant
+    // `?layout=(kindA+kindB+...+kindZ)` string into the URL on every tab
+    // click. Compare against the default so a session that has never touched
+    // structure keeps a clean URL, and clear any stale layout param once the
+    // layout is back to default (e.g. after a close undo).
+    const defaultLayoutStr = serializeLayout(defaultDockTree(dash.tiles.map(t => t.id)), dash.tiles)
+    if (layoutStr === defaultLayoutStr) {
+      if (lastWrittenLayoutStr !== '') { writeLayoutToURL(''); lastWrittenLayoutStr = '' }
+      return
+    }
+    if (layoutStr === lastWrittenLayoutStr) return
     writeLayoutToURL(layoutStr)
+    lastWrittenLayoutStr = layoutStr
   }, 300)
 }
 
