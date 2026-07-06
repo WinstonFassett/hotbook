@@ -49,7 +49,15 @@ const experiments: Array<{ id: string; title: string; tag: string; ctor: typeof 
 ];
 
 for (const e of experiments) {
-  if (!customElements.get(e.tag)) customElements.define(e.tag, e.ctor as any);
+  if (!customElements.get(e.tag)) {
+    try {
+      customElements.define(e.tag, e.ctor as any);
+    } catch (err) {
+      // Constructor already registered by another module (e.g., when loaded in sliceboard).
+      // Safe to skip — the element is available under a different tag name.
+      if (!(err instanceof DOMException && err.name === 'NotSupportedError')) throw err;
+    }
+  }
 }
 
 // --- Repro config: drive charts into the states that only break in sliceboard ---
