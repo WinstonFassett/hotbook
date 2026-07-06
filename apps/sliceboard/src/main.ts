@@ -177,9 +177,11 @@ function getDockTree(dash: Dashboard) {
   if (!urlLayoutApplied) {
     const urlLayout = readLayoutFromURL()
     if (urlLayout) {
+      console.log('[main] Applying URL layout:', urlLayout)
       urlLayoutApplied = true
       // First pass: parse with existing tiles to find what's missing
       const { dock: partialDock, missingKinds } = parseLayout(urlLayout, dash.tiles)
+      console.log('[main] Parse result:', { hasDock: !!partialDock, missingKinds })
 
       if (missingKinds.length > 0) {
         // Add missing tiles to the dashboard

@@ -60,6 +60,28 @@ function serializeGroup(group: DockGroup, tileMap: Map<string, Tile>): string {
 
 // ─── Parse ────────────────────────────────────────────────────────────────────
 
+/** Expand shorthand chart names to full TileKind.
+ *  bar → br-lc-bar, line → br-lc-line, etc. */
+function expandShorthand(kindStr: string): TileKind {
+  // Common shorthands
+  const shorthands: Record<string, TileKind> = {
+    'bar': 'br-lc-bar',
+    'line': 'br-lc-line',
+    'area': 'br-lc-area',
+    'scatter': 'br-lc-scatter',
+    'pie': 'br-lc-pie',
+    'radar': 'br-lc-radar',
+    'pack': 'br-lc-pack',
+    'treemap': 'br-lc-treemap',
+    'icicle': 'br-lc-icicle',
+    'sunburst': 'br-lc-sunburst',
+    'sankey': 'br-lc-sankey',
+    'tree': 'br-lc-tree',
+    'gantt': 'br-lc-gantt',
+  }
+  return (shorthands[kindStr] || kindStr) as TileKind
+}
+
 /** Parse a layout string into a DockNode tree. Tiles referenced in the layout
  *  that don't exist in the dashboard will be reported as missing kinds. The caller
  *  should add those tiles to the workspace before hydrating the layout. */
@@ -79,7 +101,7 @@ export function parseLayout(
 
   // Resolve a tile reference (kind string) to a tileId
   function resolveTile(kindStr: string): string | null {
-    const kind = kindStr as TileKind
+    const kind = expandShorthand(kindStr)
     const existingTile = tilesByKind.get(kind)
     if (existingTile) return existingTile.id
     // Mark as missing
@@ -134,7 +156,8 @@ export function parseLayout(
   function expect(type: Token['type']): Token {
     const t = advance()
     if (!t || t.type !== type) {
-      throw new Error(`Expected ${type}, got ${t?.type ?? 'EOF'}`)
+      const context = tokens.slice(Math.max(0, pos - 3), pos + 2).map(tk => tk.value).join('')
+      throw new Error(`Expected ${type}, got ${t?.type ?? 'EOF'} at position ${pos} (context: "${context}")`)
     }
     return t
   }
