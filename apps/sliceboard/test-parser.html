@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Test URL Layout Parser</title>
+</head>
+<body>
+  <h1>URL Layout Parser Test</h1>
+  <div id="output"></div>
+
+  <script type="module">
+    import { parseLayout, serializeLayout } from './src/url-layout.ts';
+
+    const output = document.getElementById('output');
+
+    function test(layoutStr, description) {
+      output.innerHTML += `<h2>${description}</h2>`;
+      output.innerHTML += `<p>Input: <code>${layoutStr}</code></p>`;
+
+      try {
+        const result = parseLayout(layoutStr, [
+          { id: 'tile1', kind: 'treetable' },
+          { id: 'tile2', kind: 'bar' },
+          { id: 'tile3', kind: 'line' },
+          { id: 'tile4', kind: 'scatter' },
+          { id: 'tile5', kind: 'br-lc-pack' },
+          { id: 'tile6', kind: 'br-lc-treemap' },
+        ]);
+
+        output.innerHTML += `<pre>${JSON.stringify(result, null, 2)}</pre>`;
+
+        if (result.dock) {
+          const serialized = serializeLayout(result.dock, [
+            { id: 'tile1', kind: 'treetable' },
+            { id: 'tile2', kind: 'bar' },
+            { id: 'tile3', kind: 'line' },
+            { id: 'tile4', kind: 'scatter' },
+            { id: 'tile5', kind: 'br-lc-pack' },
+            { id: 'tile6', kind: 'br-lc-treemap' },
+          ]);
+          output.innerHTML += `<p>Serialized back: <code>${serialized}</code></p>`;
+        }
+      } catch (e) {
+        output.innerHTML += `<p style="color: red;">Error: ${e.message}</p>`;
+      }
+
+      output.innerHTML += '<hr>';
+    }
+
+    test('treetable|bar', 'Two panes');
+    test('(bar+line)|scatter', 'Tabs left, single right');
+    test('br-lc-pack|br-lc-treemap', 'Pack and treemap');
+  </script>
+</body>
+</html>

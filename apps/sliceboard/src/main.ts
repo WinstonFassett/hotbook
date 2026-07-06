@@ -19,6 +19,7 @@ import { hudStore, resetHudForDataset } from './store'
 import type { TileRecord } from './DockView'
 import './DockView'
 import { defaultDockTree, reconcile, addTileToDock, type DockNode } from './dock'
+import { readLayoutFromURL, parseLayout, serializeLayout, writeLayoutToURL } from './url-layout'
 
 // ─── Tile metadata ─────────────────────────────────────────────────────────────
 
@@ -167,9 +168,57 @@ let lastDashId = ''
 let lastTileIds: string[] = []
 let cachedDefaultTree: DockNode | null = null
 let cachedDefaultTileIds: string[] = []
+let urlLayoutApplied = false // Track if we've applied URL layout once
 
 function getDockTree(dash: Dashboard) {
   const tileIds = dash.tiles.map(t => t.id)
+
+  // First check for URL layout on initial load (once per session)
+  if (!urlLayoutApplied) {
+    const urlLayout = readLayoutFromURL()
+    if (urlLayout) {
+      console.log('[main] Applying URL layout:', urlLayout)
+      urlLayoutApplied = true
+      // First pass: parse with existing tiles to find what's missing
+      const { dock: partialDock, missingKinds } = parseLayout(urlLayout, dash.tiles)
+      console.log('[main] Parse result:', { hasDock: !!partialDock, missingKinds })
+
+      if (missingKinds.length > 0) {
+        // Add missing tiles to the dashboard
+        let updatedWs = ws
+        for (const kind of missingKinds) {
+          if (TILE_KINDS.includes(kind)) {
+            updatedWs = addTile(updatedWs, dash.id, kind)
+          }
+        }
+        ws = updatedWs
+        saveWorkspace(ws)
+
+        // Second pass: parse again with all tiles present
+        const updatedDash = updatedWs.dashboards.find(d => d.id === dash.id)!
+        const { dock } = parseLayout(urlLayout, updatedDash.tiles)
+        if (dock) {
+          ws = updateDashboard(ws, { ...updatedDash, dockTree: dock })
+          saveWorkspace(ws)
+          cachedDefaultTree = dock
+          cachedDefaultTileIds = updatedDash.tiles.map(t => t.id)
+          lastDashId = dash.id
+          lastTileIds = updatedDash.tiles.map(t => t.id)
+          return dock
+        }
+      } else if (partialDock) {
+        // All tiles exist, just update the dock tree
+        ws = updateDashboard(ws, { ...dash, dockTree: partialDock })
+        saveWorkspace(ws)
+        cachedDefaultTree = partialDock
+        cachedDefaultTileIds = [...tileIds]
+        lastDashId = dash.id
+        lastTileIds = tileIds
+        return partialDock
+      }
+    }
+  }
+
   // Only reconcile when tiles change — not on every render.
   // Reconciling on every render prunes empty groups created by splitGroupRight/Down.
   const tilesChanged = dash.id !== lastDashId || JSON.stringify(tileIds) !== JSON.stringify(lastTileIds)
@@ -457,7 +506,20 @@ dockView.addEventListener('dockchange', (e: Event) => {
   if (!dash) return
   ws = updateDashboard(ws, { ...dash, dockTree: detail })
   commit(ws)
+  // Sync layout to URL (debounced to avoid excessive history writes)
+  syncLayoutToURL(detail)
 })
+
+let layoutSyncDebounce: ReturnType<typeof setTimeout> | null = null
+function syncLayoutToURL(dock: DockNode | null) {
+  if (layoutSyncDebounce) clearTimeout(layoutSyncDebounce)
+  layoutSyncDebounce = setTimeout(() => {
+    const dash = activeDashboard(ws)
+    if (!dash) return
+    const layoutStr = serializeLayout(dock, dash.tiles)
+    writeLayoutToURL(layoutStr)
+  }, 300)
+}
 
 // ─── dockaddtile handler ──────────────────────────────────────────────────────
 
