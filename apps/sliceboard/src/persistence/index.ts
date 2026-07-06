@@ -1,0 +1,39 @@
+// Re-export the full public surface so existing imports keep working
+export type {
+  LayoutItem,
+  MeasureDef,
+  DimDef,
+  Dataset,
+  RetiredTileKind,
+  TileKind,
+  Tile,
+  Dashboard,
+  Workspace,
+} from './schema/v11'
+
+export type { PNode, PEdge } from './schema/v11'
+
+export {
+  initWorkspace,
+  saveWorkspace,
+  newId,
+} from './storage'
+
+export {
+  updateRow,
+  updateRows,
+  reorderLeaves,
+  createDataset,
+  createDashboard,
+  updateDataset,
+  updateDashboard,
+  addTile,
+  removeTile,
+  deleteDashboard,
+  deleteDataset,
+  activeDataset,
+  activeDashboard,
+  dashboardsForDataset,
+  applyGroupBy,
+  drillPath,
+} from './mutations'
