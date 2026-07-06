@@ -347,17 +347,29 @@ export class MdBarChartLC extends Diagram {
     });
 
     // ─── Highlight rect (column/row hover background) ─────────────────────
+    // MUST pass x,y as separate Num values — rect(Vec, w, h) is CENTER-based!
     const hlTarget = derive(() => hover.value ?? selected.value);
-    const hlPos = Vec.derive(() => {
-      const t = hlTarget.value; if (!t) return { x: -9999, y: -9999 };
+    const hlX = derive(() => {
+      const t = hlTarget.value; if (!t) return -9999;
       const targetId = t.id ?? t.label;
       const i = (data.value as Bar[]).findIndex(d => (d.id ?? d.label) === targetId);
-      if (i < 0) return { x: -9999, y: -9999 };
+      if (i < 0) return -9999;
       const bs = bandScale.value;
       const bp = bs(String(i)) ?? 0;
       const pad = (bs.step() - bs.bandwidth()) / 2;
-      if (isVert.value) return { x: bp - pad, y: plotBottom.value - effPlotH.value };
-      return { x: plotX.value, y: bp - pad };
+      if (isVert.value) return bp - pad;
+      return plotX.value;
+    });
+    const hlY = derive(() => {
+      const t = hlTarget.value; if (!t) return -9999;
+      const targetId = t.id ?? t.label;
+      const i = (data.value as Bar[]).findIndex(d => (d.id ?? d.label) === targetId);
+      if (i < 0) return -9999;
+      const bs = bandScale.value;
+      const bp = bs(String(i)) ?? 0;
+      const pad = (bs.step() - bs.bandwidth()) / 2;
+      if (isVert.value) return plotY.value;
+      return bp - pad;
     });
     const hlW = derive(() => {
       if (!isVert.value) return plotW.value;
@@ -367,13 +379,13 @@ export class MdBarChartLC extends Diagram {
       return i < 0 ? 0 : bandScale.value.step();
     });
     const hlH = derive(() => {
-      if (isVert.value) return effPlotH.value;
+      if (isVert.value) return plotH.value;
       const t = hlTarget.value; if (!t) return 0;
       const targetId = t.id ?? t.label;
       const i = (data.value as Bar[]).findIndex(d => (d.id ?? d.label) === targetId);
       return i < 0 ? 0 : bandScale.value.step();
     });
-    const hlRect = s(rect(hlPos, hlW, hlH, {
+    const hlRect = s(rect(hlX, hlY, hlW, hlH, {
       fill: "#ffffff", opacity: derive(() => hlTarget.value ? 0.06 : 0),
     }));
     hlRect.el.style.transition = "x 0.15s ease, y 0.15s ease, opacity 0.1s ease";
