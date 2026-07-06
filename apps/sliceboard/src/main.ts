@@ -92,6 +92,50 @@ function commit(next: Workspace) {
   render()
 }
 
+// ─── E2E hook ─────────────────────────────────────────────────────────────────
+// Registers window.__vizform.setCell — the same commit path a treetable
+// numberDrag reaches via `onUpdate → commit(updateRow(ws, …))`. The R2 e2e
+// harness (tests/e2e/r2_harness.py) uses it to drive value edits without
+// pointer choreography or dock coordination. Exposed in every build (including
+// production) because the sole test surface is the Netlify deploy preview,
+// which is built with `vite build` (`import.meta.env.DEV === false`). No new
+// mutation is possible via this hook that the numberDrag UI does not already
+// expose.
+;(window as any).__vizform = {
+  setCell(datasetId: string, rowId: string, measureKey: string, value: number) {
+    const ds = ws.datasets.find(d => d.id === datasetId)
+    if (!ds) throw new Error(`__vizform.setCell: unknown dataset ${datasetId}`)
+    const row = ds.rows.find(r => r.id === rowId)
+    if (!row) throw new Error(`__vizform.setCell: unknown row ${rowId} in ${datasetId}`)
+    const measures = { ...(row.measures ?? {}), [measureKey]: value }
+    commit(updateRow(ws, datasetId, rowId, { measures }))
+  },
+  getCell(datasetId: string, rowId: string, measureKey: string): number | undefined {
+    const ds = ws.datasets.find(d => d.id === datasetId)
+    const row = ds?.rows.find(r => r.id === rowId)
+    return row?.measures?.[measureKey]
+  },
+  activeDatasetId(): string | null {
+    return activeDataset(ws)?.id ?? null
+  },
+  /** Row ids in a dataset — lets a test pick a target row without scraping the DOM. */
+  rowIds(datasetId: string): string[] {
+    const ds = ws.datasets.find(d => d.id === datasetId)
+    return ds ? ds.rows.map(r => r.id) : []
+  },
+  /** Measure keys present on any row of a dataset. */
+  measureKeys(datasetId: string): string[] {
+    const ds = ws.datasets.find(d => d.id === datasetId)
+    if (!ds) return []
+    const keys = new Set<string>()
+    for (const r of ds.rows) for (const k of Object.keys(r.measures ?? {})) keys.add(k)
+    return [...keys]
+  },
+  activeDashboardId(): string | null {
+    return activeDashboard(ws)?.id ?? null
+  },
+}
+
 // ─── Drill sync ────────────────────────────────────────────────────────────────
 
 // Store → Dashboard: debounced 16ms to batch rapid drill changes
@@ -173,12 +217,21 @@ let urlLayoutApplied = false // Track if we've applied URL layout once
 function getDockTree(dash: Dashboard) {
   const tileIds = dash.tiles.map(t => t.id)
 
-  // First check for URL layout on initial load (once per session)
+  // First check for URL layout on initial load (once per session).
+  // Note: flip `urlLayoutApplied` BEFORE the presence check, not inside the
+  // `if (urlLayout)` branch. Otherwise a session that arrived without a URL
+  // layout keeps re-entering this block on every render — and once the first
+  // dockchange debounce writes a layout to the URL, every subsequent commit
+  // re-parses it. parseLayout() mints fresh group/panel nids, so DockView
+  // rebuilds the dock DOM from scratch (root id changed → not a patch-in-place
+  // update), losing the active tab. Manifested as: e2e cross-tile edit reverts
+  // the active tab to the first panel; long-running sessions "randomly" snap
+  // tabs after a layout change was made.
   if (!urlLayoutApplied) {
+    urlLayoutApplied = true
     const urlLayout = readLayoutFromURL()
     if (urlLayout) {
       console.log('[main] Applying URL layout:', urlLayout)
-      urlLayoutApplied = true
       // First pass: parse with existing tiles to find what's missing
       const { dock: partialDock, missingKinds } = parseLayout(urlLayout, dash.tiles)
       console.log('[main] Parse result:', { hasDock: !!partialDock, missingKinds })
