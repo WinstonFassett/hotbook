@@ -49,7 +49,21 @@ const experiments: Array<{ id: string; title: string; tag: string; ctor: typeof 
 ];
 
 for (const e of experiments) {
-  if (!customElements.get(e.tag)) customElements.define(e.tag, e.ctor as any);
+  if (!customElements.get(e.tag)) {
+    try {
+      customElements.define(e.tag, e.ctor as any);
+    } catch (err) {
+      // Constructor already registered by another module (e.g., when loaded in sliceboard).
+      // Create a wrapper class that extends the original so we can register under our tag.
+      if (err instanceof DOMException && err.name === 'NotSupportedError') {
+        // Dynamic wrapper class — each one unique so the registry accepts it.
+        const WrapperClass = class extends (e.ctor as any) {};
+        customElements.define(e.tag, WrapperClass as any);
+      } else {
+        throw err;
+      }
+    }
+  }
 }
 
 // --- Repro config: drive charts into the states that only break in sliceboard ---
