@@ -70,6 +70,45 @@ html, body, #root, #app {
   flex-direction: column;
 }
 
+/* ─── Page stack (Phase C · Stage 2) ────────────────────────────────────────── */
+
+.sb-page-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+.sb-page {
+  background: var(--pv-bg);
+}
+.sb-page-gutter {
+  position: relative;
+  height: 10px;
+  flex-shrink: 0;
+  background: #0d0d0d;
+  border-top: 1px solid #262626;
+  border-bottom: 1px solid #262626;
+  cursor: ns-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+  user-select: none;
+}
+.sb-page-gutter:hover,
+.sb-page-gutter.dragging {
+  background: #181818;
+}
+.sb-page-gutter-handle {
+  width: 32px;
+  height: 3px;
+  border-radius: 2px;
+  background: #3a3a3a;
+}
+.sb-page-gutter:hover .sb-page-gutter-handle,
+.sb-page-gutter.dragging .sb-page-gutter-handle {
+  background: #666;
+}
+
 /* ─── Buttons ────────────────────────────────────────────────────────────────── */
 
 .sb-btn {

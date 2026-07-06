@@ -981,3 +981,46 @@ export function activeDashboard(ws: Workspace): Dashboard | undefined {
 export function dashboardsForDataset(ws: Workspace, dsId: string): Dashboard[] {
   return ws.dashboards.filter(d => d.datasetId === dsId)
 }
+
+export function activePageStack(ws: Workspace): PageStack | undefined {
+  return ws.pageStacks.find(s => s.id === ws.activePageStackId)
+    ?? ws.pageStacks.find(s => s.datasetId === ws.activeDatasetId)
+}
+
+export function updatePageHeight(ws: Workspace, stackId: string, pageId: string, heightPx: number): Workspace {
+  return {
+    ...ws,
+    pageStacks: ws.pageStacks.map(s => s.id !== stackId ? s : {
+      ...s,
+      pages: s.pages.map(p => p.id !== pageId ? p : { ...p, heightPx }),
+    }),
+  }
+}
+
+// Minimum height in pixels a page can be shrunk to via the inter-page gutter drag.
+export const MIN_PAGE_HEIGHT_PX = 200
+
+// Dev-only: append an extra page to the active PageStack referencing the given
+// (or newly created) dashboard. Used by the ?seed2pages=1 URL param and the
+// window.__sbAddPage() helper to exercise multi-page rendering before Stage 3
+// ships user-facing page management.
+export function devAppendPage(ws: Workspace, opts?: { dashboardId?: string; heightPx?: number }): Workspace {
+  const stack = activePageStack(ws)
+  if (!stack) return ws
+  let next = ws
+  let dashboardId = opts?.dashboardId
+  if (!dashboardId) {
+    const others = ws.dashboards.filter(d => d.datasetId === stack.datasetId && !stack.pages.some(p => p.dashboardId === d.id))
+    if (others[0]) {
+      dashboardId = others[0].id
+    } else {
+      next = createDashboard(next, `Page ${stack.pages.length + 1}`, stack.datasetId)
+      dashboardId = next.dashboards[next.dashboards.length - 1]!.id
+    }
+  }
+  const page: Page = { id: genId(), dashboardId, heightPx: opts?.heightPx ?? Math.round(defaultPageHeightPx() * 0.6) }
+  return {
+    ...next,
+    pageStacks: next.pageStacks.map(s => s.id !== stack.id ? s : { ...s, pages: [...s.pages, page] }),
+  }
+}

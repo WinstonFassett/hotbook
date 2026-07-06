@@ -11,6 +11,7 @@ import {
   createDataset, createDashboard, updateDashboard,
   addTile, removeTile, deleteDashboard, deleteDataset,
   activeDataset, activeDashboard, dashboardsForDataset,
+  activePageStack, updatePageHeight, devAppendPage,
   updateRow, updateRows, reorderLeaves,
   drillPath,
 } from './persistence'
@@ -18,6 +19,12 @@ import type { Workspace, Dataset, Dashboard, Tile, TileKind } from './persistenc
 import { hudStore, resetHudForDataset } from './store'
 import type { TileRecord } from './DockView'
 import './DockView'
+// Side-effect import — the module registers the sb-page-stack-view custom
+// element at load time. Named imports below are type-only positions, which TS
+// / Vite elide, so the bare import is required to guarantee execution before
+// document.createElement('sb-page-stack-view') runs.
+import './PageStackView'
+import type { PageStackView, PageEntry } from './PageStackView'
 import { defaultDockTree, reconcile, addTileToDock, type DockNode } from './dock'
 
 // ─── Tile metadata ─────────────────────────────────────────────────────────────
@@ -80,7 +87,19 @@ if (new URLSearchParams(window.location.search).get('reset') === '1') {
 }
 
 let ws: Workspace = initWorkspace()
-const dockView = document.createElement('sb-dock-view') as DockView
+
+// Dev-only: preload a second page in the active stack so multi-page rendering
+// has real content on first paint. Trigger with ?seed2pages=1. Stage 3 replaces
+// this with a real "Add page below" affordance.
+if (new URLSearchParams(window.location.search).get('seed2pages') === '1') {
+  const stack = activePageStack(ws)
+  if (stack && stack.pages.length < 2) {
+    ws = devAppendPage(ws)
+    saveWorkspace(ws)
+  }
+}
+
+const pageStackView = document.createElement('sb-page-stack-view') as PageStackView
 
 let drillPersistDebounce: ReturnType<typeof setTimeout> | null = null
 let lastHydratedDashId = ''
@@ -163,36 +182,30 @@ function buildTileRecords(dash: Dashboard, ds: Dataset): TileRecord[] {
 
 // ─── Dock tree per dashboard ──────────────────────────────────────────────────
 
-let lastDashId = ''
-let lastTileIds: string[] = []
-let cachedDefaultTree: DockNode | null = null
-let cachedDefaultTileIds: string[] = []
+// Per-dashboard cache so stacked pages don't fight over a single lastDashId slot
+// (which would force full reconciles on every render when two pages point at
+// different dashboards). Reconcile is only run when a dashboard's tile-id list
+// actually changes — matches the pre-Phase-C behavior for the single-page case.
+interface DockCacheEntry {
+  lastTileIds: string[]
+  tree: DockNode | null
+}
+const dockCache = new Map<string, DockCacheEntry>()
 
-function getDockTree(dash: Dashboard) {
+function getDockTree(dash: Dashboard): DockNode | null {
   const tileIds = dash.tiles.map(t => t.id)
-  // Only reconcile when tiles change — not on every render.
-  // Reconciling on every render prunes empty groups created by splitGroupRight/Down.
-  const tilesChanged = dash.id !== lastDashId || JSON.stringify(tileIds) !== JSON.stringify(lastTileIds)
+  const cached = dockCache.get(dash.id)
+  const tilesChanged = !cached || JSON.stringify(tileIds) !== JSON.stringify(cached.lastTileIds)
+
   if (tilesChanged) {
-    lastDashId = dash.id
-    lastTileIds = tileIds
-    if (dash.dockTree) return reconcile(dash.dockTree, tileIds)
-    // Cache the default tree so we don't generate new random IDs on every
-    // render — that would remount every chart on each store update.
-    if (JSON.stringify(tileIds) !== JSON.stringify(cachedDefaultTileIds)) {
-      cachedDefaultTree = defaultDockTree(tileIds)
-      cachedDefaultTileIds = [...tileIds]
-    }
-    return cachedDefaultTree
+    const tree = dash.dockTree
+      ? reconcile(dash.dockTree, tileIds)
+      : defaultDockTree(tileIds)
+    dockCache.set(dash.id, { lastTileIds: [...tileIds], tree })
+    return tree
   }
   if (dash.dockTree) return dash.dockTree
-  // Same default tree as last time — don't regenerate.
-  if (cachedDefaultTree && JSON.stringify(tileIds) === JSON.stringify(cachedDefaultTileIds)) {
-    return cachedDefaultTree
-  }
-  cachedDefaultTree = defaultDockTree(tileIds)
-  cachedDefaultTileIds = [...tileIds]
-  return cachedDefaultTree
+  return cached!.tree
 }
 
 // ─── Render ───────────────────────────────────────────────────────────────────
@@ -206,6 +219,10 @@ function render() {
   // that persists drills to dash.drills is debounced 16ms, so a synchronous commit
   // (e.g. onDepthChange) triggers render() before the debounce fires — dash.drills
   // is stale, hydrateDrills wipes the just-set drill, and the chart snaps to root.
+  //
+  // Phase C · Stage 2: hudStore remains a singleton shared across pages (Stage 4
+  // will split drills per page). The topbar-selected dashboard still drives drill
+  // hydration, matching pre-Phase-C behavior.
   const dashId = dash?.id ?? ''
   if (dashId !== lastHydratedDashId) {
     lastHydratedDashId = dashId
@@ -216,21 +233,23 @@ function render() {
     }
   }
 
-  // Dock tree
-  const dock = dash ? getDockTree(dash) : null
-  if (typeof dockView.setDock === 'function') {
-    dockView.setDock(dock)
-  } else {
-    dockView.externalDock = dock
+  const stack = activePageStack(ws)
+  const entries: PageEntry[] = []
+  if (stack && ds) {
+    for (const page of stack.pages) {
+      const pageDash = ws.dashboards.find(d => d.id === page.dashboardId)
+      if (!pageDash) continue
+      const pageDs = ws.datasets.find(d => d.id === pageDash.datasetId) ?? ds
+      entries.push({
+        pageId: page.id,
+        dashboardId: pageDash.id,
+        heightPx: page.heightPx,
+        dock: getDockTree(pageDash),
+        tiles: buildTileRecords(pageDash, pageDs),
+      })
+    }
   }
-
-  // Tile records
-  const tiles = dash && ds ? buildTileRecords(dash, ds) : []
-  if (typeof dockView.setTiles === 'function') {
-    dockView.setTiles(tiles)
-  } else {
-    dockView.externalTiles = tiles
-  }
+  pageStackView.setPages(entries)
 
   renderTopbar(ws)
 }
@@ -449,32 +468,44 @@ window.addEventListener('keydown', (e: KeyboardEvent) => {
   }
 })
 
-// ─── dockchange handler ───────────────────────────────────────────────────────
+// ─── PageStackView callbacks ─────────────────────────────────────────────────
 
-dockView.addEventListener('dockchange', (e: Event) => {
-  const detail = (e as CustomEvent).detail
-  const dash = activeDashboard(ws)
-  if (!dash) return
-  ws = updateDashboard(ws, { ...dash, dockTree: detail })
-  commit(ws)
-})
-
-// ─── dockaddtile handler ──────────────────────────────────────────────────────
-
-dockView.addEventListener('dockaddtile', (e: Event) => {
-  const { groupId, x, y } = (e as CustomEvent).detail
-  showTilePicker(x, y, (kind) => {
-    const dash = activeDashboard(ws)
+pageStackView.setCallbacks({
+  onDockChange(dashboardId, dock) {
+    const dash = ws.dashboards.find(d => d.id === dashboardId)
     if (!dash) return
-    const next = addTile(ws, dash.id, kind)
-    const newTile = next.dashboards.find(d => d.id === dash.id)!.tiles.at(-1)!
-    const currentTree = getDockTree(dash)
-    const newTree = addTileToDock(currentTree, newTile.id, groupId)
-    const updatedDash = next.dashboards.find(d => d.id === dash.id)!
-    ws = updateDashboard(next, { ...updatedDash, dockTree: newTree })
+    ws = updateDashboard(ws, { ...dash, dockTree: dock })
     commit(ws)
-  })
+  },
+  onDockAddTile(dashboardId, groupId, x, y) {
+    showTilePicker(x, y, (kind) => {
+      const dash = ws.dashboards.find(d => d.id === dashboardId)
+      if (!dash) return
+      const next = addTile(ws, dash.id, kind)
+      const updatedDash = next.dashboards.find(d => d.id === dash.id)!
+      const newTile = updatedDash.tiles.at(-1)!
+      const currentTree = getDockTree(dash)
+      const newTree = addTileToDock(currentTree, newTile.id, groupId)
+      ws = updateDashboard(next, { ...updatedDash, dockTree: newTree })
+      commit(ws)
+    })
+  },
+  onPageResize(pageId, heightPx) {
+    const stack = activePageStack(ws)
+    if (!stack) return
+    ws = updatePageHeight(ws, stack.id, pageId, heightPx)
+    saveWorkspace(ws)
+    // No re-render — the DOM was already sized during the drag, and re-render
+    // would rebuild the entries list unnecessarily.
+  },
 })
+
+// Dev helper: window.__sbAddPage() appends a page and re-renders. Handy when
+// manually exercising multi-page rendering during Stage 2 review.
+;(window as any).__sbAddPage = () => {
+  ws = devAppendPage(ws)
+  commit(ws)
+}
 
 function showTilePicker(x: number, y: number, onPick: (kind: TileKind) => void) {
   // Remove any existing picker
@@ -566,8 +597,8 @@ function mount() {
   `
 
   const body = document.getElementById('sb-body')!
-  dockView.style.cssText = 'flex:1;min-height:0;width:100%'
-  body.appendChild(dockView)
+  pageStackView.style.cssText = 'flex:1;min-height:0;width:100%'
+  body.appendChild(pageStackView)
 
   render()
 }
