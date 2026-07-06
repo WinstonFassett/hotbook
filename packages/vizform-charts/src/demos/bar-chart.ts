@@ -15,20 +15,13 @@ import {
   GESTURE_SUPPRESSION_CSS,
   hoverTransition,
 } from "../lib/transitions";
+import { lightenHex } from "../lib/color-utils";
 
 const W = 720;
 const H = 360;
 const SINGLE_COLOR = "#7aaae8";
 const PALETTE = ['#e08888', '#d4a86c', '#ccc060', '#7ec87e', '#60c4c0', '#7aaae8', '#b090e0', '#8899b4'];
 const SORT_SEC = 0.35; // s — orientation/measure swap tween duration
-
-function lightenHex(hex: string, t: number): string {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  const m = (c: number) => Math.round(c + (255 - c) * t).toString(16).padStart(2, '0');
-  return `#${m(r)}${m(g)}${m(b)}`;
-}
 
 interface Bar { id?: string; label: string; value: number; }
 
