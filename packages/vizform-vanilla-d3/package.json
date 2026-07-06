@@ -1,7 +1,7 @@
 {
   "name": "@winstonfassett/vizform-vanilla-d3",
   "version": "0.1.0",
-  "description": "vizform vanilla D3 \u2014 pure D3/TS visualization engine, no framework dependencies.",
+  "description": "vizform vanilla D3 — pure D3/TS visualization engine, no framework dependencies.",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -23,6 +23,14 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/vizform-vanilla-d3.js",
       "require": "./dist/vizform-vanilla-d3.umd.cjs"
+    },
+    "./host/tile-binder": {
+      "node": {
+        "types": "./src/host/tile-binder.ts",
+        "import": "./src/host/tile-binder.ts"
+      },
+      "types": "./dist/host/tile-binder.d.ts",
+      "import": "./dist/host/tile-binder.js"
     }
   },
   "types": "./dist/index.d.ts",
@@ -31,11 +39,15 @@
   ],
   "scripts": {
     "build": "vite build",
-    "watch": "vite build --watch"
+    "watch": "vite build --watch",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
-    "@winstonfassett/vizform-core": "*",
     "@types/d3-scale": "^4.0.9",
+    "@winstonfassett/vizform-charts": "*",
+    "@winstonfassett/vizform-core": "*",
+    "bireactive": "^0.3.4",
     "d3-drag": "^3.0.0",
     "d3-ease": "^3.0.1",
     "d3-hierarchy": "^3.1.2",
@@ -53,8 +65,11 @@
     "@types/d3-selection": "^3.0.10",
     "@types/d3-shape": "^3.1.6",
     "@types/d3-transition": "^3.0.9",
+    "@vitest/coverage-v8": "^4.1.10",
+    "jsdom": "^29.1.1",
     "typescript": "^5.9.3",
     "vite": "^6.0.0",
-    "vite-plugin-dts": "^4.0.0"
+    "vite-plugin-dts": "^4.0.0",
+    "vitest": "^4.1.10"
   }
 }
