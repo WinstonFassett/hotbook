@@ -1,11 +1,14 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 
-// Alias `@bireactive` and `@bireactive/*` to the vendored source under
-// inspo/. The published npm `bireactive@0.2.4` does NOT expose
-// /constraints or /propagators subpaths; this spike needs them.
-const bireactiveSrc = fileURLToPath(
-  new URL("../../inspo/bireactive/src", import.meta.url),
+// Alias `@bireactive` and `@bireactive/*` to the published npm package's
+// dist. The npm tarball ships /constraints and /propagators builds but
+// does not list them in package.json `exports`, so bare subpath imports
+// like `bireactive/constraints` fail Node resolution. This alias points
+// directly at the dist files so the spike can import them without
+// vendoring the source.
+const bireactiveDist = fileURLToPath(
+  new URL("../../node_modules/bireactive/dist", import.meta.url),
 );
 
 export default defineConfig({
@@ -21,7 +24,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      "@bireactive": bireactiveSrc,
+      "@bireactive": bireactiveDist,
     },
   },
   server: { host: true },

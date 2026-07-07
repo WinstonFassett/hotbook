@@ -13,9 +13,15 @@
     "dev:vanilla-bireactive": "npm run dev -w apps/vanilla-bireactive-spike",
     "dev:vanilla-bireactive-layercharts": "npm run dev -w apps/vanilla-bireactive-layercharts-spike",
     "dev:vanilla-bireactive-native-layout": "npm run dev -w apps/vanilla-bireactive-native-layout-spike",
-    "dev": "concurrently -n sliceboard,vanilla-bireactive-layercharts \"npm run dev -w apps/sliceboard\" \"npm run dev -w apps/vanilla-bireactive-layercharts-spike\""
+    "dev": "concurrently -n sliceboard,vanilla-bireactive-layercharts \"npm run dev -w apps/sliceboard\" \"npm run dev -w apps/vanilla-bireactive-layercharts-spike\"",
+    "postinstall": "patch-package"
   },
   "devDependencies": {
-    "concurrently": "^10.0.3"
+    "concurrently": "^10.0.3",
+    "patch-package": "^8.0.1",
+    "postinstall-postinstall": "^2.1.0"
+  },
+  "dependencies": {
+    "bireactive": "^0.3.5"
   }
 }

@@ -1,0 +1,19 @@
+diff --git a/node_modules/bireactive/dist/animation/anim.js b/node_modules/bireactive/dist/animation/anim.js
+index 4d58959..f72f6b6 100644
+--- a/node_modules/bireactive/dist/animation/anim.js
++++ b/node_modules/bireactive/dist/animation/anim.js
+@@ -123,6 +123,14 @@ export class Anim {
+         a.cleanup = null;
+         a.onSettle = null;
+         this.safe(c);
++        // If the generator is currently on the stack (mid-`next`/`throw`),
++        // calling `.return()` throws "Generator is already running". Defer
++        // the close until the active `advance` frame unwinds; the wakeAt===DEAD
++        // check inside `advance` will halt further iteration in the meantime.
++        if (a.advancing) {
++            a.pendingReturn = true;
++            return;
++        }
+         try {
+             a.gen.return(undefined);
+         }
