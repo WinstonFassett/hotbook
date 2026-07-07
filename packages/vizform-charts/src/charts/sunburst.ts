@@ -1,6 +1,5 @@
 import {
   Anchor,
-  Diagram,
   derive,
   forEach,
   group,
@@ -16,6 +15,7 @@ import {
   effect as biEffect,
   untracked,
 } from "bireactive";
+import { Diagram } from "../lib/diagram";
 import { partition, type HierarchyRectangularNode } from "d3-hierarchy";
 import { depthFill, labelInk } from "../lib/depth-color";
 import { buildHierarchy } from "../lib/interaction";
@@ -23,6 +23,7 @@ import { buildParentIndex, type BiNode } from "../lib/tree";
 import { portfolio, walkWithDepth } from "../lib/portfolio";
 import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
+import { mountDrillBreadcrumb } from "../lib/drill-breadcrumb";
 import { dragCancelable } from "../lib/esc-contract";
 import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS } from "../lib/transitions";
 import { withExitDelay, enterExitFade, membershipCell } from "../lib/mark-lifecycle";
@@ -525,5 +526,18 @@ export class MdSunburstLC extends Diagram {
       const f = state.focused.value;
       return `total: ${root.value.total.value.toFixed(0)} · focused: ${f?.value.label ?? "(none)"} · hover + cmd/ctrl+wheel · click + arrows/Tab`;
     }), { size: 10, align: Anchor.Center, fill: "#9aa0a8" }));
+
+    if (this.showBreadcrumb !== false && this.chromeLayer) {
+      mountDrillBreadcrumb({
+        drillIdCell: this._drillIdCell,
+        root,
+        chromeLayer: this.chromeLayer,
+        onDrill: (id) => {
+          this.drillNodeId = id;
+          const drillKey = (this as any).drillKey ?? "default";
+          (this as ElementWithBridge).brSync?.emitDrill?.(drillKey, id);
+        },
+      });
+    }
   }
 }

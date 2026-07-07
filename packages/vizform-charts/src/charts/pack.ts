@@ -1,6 +1,5 @@
 import {
   Anchor,
-  Diagram,
   derive,
   forEach,
   group,
@@ -15,6 +14,7 @@ import {
   effect as biEffect,
   untracked,
 } from "bireactive";
+import { Diagram } from "../lib/diagram";
 import type { ElementWithBridge } from "../lib/hud-bridge";
 import { pack as d3pack, type HierarchyCircularNode } from "d3-hierarchy";
 import { depthFill, labelInk } from "../lib/depth-color";
@@ -23,6 +23,7 @@ import { buildParentIndex, type BiNode } from "../lib/tree";
 import { portfolio, walkWithDepth } from "../lib/portfolio";
 import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
+import { mountDrillBreadcrumb } from "../lib/drill-breadcrumb";
 import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, ENTER_MS } from "../lib/transitions";
 import { withExitDelay, membershipCell } from "../lib/mark-lifecycle";
 
@@ -111,6 +112,7 @@ export class MdPack extends Diagram {
     // Watch drillNodeId; on change tween the viewport to the drilled node bounds.
     // Reads Wc/Hc (tracked) so viewport resets correctly on resize.
     // Reads layout via untracked so value edits don't re-fire the tween.
+    const maxDepthCell = this._maxDepthCell;
     let drillInited = false;
     let lastDrillId: string | null = null;
     let drillCancel: (() => void) | null = null;
@@ -188,8 +190,6 @@ export class MdPack extends Diagram {
         this.classList.remove(GESTURE_ACTIVE_CLASS);
       }, DRILL_DURATION + 60);
     });
-
-    const maxDepthCell = this._maxDepthCell;
 
     // Window: when drilled (fd > 0) include focus node as context circle + descendants.
     // Walk focus subtree only so off-screen sibling circles don't leak into the canvas.
@@ -373,5 +373,18 @@ export class MdPack extends Diagram {
       const f = state.focused.value;
       return `total: ${root.value.total.value.toFixed(0)} · focused: ${f?.value.label ?? "(none)"} · hover + cmd/ctrl+wheel · click + arrows/Tab`;
     }), { size: 10, align: Anchor.Center, fill: "#9aa0a8" }));
+
+    if (this.showBreadcrumb !== false && this.chromeLayer) {
+      mountDrillBreadcrumb({
+        drillIdCell: this._drillIdCell,
+        root,
+        chromeLayer: this.chromeLayer,
+        onDrill: (id) => {
+          this.drillNodeId = id;
+          const drillKey = (this as any).drillKey ?? "default";
+          (this as ElementWithBridge).brSync?.emitDrill?.(drillKey, id);
+        },
+      });
+    }
   }
 }

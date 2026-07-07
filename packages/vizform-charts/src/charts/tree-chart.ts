@@ -1,6 +1,5 @@
 import {
   Anchor,
-  Diagram,
   derive,
   effect as biEffect,
   label,
@@ -16,6 +15,7 @@ import {
   Vec,
   cell,
 } from "bireactive";
+import { Diagram } from "../lib/diagram";
 import { tree, type HierarchyPointNode } from "d3-hierarchy";
 import { zoom } from "d3-zoom";
 import { select } from "d3-selection";

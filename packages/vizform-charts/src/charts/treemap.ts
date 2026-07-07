@@ -1,6 +1,5 @@
 import {
   Anchor,
-  Diagram,
   derive,
   forEach,
   group,
@@ -15,6 +14,7 @@ import {
   effect as biEffect,
   untracked,
 } from "bireactive";
+import { Diagram } from "../lib/diagram";
 import type { ElementWithBridge } from "../lib/hud-bridge";
 import { treemap, treemapSquarify, type HierarchyRectangularNode } from "d3-hierarchy";
 import { depthFill, labelInk } from "../lib/depth-color";
@@ -23,6 +23,7 @@ import { buildParentIndex, type BiNode } from "../lib/tree";
 import { portfolio, walkWithDepth } from "../lib/portfolio";
 import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
+import { mountDrillBreadcrumb } from "../lib/drill-breadcrumb";
 import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, ENTER_MS } from "../lib/transitions";
 import { withExitDelay, membershipCell } from "../lib/mark-lifecycle";
 
@@ -49,6 +50,7 @@ export class MdTreemapLC extends Diagram {
   `
   externalRoot?: BiNode
   drillKey?: string
+  showBreadcrumb?: boolean
 
   // Reactive so the levels dropdown drives enter/exit fades instead of a remount.
   private _maxDepthCell = cell<number | undefined>(undefined)
@@ -429,5 +431,19 @@ export class MdTreemapLC extends Diagram {
       const f = state.focused.value;
       return `total: ${root.value.total.value.toFixed(0)} · focused: ${f?.value.label ?? "(none)"} · hover + cmd/ctrl+wheel · click + arrows/Tab`;
     }), { size: 10, align: Anchor.Center, fill: "#9aa0a8" }));
+
+    // Drill breadcrumb in the chrome layer — chart-owned, reactive.
+    if (this.showBreadcrumb !== false && this.chromeLayer) {
+      mountDrillBreadcrumb({
+        drillIdCell: this._drillIdCell,
+        root,
+        chromeLayer: this.chromeLayer,
+        onDrill: (id) => {
+          this.drillNodeId = id;
+          const drillKey = (this as any).drillKey ?? "default";
+          (this as ElementWithBridge).brSync?.emitDrill?.(drillKey, id);
+        },
+      });
+    }
   }
 }

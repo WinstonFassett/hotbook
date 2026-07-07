@@ -30,7 +30,6 @@ import type { TileController, TileSource } from './viz/br/bindTile'
 import { hudStore } from './store'
 import { buildTileSource, buildSimpleMount, simpleTag, simpleDataKey } from './tile-sources'
 import type { TileRenderContext } from './tile-sources'
-import { drillPath } from './persistence'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -127,10 +126,7 @@ export class DockView extends HTMLElement {
 
     let lastDrills: Record<string, string | null> = {}
     this._unsubHud = hudStore.subscribe(() => {
-      // Re-render drill breadcrumbs on drill change — panel bodies contain them
-      const dock = dockCell.value
-      const tiles = tilesCell.value
-      this._syncDrillBreadcrumbs(dock, tiles)
+      // Breadcrumbs are now rendered inside the chart element (chrome layer).
       // Only push drillNodeId to chart elements when drills actually changed.
       // Firing _syncChart on every hudStore change (hover, select) would overwrite
       // in-flight gesture edits with stale store values.
@@ -138,6 +134,7 @@ export class DockView extends HTMLElement {
       const drillsChanged = JSON.stringify(currentDrills) !== JSON.stringify(lastDrills)
       if (drillsChanged) {
         lastDrills = { ...currentDrills }
+        const tiles = tilesCell.value
         for (const [panelId, ctrl] of this._panelCtrls) {
           if (ctrl.tileCtrl) {
             const tileRec = tiles.find(t => t.tile.id === ctrl.tileId)
@@ -585,11 +582,8 @@ export class DockView extends HTMLElement {
     const header = this._buildTileHeader(tileRec, tiles)
     wrap.appendChild(header)
 
-    // Drill breadcrumb (if chart supports drill)
-    if (schema.drillKey) {
-      const drillBar = this._buildDrillBreadcrumb(tile.id, tileRec.ds)
-      if (drillBar) wrap.appendChild(drillBar)
-    }
+    // Drill breadcrumb is now rendered inside the chart element itself
+    // (via the chrome layer in our Diagram base class). No container-level bar.
 
     // Chart body
     const body = document.createElement('div')
@@ -723,75 +717,6 @@ export class DockView extends HTMLElement {
 
     header.appendChild(actions)
     return header
-  }
-
-  private _buildDrillBreadcrumb(drillKey: string, ds: Dataset): HTMLElement | null {
-    const drillNodeId = hudStore.getSnapshot().drills[drillKey] ?? null
-    const path = drillNodeId ? drillPath(ds.rows, drillNodeId) : []
-    if (!drillNodeId || path.length === 0) return null
-
-    const bar = document.createElement('div')
-    bar.className = 'sb-drill-bar'
-    bar.setAttribute('role', 'navigation')
-    bar.setAttribute('aria-label', 'Drill path')
-    bar.dataset.drillKey = drillKey
-
-    const rootBtn = document.createElement('button')
-    rootBtn.type = 'button'
-    rootBtn.className = 'sb-drill-crumb'
-    rootBtn.textContent = 'Root'
-    rootBtn.addEventListener('click', () => hudStore.setDrill(drillKey, null))
-    bar.appendChild(rootBtn)
-
-    const parent = path.length >= 2 ? path[path.length - 2]! : null
-
-    path.forEach((n, i) => {
-      const isCurrent = i === path.length - 1
-      const seg = document.createElement('span')
-      seg.className = 'sb-drill-seg'
-
-      const sep = document.createElement('span')
-      sep.className = 'sb-drill-sep'
-      sep.textContent = '›'
-      seg.appendChild(sep)
-
-      const btn = document.createElement('button')
-      btn.type = 'button'
-      btn.className = `sb-drill-crumb${isCurrent ? ' sb-drill-crumb--current' : ''}`
-      btn.textContent = n.name
-      btn.title = isCurrent ? 'Click to drill out fully' : `Drill to ${n.name}`
-      if (isCurrent) btn.setAttribute('aria-current', 'location')
-      btn.addEventListener('click', () => hudStore.setDrill(drillKey, isCurrent ? null : n.id))
-      seg.appendChild(btn)
-      bar.appendChild(seg)
-    })
-
-    const upBtn = document.createElement('button')
-    upBtn.type = 'button'
-    upBtn.className = 'sb-btn sb-drill-up'
-    upBtn.textContent = '↑ Up'
-    upBtn.title = 'Drill out one level (Esc)'
-    upBtn.addEventListener('click', () => hudStore.setDrill(drillKey, parent ? parent.id : null))
-    bar.appendChild(upBtn)
-
-    return bar
-  }
-
-  private _syncDrillBreadcrumbs(dock: DockNode | null, tiles: TileRecord[]) {
-    // Re-render drill bars for all visible panels when hud changes.
-    // Find all [data-drill-key] elements and rebuild them in place.
-    const bars = this.querySelectorAll<HTMLElement>('[data-drill-key]')
-    bars.forEach(bar => {
-      const drillKey = bar.dataset.drillKey!
-      const tileRec = tiles.find(t => t.tile.id === drillKey)
-      if (!tileRec) return
-      const newBar = this._buildDrillBreadcrumb(drillKey, tileRec.ds)
-      if (newBar) {
-        bar.replaceWith(newBar)
-      } else {
-        bar.replaceWith(document.createElement('div')) // empty placeholder
-      }
-    })
   }
 
   // ─── Chart data sync (same panel, data changed) ──────────────────────────

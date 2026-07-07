@@ -9,7 +9,6 @@
 import {
   Anchor,
   cell,
-  Diagram,
   derive,
   effect as biEffect,
   label,
@@ -22,6 +21,7 @@ import {
   Vec,
   type Writable,
 } from "bireactive";
+import { Diagram } from "../lib/diagram";
 import { dragCancelable } from "../lib/esc-contract";
 
 interface Category {

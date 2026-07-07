@@ -4,7 +4,8 @@
 // cell. x is always date (static). Changing yBinding fires the tween gate
 // in chartContext — line animates to new values. No manual tween cells.
 
-import { cell, circle, derive, Diagram, label, line, type Mount, Vec } from "bireactive";
+import { cell, circle, derive, label, line, type Mount, Vec } from "bireactive";
+import { Diagram } from "../lib/diagram";
 import { axis } from "../lib/axis";
 import { chartContext } from "../lib/chart-context";
 import { attachCartesianGestures, makeBisectFinder } from "../lib/cartesian-gestures";

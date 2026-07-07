@@ -5,9 +5,10 @@
 // one number here, presented in discrete chunks.
 
 import {
-  Anchor, cell, circle, derive, Diagram, effect as biEffect,
+  Anchor, cell, circle, derive, effect as biEffect,
   group, label, mount, type Mount, Num, num, pathD, rect, Vec, type Writable,
 } from "bireactive";
+import { Diagram } from "../lib/diagram";
 import { arc as d3Arc } from "d3-shape";
 import { wheelController, realModifierDown } from "../lib/interaction";
 import { dragCancelable } from "../lib/esc-contract";

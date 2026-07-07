@@ -11,7 +11,8 @@
 // dragCancelable (see lib/esc-contract.ts), so every drag reverts on Esc —
 // consistent with every other chart in this app.
 
-import { Anchor, Diagram, cell, circle, derive, label, type Mount, num, pathD, Vec, type Writable, type Num } from "bireactive";
+import { Anchor, cell, circle, derive, label, type Mount, num, pathD, Vec, type Writable, type Num } from "bireactive";
+import { Diagram } from "../lib/diagram";
 import { dragCancelable } from "../lib/esc-contract";
 
 // ── Layout constants ────────────────────────────────────────────────────

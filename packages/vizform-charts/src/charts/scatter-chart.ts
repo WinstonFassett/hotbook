@@ -5,7 +5,8 @@
 // dots animate to new positions. No manual tween cells, no orderHash, no
 // measureKey. Marks read through ctx.xGet/ctx.yGet which read tween cells.
 
-import { cell, circle, derive, Diagram, label, type Mount, Vec } from "bireactive";
+import { cell, circle, derive, label, type Mount, Vec } from "bireactive";
+import { Diagram } from "../lib/diagram";
 import { axis } from "../lib/axis";
 import { chartContext } from "../lib/chart-context";
 import { attachCartesianGestures, makeBisectFinder } from "../lib/cartesian-gestures";
