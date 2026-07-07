@@ -2,10 +2,6 @@
 node_modules/
 dist/
 inspo/*
-!inspo/bireactive/
-inspo/bireactive/*
-!inspo/bireactive/src/
-!inspo/bireactive/src/**
 *.zip
 .DS_Store
 .apitable.yml
