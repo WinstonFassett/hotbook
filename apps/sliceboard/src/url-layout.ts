@@ -1,8 +1,9 @@
 /**
- * url-layout.ts — URL-based layout serialization for WIN-134.
+ * url-layout.ts — URL layout parser for fixture-based layouts (WIN-191).
  *
- * Enables declarative, shareable layout via URL query param `?layout=...`.
- * Format is compact and hand-writable for test fixtures and demos.
+ * Reads `?layout=...` on boot to hydrate deterministic pane arrangements for
+ * test fixtures (R2 harness, WIN-131) and demos. The URL does NOT update as
+ * the user arranges panes — that half was removed in WIN-191.
  *
  * Example URLs:
  *   ?layout=treetable|bar              → two-pane split (treetable left, bar right)
@@ -10,8 +11,7 @@
  *   ?layout=bar|(scatter%2Btreemap)    → right group has scatter+treemap tabs
  *
  * NOTE: The `+` character MUST be URL-encoded as `%2B` in query strings,
- * otherwise browsers decode it as a space. Use encodeURIComponent() when
- * programmatically constructing URLs.
+ * otherwise browsers decode it as a space.
  *
  * Grammar (simplified):
  *   layout   := pane ( '|' pane )*     # horizontal split
@@ -20,46 +20,13 @@
  *   tiles    := tile ( '+' tile )*     # tabs within a group
  *   tile     := [a-z0-9-]+             # chart kind
  *
- * The serializer maps DockNode trees to this compact DSL. The parser builds
- * DockNode trees from the DSL, creating tiles on demand if they don't exist.
+ * The parser builds DockNode trees from the DSL, creating tiles on demand if
+ * they don't exist.
  */
 
 import type { DockNode, DockGroup, DockPanel } from './dock'
 import { makeGroup, makeSplit, makePanel } from './dock'
 import type { TileKind, Dashboard, Tile } from './persistence'
-
-// ─── Serialize ────────────────────────────────────────────────────────────────
-
-/** Serialize a dock tree to a layout string suitable for URL ?layout=...
- *  Requires a tile lookup to map tile IDs to kinds for hand-writable output. */
-export function serializeLayout(dock: DockNode | null, tiles: Tile[]): string {
-  if (!dock) return ''
-  const tileMap = new Map(tiles.map(t => [t.id, t]))
-  return serializeNode(dock, tileMap)
-}
-
-function serializeNode(node: DockNode, tileMap: Map<string, Tile>): string {
-  if (node.kind === 'group') {
-    return serializeGroup(node, tileMap)
-  }
-  // Split — row means horizontal '|', col means vertical '/' (not used in current
-  // design but reserved for future)
-  const sep = node.direction === 'row' ? '|' : '/'
-  return node.children.map(c => serializeNode(c, tileMap)).join(sep)
-}
-
-function serializeGroup(group: DockGroup, tileMap: Map<string, Tile>): string {
-  if (group.panels.length === 0) return ''
-  const kinds = group.panels.map(p => {
-    const tile = tileMap.get(p.tileId)
-    return tile?.kind ?? p.tileId
-  })
-  if (kinds.length === 1) {
-    return kinds[0]!
-  }
-  // Multiple panels → tabs, wrap in parens
-  return `(${kinds.join('+')})`
-}
 
 // ─── Parse ────────────────────────────────────────────────────────────────────
 
@@ -235,16 +202,4 @@ export function parseLayout(
 export function readLayoutFromURL(): string | null {
   const params = new URLSearchParams(window.location.search)
   return params.get('layout')
-}
-
-/** Write layout to URL query param ?layout=..., preserving other params.
- *  Uses replaceState so it doesn't add history entries on every layout change. */
-export function writeLayoutToURL(layoutStr: string): void {
-  const url = new URL(window.location.href)
-  if (layoutStr) {
-    url.searchParams.set('layout', layoutStr)
-  } else {
-    url.searchParams.delete('layout')
-  }
-  window.history.replaceState({}, '', url.toString())
 }
