@@ -2,7 +2,8 @@
 // Mirrors LC's radial Chart + scaleBand for x (angle per category).
 // Grid: polygon rings at radius ticks + spoke lines. Points on polygon are clickable/editable.
 
-import { Anchor, cell, circle, derive, Diagram, easeOut, effect as biEffect, label, type Mount, num, pathD, tween, untracked, Vec } from "bireactive";
+import { Anchor, cell, circle, derive, easeOut, effect as biEffect, label, type Mount, num, pathD, tween, untracked, Vec } from "bireactive";
+import { Diagram } from "../lib/diagram";
 import { scaleLinear } from "d3-scale";
 import { extent, ticks as d3Ticks } from "d3-array";
 import { wheelController, dragController, dynamicWheelStep, realModifierDown } from "../lib/interaction";

@@ -2,7 +2,8 @@
 // Full-360° track per ring, rounded ends, value arc on top.
 // Click ring to select · Tab/←/→ nav · ↑/↓ edit · cmd+wheel.
 
-import { Anchor, cell, circle, derive, Diagram, easeInOut, easeOut, effect as biEffect, group, label, mount, type Mount, num, pathD, tween, untracked, Vec } from "bireactive";
+import { Anchor, cell, circle, derive, easeInOut, easeOut, effect as biEffect, group, label, mount, type Mount, num, pathD, tween, untracked, Vec } from "bireactive";
+import { Diagram } from "../lib/diagram";
 import { arc as d3Arc } from "d3-shape";
 import { wheelController, dragController, realModifierDown } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";

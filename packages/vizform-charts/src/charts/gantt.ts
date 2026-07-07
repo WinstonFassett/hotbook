@@ -26,10 +26,11 @@
 // `dataCell`, so external edits or in-chart drags reflow without React.
 
 import {
-  Anchor, cell, circle, derive, Diagram, effect as biEffect,
+  Anchor, cell, circle, derive, effect as biEffect,
   ensureArrowMarker,
   label, line, type Mount, pathD, rect, Vec,
 } from "bireactive";
+import { Diagram } from "../lib/diagram";
 import { scaleTime } from "d3-scale";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE, type HostSize } from "../lib/host-size";

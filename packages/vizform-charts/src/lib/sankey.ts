@@ -9,11 +9,11 @@ import {
   pathD,
   rect,
   Vec,
-  type Diagram,
   type Mount,
   type Num,
   type Writable,
 } from "bireactive";
+import type { Diagram } from "./diagram";
 import { scaleSequential } from "d3-scale";
 import { interpolateCool } from "d3-scale-chromatic";
 import { wheelController, dynamicWheelStep, realModifierDown } from "./interaction";

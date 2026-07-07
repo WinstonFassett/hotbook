@@ -1,4 +1,5 @@
-import { Anchor, annularSector, cell, circle, derive, Diagram, easeOut, effect as biEffect, label, type Mount, Num, num, tween, untracked, Vec, type Writable } from "bireactive";
+import { Anchor, annularSector, cell, circle, derive, easeOut, effect as biEffect, label, type Mount, Num, num, tween, untracked, Vec, type Writable } from "bireactive";
+import { Diagram } from "../lib/diagram";
 import { pie } from "d3-shape";
 import { wheelController, dynamicWheelStep, realModifierDown } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";

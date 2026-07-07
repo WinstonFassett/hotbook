@@ -1,4 +1,5 @@
-import { Diagram, effect, type Mount } from "bireactive";
+import { effect, type Mount } from "bireactive";
+import { Diagram } from "../lib/diagram";
 import { interpolateCool, interpolateWarm, interpolateRainbow } from "d3-scale-chromatic";
 import { hierarchy } from "d3-hierarchy";
 import { sankeyScene, renderColorControls, type LinkDef } from "../lib/sankey";

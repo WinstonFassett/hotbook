@@ -5,7 +5,8 @@
 // valueMode:   inside (inside bar) | outside (beyond bar end) | none
 // minBandSize: minimum px for a band before touch target is clamped (0 = scale freely)
 
-import { Anchor, cell, circle, derive, Diagram, easeInOut, effect as biEffect, label, line, type Mount, num, rect, tween, untracked, Vec } from "bireactive";
+import { Anchor, cell, circle, derive, easeInOut, effect as biEffect, label, line, type Mount, num, rect, tween, untracked, Vec } from "bireactive";
+import { Diagram } from "../lib/diagram";
 import { scaleLinear, scaleBand } from "d3-scale";
 import { wheelController, dragController, dynamicWheelStep, realModifierDown } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";

@@ -1,7 +1,6 @@
 import {
   Anchor,
   circle,
-  Diagram,
   derive,
   effect as biEffect,
   forEach,
@@ -16,6 +15,7 @@ import {
   rect,
   Vec,
 } from "bireactive";
+import { Diagram } from "../lib/diagram";
 import { partition, type HierarchyRectangularNode } from "d3-hierarchy";
 import { depthFill, labelInk } from "../lib/depth-color";
 import { buildHierarchy } from "../lib/interaction";
@@ -23,6 +23,7 @@ import { buildParentIndex, type BiNode } from "../lib/tree";
 import { portfolio, walkWithDepth } from "../lib/portfolio";
 import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
+import { mountDrillBreadcrumb } from "../lib/drill-breadcrumb";
 import { dragCancelable } from "../lib/esc-contract";
 import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, settleTransition } from "../lib/transitions";
 import { withExitDelay, membershipCell } from "../lib/mark-lifecycle";
@@ -48,6 +49,7 @@ export class MdIcicleLC extends Diagram {
     }
   `
   drillKey?: string
+  showBreadcrumb?: boolean
 
   // ── Constructor-scope state: every cell a host can set lives at element
   // lifetime, NOT scene lifetime. scene() is a pure projection of these, so
@@ -591,5 +593,18 @@ export class MdIcicleLC extends Diagram {
       const f = state.focused.value;
       return `total: ${rootCell.value.value.total.value.toFixed(0)} · focused: ${f?.value.label ?? "(none)"} · hover + cmd/ctrl+wheel · click + arrows/Tab`;
     }), { size: 10, align: Anchor.Center, fill: "#9aa0a8" }));
+
+    if (this.showBreadcrumb !== false && this.chromeLayer) {
+      mountDrillBreadcrumb({
+        drillIdCell: this._drillIdCell,
+        root: rootCell.value,
+        chromeLayer: this.chromeLayer,
+        onDrill: (id) => {
+          this.drillNodeId = id;
+          const drillKey = this.drillKey ?? 'default';
+          (this as ElementWithBridge).brSync?.emitDrill?.(drillKey, id);
+        },
+      });
+    }
   }
 }
