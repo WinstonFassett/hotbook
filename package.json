@@ -12,7 +12,7 @@
     "dev:sliceboard": "npm run dev -w apps/sliceboard",
     "dev:vanilla-bireactive": "npm run dev -w apps/vanilla-bireactive-spike",
     "dev:vanilla-bireactive-layercharts": "npm run dev -w apps/vanilla-bireactive-layercharts-spike",
-    "dev:vanilla-bireactive-native-layout": "npm run dev -w apps/vanilla-bireactive-native-layout-spike",
+    "dev:vanilla-bireactive-native-layout": "npm run demo -w packages/vizform-layout",
     "dev": "concurrently -n sliceboard,vanilla-bireactive-layercharts \"npm run dev -w apps/sliceboard\" \"npm run dev -w apps/vanilla-bireactive-layercharts-spike\"",
     "postinstall": "patch-package"
   },

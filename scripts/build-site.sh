@@ -25,7 +25,7 @@ echo "==> Building bireactive demo..."
 (cd apps/vanilla-bireactive-spike && npx vite build --base /demos/bireactive/)
 
 echo "==> Building bireactive native layout demo..."
-(cd apps/vanilla-bireactive-native-layout-spike && npx vite build --base /demos/bireactive-native-layout/)
+(cd packages/vizform-layout && npx vite build --base /demos/bireactive-native-layout/)
 
 echo "==> Assembling site..."
 # Copy demo builds into docs dist at their subpaths
@@ -33,6 +33,6 @@ cp -r apps/sliceboard/dist apps/docs/dist/sliceboard
 mkdir -p apps/docs/dist/demos
 cp -r apps/vanilla-bireactive-layercharts-spike/dist apps/docs/dist/demos/bireactive-layercharts
 cp -r apps/vanilla-bireactive-spike/dist apps/docs/dist/demos/bireactive
-cp -r apps/vanilla-bireactive-native-layout-spike/dist apps/docs/dist/demos/bireactive-native-layout
+cp -r packages/vizform-layout/dist apps/docs/dist/demos/bireactive-native-layout
 
 echo "==> Site built at apps/docs/dist"

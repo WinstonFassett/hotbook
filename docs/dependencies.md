@@ -23,8 +23,12 @@ graph TD
     slice["sliceboard<br/><b>main app</b>"]
     brlc["layercharts-bireactive-spike<br/><i>spike/demo harness</i>"]
     sveltelc["layerchart-direct-spike<br/><i>@svelte-lc source</i>"]
-    nativelayout["bireactive-layout-spike"]
     brspike["bireactive-spike"]
+  end
+
+  subgraph packages["packages/"]
+    direction TB
+    nativelayout["vizform-layout<br/><i>layout engine</i>"]
   end
 
   vanilla --> core
@@ -65,6 +69,7 @@ safe to delete.
 | `vizform-element-d3` | Web-component wrapper | vanilla-d3 | — |
 | `vizform-react-d3` | React wrapper | vanilla-d3 | `react >=17` |
 | `vizform-apitable` | APITable binding | core, react-d3 | `react ^17` |
+| `vizform-layout` | Graph layout engine experiments | — | `bireactive`, `d3-force/hierarchy` |
 
 ## Apps
 
@@ -73,7 +78,6 @@ safe to delete.
 | `sliceboard` | sliceboard | react-d3 + `@webdev/vite`; `vizform-charts`; alias `@svelte-lc` | `bireactive ^0.3.4`, `d3 ^7`, `react ^18.3` |
 | `vanilla-bireactive-layercharts-spike` | layercharts-bireactive-spike | `vizform-charts` (workspace dep) | `bireactive`, `d3-array/hierarchy/sankey/scale/scale-chromatic/shape` |
 | `svelte-layerchart-spike` | layerchart-direct-spike | — (consumed as `@svelte-lc`) | `bireactive`, `d3-hierarchy/sankey`, `layerchart ^1`, `svelte ^5` |
-| `vanilla-bireactive-native-layout-spike` | bireactive-layout-spike | — | `d3-force/hierarchy` |
 | `vanilla-bireactive-spike` | bireactive-spike | — | `bireactive`, `d3-hierarchy` |
 
 ## ⚠️ Version conflicts & packaging smells

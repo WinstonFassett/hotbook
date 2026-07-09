@@ -618,7 +618,7 @@ change, not a flag flip.
 
 ### Is recursive `layered()` incremental in any meaningful sense?
 
-**No, today.** [spike5-nested-layered.ts:114](../apps/bireactive-layout-spike/src/lib/spike5-nested-layered.ts#L114)'s `effect()` calls
+**No, today.** [spike5-nested-layered.ts:114](../packages/vizform-layout/src/lib/spike5-nested-layered.ts#L114)'s `effect()` calls
 `#buildAll()` and `#applyLayout()` on any change. `solveGroup()`
 recurses from the root and re-solves every level. Springs absorb
 the visual jump.
