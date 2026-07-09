@@ -81,12 +81,26 @@ export interface Tile {
   id: string
   kind: TileKind
   title?: string
+  /** Which measure drives the value axis. Replaces `measureKey`. */
+  valueBinding?: string
+  /** Which measure determines slot order for slot charts. Replaces `sortBy`. */
+  orderBinding?: string
+  /** Direction for orderBinding. Defaults to 'desc' for 'value', 'asc' otherwise. */
+  orderDir?: 'asc' | 'desc'
+  /** Scatter / cartesian x-axis measure. Replaces `xKey`. */
+  xBinding?: string
+  /** Scatter / cartesian y-axis measure. Replaces `yKey`. */
+  yBinding?: string
+  /** @deprecated use `valueBinding` */
   measureKey?: string
+  /** @deprecated use `orderBinding` */
+  sortBy?: 'index' | 'value'
+  /** @deprecated use `xBinding` */
   xKey?: string
+  /** @deprecated use `yBinding` */
   yKey?: string
   groupBy?: string
   depth?: number
-  sortBy?: 'index' | 'value'
   orientation?: 'vertical' | 'horizontal'
   colorMode?: 'single' | 'palette'
   labelMode?: 'axis' | 'inside' | 'both'

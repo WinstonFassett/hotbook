@@ -183,19 +183,20 @@ function buildTileRecords(dash: Dashboard, ds: Dataset): TileRecord[] {
       commit(removeTile(ws, dash.id, tile.id))
     },
     onMeasureChange: (key: string) => {
-      commit(updateTile(tile.id, { measureKey: key }))
+      commit(updateTile(tile.id, { valueBinding: key, measureKey: key }))
     },
     onXKeyChange: (key: string) => {
-      commit(updateTile(tile.id, { xKey: key }))
+      commit(updateTile(tile.id, { xBinding: key, xKey: key }))
     },
     onYKeyChange: (key: string) => {
-      commit(updateTile(tile.id, { yKey: key }))
+      commit(updateTile(tile.id, { yBinding: key, yKey: key }))
     },
     onDepthChange: (depth: number) => {
       commit(updateTile(tile.id, { depth }))
     },
-    onSortChange: (sortBy: 'index' | 'value') => {
-      commit(updateTile(tile.id, { sortBy }))
+    onSortChange: (orderBinding: string, orderDir?: 'asc' | 'desc') => {
+      const dir = orderDir ?? (orderBinding === 'value' ? 'desc' : 'asc')
+      commit(updateTile(tile.id, { orderBinding, orderDir: dir, sortBy: orderBinding as 'index' | 'value' }))
     },
     onOrientationChange: (orientation: 'vertical' | 'horizontal') => {
       commit(updateTile(tile.id, { orientation }))

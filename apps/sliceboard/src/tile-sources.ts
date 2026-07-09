@@ -99,6 +99,38 @@ function colorByGroup(nodes: PNode[]): PNode[] {
   return nodes.map(n => ({ ...n, color: n.color ?? nearestColor(n) }))
 }
 
+// ─── Axis binding helpers (WIN-144 tile spec gap) ─────────────────────────────
+
+/** Resolve tile bindings, falling back to deprecated aliases. */
+export function resolveTileBindings(tile: Tile, defaultValueBinding: string) {
+  const valueBinding = tile.valueBinding ?? tile.measureKey ?? defaultValueBinding
+  const xBinding = tile.xBinding ?? tile.xKey
+  const yBinding = tile.yBinding ?? tile.yKey
+  // orderBinding defaults to deprecated sortBy: 'index' | 'value'.
+  // 'value' means "sort by the value binding".
+  const orderBinding = tile.orderBinding ?? tile.sortBy ?? 'index'
+  // Default direction: 'desc' for value-sorted, 'asc' for index or named field.
+  const orderDir = tile.orderDir ?? (orderBinding === 'value' ? 'desc' : 'asc')
+  return { valueBinding, xBinding, yBinding, orderBinding, orderDir }
+}
+
+/** Sort nodes by orderBinding + orderDir. orderBinding can be:
+ *  - 'index' or '_index': preserve/reverse input order
+ *  - 'value' or '_value': sort by valueBinding
+ *  - any measure key: sort by that measure
+ */
+function sortNodes(nodes: PNode[], orderBinding: string, valueBinding: string, orderDir: 'asc' | 'desc'): PNode[] {
+  const sorted = [...nodes]
+  if (orderBinding === 'index' || orderBinding === '_index') {
+    sorted.sort((a, b) => a.index - b.index)
+  } else {
+    const key = orderBinding === 'value' || orderBinding === '_value' ? valueBinding : orderBinding
+    sorted.sort((a, b) => (a.measures[key] ?? 0) - (b.measures[key] ?? 0))
+  }
+  if (orderDir === 'desc') sorted.reverse()
+  return sorted
+}
+
 const SERIES_START = new Date(2026, 0, 1).getTime()
 const DAY_MS = 86400 * 1000
 
@@ -121,18 +153,11 @@ export interface TileRenderContext {
  *  caller must handle those with a separate mount path. */
 export function buildTileSource(ctx: TileRenderContext): TileSource | null {
   const { tile, ds, measureKey, drillNodeId, onUpdate, onUpdateMany } = ctx
-  const mk = tile.measureKey ?? measureKey
+  const { valueBinding, xBinding, yBinding, orderBinding, orderDir } = resolveTileBindings(tile, measureKey)
   const rawNodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.rows, tile.groupBy) : ds.rows)
-  const sortBy = tile.sortBy ?? 'index'
+  const sorted = sortNodes(rawNodes, orderBinding, valueBinding, orderDir)
+  const sortedWithIndex = sorted.map((n, i) => ({ ...n, index: i }))
   const depth = tile.depth || undefined
-
-  const sorted = sortBy === 'value'
-    ? [...rawNodes].sort((a, b) => (b.measures[mk] ?? 0) - (a.measures[mk] ?? 0))
-    : rawNodes
-
-  const sortedWithIndex = sortBy === 'value'
-    ? sorted.map((n, i) => ({ ...n, index: i }))
-    : rawNodes
 
   const drillKey = tile.id
 
@@ -148,17 +173,17 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
     const maxItems = tile.maxItems
     const leaves = leavesOfNodes(sorted)
     const ids = leaves.map(n => n.id)
-    // shapeKey excludes orientation + mk — those now flow through applyData
+    // shapeKey excludes orientation + valueBinding — those now flow through applyData
     // (sets reactive _orientationCell + _measureKeyCell) so the chart morphs
     // instead of remounting (WIN-144 wave 2).
     const displayKey = `${colorMode}|${labelMode}|${valueMode}|${minBandSize}|${maxItems ?? 0}`
     const maxProp = orientation === 'horizontal' ? 'maxBands' : 'maxBars'
     const shapeKey = `${displayKey}|${[...ids].sort().join(',')}|${[...leaves].sort((a,b)=>a.id<b.id?-1:1).map(n=>n.name).join(',')}`
     return makeFlatSource<{ id: string; label: string; value: number }>({
-      tag: 'v-br-bar', ids, measureKey: mk,
-      values: leaves.map(n => n.measures[mk] ?? 0),
+      tag: 'v-br-bar', ids, measureKey: valueBinding,
+      values: leaves.map(n => n.measures[valueBinding] ?? 0),
       shapeKey,
-      build: () => leaves.map(n => ({ id: n.id, label: n.name, value: n.measures[mk] ?? 1 })),
+      build: () => leaves.map(n => ({ id: n.id, label: n.name, value: n.measures[valueBinding] ?? 1 })),
       mountProps: (el: any) => {
         el.orientation = orientation; el.colorMode = colorMode
         el.labelMode = labelMode; el.valueMode = valueMode
@@ -173,14 +198,14 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
   if (kind === 'br-lc-pie') {
     const leaves = leavesOfNodes(sorted)
     const ids = leaves.map(n => n.id)
-    // shapeKey excludes mk — measure changes flow through applyData (sets
+    // shapeKey excludes valueBinding — measure changes flow through applyData (sets
     // reactive measureKey cell) so the chart animates instead of remounting.
     const shapeKey = `${[...ids].sort().join(',')}|${[...leaves].sort((a,b)=>a.id<b.id?-1:1).map(n=>n.name).join(',')}`
     return makeFlatSource<{ id: string; label: string; value: Writable<Num> }>({
-      tag: 'v-br-pie', ids, measureKey: mk,
-      values: leaves.map(n => n.measures[mk] ?? 0),
+      tag: 'v-br-pie', ids, measureKey: valueBinding,
+      values: leaves.map(n => n.measures[valueBinding] ?? 0),
       shapeKey,
-      build: () => leaves.map(n => ({ id: n.id, label: n.name, value: n.measures[mk] ?? 1 })) as never,
+      build: () => leaves.map(n => ({ id: n.id, label: n.name, value: n.measures[valueBinding] ?? 1 })) as never,
       readValue: d => d.value.value, writeValue: (d, v) => { d.value.value = v }, idOf: d => d.id,
       nodes: rawNodes, onUpdate, onUpdateMany,
     })
@@ -195,32 +220,37 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
     if (ds.shape === 'tree') {
       const roots = rootsOfNodes(rawNodes)
       // Root PNodes carry no measure of their own (only leaves do) — sort by
-      // each root's aggregate leaf sum, not raw n.measures[mk] (always 0).
-      const displayRoots = sortBy === 'value'
-        ? [...roots].sort((a, b) => sumMeasureToRoot(rawNodes, b.id, mk) - sumMeasureToRoot(rawNodes, a.id, mk))
-        : roots
+      // each root's aggregate leaf sum, not raw n.measures[valueBinding] (always 0).
+      const sortKey = orderBinding === 'value' || orderBinding === '_value' ? valueBinding : orderBinding
+      let displayRoots: PNode[]
+      if (sortKey === 'index' || sortKey === '_index') {
+        displayRoots = roots
+      } else {
+        const sorted = [...roots].sort((a, b) => sumMeasureToRoot(rawNodes, a.id, sortKey) - sumMeasureToRoot(rawNodes, b.id, sortKey))
+        displayRoots = orderDir === 'desc' ? sorted.reverse() : sorted
+      }
       const ids = displayRoots.map(n => n.id)
-      // shapeKey excludes mk/sortBy — both flow through applyData (reactive
+      // shapeKey excludes valueBinding/sortBy — both flow through applyData (reactive
       // measureKey cell + reordered array) so the chart tweens instead of
       // remounting, matching makeFlatSource/makeHierSource.
       const shapeKey = `v-br-radar|${[...ids].sort().join(',')}|${[...roots].sort((a,b)=>a.id<b.id?-1:1).map(n=>n.name).join(',')}`
       return makeHierRootFlatSource({
-        tag: 'v-br-radar', nodes: rawNodes, measureKey: mk, shapeKey, ids,
+        tag: 'v-br-radar', nodes: rawNodes, measureKey: valueBinding, shapeKey, ids,
         onUpdate, onUpdateMany,
       })
     }
 
     const leaves = leavesOfNodes(sorted)
     const ids = leaves.map(n => n.id)
-    // shapeKey excludes mk — measure changes flow through applyData (sets
+    // shapeKey excludes valueBinding — measure changes flow through applyData (sets
     // reactive measureKey cell) so the chart animates instead of remounting.
     const shapeKey = `${[...ids].sort().join(',')}|${[...leaves].sort((a,b)=>a.id<b.id?-1:1).map(n=>n.name).join(',')}`
     return makeFlatSource<{ id: string; name: string; value: number }>({
-      tag: 'v-br-radar', ids, measureKey: mk,
-      values: leaves.map(n => n.measures[mk] ?? 0),
+      tag: 'v-br-radar', ids, measureKey: valueBinding,
+      values: leaves.map(n => n.measures[valueBinding] ?? 0),
       shapeKey,
-      build: () => leaves.map(n => ({ id: n.id, name: n.name, value: n.measures[mk] ?? 1 })),
-      readValue: d => d.value, writeValue: (d, v) => { d.value = v; onUpdate(d.id, { [mk]: v }) }, idOf: d => d.id,
+      build: () => leaves.map(n => ({ id: n.id, name: n.name, value: n.measures[valueBinding] ?? 1 })),
+      readValue: d => d.value, writeValue: (d, v) => { d.value = v; onUpdate(d.id, { [valueBinding]: v }) }, idOf: d => d.id,
       nodes: rawNodes, onUpdate,
     })
   }
@@ -230,14 +260,14 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
     const ids = leaves.map(n => n.id)
     const maxItems = tile.maxItems
     const palette = ['#e05c5c', '#f0a742', '#4cba6e', '#5b8def', '#b76de0', '#44c4c4']
-    // shapeKey excludes mk and maxItems — measure/ring-count changes flow through
+    // shapeKey excludes valueBinding and maxItems — measure/ring-count changes flow through
     // applyData (sets reactive cells) so the chart animates instead of remounting.
     const shapeKey = `${[...ids].sort().join(',')}|${[...leaves].sort((a,b)=>a.id<b.id?-1:1).map(n=>n.name).join(',')}`
     return makeFlatSource<{ id: string; label: string; color: string; value: number }>({
-      tag: 'v-br-concentric-arc', ids, measureKey: mk,
-      values: leaves.map(n => Math.min(100, n.measures[mk] ?? 0)),
+      tag: 'v-br-concentric-arc', ids, measureKey: valueBinding,
+      values: leaves.map(n => Math.min(100, n.measures[valueBinding] ?? 0)),
       shapeKey,
-      build: () => leaves.map((n, i) => ({ id: n.id, label: n.name, color: palette[i % 6]!, value: Math.min(100, n.measures[mk] ?? 0) })),
+      build: () => leaves.map((n, i) => ({ id: n.id, label: n.name, color: palette[i % 6]!, value: Math.min(100, n.measures[valueBinding] ?? 0) })),
       mountProps: (el: any) => { if (maxItems !== undefined) el.maxRings = maxItems },
       readValue: d => d.value, writeValue: (d, v) => { d.value = Math.min(100, v) }, idOf: d => d.id,
       nodes: rawNodes, onUpdate,
@@ -245,8 +275,8 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
   }
 
   if (kind === 'br-lc-scatter') {
-    const xKey = tile.xKey ?? '_index'
-    const yKey = tile.yKey ?? mk
+    const xKey = xBinding ?? '_index'
+    const yKey = yBinding ?? valueBinding
     const leaves = leavesOfNodes(sorted)
     const ids = leaves.map(n => n.id)
     // shapeKey excludes xKey/yKey — measure/key changes flow through applyData
@@ -284,14 +314,14 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
   if (kind === 'br-lc-line') {
     const leaves = leavesOfNodes(sorted)
     const ids = leaves.map(n => n.id)
-    // shapeKey excludes mk — measure changes flow through applyData (sets
+    // shapeKey excludes valueBinding — measure changes flow through applyData (sets
     // reactive measureKey cell) so the chart animates instead of remounting.
     const shapeKey = `${[...ids].sort().join(',')}`
     return makeFlatSource<{ id: string; date: Date; value: number }>({
-      tag: 'v-br-line', ids, measureKey: mk,
-      values: leaves.map(n => n.measures[mk] ?? 0),
+      tag: 'v-br-line', ids, measureKey: valueBinding,
+      values: leaves.map(n => n.measures[valueBinding] ?? 0),
       shapeKey,
-      build: () => leaves.map((n, i) => ({ id: n.id, date: new Date(SERIES_START + i * DAY_MS), value: n.measures[mk] ?? 0 })),
+      build: () => leaves.map((n, i) => ({ id: n.id, date: new Date(SERIES_START + i * DAY_MS), value: n.measures[valueBinding] ?? 0 })),
       readValue: d => d.value, writeValue: (d, v) => { d.value = v }, idOf: d => d.id,
       // No reindex — dates are the x-axis and must stay stable. Sort reorders
       // the array but the line always renders left-to-right by date (tweenedData
@@ -303,14 +333,14 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
   if (kind === 'br-lc-area') {
     const leaves = leavesOfNodes(sorted)
     const ids = leaves.map(n => n.id)
-    // shapeKey excludes mk — measure changes flow through applyData (sets
+    // shapeKey excludes valueBinding — measure changes flow through applyData (sets
     // reactive measureKey cell) so the chart animates instead of remounting.
     const shapeKey = `${[...ids].sort().join(',')}`
     return makeFlatSource<{ id: string; date: Date; value: number }>({
-      tag: 'v-br-area', ids, measureKey: mk,
-      values: leaves.map(n => n.measures[mk] ?? 0),
+      tag: 'v-br-area', ids, measureKey: valueBinding,
+      values: leaves.map(n => n.measures[valueBinding] ?? 0),
       shapeKey,
-      build: () => leaves.map((n, i) => ({ id: n.id, date: new Date(SERIES_START + i * DAY_MS), value: n.measures[mk] ?? 0 })),
+      build: () => leaves.map((n, i) => ({ id: n.id, date: new Date(SERIES_START + i * DAY_MS), value: n.measures[valueBinding] ?? 0 })),
       readValue: d => d.value, writeValue: (d, v) => { d.value = v }, idOf: d => d.id,
       // No reindex — dates are the x-axis and must stay stable (same as line).
       nodes: rawNodes, onUpdate,
@@ -329,14 +359,17 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
   if (kind in hierTags) {
     const tag = hierTags[kind]!
     const orientationProp = kind === 'br-lc-icicle' ? (tile.orientation ?? 'horizontal') : undefined
-    const shapeKey = hierShapeKey(tag, sortedWithIndex, mk, depth, sortBy)
-    const valueKey = hierValueKey(sortedWithIndex, mk)
+    const sortKey = orderBinding === 'value' || orderBinding === '_value' ? valueBinding : orderBinding
+    // Hierarchical elements can sort by value (desc) internally; otherwise rely on pre-sorted nodes + 'index'.
+    const hierSortBy: 'index' | 'value' = sortKey === valueBinding && orderDir === 'desc' ? 'value' : 'index'
+    const shapeKey = hierShapeKey(tag, sortedWithIndex, valueBinding, depth, hierSortBy)
+    const valueKey = hierValueKey(sortedWithIndex, valueBinding)
     // Enable numberDrag for treetable
     const enableNumberDrag = kind === 'br-lc-treetable'
       ? { selector: '[data-editable-value', pxPerUnit: 4 }
       : undefined
     const src = makeHierSource({
-      tag, nodes: sortedWithIndex, measureKey: mk, depth, sortBy, shapeKey, valueKey,
+      tag, nodes: sortedWithIndex, measureKey: valueBinding, depth, sortBy: hierSortBy, shapeKey, valueKey,
       drillKey, drillNodeId, showBreadcrumb: true, onUpdate, onUpdateMany,
       enableNumberDrag,
       orientation: orientationProp,
@@ -354,17 +387,16 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
  *  flow. DockView calls this when buildTileSource returns null. */
 export function buildSimpleMount(ctx: TileRenderContext): ((el: HTMLElement) => void) | null {
   const { tile, ds, measureKey } = ctx
-  const mk = tile.measureKey ?? measureKey
+  const { valueBinding } = resolveTileBindings(tile, measureKey)
   const rawNodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.rows, tile.groupBy) : ds.rows)
   const leaves = rawNodes.filter(n => !rawNodes.some(m => m.parentId === n.id))
   const { kind } = tile
 
   if (kind === 'treetable') {
-    const mk = tile.measureKey ?? measureKey
     const nodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.rows, tile.groupBy) : ds.rows)
     return (el: HTMLElement) => {
       el.style.cssText = 'width:100%;height:100%;overflow:auto'
-      mountTreetable(el, nodes, mk)
+      mountTreetable(el, nodes, valueBinding)
     }
   }
 
@@ -375,7 +407,7 @@ export function buildSimpleMount(ctx: TileRenderContext): ((el: HTMLElement) => 
       id: n.id,
       label: n.name,
       start: new Date(SERIES_START + i * 7 * DAY_MS),
-      end: new Date(SERIES_START + (i * 7 + Math.max(1, Math.round((n.measures[mk] ?? 0) / 10))) * DAY_MS),
+      end: new Date(SERIES_START + (i * 7 + Math.max(1, Math.round((n.measures[valueBinding] ?? 0) / 10))) * DAY_MS),
       color: n.color,
     }))
     return (el: any) => {
@@ -384,15 +416,15 @@ export function buildSimpleMount(ctx: TileRenderContext): ((el: HTMLElement) => 
   }
 
   if (kind === 'br-lc-gauge') {
-    const value = leaves.reduce((a, b) => a + (b.measures[mk] ?? 0), 0)
-    const text = tile.title ?? mk
+    const value = leaves.reduce((a, b) => a + (b.measures[valueBinding] ?? 0), 0)
+    const text = tile.title ?? valueBinding
     const data = { value, min: 0, max: 100, label: text }
     return (el: any) => { el.externalData = data }
   }
 
   if (kind === 'br-lc-gauge-segmented') {
-    const value = leaves.reduce((a, b) => a + (b.measures[mk] ?? 0), 0)
-    const text = tile.title ?? mk
+    const value = leaves.reduce((a, b) => a + (b.measures[valueBinding] ?? 0), 0)
+    const text = tile.title ?? valueBinding
     const data = { value, min: 0, max: 100, label: text, segments: 24 }
     return (el: any) => { el.externalData = data }
   }
@@ -428,21 +460,21 @@ export function simpleTag(kind: string): string | null {
 /** A simple data key for simple-mount tiles — used to detect when to remount */
 export function simpleDataKey(ctx: TileRenderContext): string {
   const { tile, ds, measureKey } = ctx
-  const mk = tile.measureKey ?? measureKey
+  const { valueBinding } = resolveTileBindings(tile, measureKey)
   const rawNodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.rows, tile.groupBy) : ds.rows)
   const leaves = rawNodes.filter(n => !rawNodes.some(m => m.parentId === n.id))
   const { kind } = tile
   if (kind === 'treetable') {
-    return `treetable|${mk}|${ds.rows.length}`
+    return `treetable|${valueBinding}|${ds.rows.length}`
   }
   if (kind === 'br-lc-gauge' || kind === 'br-lc-gauge-segmented') {
-    return `${kind}|${mk}|${leaves.reduce((a, b) => a + (b.measures[mk] ?? 0), 0)}`
+    return `${kind}|${valueBinding}|${leaves.reduce((a, b) => a + (b.measures[valueBinding] ?? 0), 0)}`
   }
   if (kind === 'br-lc-sankey') {
     return `sankey|${JSON.stringify(ds.edges ?? [])}`
   }
   if (kind === 'br-lc-gantt') {
-    return `gantt|${mk}|${ds.rows.length}`
+    return `gantt|${valueBinding}|${ds.rows.length}`
   }
   return kind
 }

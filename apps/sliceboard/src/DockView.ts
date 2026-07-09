@@ -46,7 +46,7 @@ export interface TileRecord {
   onXKeyChange: (key: string) => void
   onYKeyChange: (key: string) => void
   onDepthChange: (depth: number) => void
-  onSortChange: (sortBy: 'index' | 'value') => void
+  onSortChange: (orderBinding: string, orderDir?: 'asc' | 'desc') => void
   onOrientationChange: (orientation: 'vertical' | 'horizontal') => void
   onGroupByChange: (key: string | undefined) => void
 }
@@ -635,8 +635,12 @@ export class DockView extends HTMLElement {
       ;[['index', 'Order'], ['value', 'Value']].forEach(([v, l]) => {
         const opt = document.createElement('option'); opt.value = v; opt.textContent = l; sel.appendChild(opt)
       })
-      sel.value = tile.sortBy ?? 'index'
-      sel.addEventListener('change', () => tileRec.onSortChange(sel.value as 'index' | 'value'))
+      sel.value = tile.orderBinding ?? tile.sortBy ?? 'index'
+      sel.addEventListener('change', () => {
+        const orderBinding = sel.value
+        const orderDir = orderBinding === 'value' ? 'desc' : 'asc'
+        tileRec.onSortChange(orderBinding, orderDir)
+      })
       actions.appendChild(sel)
     }
 
@@ -666,7 +670,7 @@ export class DockView extends HTMLElement {
       availableMeasures.forEach(m => {
         const o = document.createElement('option'); o.value = m.key; o.textContent = m.label; xSel.appendChild(o)
       })
-      xSel.value = tile.xKey ?? '_index'
+      xSel.value = tile.xBinding ?? tile.xKey ?? '_index'
       xSel.addEventListener('change', () => tileRec.onXKeyChange(xSel.value))
       actions.appendChild(xSel)
 
@@ -680,7 +684,7 @@ export class DockView extends HTMLElement {
       availableMeasures.forEach(m => {
         const o = document.createElement('option'); o.value = m.key; o.textContent = m.label; ySel.appendChild(o)
       })
-      ySel.value = tile.yKey ?? measureKey
+      ySel.value = tile.yBinding ?? tile.yKey ?? measureKey
       ySel.addEventListener('change', () => tileRec.onYKeyChange(ySel.value))
       actions.appendChild(ySel)
     } else if (pickers.measure && availableMeasures.length > 1) {
@@ -689,7 +693,7 @@ export class DockView extends HTMLElement {
       availableMeasures.forEach(m => {
         const o = document.createElement('option'); o.value = m.key; o.textContent = m.label; sel.appendChild(o)
       })
-      sel.value = tile.measureKey ?? measureKey
+      sel.value = tile.valueBinding ?? tile.measureKey ?? measureKey
       sel.addEventListener('change', () => tileRec.onMeasureChange(sel.value))
       actions.appendChild(sel)
     }
