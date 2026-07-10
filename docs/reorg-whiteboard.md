@@ -102,18 +102,28 @@ interface NodeLike {
   dims?: Record<string, string>
 }
 
+interface PatchContext {
+  // 'updateNow' = commit to the source
+  // 'updatePending' = preview / drag / tentative, may be discarded
+  phase: 'updateNow' | 'updatePending'
+  // e.g. 'drag', 'keyboard', 'remote', 'undo'
+  origin?: unknown
+  // transaction id for batching / rollback
+  transactionId?: string
+}
+
 interface NodePatch {
   op: 'setMeasure'
   nodeId: string
   key: string
   value: number
-  origin?: unknown
+  context: PatchContext
 }
 
 interface NodesPatch<N = NodeLike> {
   op: 'setNodes'
   nodes: N[]
-  origin?: unknown
+  context: PatchContext
 }
 
 type Patch<N = NodeLike> = NodePatch | NodesPatch<N>
@@ -492,6 +502,25 @@ interface NodeStore<N = NodeLike> {
 
 The `Adapter` is the strategy. The `DataView` selects it by key. `bireactive` is one adapter; `d3` is another; `svelte` is another. The same source can have multiple adapters in parallel, each keyed by `source.id + query.key() + adapter`.
 
+### Patch phase / event context
+
+A `Patch` carries a `PatchContext` with `phase` and `origin`:
+
+- `phase: 'updateNow'` — commit the patch to the source / persistent state.
+- `phase: 'updatePending'` — preview / tentative / drag state; the adapter keeps it local and may discard it.
+
+```ts
+interface PatchContext {
+  phase: 'updateNow' | 'updatePending'
+  origin?: unknown
+  transactionId?: string
+}
+```
+
+A chart can render `updatePending` patches as a preview (e.g. a dragged bar in a new position). The `Adapter` applies `updatePending` to its own `NodeStore` but does not forward it to the `Source` until the user commits and the patch becomes `updateNow`. The `Source` and remote peers only see `updateNow` patches.
+
+This means the `NodeStore` is the place where pending and committed states coexist. The `Source` is the authority for committed state.
+
 ### TanStack Query as the app reactivity layer
 
 The app shell can use **TanStack Query** (or any `queryKey`/`queryFn` cache) for the data-view layer:
@@ -509,7 +538,11 @@ function createQueryNodeStore<N = NodeLike>(query: Query, source: Source<N>, ada
   // For static sources, the query result is the setNodes patch
   source.getNodes().then((nodes) => {
     const queried = applyQuery(nodes, query)
-    store.applyPatch({ op: 'setNodes', nodes: queried })
+    store.applyPatch({
+      op: 'setNodes',
+      nodes: queried,
+      context: { phase: 'updateNow' },
+    })
   })
 
   return store
