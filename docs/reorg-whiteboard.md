@@ -111,40 +111,37 @@ interface PatchContext {
   origin?: unknown
   // transaction id for batching / rollback
   transactionId?: string
+  // Braid-like version metadata
+  version?: string | string[]
+  parents?: string[]
+  mergeType?: string
 }
 
-// A small generic patch language.
-// `set` replaces the whole value of the store.
-// `update` writes a value at a path inside the store's value.
-interface SetPatch<T> {
-  op: 'set'
-  value: T
+// A Braid-aligned patch.
+// `unit` is the content type / patch format (e.g. 'json', 'text', 'nodes').
+// `range` is the path or range to write (empty string means the whole value).
+// `content` is the new value.
+interface Patch {
+  unit: string
+  range: string
+  content: unknown
   context: PatchContext
 }
-
-interface UpdatePatch {
-  op: 'update'
-  path: (string | number)[]
-  value: unknown
-  context: PatchContext
-}
-
-type Patch<T> = SetPatch<T> | UpdatePatch
 
 // Domain-specific examples for a NodeLike[] value store.
-// `setNodes` is a `set` patch:
-//   { op: 'set', value: nodes, context: { phase: 'updateNow' } }
-// `setMeasure` is an `update` patch:
-//   { op: 'update', path: [nodeId, key], value: 42, context: { phase: 'updateNow' } }
+// `setNodes` is a patch with an empty range:
+//   { unit: 'nodes', range: '', content: nodes, context: { phase: 'updateNow' } }
+// `setMeasure` is a patch with a node path:
+//   { unit: 'nodes', range: 'nodeId/key', content: 42, context: { phase: 'updateNow' } }
 
 interface Source<T = NodeLike[]> {
   id: string
   // initial snapshot; may trigger load
   getValue(): Promise<T> | T
-  // optional patch stream for live sources (TanStack DB, etc.)
-  onPatch?(fn: (patch: Patch<T>) => void): () => void
+  // optional patch stream for live sources (TanStack DB, Braid, etc.)
+  onPatch?(fn: (patch: Patch) => void): () => void
   // optional apply for mutable sources
-  applyPatch?(patch: Patch<T>): void
+  applyPatch?(patch: Patch): void
   // optional explicit load for CSV / remote
   load?(): Promise<void>
 }
@@ -155,8 +152,8 @@ interface ValueStore<T> {
   // the current value (committed + pending)
   value: T
   getValue(): T
-  // apply a patch to the store value
-  applyPatch(patch: Patch<T>): void
+  // apply a Braid-aligned patch to the store value
+  applyPatch(patch: Patch): void
   // subscribe to value changes
   subscribe(listener: (value: T) => void): () => void
   // batch coalescing
@@ -208,7 +205,7 @@ The kernel can be the thing that owns a `ValueStore` and decides how patches get
 interface Kernel<T> {
   store: ValueStore<T>
   // applies a patch, possibly after transforming it (e.g. conservation)
-  dispatch(patch: Patch<T>): void
+  dispatch(patch: Patch): void
   // read the current doc
   getValue(): T
   // observe changes
@@ -235,12 +232,14 @@ function withConservation<T>(kernel: Kernel<T>): Kernel<T> {
 
 ### Patch vs value
 
-The `Patch` type is the lingua franca. Every `set`/`dispatch`/`update` reduces to a `set` or `update` patch:
+The `Patch` type is the lingua franca. It is Braid-aligned: `unit`/`range`/`content`/`context`. Every write reduces to a patch:
 
-- `setNodes(nodes)` → `{ op: 'set', value: nodes, context }`
-- `setMeasure(nodeId, key, value)` → `{ op: 'update', path: [nodeId, key], value, context }`
-- `chart.update(nodes)` → `{ op: 'set', value: nodes, context }` (the D3 chart receives a `set` patch)
-- `bireactive` `Writable<Num>.value = ...` → `{ op: 'update', path: [nodeId, key], value, context }` at the source
+- `setNodes(nodes)` → `{ unit: 'nodes', range: '', content: nodes, context }`
+- `setMeasure(nodeId, key, value)` → `{ unit: 'nodes', range: 'nodeId/key', content: value, context }`
+- `chart.update(nodes)` → `{ unit: 'nodes', range: '', content: nodes, context }` (the D3 chart receives a full-value patch)
+- `bireactive` `Writable<Num>.value = ...` → `{ unit: 'nodes', range: 'nodeId/key', content: value, context }` at the source
+
+A `range` of `''` means the whole value. Non-empty `range` is interpreted by the `unit` (e.g. `json` uses JSON paths, `nodes` uses `nodeId/key`).
 
 This is the braid / Yjs doc API shape: a document with a stream of typed patches.
 
@@ -540,21 +539,13 @@ The `Adapter` is the strategy. For today, the only `adapter` keys are `bireactiv
 
 ### Patch phase / event context
 
-A `Patch` carries a `PatchContext` with `phase` and `origin`:
+A `Patch` is Braid-aligned: `unit`, `range`, `content`, plus a `PatchContext`. The `context` carries the phase and optional Braid metadata (`version`, `parents`, `mergeType`).
 
 - `phase: 'updatePending'` — preview / tentative / drag state; the `ValueStore` applies it locally but does not forward it to the `Source`.
 - `phase: 'updateNow'` — commit the patch to the source / persistent state.
 - `phase: 'rejected'` — the source rejected the pending update; the `ValueStore` rolls back the pending patch.
 
-```ts
-interface PatchContext {
-  phase: 'updatePending' | 'updateNow' | 'rejected'
-  origin?: unknown
-  transactionId?: string
-}
-```
-
-A chart can render `updatePending` patches as a preview (e.g. a dragged bar in a new position). The `ValueStore` applies `updatePending` to `value` immediately so the UI updates. It does not forward `updatePending` to the `Source`. When the user commits, the same patch is re-issued with `phase: 'updateNow'`. The `Source` may later emit `updateNow` or `rejected` patches with the same `transactionId`. The `ValueStore` reconciles: `updateNow` confirms the pending state, `rejected` rolls it back.
+A chart can render `updatePending` patches as a preview (e.g. a dragged bar in a new position). The `ValueStore` applies `updatePending` to `value` immediately so the UI updates. It does not forward `updatePending` to the `Source`. When the user commits, the same patch is re-issued with `phase: 'updateNow'`. The `Source` may later emit `updateNow` or `rejected` patches with the same `transactionId` or `version`. The `ValueStore` reconciles: `updateNow` confirms the pending state, `rejected` rolls it back.
 
 This means the `ValueStore` is the place where pending and committed states coexist. The `Source` is the authority for committed state.
 
@@ -572,11 +563,12 @@ function createQueryValueStore<T = NodeLike[]>(querySource: QuerySource<T>, adap
   const adapter = adapterRegistry.get(adapterKey)
   const store = adapter.create(querySource)
 
-  // For static sources, the query result is a `set` patch
+  // For static sources, the query result is a full-value patch
   querySource.getValue().then((value) => {
     store.applyPatch({
-      op: 'set',
-      value,
+      unit: 'nodes',
+      range: '',
+      content: value,
       context: { phase: 'updateNow' },
     })
   })
@@ -697,4 +689,5 @@ The recursive bit: the `sourceId` of an `UpdatableViewQuery` can point to a base
 - `matchina` is a typed state-machine library. It is not installed yet. It is a lifecycle utility, not a `ValueStore` strategy.
 - The `bireactive` version in `package.json` is `^0.3.5` in root but `^0.3.4` in packages. Align.
 - **TanStack DB** (beta) is a close conceptual match: `Collection` = `UpdatableDataSource`, `LiveQuery` result = `UpdatableView`, `LiveQuery` definition = `UpdatableViewQuery`, `queryOnce` = one-shot, `optimistic mutations`/`transaction` = `PatchContext` (`updatePending`/`updateNow`/`rejected`), `$synced`/`$origin` = `phase`/`origin`. It has `where`, `select`, `join`, `groupBy`, `aggregate`, `orderBy`, `limit`, `offset` in the query builder, and `d2ts` for incremental live updates. This may be a viable default substrate for the app layer.
+- **Braid** is the patching metaprotocol. A Braid patch is `{ unit, range, content }` and an update carries `version`, `parents`, and `mergeType`. The `Patch` type is aligned with this. We don't need a full Braid client today, but the `Source`/`ValueStore` API should be able to map cleanly onto Braid updates when one exists.
 - **Storage / serialization formats** are a separate concern from the `Source` interface. A `Source` can wrap row-store arrays, column-store records, `Map`/`Set` unique stores, a single JSON object/array, JSONL, CSV, localStorage, IndexedDB, filesystem, or SQLite. The `Source` normalizes to `NodeLike[]` for the query/adapter layer. The `Query` engine may prefer one format (e.g. Arquero expects tables; D3 expects arrays; TanStack DB uses collections), but that is an adapter concern.
