@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "target": "ES2017",
+    "lib": ["dom", "ES2017"],
+    "jsx": "react",
+    "module": "commonjs",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "outDir": "dist"
+  },
+  "include": ["src"]
+}

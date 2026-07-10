@@ -18,7 +18,7 @@ import {
   MdSankeyFlow,
   MdTreeChart,
   MdBudgetTree,
-} from "@winstonfassett/vizform-charts";
+} from "@hotbook/bireactive";
 import { portfolio } from "./fixtures/portfolio";
 
 class MdBandsChartLC extends MdBarChartLC {

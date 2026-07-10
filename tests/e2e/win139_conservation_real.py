@@ -18,7 +18,7 @@ the sum of outgoing ribbon widths (within tolerance).
 import os, sys, math
 from playwright.sync_api import sync_playwright
 
-BASE = os.environ.get("BASE_URL", "http://sliceboard.localhost:1355")
+BASE = os.environ.get("BASE_URL", "http://hotbook.localhost:1355")
 URL = f"{BASE}/sliceboard/"
 TOL = 0.5  # px tolerance for conservation check
 

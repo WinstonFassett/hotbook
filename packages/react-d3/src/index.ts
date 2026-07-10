@@ -1,0 +1,5 @@
+export { Viz } from './Viz'
+export { HViz } from './HViz'
+export { HTreetable } from './HTreetable'
+export type { Goal, GoalTree, UnitKind, ViewMode, FlatMode, HierMode, VizNode, PNode, Rollup, Measurement } from '@hotbook/d3'
+export { pickColor, colorFor } from '@hotbook/d3'
