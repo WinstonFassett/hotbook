@@ -1,5 +1,6 @@
 import {
   Anchor,
+  type Animator,
   derive,
   forEach,
   group,
@@ -12,7 +13,7 @@ import {
   tween,
   easeOut,
   effect as biEffect,
-  untracked,
+  untracked
 } from "bireactive";
 import { Diagram } from "../lib/diagram";
 import type { ElementWithBridge } from "../lib/hud-bridge";
@@ -125,7 +126,7 @@ export class MdTreemapLC extends Diagram {
     // headers balloon, "layout doesn't match" + Esc-out strands the box).
     //
     // Instead each tile owns its own screen-space {x,y,w,h} `num` cells and we
-    // TWEEN THOSE per-tile on drill (same `this.anim.start(tween(...))` primitive
+    // TWEEN THOSE per-tile on drill (same `this.anim.start(tween(...) as unknown as Animator<any>)` primitive
     // icicle uses, applied to real tile rects). Group headers are fixed-pixel
     // labels pinned at the tile top, so they never scale with zoom. Per-tile
     // tweens are interrupt-safe by construction: re-drill cancels and re-targets
@@ -178,7 +179,7 @@ export class MdTreemapLC extends Diagram {
       drillCancel?.();
       drillCancel = null;
       if (drillSnapTimer) { clearTimeout(drillSnapTimer); drillSnapTimer = null; }
-      const gens: ReturnType<typeof tween>[] = [];
+      const gens: Animator<any>[] = [];
       // WIN-155: only retarget tiles still in the drill window. Exiting tiles
       // are held by withExitDelay for their fade — leave their geometry frozen
       // at the last visible position so the fade plays in place. Guard against
@@ -191,10 +192,10 @@ export class MdTreemapLC extends Diagram {
         const t = targetRect(node, id);
         if (animate) {
           gens.push(
-            tween(g.cx, t.x, DRILL_SEC, easeOut),
-            tween(g.cy, t.y, DRILL_SEC, easeOut),
-            tween(g.cw, t.w, DRILL_SEC, easeOut),
-            tween(g.ch, t.h, DRILL_SEC, easeOut),
+            tween(g.cx, t.x, DRILL_SEC, easeOut) as unknown as Animator<any>,
+            tween(g.cy, t.y, DRILL_SEC, easeOut) as unknown as Animator<any>,
+            tween(g.cw, t.w, DRILL_SEC, easeOut) as unknown as Animator<any>,
+            tween(g.ch, t.h, DRILL_SEC, easeOut) as unknown as Animator<any>,
           );
         } else {
           g.cx.value = t.x; g.cy.value = t.y; g.cw.value = t.w; g.ch.value = t.h;
@@ -390,7 +391,7 @@ export class MdTreemapLC extends Diagram {
           // Drill directly — don't wait for a round-trip.
           this.drillNodeId = targetId;
           const drillKey = (this as any).drillKey ?? "default";
-          (this as ElementWithBridge).brSync?.emitDrill?.(drillKey, targetId);
+          (this as any).brSync?.emitDrill?.(drillKey, targetId);
         }
       });
       tile.el.addEventListener("pointerenter", () => { state.hovered.current = node; hoverCell.value = node; state.emitHover?.(node); });
@@ -432,7 +433,7 @@ export class MdTreemapLC extends Diagram {
     }), { size: 10, align: Anchor.Center, fill: "#9aa0a8" }));
 
     // Drill breadcrumb in the chrome layer — chart-owned, reactive.
-    if (this.showBreadcrumb !== false && this.chromeLayer) {
+    if ((this as any).showBreadcrumb !== false && this.chromeLayer) {
       mountDrillBreadcrumb({
         drillIdCell: this._drillIdCell,
         root,
@@ -440,7 +441,7 @@ export class MdTreemapLC extends Diagram {
         onDrill: (id) => {
           this.drillNodeId = id;
           const drillKey = (this as any).drillKey ?? "default";
-          (this as ElementWithBridge).brSync?.emitDrill?.(drillKey, id);
+          (this as any).brSync?.emitDrill?.(drillKey, id);
         },
       });
     }

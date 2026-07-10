@@ -2,7 +2,7 @@
 // Full-360° track per ring, rounded ends, value arc on top.
 // Click ring to select · Tab/←/→ nav · ↑/↓ edit · cmd+wheel.
 
-import { Anchor, cell, circle, derive, easeInOut, easeOut, effect as biEffect, group, label, mount, type Mount, num, pathD, tween, untracked, Vec } from "bireactive";
+import { Anchor, type Animator, cell, circle, derive, easeInOut, easeOut, effect as biEffect, group, label, mount, type Mount, num, pathD, tween, untracked, Vec } from "bireactive";
 import { Diagram } from "../lib/diagram";
 import { arc as d3Arc } from "d3-shape";
 import { wheelController, dragController, realModifierDown } from "../lib/interaction";
@@ -171,7 +171,7 @@ export class MdConcentricArcLC extends Diagram {
     // Drag a ring's end-cap handle angularly to set its value; Esc reverts.
     // Config handed to the SHARED drag controller (one pointer, one live drag).
     let dragPointerId = -1;
-    let activeHandle: HTMLElement | null = null;
+    let activeHandle: SVGElement | null = null;
     const onDragMove = (pe: PointerEvent) => {
       const t = dragController.target as Ring | null;
       if (!t) return;
@@ -272,7 +272,7 @@ export class MdConcentricArcLC extends Diagram {
         seenMeasureKey = measureKey;
         if (measureSwapped && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
           fracCancel?.();
-          fracCancel = this.anim.start(tween(frac, target, SORT_SEC, easeOut));
+          fracCancel = this.anim.start(tween(frac, target, SORT_SEC, easeOut) as unknown as Animator<any>);
         } else {
           fracCancel?.(); fracCancel = null;
           frac.value = target;

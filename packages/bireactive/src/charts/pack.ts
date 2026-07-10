@@ -1,5 +1,6 @@
 import {
   Anchor,
+  type Animator,
   derive,
   forEach,
   group,
@@ -164,10 +165,10 @@ export class MdPack extends Diagram {
         // Resize-only (e.g. breadcrumb appeared): re-tween from current to new target.
         drillCancel?.();
         drillCancel = this.anim.start(
-          tween(vx0, tx0, DRILL_SEC, easeOut),
-          tween(vy0, ty0, DRILL_SEC, easeOut),
-          tween(vx1, tx1, DRILL_SEC, easeOut),
-          tween(vy1, ty1, DRILL_SEC, easeOut),
+          tween(vx0, tx0, DRILL_SEC, easeOut) as unknown as Animator<any>,
+          tween(vy0, ty0, DRILL_SEC, easeOut) as unknown as Animator<any>,
+          tween(vx1, tx1, DRILL_SEC, easeOut) as unknown as Animator<any>,
+          tween(vy1, ty1, DRILL_SEC, easeOut) as unknown as Animator<any>,
         );
         return;
       }
@@ -177,10 +178,10 @@ export class MdPack extends Diagram {
       // Drive the viewport tween on this Diagram's anim clock — `tween()` alone
       // only builds a generator; it must be started to advance per frame.
       drillCancel = this.anim.start(
-        tween(vx0, tx0, DRILL_SEC, easeOut),
-        tween(vy0, ty0, DRILL_SEC, easeOut),
-        tween(vx1, tx1, DRILL_SEC, easeOut),
-        tween(vy1, ty1, DRILL_SEC, easeOut),
+        tween(vx0, tx0, DRILL_SEC, easeOut) as unknown as Animator<any>,
+        tween(vy0, ty0, DRILL_SEC, easeOut) as unknown as Animator<any>,
+        tween(vx1, tx1, DRILL_SEC, easeOut) as unknown as Animator<any>,
+        tween(vy1, ty1, DRILL_SEC, easeOut) as unknown as Animator<any>,
       );
       if (drillClassTimer) { clearTimeout(drillClassTimer); drillClassTimer = null; }
       this.classList.add(GESTURE_ACTIVE_CLASS);
@@ -255,9 +256,9 @@ export class MdPack extends Diagram {
         if ((reordered || measureSwapped) && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
           lcancel?.();
           lcancel = this.anim.start(
-            tween(lx, t.x, SORT_SEC, easeOut),
-            tween(ly, t.y, SORT_SEC, easeOut),
-            tween(lr, t.r, SORT_SEC, easeOut),
+            tween(lx, t.x, SORT_SEC, easeOut) as unknown as Animator<any>,
+            tween(ly, t.y, SORT_SEC, easeOut) as unknown as Animator<any>,
+            tween(lr, t.r, SORT_SEC, easeOut) as unknown as Animator<any>,
           );
         } else {
           lcancel?.(); lcancel = null;
@@ -349,7 +350,7 @@ export class MdPack extends Diagram {
           // Drill directly — don't wait for a round-trip.
           this.drillNodeId = targetId;
           const drillKey = (this as any).drillKey ?? "default";
-          (this as ElementWithBridge).brSync?.emitDrill?.(drillKey, targetId);
+          (this as any).brSync?.emitDrill?.(drillKey, targetId);
         }
       });
       disc.el.addEventListener("pointerenter", () => { state.hovered.current = node; hoverCell.value = node; state.emitHover?.(node); });
@@ -373,7 +374,7 @@ export class MdPack extends Diagram {
       return `total: ${root.value.total.value.toFixed(0)} · focused: ${f?.value.label ?? "(none)"} · hover + cmd/ctrl+wheel · click + arrows/Tab`;
     }), { size: 10, align: Anchor.Center, fill: "#9aa0a8" }));
 
-    if (this.showBreadcrumb !== false && this.chromeLayer) {
+    if ((this as any).showBreadcrumb !== false && this.chromeLayer) {
       mountDrillBreadcrumb({
         drillIdCell: this._drillIdCell,
         root,
@@ -381,7 +382,7 @@ export class MdPack extends Diagram {
         onDrill: (id) => {
           this.drillNodeId = id;
           const drillKey = (this as any).drillKey ?? "default";
-          (this as ElementWithBridge).brSync?.emitDrill?.(drillKey, id);
+          (this as any).brSync?.emitDrill?.(drillKey, id);
         },
       });
     }

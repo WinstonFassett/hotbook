@@ -1,5 +1,6 @@
 import {
   Anchor,
+  type Animator,
   derive,
   forEach,
   group,
@@ -13,7 +14,7 @@ import {
   tween,
   easeOut,
   effect as biEffect,
-  untracked,
+  untracked
 } from "bireactive";
 import { Diagram } from "../lib/diagram";
 import { partition, type HierarchyRectangularNode } from "d3-hierarchy";
@@ -216,10 +217,10 @@ export class MdSunburstLC extends Diagram {
         // inner rings expand or contract to fill the space via this tween.
         drillCancel?.();
         drillCancel = this.anim.start(
-          tween(va0, ta0, DRILL_SEC, easeOut),
-          tween(va1, ta1, DRILL_SEC, easeOut),
-          tween(vr0, tr0, DRILL_SEC, easeOut),
-          tween(vr1, tr1, DRILL_SEC, easeOut),
+          tween(va0, ta0, DRILL_SEC, easeOut) as unknown as Animator<any>,
+          tween(va1, ta1, DRILL_SEC, easeOut) as unknown as Animator<any>,
+          tween(vr0, tr0, DRILL_SEC, easeOut) as unknown as Animator<any>,
+          tween(vr1, tr1, DRILL_SEC, easeOut) as unknown as Animator<any>,
         );
         // Note: depth changes intentionally do NOT toggle GESTURE_ACTIVE_CLASS
         // — that suppresses ALL descendant transitions, which would kill the
@@ -241,10 +242,10 @@ export class MdSunburstLC extends Diagram {
       // Drive the viewport tween on this Diagram's anim clock — `tween()` alone
       // only builds a generator; it must be started to advance per frame.
       drillCancel = this.anim.start(
-        tween(va0, ta0, DRILL_SEC, easeOut),
-        tween(va1, ta1, DRILL_SEC, easeOut),
-        tween(vr0, tr0, DRILL_SEC, easeOut),
-        tween(vr1, tr1, DRILL_SEC, easeOut),
+        tween(va0, ta0, DRILL_SEC, easeOut) as unknown as Animator<any>,
+        tween(va1, ta1, DRILL_SEC, easeOut) as unknown as Animator<any>,
+        tween(vr0, tr0, DRILL_SEC, easeOut) as unknown as Animator<any>,
+        tween(vr1, tr1, DRILL_SEC, easeOut) as unknown as Animator<any>,
       );
     });
 
@@ -300,10 +301,10 @@ export class MdSunburstLC extends Diagram {
         if ((reordered || measureSwapped) && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
           lcancel?.();
           lcancel = this.anim.start(
-            tween(la0, t.x0, SORT_SEC, easeOut),
-            tween(la1, t.x1, SORT_SEC, easeOut),
-            tween(lr0, t.y0, SORT_SEC, easeOut),
-            tween(lr1, t.y1, SORT_SEC, easeOut),
+            tween(la0, t.x0, SORT_SEC, easeOut) as unknown as Animator<any>,
+            tween(la1, t.x1, SORT_SEC, easeOut) as unknown as Animator<any>,
+            tween(lr0, t.y0, SORT_SEC, easeOut) as unknown as Animator<any>,
+            tween(lr1, t.y1, SORT_SEC, easeOut) as unknown as Animator<any>,
           );
         } else {
           lcancel?.(); lcancel = null;
@@ -517,7 +518,7 @@ export class MdSunburstLC extends Diagram {
       // Drill directly — don't wait for a round-trip.
       this.drillNodeId = targetId;
       const drillKey = (this as any).drillKey ?? "default";
-      const br = (this as ElementWithBridge).brSync;
+      const br = (this as any).brSync;
       br?.emitDrill?.(drillKey, targetId);
     });
 
@@ -526,7 +527,7 @@ export class MdSunburstLC extends Diagram {
       return `total: ${root.value.total.value.toFixed(0)} · focused: ${f?.value.label ?? "(none)"} · hover + cmd/ctrl+wheel · click + arrows/Tab`;
     }), { size: 10, align: Anchor.Center, fill: "#9aa0a8" }));
 
-    if (this.showBreadcrumb !== false && this.chromeLayer) {
+    if ((this as any).showBreadcrumb !== false && this.chromeLayer) {
       mountDrillBreadcrumb({
         drillIdCell: this._drillIdCell,
         root,
@@ -534,7 +535,7 @@ export class MdSunburstLC extends Diagram {
         onDrill: (id) => {
           this.drillNodeId = id;
           const drillKey = (this as any).drillKey ?? "default";
-          (this as ElementWithBridge).brSync?.emitDrill?.(drillKey, id);
+          (this as any).brSync?.emitDrill?.(drillKey, id);
         },
       });
     }

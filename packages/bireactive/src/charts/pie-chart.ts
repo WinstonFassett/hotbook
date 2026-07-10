@@ -1,4 +1,5 @@
-import { Anchor, annularSector, cell, circle, derive, easeOut, effect as biEffect, label, type Mount, Num, num, tween, untracked, Vec, type Writable } from "bireactive";
+import { Anchor, annularSector, cell, circle, derive, easeOut, effect as biEffect, label, type Mount, Num, num, tween, untracked, Vec, type Writable,
+  type Animator } from "bireactive";
 import { Diagram } from "../lib/diagram";
 import { pie } from "d3-shape";
 import { wheelController, dynamicWheelStep, realModifierDown } from "../lib/interaction";
@@ -109,7 +110,7 @@ export class MdPieChartLC extends Diagram {
         seenMeasureKey = measureKey;
         if (measureSwapped && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
           tvCancel?.();
-          tvCancel = this.anim.start(tween(tv, target, SORT_SEC, easeOut));
+          tvCancel = this.anim.start(tween(tv, target, SORT_SEC, easeOut) as unknown as Animator<any>);
         } else {
           tvCancel?.(); tvCancel = null;
           tv.value = target;

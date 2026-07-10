@@ -1,5 +1,6 @@
 import {
   Anchor,
+  type Animator,
   circle,
   derive,
   effect as biEffect,
@@ -294,10 +295,10 @@ export class MdIcicleLC extends Diagram {
       if (!drillChanged) {
         // Resize-only: re-tween to new target.
         drillCancel = this.anim.start(
-          tween(vx0, tx0, DRILL_SEC, easeOut),
-          tween(vy0, ty0, DRILL_SEC, easeOut),
-          tween(vx1, tx1, DRILL_SEC, easeOut),
-          tween(vy1, ty1, DRILL_SEC, easeOut),
+          tween(vx0, tx0, DRILL_SEC, easeOut) as unknown as Animator<any>,
+          tween(vy0, ty0, DRILL_SEC, easeOut) as unknown as Animator<any>,
+          tween(vx1, tx1, DRILL_SEC, easeOut) as unknown as Animator<any>,
+          tween(vy1, ty1, DRILL_SEC, easeOut) as unknown as Animator<any>,
         );
         return;
       }
@@ -309,10 +310,10 @@ export class MdIcicleLC extends Diagram {
         this.classList.remove(GESTURE_ACTIVE_CLASS);
       }, DRILL_DURATION + 60);
       drillCancel = this.anim.start(
-        tween(vx0, tx0, DRILL_SEC, easeOut),
-        tween(vy0, ty0, DRILL_SEC, easeOut),
-        tween(vx1, tx1, DRILL_SEC, easeOut),
-        tween(vy1, ty1, DRILL_SEC, easeOut),
+        tween(vx0, tx0, DRILL_SEC, easeOut) as unknown as Animator<any>,
+        tween(vy0, ty0, DRILL_SEC, easeOut) as unknown as Animator<any>,
+        tween(vx1, tx1, DRILL_SEC, easeOut) as unknown as Animator<any>,
+        tween(vy1, ty1, DRILL_SEC, easeOut) as unknown as Animator<any>,
       );
     }));
 
@@ -380,10 +381,10 @@ export class MdIcicleLC extends Diagram {
         if ((reordered || measureSwapped || orientationChanged || depthChanged) && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
           lcancel?.();
           lcancel = this.anim.start(
-            tween(lx0, t.x0, SORT_SEC, easeOut),
-            tween(ly0, t.y0, SORT_SEC, easeOut),
-            tween(lx1, t.x1, SORT_SEC, easeOut),
-            tween(ly1, t.y1, SORT_SEC, easeOut),
+            tween(lx0, t.x0, SORT_SEC, easeOut) as unknown as Animator<any>,
+            tween(ly0, t.y0, SORT_SEC, easeOut) as unknown as Animator<any>,
+            tween(lx1, t.x1, SORT_SEC, easeOut) as unknown as Animator<any>,
+            tween(ly1, t.y1, SORT_SEC, easeOut) as unknown as Animator<any>,
           );
         } else {
           lcancel?.(); lcancel = null;
@@ -457,7 +458,7 @@ export class MdIcicleLC extends Diagram {
           // Drill directly — don't wait for a round-trip.
           this.drillNodeId = targetId;
           const drillKey = this.drillKey ?? 'default';
-          (this as ElementWithBridge).brSync?.emitDrill?.(drillKey, targetId);
+          (this as any).brSync?.emitDrill?.(drillKey, targetId);
         }
       });
       tile.el.addEventListener("pointerenter", () => { state.hovered.current = node; hoverCell.value = node; state.emitHover?.(node); });
@@ -601,7 +602,7 @@ export class MdIcicleLC extends Diagram {
         onDrill: (id) => {
           this.drillNodeId = id;
           const drillKey = this.drillKey ?? 'default';
-          (this as ElementWithBridge).brSync?.emitDrill?.(drillKey, id);
+          (this as any).brSync?.emitDrill?.(drillKey, id);
         },
       });
     }

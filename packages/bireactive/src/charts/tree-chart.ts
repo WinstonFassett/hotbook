@@ -1,5 +1,6 @@
 import {
   Anchor,
+  type Animator,
   derive,
   effect as biEffect,
   label,
@@ -13,7 +14,7 @@ import {
   easeOut,
   untracked,
   Vec,
-  cell,
+  cell
 } from "bireactive";
 import { Diagram } from "../lib/diagram";
 import { tree, type HierarchyPointNode } from "d3-hierarchy";
@@ -287,7 +288,7 @@ export class MdTreeChart extends Diagram {
         const target = opTarget.value;
         if (!opInited) { opInited = true; op.value = target; return; }
         opCancel?.();
-        opCancel = this.anim.start(tween(op, target, SORT_SEC, easeOut));
+        opCancel = this.anim.start(tween(op, target, SORT_SEC, easeOut) as unknown as Animator<any>);
       });
     }
 
