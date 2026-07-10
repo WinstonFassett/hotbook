@@ -114,13 +114,15 @@ interface PatchContext {
   // Braid-like version metadata
   version?: string | string[]
   parents?: string[]
+  // e.g. 'merge', 'replace', 'ot', 'crdt'
   mergeType?: string
 }
 
 // A Braid-aligned patch.
-// `unit` is the content type / patch format (e.g. 'json', 'text', 'nodes').
+// `unit` is the patch type / content type (e.g. 'json', 'json-patch', 'text',
+// 'ot-text-unicode', 'nodes').
 // `range` is the path or range to write (empty string means the whole value).
-// `content` is the new value.
+// `content` is the new value or, for OT, the operation.
 interface Patch {
   unit: string
   range: string
@@ -689,5 +691,5 @@ The recursive bit: the `sourceId` of an `UpdatableViewQuery` can point to a base
 - `matchina` is a typed state-machine library. It is not installed yet. It is a lifecycle utility, not a `ValueStore` strategy.
 - The `bireactive` version in `package.json` is `^0.3.5` in root but `^0.3.4` in packages. Align.
 - **TanStack DB** (beta) is a close conceptual match: `Collection` = `UpdatableDataSource`, `LiveQuery` result = `UpdatableView`, `LiveQuery` definition = `UpdatableViewQuery`, `queryOnce` = one-shot, `optimistic mutations`/`transaction` = `PatchContext` (`updatePending`/`updateNow`/`rejected`), `$synced`/`$origin` = `phase`/`origin`. It has `where`, `select`, `join`, `groupBy`, `aggregate`, `orderBy`, `limit`, `offset` in the query builder, and `d2ts` for incremental live updates. This may be a viable default substrate for the app layer.
-- **Braid** is the patching metaprotocol. A Braid patch is `{ unit, range, content }` and an update carries `version`, `parents`, and `mergeType`. The `Patch` type is aligned with this. We don't need a full Braid client today, but the `Source`/`ValueStore` API should be able to map cleanly onto Braid updates when one exists.
+- **Braid** is the patching metaprotocol. A Braid patch is `{ unit, range, content }` and an update carries `version`, `parents`, and `mergeType`. `unit` can be `json` (range is a JSON path), `json-patch` (standard JSON Patch ops), `text`, `ot-text-unicode` (OT ops), or `nodes` (our domain). The `Patch` type is aligned with this. We don't need a full Braid client today, but the `Source`/`ValueStore` API should map cleanly onto Braid updates.
 - **Storage / serialization formats** are a separate concern from the `Source` interface. A `Source` can wrap row-store arrays, column-store records, `Map`/`Set` unique stores, a single JSON object/array, JSONL, CSV, localStorage, IndexedDB, filesystem, or SQLite. The `Source` normalizes to `NodeLike[]` for the query/adapter layer. The `Query` engine may prefer one format (e.g. Arquero expects tables; D3 expects arrays; TanStack DB uses collections), but that is an adapter concern.
