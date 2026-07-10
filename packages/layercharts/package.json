@@ -1,0 +1,30 @@
+{
+  "name": "@hotbook/layercharts",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "./src/index.ts",
+  "module": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    },
+    "./Treemap.svelte": "./src/Treemap.svelte",
+    "./TreemapLC.svelte": "./src/TreemapLC.svelte",
+    "./SunburstLC.svelte": "./src/SunburstLC.svelte",
+    "./IcicleLC.svelte": "./src/IcicleLC.svelte",
+    "./PackLC.svelte": "./src/PackLC.svelte"
+  },
+  "files": ["src", "dist"],
+  "dependencies": {
+    "bireactive": "^0.3.5",
+    "d3-hierarchy": "^3.1.2",
+    "d3-sankey": "^0.12.3",
+    "layerchart": "^1.0.13"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "vite": "^6.3.5"
+  }
+}
