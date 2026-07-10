@@ -1,6 +1,6 @@
 export type UnitKind = 'size' | 'order'
 
-export interface PNode {
+export interface VizNode {
   id: string
   parentId: string | null
   index: number
@@ -10,12 +10,17 @@ export interface PNode {
   color?: string
 }
 
+/** @deprecated use `VizNode` */
+export type PNode = VizNode
+
 export interface PEdge {
-  id: string
-  sourceId: string          // references PNode.id
-  targetId: string          // references PNode.id
-  measures: Record<string, number>
-  dims: Record<string, string>
+  id?: string
+  source: string            // references VizNode.id
+  target: string            // references VizNode.id
+  value: number
+  lag?: number
+  measures?: Record<string, number>
+  dims?: Record<string, string>
 }
 
 export interface ColumnSchema {
@@ -108,6 +113,7 @@ export interface VizConfigSchema {
     groupBy?: boolean
     xKey?: boolean        // scatter only
     yKey?: boolean        // scatter only
+    orientation?: boolean
   }
   gestureModes?: ScalingMode[]
   cascadeSupported?: boolean

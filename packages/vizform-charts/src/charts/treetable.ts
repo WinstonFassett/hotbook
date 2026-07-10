@@ -1,6 +1,5 @@
 import { leavesOf, effect } from "bireactive";
-import type { BiNode } from "../lib/tree";
-import { portfolio } from "../lib/portfolio";
+import { type BiNode, portfolio } from "../lib/tree";
 import { prefersReducedMotion, settleTransition } from "../lib/transitions";
 import { numberDrag } from "../lib/number-drag";
 

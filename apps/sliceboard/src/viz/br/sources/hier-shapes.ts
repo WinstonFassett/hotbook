@@ -5,13 +5,13 @@
  * Treetable gets its own maker because it needs numberDrag integration.
  */
 
-import type { PNode } from '../../persistence'
+import type { VizNode } from '../../../persistence'
 import { makeHierSource, hierShapeKey, hierValueKey } from '../bindTile'
 import { numberDrag } from '@winstonfassett/vizform-charts'
 import type { TileSource } from '../bindTile'
 
 export interface HierSourceProps {
-  nodes: PNode[]
+  nodes: VizNode[]
   measureKey: string
   depth?: number
   sortBy?: 'index' | 'value'
@@ -19,8 +19,8 @@ export interface HierSourceProps {
   drillKey?: string
   drillNodeId?: string | null
   showBreadcrumb?: boolean
-  onUpdate?: (nodeId: string, measures: PNode['measures']) => void
-  onUpdateMany?: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
+  onUpdate?: (nodeId: string, measures: VizNode['measures']) => void
+  onUpdateMany?: (updates: Array<{ id: string; measures: VizNode['measures'] }>) => void
 }
 
 export function makeHier(tag: string, props: HierSourceProps): TileSource {
@@ -51,7 +51,7 @@ export function makeTreetableSource(props: HierSourceProps): TileSource {
       const unsubRender = typedEl.onRender?.((allNodeIds: string[]) => {
         for (const d of disposers.splice(0)) d()
 
-        const root = typedEl.getRoot?.()
+        const root = typedEl.getRoot?.() as HTMLElement | undefined
         if (!root) return
         const biRoot = typedEl.externalRoot
         if (!biRoot) return

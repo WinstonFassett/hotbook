@@ -1,16 +1,16 @@
 import React, { useEffect, useRef } from 'react'
 import { mountIcicle, mountSunburst, mountTreemap } from '@winstonfassett/vizform-vanilla-d3'
 import type { IcicleMounted, SunburstMounted, TreemapMounted } from '@winstonfassett/vizform-vanilla-d3'
-import type { PNode, HierMode } from '@winstonfassett/vizform-vanilla-d3'
+import type { VizNode, HierMode } from '@winstonfassett/vizform-vanilla-d3'
 
 interface HVizProps {
-  nodes: PNode[]
+  nodes: VizNode[]
   measureKey: string
   mode: Exclude<HierMode, 'treetable'>
   onLeafClick?: (id: string) => void
 }
 
-function HIcicle({ nodes, measureKey, onLeafClick }: { nodes: PNode[]; measureKey: string; onLeafClick?: (id: string) => void }) {
+function HIcicle({ nodes, measureKey, onLeafClick }: { nodes: VizNode[]; measureKey: string; onLeafClick?: (id: string) => void }) {
   const ref = useRef<SVGSVGElement>(null)
   const mountedRef = useRef<IcicleMounted | null>(null)
 
@@ -27,7 +27,7 @@ function HIcicle({ nodes, measureKey, onLeafClick }: { nodes: PNode[]; measureKe
   return <svg ref={ref} style={{ width: '100%', height: '100%', display: 'block' }} />
 }
 
-function HSunburst({ nodes, measureKey, onLeafClick }: { nodes: PNode[]; measureKey: string; onLeafClick?: (id: string) => void }) {
+function HSunburst({ nodes, measureKey, onLeafClick }: { nodes: VizNode[]; measureKey: string; onLeafClick?: (id: string) => void }) {
   const ref = useRef<SVGSVGElement>(null)
   const mountedRef = useRef<SunburstMounted | null>(null)
 
@@ -44,7 +44,7 @@ function HSunburst({ nodes, measureKey, onLeafClick }: { nodes: PNode[]; measure
   return <svg ref={ref} style={{ width: '100%', height: '100%', display: 'block' }} />
 }
 
-function HTreemap({ nodes, measureKey, onLeafClick }: { nodes: PNode[]; measureKey: string; onLeafClick?: (id: string) => void }) {
+function HTreemap({ nodes, measureKey, onLeafClick }: { nodes: VizNode[]; measureKey: string; onLeafClick?: (id: string) => void }) {
   const ref = useRef<SVGSVGElement>(null)
   const mountedRef = useRef<TreemapMounted | null>(null)
 

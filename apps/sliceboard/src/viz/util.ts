@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import * as d3 from 'd3'
 import { colorFor } from '@winstonfassett/vizform-core'
-import type { PNode } from '../persistence'
+import type { VizNode } from '../persistence'
 
 // ─── Resize-aware dimensions ──────────────────────────────────────────────────
 
@@ -32,11 +32,11 @@ export function useDimensions(): [React.RefObject<SVGSVGElement>, number, number
 
 export function useAltScroll(
   ref: React.RefObject<SVGSVGElement>,
-  nodes: PNode[],
+  nodes: VizNode[],
   measureKey: string,
   cellSelector: string,
   nodeIdAttr: string,
-  onUpdate: (nodeId: string, measures: PNode['measures']) => void,
+  onUpdate: (nodeId: string, measures: VizNode['measures']) => void,
 ) {
   useEffect(() => {
     const el = ref.current
@@ -101,7 +101,7 @@ export function explodePulse(t: number): number {
 
 // ─── Color ────────────────────────────────────────────────────────────────────
 
-export function nodeColor(nodes: PNode[], id: string): string {
+export function nodeColor(nodes: VizNode[], id: string): string {
   const byId = new Map(nodes.map(n => [n.id, n]))
   let cur = byId.get(id)
   let root = cur
@@ -128,7 +128,7 @@ export function fmtNum(v: number): string {
 
 export type TreeDatum = { id: string; children?: TreeDatum[] }
 
-export function buildVizTree(nodes: PNode[]): TreeDatum | null {
+export function buildVizTree(nodes: VizNode[]): TreeDatum | null {
   function build(id: string): TreeDatum | null {
     const kids = nodes
       .filter(n => n.parentId === id)

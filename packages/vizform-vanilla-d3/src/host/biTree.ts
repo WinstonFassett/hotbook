@@ -3,21 +3,21 @@
  *
  * Ported from apps/sliceboard/src/viz/br/tree.ts.
  * Builds a BiNode tree (bireactive Num lenses for every measure at every node)
- * from a flat PNode array. Used by tile-binder.ts source factories.
+ * from a flat VizNode array. Used by tile-binder.ts source factories.
  */
 
 import { num, treeNode, walkTree, leavesOf, Num } from 'bireactive'
 import type { TreeNode, Writable } from 'bireactive'
 import { colorFor } from '@winstonfassett/vizform-core'
-import type { PNode } from '@winstonfassett/vizform-core'
+import type { VizNode } from '@winstonfassett/vizform-core'
 
 export interface NodeValue {
-  /** Backing PNode id, so chart edits can map back to the store. */
+  /** Backing VizNode id, so chart edits can map back to the store. */
   id: string
   label: string
   color: string
   total: Writable<Num>
-  /** All measures from PNode, keyed by measure name. total is always measures[primaryMeasureKey]. */
+  /** All measures from VizNode, keyed by measure name. total is always measures[primaryMeasureKey]. */
   measures?: Record<string, Writable<Num>>
 }
 
@@ -83,10 +83,10 @@ export function biLeavesOf(root: BiNode): BiNode[] {
   return leavesOf(root) as BiNode[]
 }
 
-function pnodeColor(byId: Map<string, PNode>, n: PNode): string {
+function pnodeColor(byId: Map<string, VizNode>, n: VizNode): string {
   // Walk to root ancestor; root's name is the stable color identity for the whole subtree.
-  let cur: PNode | undefined = n
-  let root: PNode = n
+  let cur: VizNode | undefined = n
+  let root: VizNode = n
   while (cur) {
     if (cur.color) return cur.color  // explicit override wins
     root = cur
@@ -95,7 +95,7 @@ function pnodeColor(byId: Map<string, PNode>, n: PNode): string {
   return colorFor(root.name)
 }
 
-export function buildBiTree(nodes: PNode[], measureKey: string, allMeasureKeys?: string[]): BiNode | null {
+export function buildBiTree(nodes: VizNode[], measureKey: string, allMeasureKeys?: string[]): BiNode | null {
   if (nodes.length === 0) return null
   const byId = new Map(nodes.map(n => [n.id, n]))
 
@@ -105,7 +105,7 @@ export function buildBiTree(nodes: PNode[], measureKey: string, allMeasureKeys?:
   )
   void measureKeys  // used by biLeaf indirectly via measuresData
 
-  function build(n: PNode): BiNode {
+  function build(n: VizNode): BiNode {
     const color = pnodeColor(byId, n)
     const kids = nodes
       .filter(c => c.parentId === n.id)
@@ -122,7 +122,7 @@ export function buildBiTree(nodes: PNode[], measureKey: string, allMeasureKeys?:
   return biGroup('__root__', 'root', colorFor('root'), roots.map(build), measureKey)
 }
 
-export function buildFlatBiData(nodes: PNode[], measureKey: string): Array<{ label: string; value: number }> {
+export function buildFlatBiData(nodes: VizNode[], measureKey: string): Array<{ label: string; value: number }> {
   return nodes
     .filter(n => !nodes.some(m => m.parentId === n.id))
     .map(n => ({ label: n.name, value: n.measures[measureKey] ?? 1 }))

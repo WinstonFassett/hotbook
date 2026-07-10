@@ -29,8 +29,8 @@
         "types": "./src/host/tile-binder.ts",
         "import": "./src/host/tile-binder.ts"
       },
-      "types": "./dist/host/tile-binder.d.ts",
-      "import": "./dist/host/tile-binder.js"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/vizform-vanilla-d3.js"
     }
   },
   "types": "./dist/index.d.ts",

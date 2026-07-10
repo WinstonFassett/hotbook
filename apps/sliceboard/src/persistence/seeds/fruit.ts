@@ -11,7 +11,7 @@ function row(name: string, measures: Record<string, number>, dims: Record<string
 
 /**
  * Dataset 1 — Fruit (flat + groupBy demo)
- *   Shape: flat (no parentId). 12 rows, 1 measure (value), 2 dims (group, season).
+ *   Shape: flat (no parentId). 12 nodes, 1 measure (value), 2 dims (group, season).
  *   Groups: Alpha (Apples/Bananas/Grapes), Beta (Carrots/Dates/Elderberry),
  *           Gamma (Eggplant/Fennel/Honeydew), Delta (Jackfruit/Kale/Lemon).
  *   Use: exercises flat charts (bar/line/area/pie/radar/concentric-arc/scatter),
@@ -19,7 +19,7 @@ function row(name: string, measures: Record<string, number>, dims: Record<string
  */
 export function buildFruitDataset(): Dataset {
   _idc = 0
-  const rows = [
+  const nodes = [
     row('Apples',      { value: 40 }, { group: 'Alpha', season: 'fall' },     undefined, '#e08888'),
     row('Bananas',     { value: 25 }, { group: 'Alpha', season: 'all-year' }, undefined, '#e08888'),
     row('Grapes',      { value: 35 }, { group: 'Alpha', season: 'fall' },     undefined, '#e08888'),
@@ -38,7 +38,7 @@ export function buildFruitDataset(): Dataset {
     name: 'Fruit (demo)',
     createdAt: NOW,
     shape: 'flat' as const,
-    rows,
+    nodes,
     measureDefs: [{ key: 'value', label: 'Value' }],
     dimDefs: [
       { key: 'group', label: 'Group', values: ['Alpha', 'Beta', 'Gamma', 'Delta'] },

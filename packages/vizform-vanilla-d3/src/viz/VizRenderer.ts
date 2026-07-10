@@ -589,8 +589,7 @@ export class VizRenderer {
   }
 
   private _attachRadialDrag(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    allAtoms: any,
+    allAtoms: Selection<AtomEl, AtomGeometry & { __value: number }, any, any>,
     atomsG: ReturnType<typeof select<SVGGElement, unknown>>,
     topG: ReturnType<typeof select<SVGGElement, unknown>>,
     atoms: AtomGeometry[],
@@ -901,8 +900,7 @@ export class VizRenderer {
   }
 
   private _attachBandsDrag(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    allAtoms: any,
+    allAtoms: Selection<AtomEl, AtomGeometry & { __value: number }, any, any>,
     atomsG: ReturnType<typeof select<SVGGElement, unknown>>,
     chromeG: ReturnType<typeof select<SVGGElement, unknown>>,
     atoms: AtomGeometry[],

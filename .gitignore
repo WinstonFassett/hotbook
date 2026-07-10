@@ -6,6 +6,7 @@ inspo/*
 .DS_Store
 .apitable.yml
 .claude/worktrees/
+dogfood-output/
 
 # Local Netlify folder
 .netlify

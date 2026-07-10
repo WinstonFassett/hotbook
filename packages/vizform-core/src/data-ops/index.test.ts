@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import type { PNode } from '../types'
+import type { VizNode } from '../types'
 import { buildTree, applyView, drillPath, leavesOf, type TreeNode } from './index'
 
 describe('buildTree', () => {
   it('builds a single-level tree', () => {
-    const rows: PNode[] = [
+    const rows: VizNode[] = [
       { id: 'r1', parentId: null, index: 0, name: 'Root 1', measures: { value: 10 }, dims: {} },
       { id: 'r2', parentId: null, index: 1, name: 'Root 2', measures: { value: 20 }, dims: {} },
     ]
@@ -16,7 +16,7 @@ describe('buildTree', () => {
   })
 
   it('builds a nested tree', () => {
-    const rows: PNode[] = [
+    const rows: VizNode[] = [
       { id: 'r1', parentId: null, index: 0, name: 'Root 1', measures: { value: 10 }, dims: {} },
       { id: 'c1', parentId: 'r1', index: 0, name: 'Child 1', measures: { value: 5 }, dims: {} },
       { id: 'c2', parentId: 'r1', index: 1, name: 'Child 2', measures: { value: 5 }, dims: {} },
@@ -40,7 +40,7 @@ describe('buildTree', () => {
   })
 
   it('handles empty groupBy (no roots)', () => {
-    const rows: PNode[] = [
+    const rows: VizNode[] = [
       { id: 'orphan', parentId: 'nonexistent', index: 0, name: 'Orphan', measures: { value: 10 }, dims: {} },
     ]
     const tree = buildTree(rows, 'value')
@@ -49,7 +49,7 @@ describe('buildTree', () => {
   })
 
   it('maintains index order', () => {
-    const rows: PNode[] = [
+    const rows: VizNode[] = [
       { id: 'r3', parentId: null, index: 2, name: 'Root 3', measures: { value: 30 }, dims: {} },
       { id: 'r1', parentId: null, index: 0, name: 'Root 1', measures: { value: 10 }, dims: {} },
       { id: 'r2', parentId: null, index: 1, name: 'Root 2', measures: { value: 20 }, dims: {} },
@@ -63,7 +63,7 @@ describe('buildTree', () => {
 
 describe('applyView (groupBy)', () => {
   it('groups flat roots by dimension', () => {
-    const rows: PNode[] = [
+    const rows: VizNode[] = [
       { id: 'a1', parentId: null, index: 0, name: 'Apple', measures: { value: 10 }, dims: { group: 'Fruit' }, color: '#ff0000' },
       { id: 'a2', parentId: null, index: 1, name: 'Banana', measures: { value: 15 }, dims: { group: 'Fruit' }, color: '#ffff00' },
       { id: 'c1', parentId: null, index: 2, name: 'Carrot', measures: { value: 8 }, dims: { group: 'Veggie' }, color: '#ff8800' },
@@ -84,7 +84,7 @@ describe('applyView (groupBy)', () => {
   })
 
   it('preserves non-root nodes', () => {
-    const rows: PNode[] = [
+    const rows: VizNode[] = [
       { id: 'r1', parentId: null, index: 0, name: 'Root', measures: { value: 10 }, dims: { group: 'A' } },
       { id: 'c1', parentId: 'r1', index: 0, name: 'Child', measures: { value: 5 }, dims: { group: 'B' } },
     ]
@@ -95,7 +95,7 @@ describe('applyView (groupBy)', () => {
   })
 
   it('handles missing dimension values with (none)', () => {
-    const rows: PNode[] = [
+    const rows: VizNode[] = [
       { id: 'x1', parentId: null, index: 0, name: 'X', measures: { value: 10 }, dims: {} },
     ]
     const result = applyView(rows, 'group')
@@ -105,7 +105,7 @@ describe('applyView (groupBy)', () => {
   })
 
   it('assigns colors to group nodes', () => {
-    const rows: PNode[] = [
+    const rows: VizNode[] = [
       { id: 'a1', parentId: null, index: 0, name: 'Apple', measures: { value: 10 }, dims: { group: 'Fruit' }, color: '#ff0000' },
       { id: 'a2', parentId: null, index: 1, name: 'Apricot', measures: { value: 5 }, dims: { group: 'Fruit' }, color: '#ff0000' },
     ]
@@ -116,7 +116,7 @@ describe('applyView (groupBy)', () => {
   })
 
   it('sorts flat array correctly with original indices preserved', () => {
-    const rows: PNode[] = [
+    const rows: VizNode[] = [
       { id: 'a1', parentId: null, index: 0, name: 'Alpha', measures: { value: 10 }, dims: { group: 'X' } },
       { id: 'a2', parentId: null, index: 1, name: 'Beta', measures: { value: 15 }, dims: { group: 'Y' } },
       { id: 'a3', parentId: null, index: 2, name: 'Gamma', measures: { value: 8 }, dims: { group: 'X' } },
@@ -131,7 +131,7 @@ describe('applyView (groupBy)', () => {
 
 describe('drillPath', () => {
   it('returns path from root to node', () => {
-    const rows: PNode[] = [
+    const rows: VizNode[] = [
       { id: 'r1', parentId: null, index: 0, name: 'Root', measures: {}, dims: {} },
       { id: 'c1', parentId: 'r1', index: 0, name: 'Child', measures: {}, dims: {} },
       { id: 'gc1', parentId: 'c1', index: 0, name: 'Grandchild', measures: {}, dims: {} },
@@ -144,7 +144,7 @@ describe('drillPath', () => {
   })
 
   it('returns single-element path for root', () => {
-    const rows: PNode[] = [
+    const rows: VizNode[] = [
       { id: 'r1', parentId: null, index: 0, name: 'Root', measures: {}, dims: {} },
     ]
     const path = drillPath(rows, 'r1')
@@ -153,7 +153,7 @@ describe('drillPath', () => {
   })
 
   it('returns empty for null drillNodeId', () => {
-    const rows: PNode[] = [
+    const rows: VizNode[] = [
       { id: 'r1', parentId: null, index: 0, name: 'Root', measures: {}, dims: {} },
     ]
     const path = drillPath(rows, null)
@@ -161,7 +161,7 @@ describe('drillPath', () => {
   })
 
   it('returns empty for missing id', () => {
-    const rows: PNode[] = [
+    const rows: VizNode[] = [
       { id: 'r1', parentId: null, index: 0, name: 'Root', measures: {}, dims: {} },
     ]
     const path = drillPath(rows, 'nonexistent')
@@ -169,7 +169,7 @@ describe('drillPath', () => {
   })
 
   it('handles deep hierarchies', () => {
-    const rows: PNode[] = [
+    const rows: VizNode[] = [
       { id: 'r1', parentId: null, index: 0, name: 'L0', measures: {}, dims: {} },
       { id: 'c1', parentId: 'r1', index: 0, name: 'L1', measures: {}, dims: {} },
       { id: 'c2', parentId: 'c1', index: 0, name: 'L2', measures: {}, dims: {} },
@@ -184,7 +184,7 @@ describe('drillPath', () => {
 
 describe('leavesOf', () => {
   it('returns all leaves from flat list', () => {
-    const rows: PNode[] = [
+    const rows: VizNode[] = [
       { id: 'a1', parentId: null, index: 0, name: 'A', measures: { value: 10 }, dims: {} },
       { id: 'a2', parentId: null, index: 1, name: 'B', measures: { value: 15 }, dims: {} },
     ]
@@ -194,7 +194,7 @@ describe('leavesOf', () => {
   })
 
   it('returns only leaves from nested tree', () => {
-    const rows: PNode[] = [
+    const rows: VizNode[] = [
       { id: 'r1', parentId: null, index: 0, name: 'Root', measures: {}, dims: {} },
       { id: 'c1', parentId: 'r1', index: 0, name: 'Child 1', measures: { value: 5 }, dims: {} },
       { id: 'c2', parentId: 'r1', index: 1, name: 'Child 2', measures: { value: 10 }, dims: {} },
@@ -205,7 +205,7 @@ describe('leavesOf', () => {
   })
 
   it('returns single leaf for single-node tree', () => {
-    const rows: PNode[] = [
+    const rows: VizNode[] = [
       { id: 'solo', parentId: null, index: 0, name: 'Solo', measures: { value: 42 }, dims: {} },
     ]
     const leaves = leavesOf(rows)
@@ -219,7 +219,7 @@ describe('leavesOf', () => {
   })
 
   it('handles only internal nodes (no leaves)', () => {
-    const rows: PNode[] = [
+    const rows: VizNode[] = [
       { id: 'r1', parentId: null, index: 0, name: 'Root', measures: {}, dims: {} },
       { id: 'c1', parentId: 'r1', index: 0, name: 'Child', measures: {}, dims: {} },
       { id: 'gc1', parentId: 'c1', index: 0, name: 'Grandchild', measures: {}, dims: {} },
@@ -233,7 +233,7 @@ describe('leavesOf', () => {
 describe('production bug surfaces (WIN-155)', () => {
   it('preserves depth hierarchy on drillPath with depth change', () => {
     // Simulates: drill target on depth change, group rollup
-    const rows: PNode[] = [
+    const rows: VizNode[] = [
       { id: 'goal1', parentId: null, index: 0, name: 'Goal 1', measures: { est: 100 }, dims: { level: 'goal' } },
       { id: 'proj1', parentId: 'goal1', index: 0, name: 'Project 1', measures: {}, dims: { level: 'project' } },
       { id: 'task1', parentId: 'proj1', index: 0, name: 'Task 1', measures: { est: 30 }, dims: { level: 'task' } },
@@ -245,7 +245,7 @@ describe('production bug surfaces (WIN-155)', () => {
   })
 
   it('group rollup preserves measure totals', () => {
-    const rows: PNode[] = [
+    const rows: VizNode[] = [
       { id: 'g1', parentId: null, index: 0, name: 'GroupA', measures: {}, dims: { group: 'A' } },
       { id: 'l1', parentId: 'g1', index: 0, name: 'Leaf 1', measures: { value: 10 }, dims: { group: 'A' } },
       { id: 'l2', parentId: 'g1', index: 1, name: 'Leaf 2', measures: { value: 20 }, dims: { group: 'A' } },
@@ -256,7 +256,7 @@ describe('production bug surfaces (WIN-155)', () => {
   })
 
   it('handles groupBy applied then drillPath', () => {
-    const flat: PNode[] = [
+    const flat: VizNode[] = [
       { id: 'a1', parentId: null, index: 0, name: 'Apple', measures: { value: 10 }, dims: { group: 'Fruit' } },
       { id: 'b1', parentId: null, index: 1, name: 'Banana', measures: { value: 15 }, dims: { group: 'Fruit' } },
       { id: 'c1', parentId: null, index: 2, name: 'Carrot', measures: { value: 8 }, dims: { group: 'Veggie' } },

@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import * as d3 from 'd3'
-import type { PNode } from '../persistence'
+import type { VizNode } from '../persistence'
 import { nodeColor, motion, buildVizTree, useDimensions, useAltScroll } from './util'
 
 type Datum = { id: string; children?: Datum[] }
@@ -10,7 +10,7 @@ type ArcEl = SVGPathElement & { __arc?: Arc }
 type TextPathEl = SVGPathElement & { __arc?: Arc }
 
 interface Props {
-  nodes: PNode[]
+  nodes: VizNode[]
   measureKey: string
   hoverId: string | null
   selectionId: string | null
@@ -20,7 +20,7 @@ interface Props {
   onHover: (id: string | null) => void
   onSelect: (id: string) => void
   onFocus: (id: string) => void
-  onUpdate?: (nodeId: string, measures: PNode['measures']) => void
+  onUpdate?: (nodeId: string, measures: VizNode['measures']) => void
 }
 
 function labelArcPath(a: Arc, ringR: number): string {

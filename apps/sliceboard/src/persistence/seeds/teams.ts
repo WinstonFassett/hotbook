@@ -11,7 +11,7 @@ function row(name: string, measures: Record<string, number>, dims: Record<string
 
 /**
  * Dataset 2 — Team Allocation (2-level hierarchy)
- *   Shape: tree (3 quarter roots Q2/Q3/Q4 → team leaves). 16 rows total.
+ *   Shape: tree (3 quarter roots Q2/Q3/Q4 → team leaves). 16 nodes total.
  *   Measures: budget (k), headcount. Dims: team, role.
  *   Teams per quarter: Design, Frontend, Backend, Infra (+ PM in Q4).
  *   Use: exercises hier charts natively (no groupBy needed), scatter (budget vs headcount),
@@ -23,7 +23,7 @@ export function buildTeamDataset(): Dataset {
   const q2 = { id: q2id, parentId: null, index: 1, name: 'Q2', measures: {}, dims: {}, color: '#7ec87e' }
   const q3 = { id: q3id, parentId: null, index: 2, name: 'Q3', measures: {}, dims: {}, color: '#7aaae8' }
   const q4 = { id: q4id, parentId: null, index: 3, name: 'Q4', measures: {}, dims: {}, color: '#b090e0' }
-  const rows = [
+  const nodes = [
     q2, q3, q4,
     row('Design',   { budget: 20, headcount: 2 }, { team: 'Design',   role: 'product' }, q2id),
     row('Frontend', { budget: 35, headcount: 3 }, { team: 'Frontend', role: 'eng' },     q2id),
@@ -44,7 +44,7 @@ export function buildTeamDataset(): Dataset {
     name: 'Team allocation (demo)',
     createdAt: NOW,
     shape: 'tree' as const,
-    rows,
+    nodes,
     measureDefs: [
       { key: 'budget', label: 'Budget', unit: 'k' },
       { key: 'headcount', label: 'Headcount' },

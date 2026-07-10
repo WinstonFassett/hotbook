@@ -1,5 +1,5 @@
 import type { Workspace, Dataset, Dashboard, Tile, TileKind } from './schema/v11'
-import type { PNode } from '@winstonfassett/vizform-core'
+import type { VizNode } from '@winstonfassett/vizform-core'
 import { removeTileFromDock } from '../dock'
 import { applyView, drillPath } from '@winstonfassett/vizform-core'
 
@@ -9,13 +9,13 @@ function genId(): string {
 
 // ─── Mutations ────────────────────────────────────────────────────────────────
 
-export function updateRow(ws: Workspace, dsId: string, rowId: string, patch: Partial<PNode>): Workspace {
+export function updateRow(ws: Workspace, dsId: string, rowId: string, patch: Partial<VizNode>): Workspace {
   return {
     ...ws,
     datasets: ws.datasets.map(ds =>
       ds.id !== dsId ? ds : {
         ...ds,
-        rows: ds.rows.map(r => r.id !== rowId ? r : { ...r, ...patch }),
+        nodes: ds.nodes.map(r => r.id !== rowId ? r : { ...r, ...patch }),
       }
     ),
   }
@@ -26,7 +26,7 @@ export function updateRow(ws: Workspace, dsId: string, rowId: string, patch: Par
 // them as separate updateRow calls would clobber each other (each starts from
 // the same stale workspace, so only the last write survives). Batching keeps
 // every changed leaf in one commit.
-export function updateRows(ws: Workspace, dsId: string, patches: Array<{ id: string; patch: Partial<PNode> }>): Workspace {
+export function updateRows(ws: Workspace, dsId: string, patches: Array<{ id: string; patch: Partial<VizNode> }>): Workspace {
   if (patches.length === 0) return ws
   const byId = new Map(patches.map(p => [p.id, p.patch]))
   return {
@@ -34,7 +34,7 @@ export function updateRows(ws: Workspace, dsId: string, patches: Array<{ id: str
     datasets: ws.datasets.map(ds =>
       ds.id !== dsId ? ds : {
         ...ds,
-        rows: ds.rows.map(r => { const p = byId.get(r.id); return p ? { ...r, ...p } : r }),
+        nodes: ds.nodes.map(r => { const p = byId.get(r.id); return p ? { ...r, ...p } : r }),
       }
     ),
   }
@@ -45,12 +45,12 @@ export function reorderLeaves(ws: Workspace, dsId: string, orderedLeafIds: strin
     ...ws,
     datasets: ws.datasets.map(ds => {
       if (ds.id !== dsId) return ds
-      const leafSet = new Set(ds.rows.filter(n => !ds.rows.some(m => m.parentId === n.id)).map(n => n.id))
-      const leafPositions = ds.rows.reduce<number[]>((acc, n, i) => { if (leafSet.has(n.id)) acc.push(i); return acc }, [])
-      const byId = new Map(ds.rows.map(n => [n.id, n]))
-      const result = [...ds.rows]
+      const leafSet = new Set(ds.nodes.filter(n => !ds.nodes.some(m => m.parentId === n.id)).map(n => n.id))
+      const leafPositions = ds.nodes.reduce<number[]>((acc, n, i) => { if (leafSet.has(n.id)) acc.push(i); return acc }, [])
+      const byId = new Map(ds.nodes.map(n => [n.id, n]))
+      const result = [...ds.nodes]
       orderedLeafIds.forEach((id, i) => { result[leafPositions[i]!] = byId.get(id)! })
-      return { ...ds, rows: result }
+      return { ...ds, nodes: result }
     }),
   }
 }
@@ -60,7 +60,8 @@ export function createDataset(ws: Workspace, name: string): Workspace {
     id: genId(),
     name,
     createdAt: new Date().toISOString(),
-    rows: [],
+    shape: 'flat',
+    nodes: [],
     measureDefs: [{ key: 'value', label: 'Value' }],
     dimDefs: [],
   }
@@ -136,8 +137,8 @@ export function dashboardsForDataset(ws: Workspace, dsId: string): Dashboard[] {
 // ─── GroupBy helper (re-exported from @winstonfassett/vizform-core) ──────────
 
 // For backwards compatibility, re-export applyView as applyGroupBy
-export function applyGroupBy(rows: PNode[], dimKey: string): PNode[] {
-  return applyView(rows, dimKey)
+export function applyGroupBy(nodes: VizNode[], dimKey: string): VizNode[] {
+  return applyView(nodes, dimKey)
 }
 
 // ─── Drill helpers (re-exported from @winstonfassett/vizform-core) ────────────

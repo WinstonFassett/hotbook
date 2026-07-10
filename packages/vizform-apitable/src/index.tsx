@@ -83,6 +83,7 @@ function buildHierRoot(
     if (depth >= groupFieldIds.length) {
       return recs.map((r) =>
         leaf(
+          r.id,
           r.title ?? r.id,
           Number(r.getCellValue(valueFieldId)) || 0,
           colorFor(r.title ?? r.id),
@@ -97,12 +98,12 @@ function buildHierRoot(
       groups.get(key)!.push(rec)
     }
     return Array.from(groups.entries()).map(([key, groupRecs]) =>
-      group(key, colorFor(key), buildLevel(groupRecs, depth + 1)),
+      group(key, key, colorFor(key), buildLevel(groupRecs, depth + 1)),
     )
   }
 
   const children = buildLevel(records, 0)
-  return group('All', 'oklch(0.28 0 0)', children)
+  return group('All', 'All', 'oklch(0.28 0 0)', children)
 }
 
 interface ChartMountProps {
@@ -142,8 +143,9 @@ function ChartMount({ mode, flatData, hierRoot }: ChartMountProps) {
       // flat treemap: wrap as a single-level hier root
       el.externalRoot = group(
         'All',
+        'All',
         'oklch(0.28 0 0)',
-        flatData.map((d) => leaf(d.label, d.value, colorFor(d.label))),
+        flatData.map((d) => leaf(d.id, d.label, d.value, colorFor(d.label))),
       )
     }
     container.appendChild(el)
@@ -196,15 +198,17 @@ function AllocVizWidget() {
   }, [records, resolvedFieldId])
 
   const hierRoot = useMemo<BiNode>(() => {
-    if (!resolvedFieldId) return group('All', 'oklch(0.28 0 0)', [])
+    if (!resolvedFieldId) return group('All', 'All', 'oklch(0.28 0 0)', [])
     if (hasGroups) {
       return buildHierRoot(records, groupInfo.map((g) => g.fieldId), resolvedFieldId)
     }
     return group(
       'All',
+      'All',
       'oklch(0.28 0 0)',
       records.map((r) =>
         leaf(
+          r.id,
           r.title ?? r.id,
           Number(r.getCellValue(resolvedFieldId)) || 0,
           colorFor(r.title ?? r.id),

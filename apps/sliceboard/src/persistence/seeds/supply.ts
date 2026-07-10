@@ -23,7 +23,7 @@ export function buildSupplyChainDataset(): Dataset {
     name: 'Supply chain (sankey)',
     createdAt: NOW,
     shape: 'graph',
-    rows: [],
+    nodes: [],
     edges,
     measureDefs: [],
     dimDefs: [],

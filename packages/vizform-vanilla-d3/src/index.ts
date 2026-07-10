@@ -2,7 +2,7 @@ export type {
   Goal, GoalTree, UnitKind, ViewMode, FlatMode, HierMode,
   VizConfig, HVizConfig, VizCallbacks, HVizCallbacks,
   VizFormEvent, VizFormChangeEvent, VizFormClickEvent, Cleanup,
-  PNode, Rollup, Measurement,
+  VizNode, PNode, Rollup, Measurement,
 } from './types'
 export { pickColor, colorFor } from './colors'
 export { VizRenderer } from './viz/VizRenderer'

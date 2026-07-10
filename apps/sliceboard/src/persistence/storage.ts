@@ -20,11 +20,22 @@ const VALID_TILE_KINDS = new Set<TileKind>([
   'treetable', // retired but still renders via vanilla treetable
 ])
 
+function migrateDatasetFieldNames(ws: Workspace): Workspace {
+  ws.datasets.forEach((ds: any) => {
+    if ('rows' in ds && !('nodes' in ds)) {
+      ds.nodes = ds.rows
+      delete ds.rows
+    }
+  })
+  return ws
+}
+
 function load(): Workspace | null {
   try {
     const raw = localStorage.getItem(LS_KEY)
     if (raw) {
       const ws = JSON.parse(raw) as Workspace
+      migrateDatasetFieldNames(ws)
       // Guard: filter out tiles with unknown kinds
       ws.dashboards.forEach(dash => {
         const before = dash.tiles.length
@@ -47,6 +58,7 @@ function load(): Workspace | null {
     if (!legacy) return null
     const ws = JSON.parse(legacy) as Workspace
     const migrated = migrate(ws)
+    migrateDatasetFieldNames(migrated)
     migrated.dashboards.forEach(dash => {
       // Guard: filter out tiles with unknown kinds (also for migrated data)
       const before = dash.tiles.length

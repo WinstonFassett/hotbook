@@ -10,32 +10,32 @@ import {
   BrLcPack, BrLcTreemap, BrLcTreetable, BrLcIcicle, BrLcSunburst, BrLcSankey, BrLcSankeyFlow, BrLcTree,
   BrLcGantt,
 } from '../viz/br/BrLcCharts'
-import type { PNode, PEdge } from '../persistence'
+import type { VizNode, PEdge } from '../persistence'
 import { DemoFrame } from './DemoFrame'
 import fruitFlat from './fixtures/fruit-flat.json'
 import teamHier from './fixtures/team-hier.json'
 import supplyEdges from './fixtures/supply-edges.json'
 import ganttTasks from './fixtures/gantt-tasks.json'
 
-interface FlatFixture { name: string; description: string; rows: PNode[] }
+interface FlatFixture { name: string; description: string; rows: VizNode[] }
 interface EdgeFixture { name: string; description: string; edges: PEdge[] }
-interface GanttFixture { name: string; description: string; rows: PNode[]; deps: Array<{ from: string; to: string }> }
+interface GanttFixture { name: string; description: string; rows: VizNode[]; deps: Array<{ from: string; to: string }> }
 const FRUIT: FlatFixture = fruitFlat as FlatFixture
 const TEAM:  FlatFixture = teamHier  as FlatFixture
 const SUPPLY: EdgeFixture = supplyEdges as EdgeFixture
 const GANTT: GanttFixture = ganttTasks as GanttFixture
 
-type OnNodeUpdate = (nodeId: string, measures: PNode['measures']) => void
-type OnNodesUpdate = (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
+type OnNodeUpdate = (nodeId: string, measures: VizNode['measures']) => void
+type OnNodesUpdate = (updates: Array<{ id: string; measures: VizNode['measures'] }>) => void
 
 interface DemoDef {
   slug: string
   label: string
   fixtureName: string
   fixture: unknown
-  initRows?: PNode[]
+  initRows?: VizNode[]
   initEdges?: PEdge[]
-  render: (rows: PNode[], edges: PEdge[], onNodeUpdate: OnNodeUpdate, onNodesUpdate: OnNodesUpdate) => ReactNode
+  render: (rows: VizNode[], edges: PEdge[], onNodeUpdate: OnNodeUpdate, onNodesUpdate: OnNodesUpdate) => ReactNode
 }
 
 const DEMOS: DemoDef[] = [
@@ -146,7 +146,7 @@ export function Demos() {
   const slug = useHashRoute()
 
   // Reactive fixture state — keyed by slug so navigation preserves edits.
-  const [rowsMap, setRowsMap] = useState<Record<string, PNode[]>>(() =>
+  const [rowsMap, setRowsMap] = useState<Record<string, VizNode[]>>(() =>
     Object.fromEntries(
       DEMOS.filter(d => d.initRows).map(d => [d.slug, d.initRows!])
     )
@@ -157,14 +157,14 @@ export function Demos() {
     )
   )
 
-  const handleNodeUpdate = useCallback((demoSlug: string, nodeId: string, measures: PNode['measures']) => {
+  const handleNodeUpdate = useCallback((demoSlug: string, nodeId: string, measures: VizNode['measures']) => {
     setRowsMap(prev => ({
       ...prev,
       [demoSlug]: (prev[demoSlug] ?? []).map(r => r.id !== nodeId ? r : { ...r, measures }),
     }))
   }, [])
 
-  const handleNodesUpdate = useCallback((demoSlug: string, updates: Array<{ id: string; measures: PNode['measures'] }>) => {
+  const handleNodesUpdate = useCallback((demoSlug: string, updates: Array<{ id: string; measures: VizNode['measures'] }>) => {
     const byId = new Map(updates.map(u => [u.id, u.measures]))
     setRowsMap(prev => ({
       ...prev,

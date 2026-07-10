@@ -1,4 +1,3 @@
-import { Diagram } from "bireactive";
 import {
   MdPack,
   MdTreemapLC,
@@ -20,12 +19,21 @@ import {
   MdTreeChart,
   MdBudgetTree,
 } from "@winstonfassett/vizform-charts";
+import { portfolio } from "./fixtures/portfolio";
 
 class MdBandsChartLC extends MdBarChartLC {
   constructor() { super(); this.orientation = 'horizontal'; this.colorMode = 'palette'; this.labelMode = 'inside'; this.valueMode = 'inside'; }
 }
 
-const experiments: Array<{ id: string; title: string; tag: string; ctor: typeof Diagram }> = [
+const HIER_TAGS = new Set([
+  'v-pack',
+  'v-treemap',
+  'v-icicle',
+  'v-sunburst',
+  'v-tree-chart',
+]);
+
+const experiments: Array<{ id: string; title: string; tag: string; ctor: CustomElementConstructor }> = [
   { id: "line-chart", title: "LineChart", tag: "v-line-chart", ctor: MdLineChartLC },
   { id: "area-chart", title: "AreaChart", tag: "v-area-chart", ctor: MdAreaChartLC },
   { id: "bar-chart", title: "BarChart (vertical)", tag: "v-bar-chart", ctor: MdBarChartLC },
@@ -99,7 +107,7 @@ function readConfig(): ReproConfig {
 }
 let config = readConfig();
 
-function applyConfig(el: InstanceType<typeof Diagram>, demo: HTMLElement) {
+function applyConfig(el: HTMLElement, demo: HTMLElement) {
   // Only set sortBy on charts that declare it (index/value charts).
   if ('sortBy' in el) (el as any).sortBy = config.sort;
   if (config.width != null) {
@@ -141,7 +149,7 @@ function buildConfigBar(): HTMLElement {
 
 const app = document.getElementById("app");
 // Track mounted elements so a live hash change re-applies config without reload.
-const mounted: Array<{ el: InstanceType<typeof Diagram>; demo: HTMLElement }> = [];
+const mounted: Array<{ el: HTMLElement; demo: HTMLElement }> = [];
 if (app) {
   app.prepend(buildConfigBar());
   const shown = config.only
@@ -157,8 +165,11 @@ if (app) {
 
     const demo = document.createElement("div");
     demo.className = "demo";
-    const el = document.createElement(e.tag) as InstanceType<typeof Diagram>;
+    const el = document.createElement(e.tag) as HTMLElement;
     el.setAttribute("no-source", "");
+    if (HIER_TAGS.has(e.tag)) {
+      (el as any).externalRoot = portfolio();
+    }
     demo.appendChild(el);
     applyConfig(el, demo);
     mounted.push({ el, demo });

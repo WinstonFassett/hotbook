@@ -1,4 +1,4 @@
-import type { Dataset } from '../schema/v11'
+import type { Dataset, VizNode } from '../schema/v11'
 
 const NOW = '2026-05-13T12:00:00.000Z'
 
@@ -28,7 +28,7 @@ interface ProjSpec  { name: string; status?: string; subs: SubSpec[] }
 interface GoalSpec  { name: string; color: string; projects: ProjSpec[] }
 
 function makeHierarchy(goals: GoalSpec[]) {
-  const out = []
+  const out: VizNode[] = []
   goals.forEach((g, gi) => {
     const gid = nid()
     out.push({ id: gid, parentId: null, index: gi + 1, name: g.name, measures: {}, dims: { level: 'goal' }, color: g.color })
@@ -255,13 +255,13 @@ const LIFE_GOALS: GoalSpec[] = [
 
 export function buildLifeDataset(): Dataset {
   _idc = 0
-  const rows = makeHierarchy(LIFE_GOALS)
+  const nodes = makeHierarchy(LIFE_GOALS)
   return {
     id: 'ds-life',
     name: 'Life areas',
     createdAt: NOW,
     shape: 'tree' as const,
-    rows,
+    nodes,
     measureDefs: [
       { key: 'est', label: 'Estimate', unit: 'h' },
       { key: 'act', label: 'Actual', unit: 'h' },

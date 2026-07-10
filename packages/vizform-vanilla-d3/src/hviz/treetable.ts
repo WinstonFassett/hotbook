@@ -1,4 +1,4 @@
-import type { PNode } from '../types'
+import type { VizNode } from '../types'
 import { nodeColor, rollupMeasurement, childrenOf } from './pnodeUtils'
 
 export interface TreetableOptions {
@@ -7,7 +7,7 @@ export interface TreetableOptions {
 }
 
 export interface TreetableMounted {
-  update(nodes: PNode[], measureKey: string): void
+  update(nodes: VizNode[], measureKey: string): void
   destroy(): void
   /**
    * Returns the live root element, so a higher-level adapter can query
@@ -28,7 +28,7 @@ export interface TreetableMounted {
 }
 
 interface VisibleRow {
-  node: PNode
+  node: VizNode
   depth: number
   hasKids: boolean
 }
@@ -59,7 +59,7 @@ function fmtNum(v: number): string {
   return Math.round(v).toString()
 }
 
-function computeVisible(nodes: PNode[], collapsed: Set<string>): VisibleRow[] {
+function computeVisible(nodes: VizNode[], collapsed: Set<string>): VisibleRow[] {
   const out: VisibleRow[] = []
 
   function walk(parentId: string | null, depth: number) {
@@ -76,7 +76,7 @@ function computeVisible(nodes: PNode[], collapsed: Set<string>): VisibleRow[] {
 
 export function mountTreetable(
   containerEl: HTMLElement,
-  nodes: PNode[],
+  nodes: VizNode[],
   measureKey: string,
   options: TreetableOptions = {},
 ): TreetableMounted {
@@ -200,7 +200,7 @@ export function mountTreetable(
   render()
 
   return {
-    update(nodes: PNode[], measureKey: string) {
+    update(nodes: VizNode[], measureKey: string) {
       currentNodes = nodes
       currentMeasureKey = measureKey
       render()

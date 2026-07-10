@@ -4,7 +4,7 @@
  */
 
 import type { Num, Writable } from 'bireactive'
-import type { PNode, PEdge, Tile, Dataset } from './persistence'
+import type { VizNode, PEdge, Tile, Dataset } from './persistence'
 import { makeFlatSource, makeHierSource, makeHierRootFlatSource, hierShapeKey, hierValueKey } from './viz/br/bindTile'
 import type { TileSource } from './viz/br/bindTile'
 import { hudStore } from './store'
@@ -61,21 +61,21 @@ for (const [tag, cls] of TAGS) {
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
-function leavesOfNodes(nodes: PNode[]): PNode[] {
+function leavesOfNodes(nodes: VizNode[]): VizNode[] {
   return leavesOf(nodes)
 }
 
-function rootsOfNodes(nodes: PNode[]): PNode[] {
+function rootsOfNodes(nodes: VizNode[]): VizNode[] {
   return nodes.filter(n => !n.parentId)
 }
 
 /** Sum of a measure across all descendant leaves of a root — used ONLY to
- *  order roots for sortBy:'value' display. A root PNode's own `measures` is
+ *  order roots for sortBy:'value' display. A root VizNode's own `measures` is
  *  always empty (only leaves carry measures), so sorting roots by their raw
  *  measures would compare 0 against 0. The actual redistributable values
  *  rendered/edited by the chart come from the live BiNode lens tree built
  *  inside makeHierRootFlatSource — this is a plain, disposable sum for order only. */
-function sumMeasureToRoot(nodes: PNode[], rootId: string, measureKey: string): number {
+function sumMeasureToRoot(nodes: VizNode[], rootId: string, measureKey: string): number {
   let sum = 0
   const queue = nodes.filter(n => n.parentId === rootId)
   while (queue.length) {
@@ -86,9 +86,9 @@ function sumMeasureToRoot(nodes: PNode[], rootId: string, measureKey: string): n
   return sum
 }
 
-function colorByGroup(nodes: PNode[]): PNode[] {
+function colorByGroup(nodes: VizNode[]): VizNode[] {
   const byId = new Map(nodes.map(n => [n.id, n]))
-  const nearestColor = (n: PNode): string => {
+  const nearestColor = (n: VizNode): string => {
     let cur = n
     while (true) {
       if (cur.color) return cur.color
@@ -119,7 +119,7 @@ export function resolveTileBindings(tile: Tile, defaultValueBinding: string) {
  *  - 'value' or '_value': sort by valueBinding
  *  - any measure key: sort by that measure
  */
-function sortNodes(nodes: PNode[], orderBinding: string, valueBinding: string, orderDir: 'asc' | 'desc'): PNode[] {
+function sortNodes(nodes: VizNode[], orderBinding: string, valueBinding: string, orderDir: 'asc' | 'desc'): VizNode[] {
   const sorted = [...nodes]
   if (orderBinding === 'index' || orderBinding === '_index') {
     sorted.sort((a, b) => a.index - b.index)
@@ -141,8 +141,8 @@ export interface TileRenderContext {
   ds: Dataset
   measureKey: string
   drillNodeId: string | null
-  onUpdate: (rowId: string, measures: PNode['measures']) => void
-  onUpdateMany: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
+  onUpdate: (rowId: string, measures: VizNode['measures']) => void
+  onUpdateMany: (updates: Array<{ id: string; measures: VizNode['measures'] }>) => void
   onNodeReorder: (orderedIds: string[]) => void
 }
 
@@ -154,7 +154,7 @@ export interface TileRenderContext {
 export function buildTileSource(ctx: TileRenderContext): TileSource | null {
   const { tile, ds, measureKey, drillNodeId, onUpdate, onUpdateMany } = ctx
   const { valueBinding, xBinding, yBinding, orderBinding, orderDir } = resolveTileBindings(tile, measureKey)
-  const rawNodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.rows, tile.groupBy) : ds.rows)
+  const rawNodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.nodes, tile.groupBy) : ds.nodes)
   const sorted = sortNodes(rawNodes, orderBinding, valueBinding, orderDir)
   const sortedWithIndex = sorted.map((n, i) => ({ ...n, index: i }))
   const depth = tile.depth || undefined
@@ -219,10 +219,10 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
     // tree instead of requiring a manual aggregate-then-writeback loop.
     if (ds.shape === 'tree') {
       const roots = rootsOfNodes(rawNodes)
-      // Root PNodes carry no measure of their own (only leaves do) — sort by
+      // Root VizNodes carry no measure of their own (only leaves do) — sort by
       // each root's aggregate leaf sum, not raw n.measures[valueBinding] (always 0).
       const sortKey = orderBinding === 'value' || orderBinding === '_value' ? valueBinding : orderBinding
-      let displayRoots: PNode[]
+      let displayRoots: VizNode[]
       if (sortKey === 'index' || sortKey === '_index') {
         displayRoots = roots
       } else {
@@ -362,7 +362,7 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
     const sortKey = orderBinding === 'value' || orderBinding === '_value' ? valueBinding : orderBinding
     // Hierarchical elements can sort by value (desc) internally; otherwise rely on pre-sorted nodes + 'index'.
     const hierSortBy: 'index' | 'value' = sortKey === valueBinding && orderDir === 'desc' ? 'value' : 'index'
-    const shapeKey = hierShapeKey(tag, sortedWithIndex, valueBinding, depth, hierSortBy)
+    const shapeKey = hierShapeKey(tag, sortedWithIndex, valueBinding, depth)
     const valueKey = hierValueKey(sortedWithIndex, valueBinding)
     // Enable numberDrag for treetable
     const enableNumberDrag = kind === 'br-lc-treetable'
@@ -388,12 +388,12 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
 export function buildSimpleMount(ctx: TileRenderContext): ((el: HTMLElement) => void) | null {
   const { tile, ds, measureKey } = ctx
   const { valueBinding } = resolveTileBindings(tile, measureKey)
-  const rawNodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.rows, tile.groupBy) : ds.rows)
+  const rawNodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.nodes, tile.groupBy) : ds.nodes)
   const leaves = rawNodes.filter(n => !rawNodes.some(m => m.parentId === n.id))
   const { kind } = tile
 
   if (kind === 'treetable') {
-    const nodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.rows, tile.groupBy) : ds.rows)
+    const nodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.nodes, tile.groupBy) : ds.nodes)
     return (el: HTMLElement) => {
       el.style.cssText = 'width:100%;height:100%;overflow:auto'
       mountTreetable(el, nodes, valueBinding)
@@ -461,11 +461,11 @@ export function simpleTag(kind: string): string | null {
 export function simpleDataKey(ctx: TileRenderContext): string {
   const { tile, ds, measureKey } = ctx
   const { valueBinding } = resolveTileBindings(tile, measureKey)
-  const rawNodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.rows, tile.groupBy) : ds.rows)
+  const rawNodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.nodes, tile.groupBy) : ds.nodes)
   const leaves = rawNodes.filter(n => !rawNodes.some(m => m.parentId === n.id))
   const { kind } = tile
   if (kind === 'treetable') {
-    return `treetable|${valueBinding}|${ds.rows.length}`
+    return `treetable|${valueBinding}|${ds.nodes.length}`
   }
   if (kind === 'br-lc-gauge' || kind === 'br-lc-gauge-segmented') {
     return `${kind}|${valueBinding}|${leaves.reduce((a, b) => a + (b.measures[valueBinding] ?? 0), 0)}`
@@ -474,7 +474,7 @@ export function simpleDataKey(ctx: TileRenderContext): string {
     return `sankey|${JSON.stringify(ds.edges ?? [])}`
   }
   if (kind === 'br-lc-gantt') {
-    return `gantt|${valueBinding}|${ds.rows.length}`
+    return `gantt|${valueBinding}|${ds.nodes.length}`
   }
   return kind
 }

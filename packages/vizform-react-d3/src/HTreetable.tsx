@@ -1,18 +1,18 @@
 import { useEffect, useRef } from 'react'
 import { mountTreetable } from '@winstonfassett/vizform-vanilla-d3'
 import type { TreetableMounted } from '@winstonfassett/vizform-vanilla-d3'
-import type { PNode } from '@winstonfassett/vizform-vanilla-d3'
+import type { VizNode } from '@winstonfassett/vizform-vanilla-d3'
 import { numberDrag } from '@winstonfassett/vizform-charts'
 
 interface HTreetableProps {
-  nodes: PNode[]
+  nodes: VizNode[]
   measureKey: string
   /**
    * Called when the user scrubs a leaf row's value cell (Figma-style number
    * drag). Patch contains the new measure value for `measureKey`. If omitted,
    * the value cells render as static text.
    */
-  onUpdate?: (rowId: string, measures: PNode['measures']) => void
+  onUpdate?: (rowId: string, measures: VizNode['measures']) => void
 }
 
 export function HTreetable({ nodes, measureKey, onUpdate }: HTreetableProps) {

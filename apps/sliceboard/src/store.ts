@@ -1,4 +1,4 @@
-import type { PNode } from './persistence'
+import type { VizNode } from './persistence'
 
 export interface HudState {
   hoverId: string | null
@@ -48,6 +48,6 @@ export const hudStore = {
 }
 
 /** Reset focus + selection + drill when dataset changes */
-export function resetHudForDataset(_nodes: PNode[]) {
+export function resetHudForDataset(_nodes: VizNode[]) {
   hudStore.reset()
 }

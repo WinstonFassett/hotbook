@@ -11,7 +11,7 @@ export type {
   Workspace,
 } from './schema/v11'
 
-export type { PNode, PEdge } from './schema/v11'
+export type { VizNode, PNode, PEdge } from './schema/v11'
 
 export {
   initWorkspace,

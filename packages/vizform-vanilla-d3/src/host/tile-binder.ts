@@ -13,7 +13,7 @@
 
 import { effect as biEffect, leavesOf, walkTree } from 'bireactive'
 import type { Cell, Num, Writable } from 'bireactive'
-import type { PNode } from '@winstonfassett/vizform-core'
+import type { VizNode } from '@winstonfassett/vizform-core'
 import { numberDrag } from '@winstonfassett/vizform-charts'
 import { buildBiTree } from './biTree'
 import type { BiNode } from './biTree'
@@ -208,6 +208,7 @@ interface ElWithDataCell<D> extends HTMLElement {
   dataCell: Writable<Cell<readonly D[]>>
   externalData?: unknown
   gestureActive?: boolean
+  measureKey?: string
 }
 
 export interface FlatSpec<D> {
@@ -222,9 +223,9 @@ export interface FlatSpec<D> {
   shapeKey: string
   measureKey: string
   mountProps?: (el: HTMLElement) => void
-  nodes: PNode[]
-  onUpdate?: (nodeId: string, measures: PNode['measures']) => void
-  onUpdateMany?: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
+  nodes: VizNode[]
+  onUpdate?: (nodeId: string, measures: VizNode['measures']) => void
+  onUpdateMany?: (updates: Array<{ id: string; measures: VizNode['measures'] }>) => void
 }
 
 export function makeFlatSource<D>(spec: FlatSpec<D>): TileSource {
@@ -314,7 +315,7 @@ export function makeFlatSource<D>(spec: FlatSpec<D>): TileSource {
         const last = lastRef
         if (!cb && !cbMany) { for (const d of arr) last.set(s.idOf(d), s.readValue(d)); return }
         const byId = new Map(nodesRef.current.map(n => [n.id, n]))
-        const pending: Array<{ id: string; measures: PNode['measures'] }> = []
+        const pending: Array<{ id: string; measures: VizNode['measures'] }> = []
         for (const d of arr) {
           const id = s.idOf(d)
           const v = s.readValue(d)
@@ -370,7 +371,7 @@ interface ElWithRoot extends HTMLElement {
 
 export interface HierSpec {
   tag: string
-  nodes: PNode[]
+  nodes: VizNode[]
   measureKey: string
   depth?: number
   sortBy?: 'index' | 'value'
@@ -380,8 +381,8 @@ export interface HierSpec {
   drillNodeId?: string | null
   drillKey?: string
   showBreadcrumb?: boolean
-  onUpdate?: (nodeId: string, measures: PNode['measures']) => void
-  onUpdateMany?: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
+  onUpdate?: (nodeId: string, measures: VizNode['measures']) => void
+  onUpdateMany?: (updates: Array<{ id: string; measures: VizNode['measures'] }>) => void
   enableNumberDrag?: {
     selector: string  // CSS selector prefix for editable elements, e.g., '[data-editable-value'
     pxPerUnit?: number
@@ -430,7 +431,7 @@ export function makeHierSource(spec: HierSpec): TileSource {
           // Clean up previous drag handlers
           for (const d of disposers.splice(0)) d()
 
-          const rootEl = (typedEl as any).getRoot?.()
+          const rootEl = (typedEl as any).getRoot?.() as HTMLElement | undefined
           if (!rootEl) return
 
           // Build a map of ALL BiNodes by id (including parents)
@@ -523,7 +524,7 @@ export function makeHierSource(spec: HierSpec): TileSource {
         const last = lastRef
         const cb = onUpdateRef.current
         const cbMany = onUpdateManyRef.current
-        const pending: Array<{ id: string; measures: PNode['measures'] }> = []
+        const pending: Array<{ id: string; measures: VizNode['measures'] }> = []
         const byId = new Map(nodesRef.current.map(n => [n.id, n]))
         for (const leaf of leavesRef.current) {
           const v = leaf.value.total.value
@@ -581,7 +582,7 @@ interface FlatDatum { id: string; name: string; value: number }
 
 export interface HierRootFlatSpec {
   tag: string
-  nodes: PNode[]
+  nodes: VizNode[]
   measureKey: string
   shapeKey: string
   /** Desired display order of root ids — e.g. sorted by aggregate value.
@@ -589,8 +590,8 @@ export interface HierRootFlatSpec {
    *  (order change = structural, per the chart's two-lane gate). */
   ids: string[]
   mountProps?: (el: HTMLElement) => void
-  onUpdate?: (nodeId: string, measures: PNode['measures']) => void
-  onUpdateMany?: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
+  onUpdate?: (nodeId: string, measures: VizNode['measures']) => void
+  onUpdateMany?: (updates: Array<{ id: string; measures: VizNode['measures'] }>) => void
 }
 
 export function makeHierRootFlatSource(spec: HierRootFlatSpec): TileSource {
@@ -639,7 +640,7 @@ export function makeHierRootFlatSource(spec: HierRootFlatSpec): TileSource {
 
     applyData(el: HTMLElement, { gestureActive, lastRef }) {
       // Apply external store changes into the live LEAF cells (same as
-      // makeHierSource) — group/root PNodes never carry the aggregate measure
+      // makeHierSource) — group/root VizNodes never carry the aggregate measure
       // themselves (only leaves do), so the only correct source of truth for
       // "did the store change externally" is each leaf's own measure. Writing
       // leaves lets the lens recompute root totals naturally; comparing/writing
@@ -695,7 +696,7 @@ export function makeHierRootFlatSource(spec: HierRootFlatSpec): TileSource {
         const cb = onUpdateRef.current
         const cbMany = onUpdateManyRef.current
         const byId = new Map(nodesRef.current.map(n => [n.id, n]))
-        const pending: Array<{ id: string; measures: PNode['measures'] }> = []
+        const pending: Array<{ id: string; measures: VizNode['measures'] }> = []
         for (const d of arr) {
           const r = rootsRef.current.find(x => x.value.id === d.id)
           if (!r) continue
@@ -744,11 +745,11 @@ export function makeHierRootFlatSource(spec: HierRootFlatSpec): TileSource {
 
 // ─── Hier value key helper (exported for use in component wrappers) ───────────
 
-export function hierValueKey(nodes: PNode[], measureKey: string): string {
+export function hierValueKey(nodes: VizNode[], measureKey: string): string {
   return nodes.map(n => `${n.id}:${vkey(n.measures[measureKey] ?? 0)}`).sort().join(',')
 }
 
-export function hierShapeKey(tag: string, nodes: PNode[], _measureKey: string, _depth?: number): string {
+export function hierShapeKey(tag: string, nodes: VizNode[], _measureKey: string, _depth?: number): string {
   // NOTE: sortBy, measureKey, and depth are intentionally excluded — those
   // changes flow through the same-shape syncFrom/applyData path so the chart
   // can animate reorder/value-swap/level enter+exit instead of remounting

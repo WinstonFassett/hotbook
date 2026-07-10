@@ -16,7 +16,7 @@
 // compatible with what `buildBiTree` produces.
 
 import { useEffect, useRef } from 'react'
-import type { PNode } from '../../persistence'
+import type { VizNode } from '../../persistence'
 import { makeHierSource, hierShapeKey, hierValueKey } from './bindTile'
 import { BrLcTile } from './BrLcTile'
 
@@ -29,10 +29,10 @@ import '@svelte-lc/lib/TreemapLC.svelte'
 import '@svelte-lc/lib/Treemap.svelte'
 
 interface HierProps {
-  nodes: PNode[]
+  nodes: VizNode[]
   measureKey: string
-  onUpdate?: (nodeId: string, measures: PNode['measures']) => void
-  onUpdateMany?: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
+  onUpdate?: (nodeId: string, measures: VizNode['measures']) => void
+  onUpdateMany?: (updates: Array<{ id: string; measures: VizNode['measures'] }>) => void
 }
 
 // Build a hier TileSource for a Svelte custom-element tag (same path as the

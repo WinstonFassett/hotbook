@@ -17,6 +17,7 @@ import {
 import type { Workspace, Dataset, Dashboard, Tile, TileKind } from './persistence'
 import { hudStore, resetHudForDataset } from './store'
 import type { TileRecord } from './DockView'
+import { DockView } from './DockView'
 import './DockView'
 import { defaultDockTree, reconcile, addTileToDock, type DockNode } from './dock'
 import { readLayoutFromURL, parseLayout } from './url-layout'
@@ -105,14 +106,14 @@ function commit(next: Workspace) {
   setCell(datasetId: string, rowId: string, measureKey: string, value: number) {
     const ds = ws.datasets.find(d => d.id === datasetId)
     if (!ds) throw new Error(`__vizform.setCell: unknown dataset ${datasetId}`)
-    const row = ds.rows.find(r => r.id === rowId)
+    const row = ds.nodes.find(r => r.id === rowId)
     if (!row) throw new Error(`__vizform.setCell: unknown row ${rowId} in ${datasetId}`)
     const measures = { ...(row.measures ?? {}), [measureKey]: value }
     commit(updateRow(ws, datasetId, rowId, { measures }))
   },
   getCell(datasetId: string, rowId: string, measureKey: string): number | undefined {
     const ds = ws.datasets.find(d => d.id === datasetId)
-    const row = ds?.rows.find(r => r.id === rowId)
+    const row = ds?.nodes.find(r => r.id === rowId)
     return row?.measures?.[measureKey]
   },
   activeDatasetId(): string | null {
@@ -121,14 +122,14 @@ function commit(next: Workspace) {
   /** Row ids in a dataset — lets a test pick a target row without scraping the DOM. */
   rowIds(datasetId: string): string[] {
     const ds = ws.datasets.find(d => d.id === datasetId)
-    return ds ? ds.rows.map(r => r.id) : []
+    return ds ? ds.nodes.map(r => r.id) : []
   },
   /** Measure keys present on any row of a dataset. */
   measureKeys(datasetId: string): string[] {
     const ds = ws.datasets.find(d => d.id === datasetId)
     if (!ds) return []
     const keys = new Set<string>()
-    for (const r of ds.rows) for (const k of Object.keys(r.measures ?? {})) keys.add(k)
+    for (const r of ds.nodes) for (const k of Object.keys(r.measures ?? {})) keys.add(k)
     return [...keys]
   },
   activeDashboardId(): string | null {
@@ -491,7 +492,7 @@ function switchDataset(id: string) {
   const dashes = dashboardsForDataset(next, id)
   const updated = { ...next, activeDashboardId: dashes[0]?.id ?? '' }
   const newDs = updated.datasets.find(d => d.id === id)
-  if (newDs) resetHudForDataset(newDs.rows)
+  if (newDs) resetHudForDataset(newDs.nodes)
   commit(updated)
 }
 
@@ -539,7 +540,7 @@ window.addEventListener('keydown', (e: KeyboardEvent) => {
     const dash = activeDashboard(ws)
     const ds = dash ? ws.datasets.find(d => d.id === dash.datasetId) : undefined
     if (!ds) return
-    const path = drillPath(ds.rows, drillNodeId)
+    const path = drillPath(ds.nodes, drillNodeId)
     const parent = path.length >= 2 ? path[path.length - 2]! : null
     e.preventDefault()
     hudStore.setDrill(focusedDrillKey, parent ? parent.id : null)
@@ -570,7 +571,8 @@ dockView.addEventListener('dockaddtile', (e: Event) => {
     const dash = activeDashboard(ws)
     if (!dash) return
     const next = addTile(ws, dash.id, kind)
-    const newTile = next.dashboards.find(d => d.id === dash.id)!.tiles.at(-1)!
+    const tiles = next.dashboards.find(d => d.id === dash.id)!.tiles
+    const newTile = tiles[tiles.length - 1]!
     const currentTree = getDockTree(dash)
     const newTree = addTileToDock(currentTree, newTile.id, groupId)
     const updatedDash = next.dashboards.find(d => d.id === dash.id)!

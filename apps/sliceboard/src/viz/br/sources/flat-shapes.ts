@@ -7,32 +7,32 @@
 
 import type { Writable } from 'bireactive'
 import type { Num } from 'bireactive'
-import type { PNode } from '../../persistence'
+import type { VizNode } from '../../../persistence'
 import { makeFlatSource } from '../bindTile'
 import type { TileSource } from '../bindTile'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-export function leavesOfNodes(nodes: PNode[]): PNode[] {
+export function leavesOfNodes(nodes: VizNode[]): VizNode[] {
   return nodes.filter(n => !nodes.some(m => m.parentId === n.id))
 }
 
-function leafIds(leaves: PNode[]): string[] {
+function leafIds(leaves: VizNode[]): string[] {
   return leaves.map(n => n.id)
 }
 
-function nameSortKey(leaves: PNode[]): string {
+function nameSortKey(leaves: VizNode[]): string {
   return [...leaves].sort((a, b) => a.id < b.id ? -1 : 1).map(n => n.name).join(',')
 }
 
-function sortedIds(leaves: PNode[]): string {
+function sortedIds(leaves: VizNode[]): string {
   return [...leafIds(leaves)].sort().join(',')
 }
 
 // ─── Bar ──────────────────────────────────────────────────────────────────────
 
 export interface BarSourceSpec {
-  nodes: PNode[]
+  nodes: VizNode[]
   measureKey: string
   maxItems?: number
   orientation?: 'vertical' | 'horizontal'
@@ -40,7 +40,7 @@ export interface BarSourceSpec {
   labelMode?: 'axis' | 'inside' | 'both'
   valueMode?: 'inside' | 'outside' | 'none'
   minBandSize?: number
-  onUpdate?: (nodeId: string, measures: PNode['measures']) => void
+  onUpdate?: (nodeId: string, measures: VizNode['measures']) => void
 }
 
 export function makeBarSource({
@@ -72,10 +72,10 @@ export function makeBarSource({
 // ─── Pie ──────────────────────────────────────────────────────────────────────
 
 export interface PieSourceSpec {
-  nodes: PNode[]
+  nodes: VizNode[]
   measureKey: string
-  onUpdate?: (nodeId: string, measures: PNode['measures']) => void
-  onUpdateMany?: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
+  onUpdate?: (nodeId: string, measures: VizNode['measures']) => void
+  onUpdateMany?: (updates: Array<{ id: string; measures: VizNode['measures'] }>) => void
 }
 
 export function makePieSource({ nodes, measureKey, onUpdate, onUpdateMany }: PieSourceSpec): TileSource {
@@ -95,9 +95,9 @@ export function makePieSource({ nodes, measureKey, onUpdate, onUpdateMany }: Pie
 // ─── Radar ────────────────────────────────────────────────────────────────────
 
 export interface RadarSourceSpec {
-  nodes: PNode[]
+  nodes: VizNode[]
   measureKey: string
-  onUpdate?: (nodeId: string, measures: PNode['measures']) => void
+  onUpdate?: (nodeId: string, measures: VizNode['measures']) => void
 }
 
 export function makeRadarSource({ nodes, measureKey, onUpdate }: RadarSourceSpec): TileSource {
@@ -117,10 +117,10 @@ export function makeRadarSource({ nodes, measureKey, onUpdate }: RadarSourceSpec
 // ─── ConcentricArc ────────────────────────────────────────────────────────────
 
 export interface ConcentricArcSourceSpec {
-  nodes: PNode[]
+  nodes: VizNode[]
   measureKey: string
   maxItems?: number
-  onUpdate?: (nodeId: string, measures: PNode['measures']) => void
+  onUpdate?: (nodeId: string, measures: VizNode['measures']) => void
 }
 
 const CONCENTRIC_PALETTE = ['#e05c5c', '#f0a742', '#4cba6e', '#5b8def', '#b76de0', '#44c4c4']
@@ -143,10 +143,10 @@ export function makeConcentricArcSource({ nodes, measureKey, maxItems, onUpdate 
 // ─── Scatter ──────────────────────────────────────────────────────────────────
 
 export interface ScatterSourceSpec {
-  nodes: PNode[]
+  nodes: VizNode[]
   xKey: string
   yKey: string
-  onUpdate?: (nodeId: string, measures: PNode['measures']) => void
+  onUpdate?: (nodeId: string, measures: VizNode['measures']) => void
 }
 
 export function makeScatterSource({ nodes, xKey, yKey, onUpdate }: ScatterSourceSpec): TileSource {
@@ -170,10 +170,10 @@ const SERIES_START = new Date(2026, 0, 1).getTime()
 const DAY_MS = 86400 * 1000
 
 export interface TimeSeriesSourceSpec {
-  nodes: PNode[]
+  nodes: VizNode[]
   measureKey: string
   tag: 'v-br-line' | 'v-br-area'
-  onUpdate?: (nodeId: string, measures: PNode['measures']) => void
+  onUpdate?: (nodeId: string, measures: VizNode['measures']) => void
 }
 
 export function makeTimeSeriesSource({ nodes, measureKey, tag, onUpdate }: TimeSeriesSourceSpec): TileSource {

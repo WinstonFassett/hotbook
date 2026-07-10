@@ -3,7 +3,7 @@ import { select } from 'd3-selection'
 import { arc as d3arc } from 'd3-shape'
 import { interpolate as d3interpolate } from 'd3-interpolate'
 import 'd3-transition'
-import type { PNode, HVizCallbacks } from '../types'
+import type { VizNode, HVizCallbacks } from '../types'
 import { motion } from '../viz/constants'
 import { buildTree, buildColorMap, buildNameMap, measureValue } from './pnodeUtils'
 
@@ -33,13 +33,13 @@ function labelArcPath(a: Arc, ringR: number): string {
 function cssId(id: string): string { return id.replace(/[^a-zA-Z0-9_-]/g, '_') }
 
 export interface SunburstMounted {
-  update(nodes: PNode[], measureKey: string): void
+  update(nodes: VizNode[], measureKey: string): void
   destroy(): void
 }
 
 export function mountSunburst(
   svgEl: SVGSVGElement,
-  nodes: PNode[],
+  nodes: VizNode[],
   measureKey: string,
   callbacks: HVizCallbacks,
 ): SunburstMounted {
@@ -202,7 +202,7 @@ export function mountSunburst(
   render()
 
   return {
-    update(nodes: PNode[], measureKey: string) {
+    update(nodes: VizNode[], measureKey: string) {
       currentNodes = nodes
       currentMeasureKey = measureKey
       render()

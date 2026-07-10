@@ -1,17 +1,17 @@
 import { colorFor } from '@winstonfassett/vizform-core'
-import type { PNode, Rollup } from '../types'
+import type { VizNode, Rollup } from '../types'
 
 export interface TreeDatum {
   id: string
   children?: TreeDatum[]
 }
 
-export function childrenOf(nodes: PNode[], parentId: string | null): PNode[] {
+export function childrenOf(nodes: VizNode[], parentId: string | null): VizNode[] {
   return nodes.filter(n => n.parentId === parentId).sort((a, b) => a.index - b.index)
 }
 
-export function descendantsOf(nodes: PNode[], rootId: string): PNode[] {
-  const out: PNode[] = []
+export function descendantsOf(nodes: VizNode[], rootId: string): VizNode[] {
+  const out: VizNode[] = []
   const stack = [rootId]
   while (stack.length) {
     const cur = stack.pop()!
@@ -25,13 +25,13 @@ export function descendantsOf(nodes: PNode[], rootId: string): PNode[] {
   return out
 }
 
-export function leavesOf(nodes: PNode[]): PNode[] {
+export function leavesOf(nodes: VizNode[]): VizNode[] {
   const hasChild = new Set(nodes.map(n => n.parentId).filter((p): p is string => !!p))
   return nodes.filter(n => !hasChild.has(n.id))
 }
 
 export function rollupMeasurement(
-  nodes: PNode[],
+  nodes: VizNode[],
   rootId: string,
   key: string,
   rollup: Rollup = 'sum',
@@ -48,7 +48,7 @@ export function rollupMeasurement(
   return all.reduce((a, b) => a + b, 0)
 }
 
-export function nodeColor(nodes: PNode[], id: string): string {
+export function nodeColor(nodes: VizNode[], id: string): string {
   const byId = new Map(nodes.map(n => [n.id, n]))
   let cur = byId.get(id)
   let root = cur
@@ -60,13 +60,13 @@ export function nodeColor(nodes: PNode[], id: string): string {
   return colorFor(root?.name ?? id)
 }
 
-export function buildColorMap(nodes: PNode[]): Map<string, string> {
+export function buildColorMap(nodes: VizNode[]): Map<string, string> {
   const m = new Map<string, string>()
   for (const n of nodes) m.set(n.id, nodeColor(nodes, n.id))
   return m
 }
 
-export function buildNameMap(nodes: PNode[]): Map<string, string> {
+export function buildNameMap(nodes: VizNode[]): Map<string, string> {
   const m = new Map<string, string>()
   for (const n of nodes) m.set(n.id, n.name)
   return m
@@ -74,8 +74,8 @@ export function buildNameMap(nodes: PNode[]): Map<string, string> {
 
 // Build a tree datum rooted at __root__ for d3-hierarchy.
 // Leaf value = own measurement[measureKey]; internal nodes sum children.
-export function buildTree(nodes: PNode[], measureKey: string): TreeDatum {
-  const byParent = new Map<string | null, PNode[]>()
+export function buildTree(nodes: VizNode[], measureKey: string): TreeDatum {
+  const byParent = new Map<string | null, VizNode[]>()
   for (const n of nodes) {
     const arr = byParent.get(n.parentId) ?? []
     arr.push(n)
@@ -92,6 +92,6 @@ export function buildTree(nodes: PNode[], measureKey: string): TreeDatum {
   return { id: '__root__', children: roots }
 }
 
-export function measureValue(nodes: PNode[], id: string, measureKey: string): number {
+export function measureValue(nodes: VizNode[], id: string, measureKey: string): number {
   return nodes.find(n => n.id === id)?.measures[measureKey] ?? 0
 }

@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useRef } from 'react'
-import type { PNode, PEdge } from '../../persistence'
+import type { VizNode, PEdge } from '../../persistence'
 import { BrLcTile } from './BrLcTile'
 import { useDrillNodeId } from '../../store-react'
 import {
@@ -79,11 +79,11 @@ function useBrElement<T extends HTMLElement>(
 // ─── Flat chart props ─────────────────────────────────────────────────────────
 
 interface FlatProps {
-  nodes: PNode[]
+  nodes: VizNode[]
   measureKey: string
   maxItems?: number
-  onUpdate?: (nodeId: string, measures: PNode['measures']) => void
-  onUpdateMany?: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
+  onUpdate?: (nodeId: string, measures: VizNode['measures']) => void
+  onUpdateMany?: (updates: Array<{ id: string; measures: VizNode['measures'] }>) => void
 }
 
 // ─── Flat live charts ─────────────────────────────────────────────────────────
@@ -112,7 +112,7 @@ export function BrLcConcentricArc({ nodes, measureKey, maxItems, onUpdate }: Fla
   return <BrLcTile source={makeConcentricArcSource({ nodes, measureKey, maxItems, onUpdate })} />
 }
 
-interface ScatterProps { nodes: PNode[]; xKey: string; yKey: string; onUpdate?: (nodeId: string, measures: PNode['measures']) => void }
+interface ScatterProps { nodes: VizNode[]; xKey: string; yKey: string; onUpdate?: (nodeId: string, measures: VizNode['measures']) => void }
 export function BrLcScatter(props: ScatterProps) {
   return <BrLcTile source={makeScatterSource(props)} />
 }
@@ -127,7 +127,7 @@ export function BrLcArea({ nodes, measureKey, onUpdate }: FlatProps) {
 
 // ─── Gauge — single scalar (not live-editable) ───────────────────────────────
 
-interface GaugeProps { nodes: PNode[]; measureKey: string; min?: number; max?: number; label?: string; color?: string }
+interface GaugeProps { nodes: VizNode[]; measureKey: string; min?: number; max?: number; label?: string; color?: string }
 
 export function BrLcGauge({ nodes, measureKey, min = 0, max = 100, label, color }: GaugeProps) {
   const leaves = nodes.filter(n => !nodes.some(m => m.parentId === n.id))
@@ -148,11 +148,11 @@ export function BrLcGaugeSegmented({ nodes, measureKey, min = 0, max = 100, labe
 // ─── Hierarchical live charts ─────────────────────────────────────────────────
 
 interface HierProps {
-  nodes: PNode[]; measureKey: string; depth?: number; sortBy?: 'index' | 'value'
+  nodes: VizNode[]; measureKey: string; depth?: number; sortBy?: 'index' | 'value'
   orientation?: 'horizontal' | 'vertical'; drillKey?: string; drillNodeId?: string | null
   showBreadcrumb?: boolean
-  onUpdate?: (nodeId: string, measures: PNode['measures']) => void
-  onUpdateMany?: (updates: Array<{ id: string; measures: PNode['measures'] }>) => void
+  onUpdate?: (nodeId: string, measures: VizNode['measures']) => void
+  onUpdateMany?: (updates: Array<{ id: string; measures: VizNode['measures'] }>) => void
 }
 
 export function BrLcPack(props: HierProps) {
@@ -206,7 +206,7 @@ export function BrLcSankeyFlow() {
 // ─── Gantt ────────────────────────────────────────────────────────────────────
 
 interface GanttProps {
-  nodes: PNode[]; startKey?: string; endKey?: string; epoch?: Date
+  nodes: VizNode[]; startKey?: string; endKey?: string; epoch?: Date
   deps?: Array<{ from: string; to: string }>; enforceDeps?: boolean
 }
 

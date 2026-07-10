@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import * as d3 from 'd3'
-import type { PNode } from '../persistence'
+import type { VizNode } from '../persistence'
 import { nodeColor, motion, explodePulse, buildVizTree, useDimensions, useAltScroll } from './util'
 
 type Node = d3.HierarchyRectangularNode<{ id: string }>
@@ -8,7 +8,7 @@ type CellEl = SVGGElement & { __layout?: CellLayout }
 type CellLayout = { x: number; y: number; w: number; h: number }
 
 interface Props {
-  nodes: PNode[]
+  nodes: VizNode[]
   measureKey: string
   hoverId: string | null
   selectionId: string | null
@@ -18,7 +18,7 @@ interface Props {
   onHover: (id: string | null) => void
   onSelect: (id: string) => void
   onFocus: (id: string) => void
-  onUpdate?: (nodeId: string, measures: PNode['measures']) => void
+  onUpdate?: (nodeId: string, measures: VizNode['measures']) => void
 }
 
 export function Icicle({ nodes, measureKey, hoverId, selectionId, focusId, depth = 2, sortBy = 'index', onHover, onSelect, onFocus, onUpdate }: Props) {

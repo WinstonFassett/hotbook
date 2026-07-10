@@ -2,7 +2,7 @@ import * as d3 from 'd3-hierarchy'
 import { select } from 'd3-selection'
 import { interpolateObject } from 'd3-interpolate'
 import 'd3-transition'
-import type { PNode, HVizCallbacks } from '../types'
+import type { VizNode, HVizCallbacks } from '../types'
 import { motion } from '../viz/constants'
 import { buildTree, buildColorMap, buildNameMap, measureValue } from './pnodeUtils'
 
@@ -14,13 +14,13 @@ type RNode = d3.HierarchyRectangularNode<Datum>
 type CellEl = SVGGElement & { __layout?: { x: number; y: number; w: number; h: number } }
 
 export interface IcicleMounted {
-  update(nodes: PNode[], measureKey: string): void
+  update(nodes: VizNode[], measureKey: string): void
   destroy(): void
 }
 
 export function mountIcicle(
   svgEl: SVGSVGElement,
-  nodes: PNode[],
+  nodes: VizNode[],
   measureKey: string,
   callbacks: HVizCallbacks,
 ): IcicleMounted {
@@ -128,7 +128,7 @@ export function mountIcicle(
   render()
 
   return {
-    update(nodes: PNode[], measureKey: string) {
+    update(nodes: VizNode[], measureKey: string) {
       currentNodes = nodes
       currentMeasureKey = measureKey
       render()

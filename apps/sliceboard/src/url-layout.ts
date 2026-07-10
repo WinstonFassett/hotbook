@@ -30,26 +30,32 @@ import type { TileKind, Dashboard, Tile } from './persistence'
 
 // ─── Parse ────────────────────────────────────────────────────────────────────
 
+// Common shorthands
+const shorthands: Record<string, TileKind> = {
+  'treetable': 'br-lc-treetable',
+  'bar': 'br-lc-bar',
+  'line': 'br-lc-line',
+  'area': 'br-lc-area',
+  'scatter': 'br-lc-scatter',
+  'pie': 'br-lc-pie',
+  'radar': 'br-lc-radar',
+  'pack': 'br-lc-pack',
+  'treemap': 'br-lc-treemap',
+  'icicle': 'br-lc-icicle',
+  'sunburst': 'br-lc-sunburst',
+  'sankey': 'br-lc-sankey',
+  'tree': 'br-lc-tree',
+  'gantt': 'br-lc-gantt',
+}
+
+const reverseShorthands: Record<TileKind, string> = {} as Record<TileKind, string>
+for (const [short, kind] of Object.entries(shorthands)) {
+  reverseShorthands[kind as TileKind] = short
+}
+
 /** Expand shorthand chart names to full TileKind.
  *  bar → br-lc-bar, line → br-lc-line, etc. */
 function expandShorthand(kindStr: string): TileKind {
-  // Common shorthands
-  const shorthands: Record<string, TileKind> = {
-    'treetable': 'br-lc-treetable',
-    'bar': 'br-lc-bar',
-    'line': 'br-lc-line',
-    'area': 'br-lc-area',
-    'scatter': 'br-lc-scatter',
-    'pie': 'br-lc-pie',
-    'radar': 'br-lc-radar',
-    'pack': 'br-lc-pack',
-    'treemap': 'br-lc-treemap',
-    'icicle': 'br-lc-icicle',
-    'sunburst': 'br-lc-sunburst',
-    'sankey': 'br-lc-sankey',
-    'tree': 'br-lc-tree',
-    'gantt': 'br-lc-gantt',
-  }
   return (shorthands[kindStr] || kindStr) as TileKind
 }
 
@@ -194,6 +200,36 @@ export function parseLayout(
     console.error('[url-layout] Failed to parse layout:', e)
     return { dock: null, missingKinds: [] }
   }
+}
+
+// ─── Serialize ─────────────────────────────────────────────────────────────────
+
+function kindToString(kind: TileKind): string {
+  return reverseShorthands[kind] ?? kind
+}
+
+/** Serialize a DockNode tree back to a layout string. */
+export function serializeLayout(dock: DockNode | null, tiles: Tile[]): string {
+  if (!dock) return ''
+  const tilesById = new Map(tiles.map(t => [t.id, t]))
+
+  function panelKind(panel: DockPanel): string {
+    const tile = tilesById.get(panel.tileId)
+    return tile ? kindToString(tile.kind) : panel.tileId
+  }
+
+  function groupToString(group: DockGroup): string {
+    if (group.panels.length === 1) return panelKind(group.panels[0]!)
+    return `(${group.panels.map(panelKind).join('+')})`
+  }
+
+  function nodeToString(node: DockNode): string {
+    if (node.kind === 'group') return groupToString(node)
+    const sep = node.direction === 'col' ? '/' : '|'
+    return node.children.map(nodeToString).join(sep)
+  }
+
+  return nodeToString(dock)
 }
 
 // ─── URL integration ──────────────────────────────────────────────────────────

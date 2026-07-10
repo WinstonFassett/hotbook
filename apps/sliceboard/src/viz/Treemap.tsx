@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef } from 'react'
 import * as d3 from 'd3'
-import type { PNode } from '../persistence'
+import type { VizNode } from '../persistence'
 import { nodeColor, motion, buildVizTree, useDimensions, useAltScroll } from './util'
 import type { MotionSpec } from './util'
 
@@ -24,7 +24,7 @@ interface ChartState {
 }
 
 interface Props {
-  nodes: PNode[]
+  nodes: VizNode[]
   measureKey: string
   hoverId: string | null
   selectionId: string | null
@@ -35,7 +35,7 @@ interface Props {
   onHover: (id: string | null) => void
   onSelect: (id: string) => void
   onFocus: (id: string) => void
-  onUpdate?: (nodeId: string, measures: PNode['measures']) => void
+  onUpdate?: (nodeId: string, measures: VizNode['measures']) => void
 }
 
 export function Treemap({ nodes, measureKey, hoverId, selectionId, focusId, depth = 2, sortBy = 'index', onHover, onSelect, onFocus, onUpdate }: Props) {
@@ -134,7 +134,7 @@ export function Treemap({ nodes, measureKey, hoverId, selectionId, focusId, dept
 }
 
 function renderView(
-  ctx: ChartState, focus: RNode, nodes: PNode[], measureKey: string, maxDepth: number,
+  ctx: ChartState, focus: RNode, nodes: VizNode[], measureKey: string, maxDepth: number,
   onHover: (id: string | null) => void, onSelect: (id: string) => void, onFocus: (id: string) => void,
 ) {
   // Collect descendants of focus within maxDepth levels, sorted by depth so children render on top of parents
@@ -200,14 +200,14 @@ function position(ctx: ChartState, sel: d3.Selection<SVGGElement, any, any, any>
     .attr('height', d => Math.max(0, y(d.y1) - y(d.y0)))
 }
 
-function updateHeader(ctx: ChartState, focus: RNode, nodes: PNode[]) {
+function updateHeader(ctx: ChartState, focus: RNode, nodes: VizNode[]) {
   ctx.header.attr('cursor', focus.depth > 0 ? 'pointer' : 'default')
   ctx.header.select('text.tm-header-name').text(headerLabel(focus, nodes))
   ctx.header.select('text.tm-header-hint').text(focus.depth > 0 ? '↑ ZOOM OUT' : '').attr('x', ctx.w - 8)
 }
 
 function zoomTo(
-  ctx: ChartState, target: RNode, nodes: PNode[], measureKey: string, maxDepth: number, move: MotionSpec,
+  ctx: ChartState, target: RNode, nodes: VizNode[], measureKey: string, maxDepth: number, move: MotionSpec,
   onHover: (id: string | null) => void, onSelect: (id: string) => void, onFocus: (id: string) => void,
 ) {
   const dir = isDescendant(target, ctx.focus) ? 'in' : 'out'
@@ -287,7 +287,7 @@ function isDescendant(d: RNode, ancestor: RNode): boolean {
   return false
 }
 
-function headerLabel(focus: RNode, nodes: PNode[]): string {
+function headerLabel(focus: RNode, nodes: VizNode[]): string {
   if (focus.depth === 0) return 'ALL'
   const path: string[] = []
   let cur: RNode | null = focus
@@ -298,7 +298,7 @@ function headerLabel(focus: RNode, nodes: PNode[]): string {
   return path.join('  ›  ')
 }
 
-function parentOrLeafLabel(d: RNode, nodes: PNode[], cw: number, ch: number, parent: boolean): string {
+function parentOrLeafLabel(d: RNode, nodes: VizNode[], cw: number, ch: number, parent: boolean): string {
   // Parent: needs width and at least the label strip height (PARENT_LABEL_H = 18). Leaf: needs ch >= 22.
   if (cw < 44) return ''
   if (!parent && ch < 22) return ''
@@ -308,7 +308,7 @@ function parentOrLeafLabel(d: RNode, nodes: PNode[], cw: number, ch: number, par
   return name.length > max ? name.slice(0, max) + '…' : name
 }
 
-function valueFor(d: RNode, nodes: PNode[], measureKey: string, cw: number, ch: number): string {
+function valueFor(d: RNode, nodes: VizNode[], measureKey: string, cw: number, ch: number): string {
   if (cw < 56 || ch < 36) return ''
   const n = nodes.find(n => n.id === d.data.id)
   const v = n?.measures[measureKey] ?? d.value ?? 0

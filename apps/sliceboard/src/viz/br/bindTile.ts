@@ -19,14 +19,14 @@ import {
   makeHierRootFlatSource,
   hierShapeKey,
   hierValueKey,
-} from '@winstonfassett/vizform-vanilla-d3/host/tile-binder'
+} from '@winstonfassett/vizform-vanilla-d3'
 import type {
   TileSource,
   TileController,
   FlatSpec,
   HierSpec,
   HierRootFlatSpec,
-} from '@winstonfassett/vizform-vanilla-d3/host/tile-binder'
+} from '@winstonfassett/vizform-vanilla-d3'
 import { hudStore } from '../../store'
 
 export type { TileSource, TileController, FlatSpec, HierSpec, HierRootFlatSpec }

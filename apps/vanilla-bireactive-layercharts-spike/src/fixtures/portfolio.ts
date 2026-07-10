@@ -1,23 +1,23 @@
 import { group, leaf, type BiNode } from "@winstonfassett/vizform-charts";
 
 export function portfolio(): BiNode {
-  return group("Portfolio", "#222", [
-    group("Tech", "#5b8def", [
-      leaf("AAPL", 35, "#86acf5"),
-      leaf("MSFT", 28, "#86acf5"),
-      leaf("NVDA", 22, "#86acf5"),
+  return group("portfolio", "Portfolio", "#222", [
+    group("tech", "Tech", "#5b8def", [
+      leaf("aapl", "AAPL", 35, "#86acf5"),
+      leaf("msft", "MSFT", 28, "#86acf5"),
+      leaf("nvda", "NVDA", 22, "#86acf5"),
     ]),
-    group("Finance", "#7ed321", [
-      leaf("JPM", 18, "#a6df5e"),
-      leaf("BRK", 14, "#a6df5e"),
+    group("finance", "Finance", "#7ed321", [
+      leaf("jpm", "JPM", 18, "#a6df5e"),
+      leaf("brk", "BRK", 14, "#a6df5e"),
     ]),
-    group("Energy", "#f5a623", [
-      leaf("XOM", 10, "#f7be5a"),
-      leaf("SHEL", 8, "#f7be5a"),
+    group("energy", "Energy", "#f5a623", [
+      leaf("xom", "XOM", 10, "#f7be5a"),
+      leaf("shel", "SHEL", 8, "#f7be5a"),
     ]),
-    group("Health", "#e25c5c", [
-      leaf("JNJ", 9, "#ec8a8a"),
-      leaf("PFE", 6, "#ec8a8a"),
+    group("health", "Health", "#e25c5c", [
+      leaf("jnj", "JNJ", 9, "#ec8a8a"),
+      leaf("pfe", "PFE", 6, "#ec8a8a"),
     ]),
   ]);
 }

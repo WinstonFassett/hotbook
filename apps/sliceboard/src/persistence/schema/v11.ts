@@ -1,6 +1,6 @@
-import type { PNode, PEdge, ScalingMode } from '@winstonfassett/vizform-core'
+import type { VizNode, PNode, PEdge, ScalingMode } from '@winstonfassett/vizform-core'
 
-export type { PNode, PEdge }
+export type { VizNode, PNode, PEdge }
 
 // Minimal shape of the legacy grid layout items — kept for persistence compatibility
 // with stored dashboards. The dock model replaces the grid in the new shell.
@@ -38,7 +38,7 @@ export interface Dataset {
   name: string
   createdAt: string
   shape: 'flat' | 'tree' | 'graph'
-  rows: PNode[]
+  nodes: VizNode[]
   edges?: PEdge[]
   measureDefs: MeasureDef[]
   dimDefs: DimDef[]
@@ -128,7 +128,7 @@ export interface Dashboard {
   /** Legacy single drill scope - migrated to drills['default'] on load. */
   drillNodeId?: string | null
   /** Persisted dock tree. If absent, synthesized from tiles. */
-  dockTree?: import('../dock').DockNode | null
+  dockTree?: import('../../dock').DockNode | null
 }
 
 // ─── Workspace ────────────────────────────────────────────────────────────────

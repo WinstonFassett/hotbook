@@ -214,8 +214,8 @@ export function attachCartesianGestures<TData>(
   host.addEventListener("pointermove", onPointerMove);
 
   // ── Cross-tile sync bridge ──────────────────────────────────────────────
-  // Flat datums carry no PNode id, so the bridge keys on the datum's index in
-  // `order()`; the React wrapper maps index ↔ PNode id via its parallel `ids[]`.
+  // Flat datums carry no VizNode id, so the bridge keys on the datum's index in
+  // `order()`; the React wrapper maps index ↔ VizNode id via its parallel `ids[]`.
   const idOf = (d: TData | null): string | null =>
     d == null ? null : ((d as { id?: string }).id ?? null);
   const datumAt = (id: string | null): TData | null => {
