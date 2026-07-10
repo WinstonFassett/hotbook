@@ -8,6 +8,6 @@
   },
   "dependencies": {
     "bireactive": "^0.3.4",
-    "@winstonfassett/vizform-charts": "*"
+    "@hotbook/bireactive": "*"
   }
 }

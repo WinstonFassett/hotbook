@@ -1,0 +1,50 @@
+{
+  "name": "@hotbook/react-d3",
+  "version": "0.1.0",
+  "description": "hotbook React D3 adapter \u2014 thin wrappers over @hotbook/d3 for use in React apps and APITable.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/WinstonFassett/vizform.git",
+    "directory": "packages/react-d3"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": {
+      "node": {
+        "types": "./src/index.ts",
+        "import": "./src/index.ts"
+      },
+      "types": "./dist/index.d.ts",
+      "import": "./dist/react-d3.js",
+      "require": "./dist/react-d3.umd.cjs"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "vite build",
+    "watch": "vite build --watch"
+  },
+  "peerDependencies": {
+    "react": ">=17"
+  },
+  "dependencies": {
+    "@hotbook/bireactive": "*",
+    "@hotbook/d3": "*"
+  },
+  "devDependencies": {
+    "@types/react": "^18.0.0",
+    "@vitejs/plugin-react": "^4.0.0",
+    "react": "^18.0.0",
+    "typescript": "^5.9.3",
+    "vite": "^6.0.0",
+    "vite-plugin-dts": "^4.0.0"
+  }
+}

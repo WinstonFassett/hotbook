@@ -1,0 +1,22 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": false,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "paths": {
+      "@bireactive": ["../../node_modules/bireactive/dist/index.d.ts"],
+      "@bireactive/*": ["../../node_modules/bireactive/dist/*/index.d.ts"]
+    }
+  },
+  "include": ["src"]
+}

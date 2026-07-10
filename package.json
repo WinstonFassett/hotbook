@@ -1,5 +1,5 @@
 {
-  "name": "vizform",
+  "name": "hotbook",
   "private": true,
   "workspaces": [
     "packages/*",
@@ -7,13 +7,13 @@
   ],
   "scripts": {
     "build": "bash scripts/build-site.sh",
-    "build:sliceboard": "npm run build -w packages/vizform-vanilla-d3 && npm run build -w packages/vizform-react-d3 && npm run build -w apps/sliceboard",
+    "build:hotbook": "npm run build -w packages/d3 && npm run build -w packages/react-d3 && npm run build -w apps/hotbook",
     "dev:docs": "npm run dev -w apps/docs",
-    "dev:sliceboard": "npm run dev -w apps/sliceboard",
+    "dev:hotbook": "npm run dev -w apps/hotbook",
     "dev:vanilla-bireactive": "npm run dev -w apps/vanilla-bireactive-spike",
     "dev:vanilla-bireactive-layercharts": "npm run dev -w apps/vanilla-bireactive-layercharts-spike",
-    "dev:vanilla-bireactive-native-layout": "npm run demo -w packages/vizform-layout",
-    "dev": "concurrently -n sliceboard,vanilla-bireactive-layercharts \"npm run dev -w apps/sliceboard\" \"npm run dev -w apps/vanilla-bireactive-layercharts-spike\"",
+    "dev:vanilla-bireactive-native-layout": "npm run demo -w packages/layout",
+    "dev": "concurrently -n hotbook,vanilla-bireactive-layercharts \"npm run dev -w apps/hotbook\" \"npm run dev -w apps/vanilla-bireactive-layercharts-spike\"",
     "postinstall": "patch-package"
   },
   "devDependencies": {

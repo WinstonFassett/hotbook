@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@winstonfassett/vizform-charts": "*",
+    "@hotbook/bireactive": "*",
     "@types/d3-hierarchy": "^3.1.7",
     "@types/d3-sankey": "^0.12.5",
     "@types/d3-scale-chromatic": "^3.1.0",

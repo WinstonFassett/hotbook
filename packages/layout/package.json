@@ -1,0 +1,31 @@
+{
+  "name": "@hotbook/layout",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "./src/index.ts",
+  "module": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "files": ["src", "dist"],
+  "scripts": {
+    "demo": "vite"
+  },
+  "dependencies": {
+    "bireactive": "^0.3.5",
+    "@dagrejs/dagre": "^1.1.4",
+    "@xyflow/system": "^0.0.50",
+    "d3-force": "^3.0.0",
+    "d3-hierarchy": "^3.1.2"
+  },
+  "devDependencies": {
+    "@types/d3-force": "^3.0.10",
+    "@types/d3-hierarchy": "^3.1.7",
+    "typescript": "^5.7.2",
+    "vite": "^6.3.5"
+  }
+}
