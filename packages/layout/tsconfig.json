@@ -15,7 +15,13 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "paths": {
       "@bireactive": ["../../node_modules/bireactive/dist/index.d.ts"],
-      "@bireactive/*": ["../../node_modules/bireactive/dist/*/index.d.ts"]
+      "@bireactive/*": ["../../node_modules/bireactive/dist/*/index.d.ts"],
+      "@hotbook/core": ["../core/src"],
+      "@hotbook/bireactive": ["../bireactive/src"],
+      "@hotbook/d3": ["../d3/src"],
+      "@hotbook/layout": ["../layout/src"],
+      "@hotbook/react-d3": ["../react-d3/src"],
+      "@hotbook/apitable": ["../apitable/src"]
     }
   },
   "include": ["src"]

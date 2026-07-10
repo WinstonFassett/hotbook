@@ -1,11 +1,11 @@
-# @winstonfassett/vizform-core
+# @hotbook/core
 
 Pure D3 + TypeScript visualization engine. No framework dependencies. Renders proportional and hierarchical data as SVG into any container element.
 
 ## Install
 
 ```sh
-npm install @winstonfassett/vizform-core
+npm install @hotbook/core
 ```
 
 ## Flat visualizations
@@ -13,8 +13,8 @@ npm install @winstonfassett/vizform-core
 `VizRenderer` handles single-level (flat) data across three modes: `treemap`, `radial`, and `bands`.
 
 ```ts
-import { VizRenderer } from '@winstonfassett/vizform-core'
-import type { Goal, ViewMode } from '@winstonfassett/vizform-core'
+import { VizRenderer } from '@hotbook/core'
+import type { Goal, ViewMode } from '@hotbook/core'
 
 const goals: Goal[] = [
   { id: 'a', name: 'Alpha', color: '#e06c75', measurements: { value: 40 }, archived: false, tags: [], urgent: false, important: false, createdAt: '', updatedAt: '' },
@@ -40,8 +40,8 @@ renderer.destroy()
 Three mount functions for nested data: `mountTreemap`, `mountIcicle`, `mountSunburst`.
 
 ```ts
-import { mountTreemap } from '@winstonfassett/vizform-core'
-import type { GoalTree } from '@winstonfassett/vizform-core'
+import { mountTreemap } from '@hotbook/core'
+import type { GoalTree } from '@hotbook/core'
 
 const tree: GoalTree = {
   id: '__root__', name: 'All', color: '#333', value: 0,
@@ -70,4 +70,4 @@ mounted.destroy()
 | `GoalTree` | type | Nested data record for hierarchical viz |
 | `ViewMode` | type | `'treemap' \| 'radial' \| 'bands' \| 'h-treemap' \| 'h-icicle' \| 'h-radial'` |
 
-Most users will want [`vizform-react`](../vizform-react) or [`vizform-element`](../vizform-element) instead of calling this directly.
+Most users will want [`react-d3`](../react-d3) or [`bireactive`](../bireactive) instead of calling this directly.

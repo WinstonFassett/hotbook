@@ -9,31 +9,31 @@ D3-based proportional and hierarchical visualization library — framework-agnos
 ```mermaid
 graph LR
   subgraph lib["lib"]
-    core["vizform-core"]
-    charts["vizform-charts"]
-    vanilla["vizform-vanilla-d3"]
-    react["vizform-react-d3"]
+    core["core"]
+    charts["bireactive"]
+    vanilla["d3"]
+    react["react-d3"]
   end
   subgraph app["app"]
-    apitable["vizform-apitable"]
-    sliceboard["sliceboard"]
+    apitable["apitable"]
+    hotbook["hotbook"]
   end
 
   vanilla --> core
   vanilla --> charts
   react --> vanilla
   apitable --> react
-  sliceboard --> vanilla
+  hotbook --> vanilla
 ```
 
 | Package | Description |
 |---|---|
-| [`vizform-core`](packages/vizform-core) | Core data structures and utilities. Framework-agnostic. |
-| [`vizform-charts`](packages/vizform-charts) | Chart type definitions and metadata. |
-| [`vizform-vanilla-d3`](packages/vizform-vanilla-d3) | Pure D3 + TypeScript visualization engine, zero framework deps. |
-| [`vizform-react-d3`](packages/vizform-react-d3) | React adapter for vizform-vanilla-d3 charts. |
-| [`vizform-apitable`](packages/vizform-apitable) | APITable widget wrapping `vizform-react-d3`. |
-| [`apps/sliceboard`](apps/sliceboard) | Multi-board demo: editable table + live viz with multiple chart types. |
+| [`core`](packages/core) | Core data structures and utilities. Framework-agnostic. |
+| [`bireactive`](packages/bireactive) | Chart type definitions and metadata. |
+| [`d3`](packages/d3) | Pure D3 + TypeScript visualization engine, zero framework deps. |
+| [`react-d3`](packages/react-d3) | React adapter for d3 charts. |
+| [`apitable`](packages/apitable) | APITable widget wrapping `react-d3`. |
+| [`apps/hotbook`](apps/hotbook) | Multi-board demo: editable table + live viz with multiple chart types. |
 
 ## Visualization modes
 

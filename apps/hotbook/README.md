@@ -1,4 +1,4 @@
-# sliceboard
+# hotbook
 
 Demo app for [vizform](../../README.md). Multi-board data table with live proportional and hierarchical visualizations.
 
@@ -15,7 +15,7 @@ Demo app for [vizform](../../README.md). Multi-board data table with live propor
 
 ```sh
 npm install        # from repo root
-npm run dev -w apps/sliceboard
+npm run dev -w apps/hotbook
 ```
 
 Opens at `http://localhost:5173`.
@@ -23,7 +23,7 @@ Opens at `http://localhost:5173`.
 ## Build
 
 ```sh
-npm run build -w apps/sliceboard
+npm run build -w apps/hotbook
 ```
 
 Deployed to Netlify on push to `main` via [`netlify.toml`](../../netlify.toml).

@@ -3,8 +3,8 @@
 
 [build]
   base    = ""
-  command = "npm run build:sliceboard"
-  publish = "apps/sliceboard/dist"
+  command = "npm run build:hotbook"
+  publish = "apps/hotbook/dist"
 
 [build.environment]
   NODE_VERSION = "22"

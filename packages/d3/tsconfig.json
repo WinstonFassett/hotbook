@@ -14,7 +14,13 @@
     "strict": true,
     "baseUrl": ".",
     "paths": {
-      "d3-*": ["../../node_modules/@types/d3-*"]
+      "d3-*": ["../../node_modules/@types/d3-*"],
+      "@hotbook/core": ["../core/src"],
+      "@hotbook/bireactive": ["../bireactive/src"],
+      "@hotbook/d3": ["../d3/src"],
+      "@hotbook/layout": ["../layout/src"],
+      "@hotbook/react-d3": ["../react-d3/src"],
+      "@hotbook/apitable": ["../apitable/src"]
     }
   },
   "include": ["src"]

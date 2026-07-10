@@ -17,7 +17,7 @@ Two assertions every chart in the sweep must pass:
       (R1; opt-in per chart since not every chart reorders.)
 
 Value-edit driver: `window.__vizform.setCell(dsId, rowId, measureKey, v)` is
-registered by apps/sliceboard/src/main.ts (DEV builds only) and takes the exact
+registered by apps/hotbook/src/main.ts (DEV builds only) and takes the exact
 same code path as a treetable numberDrag commit — `commit(updateRow(ws, ...))`.
 This retires the earlier driver-tile approach (numberDrag scrubber on a
 co-mounted treetable/scatter), which was blocked by:
@@ -40,7 +40,7 @@ Usage from a per-chart fixture:
 Run directly to self-test against treemap (WIN-127 fix landed):
     uv run --with playwright python tests/e2e/r2_harness.py
 
-Env: BASE_URL (default http://sliceboard.localhost:1355). Point at a Netlify
+Env: BASE_URL (default http://hotbook.localhost:1355). Point at a Netlify
 deploy preview to verify a PR without a local dev server.
 """
 
@@ -48,7 +48,7 @@ import os
 import sys
 from playwright.sync_api import sync_playwright
 
-BASE = os.environ.get("BASE_URL", "http://sliceboard.localhost:1355")
+BASE = os.environ.get("BASE_URL", "http://hotbook.localhost:1355")
 URL = f"{BASE}/sliceboard/"
 
 def _short(tag: str) -> str:
@@ -115,7 +115,7 @@ class R2Harness:
         if not ok:
             raise RuntimeError(
                 "window.__vizform.setCell is not available — is this a DEV build of sliceboard? "
-                "The hook is registered in apps/sliceboard/src/main.ts under `if (import.meta.env.DEV)`."
+                "The hook is registered in apps/hotbook/src/main.ts under `if (import.meta.env.DEV)`."
             )
 
     # ── geometry sampling ─────────────────────────────────────────────────────

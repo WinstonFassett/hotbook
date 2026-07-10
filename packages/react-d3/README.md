@@ -1,11 +1,11 @@
-# @winstonfassett/vizform-react
+# @hotbook/react-d3
 
-React adapter for [vizform-core](../vizform-core). Exports `<Viz>` for flat data and `<HViz>` for hierarchical data.
+React adapter for [core](../core). Exports `<Viz>` for flat data and `<HViz>` for hierarchical data.
 
 ## Install
 
 ```sh
-npm install @winstonfassett/vizform-react @winstonfassett/vizform-core
+npm install @hotbook/react-d3 @hotbook/core
 ```
 
 Requires React ≥ 17 as a peer dependency.
@@ -13,8 +13,8 @@ Requires React ≥ 17 as a peer dependency.
 ## `<Viz>` — flat data
 
 ```tsx
-import { Viz, pickColor } from '@winstonfassett/vizform-react'
-import type { Goal } from '@winstonfassett/vizform-react'
+import { Viz, pickColor } from '@hotbook/react-d3'
+import type { Goal } from '@hotbook/react-d3'
 
 const goals: Goal[] = [
   { id: 'a', name: 'Alpha', color: pickColor(0), measurements: { value: 40 }, archived: false, tags: [], urgent: false, important: false, createdAt: '', updatedAt: '' },
@@ -34,8 +34,8 @@ The component fills its parent container. Give the parent a defined height.
 ## `<HViz>` — hierarchical data
 
 ```tsx
-import { HViz } from '@winstonfassett/vizform-react'
-import type { GoalTree } from '@winstonfassett/vizform-react'
+import { HViz } from '@hotbook/react-d3'
+import type { GoalTree } from '@hotbook/react-d3'
 
 const tree: GoalTree = {
   id: '__root__', name: 'All', color: '#333', value: 0,
@@ -63,6 +63,6 @@ const tree: GoalTree = {
 | `Viz` | component | Flat visualization |
 | `HViz` | component | Hierarchical visualization |
 | `pickColor` | function | Default palette by index |
-| `Goal` | type | re-export from vizform-core |
-| `GoalTree` | type | re-export from vizform-core |
-| `ViewMode` | type | re-export from vizform-core |
+| `Goal` | type | re-export from core |
+| `GoalTree` | type | re-export from core |
+| `ViewMode` | type | re-export from core |
