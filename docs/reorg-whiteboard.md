@@ -696,3 +696,4 @@ The recursive bit: the `sourceId` of an `UpdatableViewQuery` can point to a base
 - `apps/hotbook` has `persistence/` and `store/` — these are host-level, not kernel-level. The kernel should be ephemeral.
 - `matchina` is a typed state-machine library. It is not installed yet. It is a lifecycle utility, not a `NodeStore` strategy.
 - The `bireactive` version in `package.json` is `^0.3.5` in root but `^0.3.4` in packages. Align.
+- **TanStack DB** (beta) is a close conceptual match: `Collection` = `UpdatableDataSource`, `LiveQuery` result = `UpdatableView`, `LiveQuery` definition = `UpdatableViewQuery`, `queryOnce` = one-shot, `optimistic mutations`/`transaction` = `PatchContext` (`updateNow`/`updatePending`), `$synced`/`$origin` = `phase`/`origin`. It has `where`, `select`, `join`, `groupBy`, `aggregate`, `orderBy`, `limit`, `offset` in the query builder, and `d2ts` for incremental live updates. This may be a viable default substrate for the app layer.
