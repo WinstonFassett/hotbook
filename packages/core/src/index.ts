@@ -8,3 +8,24 @@ export type {
 export { PALETTE, pickColor, colorFor } from './colors'
 export { buildTree, applyView, drillPath, leavesOf } from './data-ops'
 export type { TreeNode } from './data-ops'
+
+// State machine
+export {
+  createUpdateLifecycleMachine,
+  createIdleTrigger,
+  type UpdateLifecycleState,
+  type UpdateLifecycleEvent,
+  type UpdateLifecycleMachine,
+} from './state'
+
+// Edit primitives
+export {
+  updateValue,
+  moveNode,
+  addNode,
+  removeNode,
+  batch,
+  transaction,
+  type ChangeCallback,
+  type DatasetLike,
+} from './edit'
