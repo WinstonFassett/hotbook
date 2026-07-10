@@ -379,12 +379,22 @@ interface Source<N = NodeLike> {
   getNodes(): Promise<N[]> | N[]
   // optional patch stream for live sources (Yjs, Braid, CRDT, etc.)
   subscribe?(fn: (patch: Patch<N>) => void): () => void
+  // optional apply for mutable sources
+  applyPatch?(patch: Patch<N>): void
   // optional explicit load for CSV / remote
   load?(): Promise<void>
 }
 
 // DataSource is any Source the workspace knows about.
 interface DataSource extends Source {}
+
+// A QuerySource is a Source derived by applying a Query to a base Source.
+// It re-runs the query when the base source changes and can translate patches
+// from the queried view back to the base source.
+interface QuerySource<N = NodeLike> extends Source<N> {
+  baseSourceId: string
+  query: Query
+}
 
 interface ViewConfig {
   kind: 'bar' | 'line' | 'pack' | 'table' | ...
@@ -394,6 +404,7 @@ interface ViewConfig {
   // chart-specific options
 }
 
+// DataView is a workspace-level declaration of a view.
 interface DataView {
   id: string
   query: Query
@@ -405,6 +416,15 @@ interface DataView {
 interface Workspace {
   dataSources: DataSource[]
   views: DataView[]
+}
+
+// Runtime object created by the viewer from a DataView + DataSource.
+interface View<N = NodeLike> {
+  spec: DataView
+  source: Source<N>
+  querySource: QuerySource<N>
+  adapter: NodeStore<N> // the living adapter
+  chart: Chart<N>
 }
 ```
 
@@ -418,6 +438,10 @@ flowchart TB
       dv["DataView(query, adapter, config)"]
     end
 
+    subgraph QuerySource
+      qs["QuerySource\n(base source + query)"]
+    end
+
     subgraph Adapter
       a["Living adapter\nNodeStore / NodeBinding"]
     end
@@ -426,24 +450,29 @@ flowchart TB
       c["Chart"]
     end
 
-    s -->|getNodes / subscribe| a
-    q -->|apply query| a
-    dv -->|selects adapter| a
+    s -->|base data| qs
+    q -->|applied to| qs
+    dv -->|selects| qs
+    dv -->|selects| a
+    qs -->|getNodes / subscribe| a
     a -->|subscribe| c
     c -->|applyPatch| a
-    a -->|forward| s
+    a -->|forward| qs
+    qs -->|translate| s
 ```
 
 The viewer:
 
 1. Resolves `view.query.sourceId` to a `Source`.
-2. Picks the `Adapter` strategy by `view.adapter` (e.g. `bireactive`, `d3`, `svelte`).
-3. Creates the adapter and connects it to the source.
-4. The adapter applies the query and materializes a `NodeStore` / `NodeBinding`.
+2. Creates a `QuerySource` from `Source + view.query`.
+3. Picks the `Adapter` strategy by `view.adapter` (e.g. `bireactive`, `d3`, `svelte`).
+4. Creates the adapter and connects it to the `QuerySource`.
 5. The chart subscribes to the adapter; user edits call `adapter.applyPatch`.
-6. The adapter forwards source changes to the chart and chart changes back to the source.
+6. For `updateNow` patches, the adapter forwards to the `QuerySource`, which translates the patch back to the base `Source`.
 
-The same source can support multiple adapters in parallel. Each adapter has its own `NodeStore` keyed by `source.id + query.key() + adapter`.
+The `DataView` is the workspace declaration. The runtime `View` is `{ spec, source, querySource, adapter, chart }`.
+
+The same `Source` can support multiple `QuerySource`s and multiple adapters in parallel. Each adapter is keyed by `source.id + query.key() + adapter`.
 
 ### Sources
 
@@ -480,15 +509,17 @@ The `Source` can be queried by the `Adapter` or can pre-apply the query itself (
 
 ### Adapters
 
-An `Adapter` is a living strategy that connects a `Source` to a `Chart`.
+An `Adapter` is a living strategy that connects a `Source` to a `Chart`. It is created with a `QuerySource` and knows how to update the source using patches.
 
 ```ts
 interface AdapterFactory {
   key: string
-  create<N = NodeLike>(source: Source<N>, query: Query): NodeStore<N>
+  create<N = NodeLike>(querySource: QuerySource<N>): NodeStore<N>
 }
 
 interface NodeStore<N = NodeLike> {
+  // the source this adapter is bound to
+  source: Source<N>
   // current view
   getNodes(): N[]
   // source / view changes
@@ -499,6 +530,8 @@ interface NodeStore<N = NodeLike> {
   batch?<R>(fn: () => R): R
 }
 ```
+
+The `NodeStore` is the public interface of the adapter. The concrete adapter (e.g. `BireactiveNodeStore`) keeps a reference to the `QuerySource` and forwards `updateNow` patches to `source.applyPatch`. Pending updates stay local.
 
 The `Adapter` is the strategy. The `DataView` selects it by key. `bireactive` is one adapter; `d3` is another; `svelte` is another. The same source can have multiple adapters in parallel, each keyed by `source.id + query.key() + adapter`.
 
@@ -525,22 +558,21 @@ This means the `NodeStore` is the place where pending and committed states coexi
 
 The app shell can use **TanStack Query** (or any `queryKey`/`queryFn` cache) for the data-view layer:
 
-- `queryKey` = `source.id + query.key() + adapter`.
-- `queryFn` = `() => adapter.create(source, query).getNodes()`.
+- `queryKey` = `querySource.baseSourceId + querySource.query.key() + adapter`.
+- `queryFn` = `() => adapter.create(querySource).getNodes()`.
 - `useQuery(queryKey, queryFn)` returns the result.
 - The `NodeStore` is a thin adapter that subscribes to the query result:
 
 ```ts
-function createQueryNodeStore<N = NodeLike>(query: Query, source: Source<N>, adapterKey: string): NodeStore<N> {
+function createQueryNodeStore<N = NodeLike>(querySource: QuerySource<N>, adapterKey: string): NodeStore<N> {
   const adapter = adapterRegistry.get(adapterKey)
-  const store = adapter.create(source, query)
+  const store = adapter.create(querySource)
 
   // For static sources, the query result is the setNodes patch
-  source.getNodes().then((nodes) => {
-    const queried = applyQuery(nodes, query)
+  querySource.getNodes().then((nodes) => {
     store.applyPatch({
       op: 'setNodes',
-      nodes: queried,
+      nodes,
       context: { phase: 'updateNow' },
     })
   })
@@ -551,7 +583,7 @@ function createQueryNodeStore<N = NodeLike>(query: Query, source: Source<N>, ada
 
 ### Bireactive query views
 
-A `BireactiveAdapter` is keyed by `source.id + query.key() + 'bireactive'`. It is ref-counted because multiple charts can share the same `BireactiveNodeStore`:
+A `BireactiveAdapter` is keyed by `querySource.baseSourceId + querySource.query.key() + 'bireactive'`. It is ref-counted because multiple charts can share the same `BireactiveNodeStore`:
 
 ```ts
 interface BireactiveQuery<N = NodeLike> {
@@ -567,7 +599,19 @@ The viewer caches `BireactiveQuery` instances. Multiple charts with the same `qu
 
 ### Query result as a view
 
-A `DataView` is not a `NodeStore` — it is a **query + adapter + config**. The same query can be rendered with different adapters (`bireactive`, `d3`, `svelte`) and different chart configs. The `NodeStore` is the living adapter; the chart is the renderer.
+A `DataView` is the workspace declaration — **query + adapter + config**. At runtime, the viewer resolves it into a `View`:
+
+```ts
+interface View<N = NodeLike> {
+  spec: DataView
+  source: Source<N>
+  querySource: QuerySource<N>
+  adapter: NodeStore<N> // the living adapter
+  chart: Chart<N>
+}
+```
+
+The `Query` is applied to the `Source` to produce a `QuerySource`. The `Adapter` is selected by `adapter` key and creates the `NodeStore`. The `Chart` is the renderer. The `NodeStore` is the living adapter; it knows the `QuerySource` and can update the `Source` using patches.
 
 Grouping and aggregation live in the `Query`:
 
@@ -576,13 +620,14 @@ Grouping and aggregation live in the `Query`:
 
 For simplicity, the same `sorts` apply to the output of `levelBy` / `aggregateBy` and to the final view. The view implementor decides how many levels to display and how to render them.
 
-This replaces the current `measureKey` dance with: `Source` → `Query` (filter / sort / levelBy / aggregateBy) → `Adapter` → `NodeStore` → `Chart` (render with config).
+This replaces the current `measureKey` dance with: `Source` → `QuerySource` (`Query` applied) → `Adapter` → `NodeStore` → `Chart` (render with config).
 
 ### Query-to-NodeStore pipeline
 
 ```ts
-async function runQuery<N extends NodeLike>(source: Source, query: Query): Promise<N[]> {
-  const nodes = await source.getNodes()
+async function runQuery<N extends NodeLike>(querySource: QuerySource<N>): Promise<N[]> {
+  const nodes = await querySource.getNodes()
+  const query = querySource.query
 
   const filtered = applyFilters(nodes, query.filters)
   const sorted = applySorts(filtered, query.sorts)
