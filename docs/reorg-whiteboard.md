@@ -147,31 +147,30 @@ interface Chart<N = NodeLike> {
 
 ### Strategy implementations
 
+For now, only two strategies matter:
+
 | Strategy | What it is | How `applyPatch` works | How it notifies |
 |---|---|---|---|
-| `ArrayNodeStore` | The row-based store. A mutable `N[]` array. | `setMeasure` mutates `node.measures[key]`; `setNodes` replaces the array. | `subscribe(listener)` fires after every patch. |
 | `BireactiveNodeStore` | Adapter. Holds a `bireactive` lens tree (internal). | `setMeasure` writes the leaf `Writable<Num>`; `setNodes` rebuilds the tree. | `subscribe` is `bireactive` `effect(...)`; children get fine-grained updates. |
-| `YjsNodeStore` | Adapter over a `Y.Doc` with `Y.Map`/`Y.Array`. | `setMeasure` updates a shared map; `setNodes` replaces a shared array. | `doc.on('update', ...)` emits binary patches. |
-| `SvelteNodeStore` | Adapter. Holds `$state` or `createSignal` for the array. | `setMeasure` updates the signal; `setNodes` replaces it. | `subscribe` is `$effect` or `effect()`. |
-| `ObservableNodeStore` | Adapter over an Observable `Module` cell. | `setMeasure` redefines a named cell; `setNodes` redefines the dataset cell. | `module.value('nodes')` is async/generator. |
+| `PlainNodeStore` | A plain JS single-value store. A mutable `N[]` array. | `setMeasure` mutates `node.measures[key]`; `setNodes` replaces the array. | `subscribe(listener)` fires after every patch. |
 
 ### D3-direct vs coarse store
 
-`D3-direct` **is** the `ArrayNodeStore` strategy, just with the chart as the only consumer. The D3 chart subscribes and calls `update(store.getNodes())` itself:
+`D3-direct` **is** the `PlainNodeStore` strategy, just with the chart as the only consumer. The D3 chart subscribes and calls `update(store.getNodes())` itself:
 
 ```ts
-const store = new ArrayNodeStore(nodes)
+const store = new PlainNodeStore(nodes)
 const chart = new PackChart(container)
 
 store.subscribe(() => chart.update(store.getNodes()))
 ```
 
-The "coarse store" is the same `ArrayNodeStore` consumed by a React/Svelte host. There is no separate D3 strategy type — just a different consumer. So the algebraic reduction is just:
+The coarse store (React/Svelte host) is the same `PlainNodeStore`. There is no separate D3 strategy type — just a different consumer. The algebraic reduction is:
 
 - **fine-grained**: `BireactiveNodeStore` (cell graph)
-- **coarse-grained**: `ArrayNodeStore` (row array)
-- **CRDT/sync**: `YjsNodeStore` / `AutomergeNodeStore` / `ObservableNodeStore`
-- **framework-native**: `SvelteNodeStore` / `SolidNodeStore` / `PreactNodeStore`
+- **coarse-grained**: `PlainNodeStore` (row array / single value)
+
+Other substrates (`Yjs`, `Svelte` runes, `Observable`) are out of scope for today.
 
 ### Where does the kernel live?
 
@@ -476,9 +475,14 @@ The same `Source` can support multiple `QuerySource`s and multiple adapters in p
 
 ### Sources
 
-A `Source` is the data side. It can be static or live, local or remote.
+A `Source` is the data side. It can be static or live, local or remote. For now, the concrete sources are plain JS / CSV / Arquero / TanStack Query / TanStack DB. CRDT sources like `Yjs` or `Braid` are out of scope today.
 
 ```ts
+interface ArraySource extends Source {
+  type: 'array'
+  nodes: NodeLike[]
+}
+
 interface CSVSource extends Source {
   type: 'csv'
   url: string
@@ -491,17 +495,10 @@ interface ArqueroSource extends Source {
   query(q: Query): NodeLike[]
 }
 
-interface YjsSource extends Source {
-  type: 'yjs'
-  doc: unknown // Y.Doc
-  subscribe(fn: (patch: Patch) => void): () => void
-}
-
-interface BraidSource extends Source {
-  type: 'braid'
-  // patch DAG / diff stream
-  subscribe(fn: (patch: Patch) => void): () => void
-  getHistory?(): Patch[]
+interface TanStackDBSource extends Source {
+  type: 'tanstack-db'
+  collection: unknown // TanStack DB collection
+  query(q: Query): NodeLike[]
 }
 ```
 
@@ -533,7 +530,12 @@ interface NodeStore<N = NodeLike> {
 
 The `NodeStore` is the public interface of the adapter. The concrete adapter (e.g. `BireactiveNodeStore`) keeps a reference to the `QuerySource` and forwards `updateNow` patches to `source.applyPatch`. Pending updates stay local.
 
-The `Adapter` is the strategy. The `DataView` selects it by key. `bireactive` is one adapter; `d3` is another; `svelte` is another. The same source can have multiple adapters in parallel, each keyed by `source.id + query.key() + adapter`.
+The `Adapter` is the strategy. For today, the only `adapter` keys are `bireactive` and `plain`:
+
+- `bireactive` — fine-grained cell graph. Use for multi-view sync, conservation, and charts that speak `bireactive`.
+- `plain` — plain JS array. Use for D3, React, Svelte, or any chart that diffs the whole array.
+
+`d3` and `svelte` are not distinct adapters; they are consumers of the `plain` adapter. `yjs` is a future source, not a today's adapter.
 
 ### Patch phase / event context
 
@@ -686,13 +688,15 @@ Mapping to current names:
 - `DataView` → `UpdatableViewQuery` (spec)
 - `NodeStore`/`Adapter` → `UpdatableView` is the result; the `Adapter` is the strategy that creates it
 
+For today, the only `Adapter` strategies are `bireactive` (fine-grained cell graph) and `plain` (plain JS array). `d3` and `svelte` are consumers of the `plain` adapter.
+
 The recursive bit: the `sourceId` of an `UpdatableViewQuery` can point to a base `UpdatableDataSource` *or* to another `UpdatableView` (or a ref to one via another `UpdatableViewQuery`). Views compose into a DAG.
 
 ---
 
 ## 8. Notes / scratch
 
-- `@hotbook/d3` currently depends on `@hotbook/bireactive` because the tile-binder uses `bireactive` primitives. If we want a pure D3-direct substrate, the `ArrayNodeStore` + `D3Chart` consumer pattern removes the need for `bireactive` in the D3 path.
+- `@hotbook/d3` currently depends on `@hotbook/bireactive` because the tile-binder uses `bireactive` primitives. If we want a pure D3-direct substrate, the `PlainNodeStore` + `D3Chart` consumer pattern removes the need for `bireactive` in the D3 path.
 - `apps/hotbook` has `persistence/` and `store/` — these are host-level, not kernel-level. The kernel should be ephemeral.
 - `matchina` is a typed state-machine library. It is not installed yet. It is a lifecycle utility, not a `NodeStore` strategy.
 - The `bireactive` version in `package.json` is `^0.3.5` in root but `^0.3.4` in packages. Align.
