@@ -12,6 +12,7 @@
     "allowSyntheticDefaultImports": true,
     "forceConsistentCasingInFileNames": true,
     "paths": {
+      "@hotbook/ui": ["./packages/ui/src"],
       "@hotbook/core": ["./packages/core/src"],
       "@hotbook/bireactive": ["./packages/bireactive/src"],
       "@hotbook/d3": ["./packages/d3/src"],
