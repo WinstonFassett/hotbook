@@ -324,7 +324,140 @@ This DAG is draft only. It depends on the substrate/kernel decision.
 
 ---
 
-## 7. Notes / scratch
+## 7. Data views / query layer
+
+Long-term, a `hotbook` is a **workbook** of modules / pages / sections. The top-level view is an ordered list. A workspace declares **data sources** and **data views**. The viewer renders `views` and binds each to a data source.
+
+### Core types
+
+```ts
+interface Filter {
+  field: string
+  op: 'eq' | 'neq' | 'in' | 'gt' | 'lt' | 'contains'
+  value: unknown
+}
+
+interface Sort {
+  name: string      // field or '_index' or '_value'
+  dir: 'asc' | 'desc'
+}
+
+interface Query {
+  sourceId: string
+  filters: Filter[]
+  sorts: Sort[]
+  // canonical cache key
+  key(): string
+}
+
+interface DataSource {
+  id: string
+  getNodes(): Promise<NodeLike[]> | NodeLike[]
+}
+
+interface ViewConfig {
+  kind: 'bar' | 'line' | 'pack' | 'table' | ...
+  measureKey: string
+  xField?: string
+  sortDir?: 'asc' | 'desc'
+  // chart-specific options
+}
+
+interface DataView {
+  id: string
+  query: Query
+  config: ViewConfig
+}
+
+interface Workspace {
+  dataSources: DataSource[]
+  views: DataView[]
+}
+```
+
+### Viewer flow
+
+```mermaid
+flowchart TB
+    subgraph Workspace
+      ds["DataSource"]
+      q["Query(filters, sorts)"]
+      dv["DataView(query, config)"]
+    end
+
+    subgraph QueryCache
+      qr["QueryResult<NodeLike[]>"]
+    end
+
+    subgraph NodeStore
+      ns["ArrayNodeStore | BireactiveNodeStore"]
+    end
+
+    subgraph Chart
+      c["Chart"]
+    end
+
+    ds --> q
+    q --> qr
+    qr --> ns
+    ns --> c
+    dv --> c
+```
+
+The viewer:
+
+1. Resolves `view.query.sourceId` to a `DataSource`.
+2. Computes `query.key()` for the cache.
+3. Runs the query: `applyQuery(await dataSource.getNodes(), query)`.
+4. Materializes a `NodeStore` from the result.
+5. Mounts the chart with the store and the view config.
+
+### TanStack Query as the app reactivity layer
+
+The app shell can use **TanStack Query** (or any `queryKey`/`queryFn` cache) for the data-view layer:
+
+- `queryKey` = `query.key()` (canonical stringified query).
+- `queryFn` = `() => applyQuery(dataSource.getNodes(), query)`.
+- `useQuery(queryKey, queryFn)` returns the result.
+- The `NodeStore` is a thin adapter that subscribes to the query result:
+
+```ts
+function createQueryNodeStore<N = NodeLike>(query: Query, dataSource: DataSource): NodeStore<N> {
+  const q = useQuery({ queryKey: [query.key()], queryFn: () => applyQuery(dataSource.getNodes(), query) })
+  const store = new ArrayNodeStore<N>(q.data ?? [])
+
+  // when query result changes, apply a setNodes patch
+  watch(q.data, (nodes) => store.applyPatch({ op: 'setNodes', nodes }))
+
+  return store
+}
+```
+
+### Bireactive query views
+
+A `BireactiveQuery` is a keyed, ref-counted `BireactiveNodeStore` per query:
+
+```ts
+interface BireactiveQuery<N = NodeLike> {
+  queryKey: string
+  store: BireactiveNodeStore<N>
+  refCount: number
+  addRef(): void
+  release(): void  // disposes when refCount hits 0
+}
+```
+
+The viewer caches `BireactiveQuery` instances by `query.key()`. Multiple charts with the same query share the same `BireactiveNodeStore`. When the last chart unmounts, the store is disposed. This gives cross-view sync for free because they share the same cell graph.
+
+### Query result as a view
+
+A `DataView` is not a `NodeStore` — it is a **query + config**. The same query can be rendered as a bar chart, a pack, or a table. The `NodeStore` is the query result; the chart is the renderer. The `ViewConfig` picks the `measureKey` / `xField` / `sortDir` and tells the chart how to read the `NodeStore`.
+
+This replaces the current `measureKey` dance with: `DataSource` → `Query` (filter/sort) → `NodeStore` → `Chart` (render with config).
+
+---
+
+## 8. Notes / scratch
 
 - `@hotbook/d3` currently depends on `@hotbook/bireactive` because the tile-binder uses `bireactive` primitives. If we want a pure D3-direct substrate, the `ArrayNodeStore` + `D3Chart` consumer pattern removes the need for `bireactive` in the D3 path.
 - `apps/hotbook` has `persistence/` and `store/` — these are host-level, not kernel-level. The kernel should be ephemeral.
