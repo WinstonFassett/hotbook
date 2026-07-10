@@ -646,6 +646,48 @@ async function runQuery<N extends NodeLike>(querySource: QuerySource<N>): Promis
 
 Both `aggregateBy` and `levelBy` produce `NodeLike[]` trees, but the difference is whether the raw nodes are present under the synthetic groups.
 
+### Updatable view model
+
+A more recursive way to look at the same thing:
+
+```ts
+interface UpdatableDataSource<N = NodeLike> {
+  id: string
+  getNodes(): Promise<N[]> | N[]
+  applyPatch(patch: Patch<N>): void
+  subscribe(fn: (patch: Patch<N>) => void): () => void
+}
+
+// An UpdatableView is itself an UpdatableDataSource.
+// It is the result of applying an UpdatableViewQuery to another UpdatableDataSource.
+interface UpdatableView<N = NodeLike> extends UpdatableDataSource<N> {
+  source: UpdatableDataSource<N>
+  query: Query
+  adapter: string
+  config: ViewConfig
+}
+
+// UpdatableViewQuery is the workspace declaration.
+// It says: take a source (which may be another view or a ref to one), apply this query,
+// and render with this adapter/config.
+interface UpdatableViewQuery<N = NodeLike> {
+  id: string
+  sourceId: string
+  query: Query
+  adapter: string
+  config: ViewConfig
+}
+```
+
+Mapping to current names:
+
+- `Source`/`DataSource` → `UpdatableDataSource`
+- `QuerySource` → `UpdatableView` (runtime)
+- `DataView` → `UpdatableViewQuery` (spec)
+- `NodeStore`/`Adapter` → `UpdatableView` is the result; the `Adapter` is the strategy that creates it
+
+The recursive bit: the `sourceId` of an `UpdatableViewQuery` can point to a base `UpdatableDataSource` *or* to another `UpdatableView` (or a ref to one via another `UpdatableViewQuery`). Views compose into a DAG.
+
 ---
 
 ## 8. Notes / scratch
