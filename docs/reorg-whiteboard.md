@@ -338,14 +338,27 @@ interface Filter {
 }
 
 interface Sort {
-  name: string      // field or '_index' or '_value'
+  field: string      // measure key, dim key, '_index', or '_value'
   dir: 'asc' | 'desc'
+}
+
+interface Dimension {
+  field: string      // a dim key or measure key
 }
 
 interface Query {
   sourceId: string
   filters: Filter[]
   sorts: Sort[]
+
+  // Structural grouping for hierarchical levels.
+  // Raw nodes are preserved; synthetic group nodes may be added above them.
+  levelBy?: Dimension[]
+
+  // Destructive aggregation.
+  // Raw nodes are collapsed into one aggregated node per dimension combination.
+  aggregateBy?: Dimension[]
+
   // canonical cache key
   key(): string
 }
@@ -453,7 +466,37 @@ The viewer caches `BireactiveQuery` instances by `query.key()`. Multiple charts 
 
 A `DataView` is not a `NodeStore` — it is a **query + config**. The same query can be rendered as a bar chart, a pack, or a table. The `NodeStore` is the query result; the chart is the renderer. The `ViewConfig` picks the `measureKey` / `xField` / `sortDir` and tells the chart how to read the `NodeStore`.
 
-This replaces the current `measureKey` dance with: `DataSource` → `Query` (filter/sort) → `NodeStore` → `Chart` (render with config).
+Grouping and aggregation live in the `Query`:
+
+- `levelBy` → structural grouping. Raw nodes are kept, but synthetic group nodes are added (e.g. group by `status` for a tree or pack). The view controls how many levels are visible.
+- `aggregateBy` → destructive aggregation. Raw nodes are collapsed to one node per dimension combination (e.g. sum by `group`). The original rows are lost.
+
+For simplicity, the same `sorts` apply to the output of `levelBy` / `aggregateBy` and to the final view. The view implementor decides how many levels to display and how to render them.
+
+This replaces the current `measureKey` dance with: `DataSource` → `Query` (filter / sort / levelBy / aggregateBy) → `NodeStore` → `Chart` (render with config).
+
+### Query-to-NodeStore pipeline
+
+```ts
+async function runQuery<N extends NodeLike>(dataSource: DataSource, query: Query): Promise<N[]> {
+  const nodes = await dataSource.getNodes()
+
+  const filtered = applyFilters(nodes, query.filters)
+  const sorted = applySorts(filtered, query.sorts)
+
+  if (query.aggregateBy) {
+    return aggregateBy(sorted, query.aggregateBy, query.sorts)
+  }
+
+  if (query.levelBy) {
+    return levelBy(sorted, query.levelBy, query.sorts)
+  }
+
+  return sorted
+}
+```
+
+Both `aggregateBy` and `levelBy` produce `NodeLike[]` trees, but the difference is whether the raw nodes are present under the synthetic groups.
 
 ---
 
