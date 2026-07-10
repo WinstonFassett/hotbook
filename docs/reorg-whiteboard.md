@@ -310,6 +310,111 @@ The real question is whether the kernel holds the **dataset** (rows/nodes) or a 
 
 ---
 
+## 3b. Reactive lingua franca
+
+The braid/crdt idea points to a **doc + patch** model. The lingua franca has two parts: a **snapshot** of the doc and a **patch** that describes a change. Each substrate materializes the snapshot in its own state shape and knows how to apply the patch.
+
+### What are our diff shapes today?
+
+| Substrate | State shape | Change / diff shape | How observed | Batch primitive |
+|---|---|---|---|---|
+| **bireactive** | `TreeNode<Writable<Num>>` graph | per-cell value write | `effect(() => root.value.total.value)` | `batch(fn)` |
+| **coarse store** | plain `Workspace` snapshot | whole `Workspace` replaced | `listener()` after `commit(next)` | manual commit |
+| **D3-direct** | chart-internal `d3.hierarchy` | `chart.update(nodes)` call | `update(...)` is the observer | the `update` call itself |
+| **matchina** | `StoreMachine<Doc>` | typed `dispatch(event, ...)` | `subscribe(change)` | `dispatch` sequence |
+
+`bireactive` is the most implicit: a write to a `Num` cell propagates through lenses and effects. The "diff" is the graph of cells. `coarse store` is the most explicit at the other extreme: a new `Workspace` object is the diff. `D3-direct` is batch-only: there is no diff, the chart just re-renders from a new dataset.
+
+### Other reactive interfaces to consider
+
+- **Solid** — `createSignal`/`createMemo`/`createEffect`; getter/setter, no `.value`.
+- **Preact Signals** — `signal.value`, `computed.value`, `effect()`.
+- **nanostores** — `atom`, `computed`, `effect()`.
+- **MobX** — `observable` + `action` + `autorun`.
+- **Valtio** — proxy snapshots + `subscribe`.
+- **Immer** — `produce` returns next state and can emit `Patch` objects.
+- **XState** — state machine, `send(event)`, `getState()`, `subscribe`.
+- **RxJS** — streams; not state, but can back a state cell.
+- **Yjs** — `Y.Doc` with shared types (`Y.Map`, `Y.Array`). Changes are binary `update` events. `doc.on('update', ...)` / `Y.applyUpdate(doc, update)` / `doc.transact(fn)`.
+- **Automerge** — immutable JSON-like doc. `Automerge.change(doc, d => ...)` produces `Change[]`. `getChanges(oldDoc, newDoc)` / `applyChanges(doc, changes)`.
+- **Observable runtime** — `Runtime` + `Module` + `Variable`; generator-based `value` observers.
+
+### Common denominator
+
+The 2026 signal consensus (`flexblox-design.md` §3) converges on:
+
+```ts
+interface Signal<T> { get(): T; set(value: T): void; }
+interface Computed<T> { get(): T; }
+interface Effect { (fn: () => (() => void) | void): () => void; }
+interface Batch { <R>(fn: () => R): R; }
+```
+
+For a doc-based lingua franca, we can add a patch dimension:
+
+```ts
+interface Doc<T> {
+  get(): T
+  set(value: T): void
+  // or patch-oriented
+  apply(patch: Patch): void
+  subscribe(fn: (patch: Patch | null, snapshot: T) => void): () => void
+  transact(fn: () => void): void
+  origin?: unknown
+}
+
+// Example patch language for our domain
+type Patch =
+  | { op: 'setCell'; datasetId: string; nodeId: string; measureKey: string; value: number; origin?: unknown }
+  | { op: 'setNodes'; datasetId: string; nodes: VizNode[]; origin?: unknown }
+  | { op: 'reorder'; datasetId: string; nodeIds: string[]; origin?: unknown }
+  | { op: 'setDrill'; drillKey: string; nodeId: string | null; origin?: unknown }
+  // ...
+```
+
+### Yjs-style doc API as the lingua franca
+
+Yjs exposes a `Y.Doc` with shared types and an `update` event. Translating that shape to our domain:
+
+```ts
+interface HotbookDoc {
+  getDataset(id: string): DatasetSnapshot
+  getDatasetArray(): Array<DatasetSnapshot>
+  setCell(datasetId: string, nodeId: string, measureKey: string, value: number): void
+  setNodes(datasetId: string, nodes: VizNode[]): void
+
+  // changes flow out as patches
+  on(event: 'update', cb: (patch: Patch) => void): () => void
+
+  // batch changes into one patch
+  transact(fn: () => void): void
+
+  // for sync/undo/crdt
+  getUpdates(): Patch[]
+  applyUpdate(update: Patch[]): void
+}
+```
+
+Each substrate then maps `HotbookDoc` to its own state:
+
+- **bireactive**: `getNodes()` returns a `TreeNode`; `setCell` writes a `Writable<Num>`; `on('update')` is `effect(...)`.
+- **coarse store**: `getDataset()` returns a plain `Dataset`; `setCell` builds a new `Dataset`; `on('update')` triggers `render()`.
+- **D3-direct**: `getDataset()` returns the last `Dataset`; `setCell` triggers `chart.update()`; `on('update')` is not needed.
+- **Yjs**: `HotbookDoc` is literally a `Y.Doc` with `Y.Map`/`Y.Array` types; patches are `update` events.
+- **Automerge**: `HotbookDoc` is an `Automerge.Doc<HotbookState>`; patches are `Change` lists.
+
+The **lingua franca** is then the patch shape, not the state representation. The kernel owns the doc and emits patches. The substrate is a patch applier with a snapshot.
+
+### Implications
+
+- **Cross-substrate sync** is free because every substrate consumes the same patch stream.
+- **Conservation** can be a kernel-level patch transformer (`setCell` → `setCell` + redistributed sibling `setCell`s) before the patch reaches the substrate.
+- **Undo/redo** is a patch log.
+- **Remote sync** is patch transport.
+- **The hard part** is defining the patch language and the snapshot boundary. Is the doc `Dataset` only, or `Workspace`? `Workspace` adds dashboards/tiles/dock as patches, which is more powerful but also more surface area.
+
+---
+
 ## 4. Kernel boundary
 
 Two competing frames:
