@@ -85,333 +85,135 @@ Notes:
 
 ---
 
-## 3. Substrate spectrum
+## 3. NodeStore strategy pattern
 
-| Substrate | Where today | What changes | Who diffs | Conservation | Notes |
-|---|---|---|---|---|---|
-| **Fine-grained signals** | `@hotbook/bireactive` | cell values | substrate (bireactive) | native multi-parent lens | best for multi-view sync |
-| **Coarse whole-value** | `Workspace` store in `apps/hotbook` | whole dataset | consumer diffs | manual fallback | simple mental model |
-| **D3-direct** | `@hotbook/d3` / gen-0 | explicit `update(data)` | D3 enter/update/exit | manual | no substrate sync bugs |
-| **Framework-native** | Svelte layerchart spike | Svelte runes | framework | manual fallback | not portable |
-| **Observable runtime** | (research only) | named cells | runtime | manual | conceptually adjacent, not a substrate adapter |
+The substrate question is really: **what is the interface for holding node values and updating them?** Everything else is a strategy implementation.
 
-```mermaid
-flowchart LR
-    dataset["dataset"]
-    dataset --> bireactive["bireactive signal graph"]
-    dataset --> store["coarse store"]
-    dataset --> d3direct["D3-direct update()"]
-    dataset --> observable["Observable runtime"]
-
-    bireactive --> chart["chart element"]
-    store --> chart
-    d3direct --> chart
-    observable --> chart
-```
-
-Open question: is `bireactive` the default, or do we support D3-direct as an equal path? Mixed is most likely.
-
----
-
-## 3a. Substrate TS-type sketches
-
-This is where the substrate discussion gets concrete. The kernel's job is to hold a `Dataset` and emit a change notification. Each substrate answers "what is the `Dataset` container and how do I subscribe?" differently.
-
-### 1. Bireactive — fine-grained signals
-
-The chart builds a live tree of `Cell`/`Num`/`Writable`.
+### Generic types (no imports)
 
 ```ts
-import { type Cell, type Read, type Writable, type Num, derive, effect, batch } from 'bireactive'
-
-interface NodeValue {
+interface NodeLike {
   id: string
-  label: string
-  color: string
-  total: Writable<Num>                 // leaf value or parent sum lens
-  measures?: Record<string, Writable<Num>>
+  parentId: string | null
+  index?: number
+  name: string
+  color?: string
+  measures: Record<string, number>
+  dims?: Record<string, string>
 }
 
-type BiNode = TreeNode<NodeValue>
-
-// The chart receives a TreeNode root. It reads `root.value.total.value` inside `derive()`.
-// Conservation is a `Num.lens` with a backprop `put`.
-// `effect(() => chart.update(root))` is the subscription.
-// `batch(() => { ... })` coalesces writes.
-```
-
-Pros: multi-view sync for free; native conservation.  
-Cons: every chart must speak the `Cell`/`derive` API; `bireactive` is the only vendor.
-
-### 2. Coarse whole-value store
-
-A plain `Workspace` object with snapshot + subscribe.
-
-```ts
-interface WorkspaceStore {
-  getSnapshot(): Workspace
-  subscribe(cb: () => void): () => void
-  // mutations return next workspace and call render()
-  commit(next: Workspace): void
+interface NodePatch {
+  op: 'setMeasure'
+  nodeId: string
+  key: string
+  value: number
+  origin?: unknown
 }
 
-interface Workspace {
-  datasets: Dataset[]
-  dashboards: Dashboard[]
-  activeDatasetId: string
-  activeDashboardId: string
+interface NodesPatch<N = NodeLike> {
+  op: 'setNodes'
+  nodes: N[]
+  origin?: unknown
+}
+
+type Patch<N = NodeLike> = NodePatch | NodesPatch<N>
+
+interface NodeStore<N = NodeLike> {
+  getNodes(): N[]
+  applyPatch(patch: Patch<N>): void
+  subscribe(listener: () => void): () => void
+  batch?<R>(fn: () => R): R
 }
 ```
 
-In `apps/hotbook/src/main.ts` today:
+A chart, tile, or layout component just consumes a `NodeStore`:
 
 ```ts
-let ws: Workspace = initWorkspace()
-const listeners = new Set<() => void>()
-
-function commit(next: Workspace) {
-  ws = next
-  saveWorkspace(next)
-  render()
+interface Chart<N = NodeLike> {
+  mount(store: NodeStore<N>, container: HTMLElement): void
+  dispose(): void
 }
 ```
 
-The chart is notified by `render()` and diffs the new `Dataset` itself. Conservation is manual.
+### Strategy implementations
 
-Pros: dead simple, any renderer can consume it.  
-Cons: every render is a full dataset diff; no fine-grained sync.
+| Strategy | What it is | How `applyPatch` works | How it notifies |
+|---|---|---|---|
+| `ArrayNodeStore` | The row-based store. A mutable `N[]` array. | `setMeasure` mutates `node.measures[key]`; `setNodes` replaces the array. | `subscribe(listener)` fires after every patch. |
+| `BireactiveNodeStore` | Adapter. Holds a `bireactive` lens tree (internal). | `setMeasure` writes the leaf `Writable<Num>`; `setNodes` rebuilds the tree. | `subscribe` is `bireactive` `effect(...)`; children get fine-grained updates. |
+| `YjsNodeStore` | Adapter over a `Y.Doc` with `Y.Map`/`Y.Array`. | `setMeasure` updates a shared map; `setNodes` replaces a shared array. | `doc.on('update', ...)` emits binary patches. |
+| `SvelteNodeStore` | Adapter. Holds `$state` or `createSignal` for the array. | `setMeasure` updates the signal; `setNodes` replaces it. | `subscribe` is `$effect` or `effect()`. |
+| `ObservableNodeStore` | Adapter over an Observable `Module` cell. | `setMeasure` redefines a named cell; `setNodes` redefines the dataset cell. | `module.value('nodes')` is async/generator. |
 
-### 3. D3-direct / procedural
+### D3-direct vs coarse store
 
-No signal. The element owns a chart instance and exposes `update`.
+`D3-direct` **is** the `ArrayNodeStore` strategy, just with the chart as the only consumer. The D3 chart subscribes and calls `update(store.getNodes())` itself:
 
 ```ts
-interface D3Chart {
-  update(data: VizNode[]): void
-  getRoot?(): HTMLElement | SVGElement
-  onRender?(cb: (ids: string[]) => void): () => void
-}
+const store = new ArrayNodeStore(nodes)
+const chart = new PackChart(container)
 
-class PackChart implements D3Chart {
-  update(nodes: VizNode[]) {
-    const root = d3.stratify()(...)
-    // d3 enter/update/exit
+store.subscribe(() => chart.update(store.getNodes()))
+```
+
+The "coarse store" is the same `ArrayNodeStore` consumed by a React/Svelte host. There is no separate D3 strategy type — just a different consumer. So the algebraic reduction is just:
+
+- **fine-grained**: `BireactiveNodeStore` (cell graph)
+- **coarse-grained**: `ArrayNodeStore` (row array)
+- **CRDT/sync**: `YjsNodeStore` / `AutomergeNodeStore` / `ObservableNodeStore`
+- **framework-native**: `SvelteNodeStore` / `SolidNodeStore` / `PreactNodeStore`
+
+### Where does the kernel live?
+
+The kernel can be the thing that owns a `NodeStore` and decides how patches get applied:
+
+```ts
+interface Kernel<N = NodeLike> {
+  store: NodeStore<N>
+  // applies a patch, possibly after transforming it (e.g. conservation)
+  dispatch(patch: Patch<N>): void
+  // read the current doc
+  getNodes(): N[]
+  // observe changes
+  subscribe(listener: () => void): () => void
+}
+```
+
+Conservation can be a **patch transformer** before the patch reaches `store.applyPatch`:
+
+```ts
+function withConservation<N extends NodeLike>(kernel: Kernel<N>): Kernel<N> {
+  return {
+    ...kernel,
+    dispatch: (patch) => {
+      const patches = expandConservation(patch, kernel.getNodes())
+      for (const p of patches) kernel.store.applyPatch(p)
+      // single notification
+    },
   }
 }
 ```
 
-`apps/hotbook/src/main.ts` would call `chart.update(activeDataset.nodes)` after every commit. The chart is the only source of truth for its own lifecycle.
+`bireactive` does this internally with `Num.lens`. `ArrayNodeStore` needs the kernel to compute it.
 
-Pros: no substrate sync failures; single chart owns cycle.  
-Cons: no automatic cross-tile sync; conservation is manual.
+### Patch vs value
 
-### 4. Framework-native — Svelte runes
+The `Patch` type is the lingua franca. Every `set`/`dispatch`/`update` reduces to a patch:
 
-Svelte 5 runes are conceptually signals with a framework compiler.
+- `setCell(id, key, value)` → `{ op: 'setMeasure', nodeId, key, value }`
+- `setNodes(nodes)` → `{ op: 'setNodes', nodes }`
+- `chart.update(nodes)` → `{ op: 'setNodes', nodes }` (the D3 chart receives a `setNodes` patch)
+- `bireactive` `Writable<Num>.value = ...` → `{ op: 'setMeasure', ... }` at the source
 
-```ts
-// Svelte 5
-let dataset = $state<Dataset>(initial)
-let derived = $derived(computeLayout(dataset))
+This is the braid / Yjs doc API shape: a document with a stream of typed patches.
 
-// Plain signal equivalent
-interface SvelteSignal<T> {
-  value: T
-  subscribe(fn: (v: T) => void): () => void
-}
-```
+### What about matchina?
 
-The chart is a Svelte component, not a custom element. Sync is Svelte-level. Not portable across frameworks.
+`matchina` is a state-machine utility, not a `NodeStore` strategy. It could wrap the kernel lifecycle (`idle` → `active` → `parked` → `disposed`) or wrap the patch dispatch, but it is not a substrate.
 
-### 5. Observable runtime
+### Open question
 
-`@observablehq/runtime` uses named cells and observers.
-
-```ts
-import { Runtime, Library } from '@observablehq/runtime'
-
-const runtime = new Runtime()
-const module = runtime.module()
-
-module.variable().define('dataset', [], () => dataset)
-module.variable().define('nodes', ['dataset'], (dataset) => dataset.nodes)
-
-// Observing a cell is async/generator-based
-for await (const value of module.value('nodes')) {
-  chart.update(value)
-}
-```
-
-The runtime is the substrate. Not a signal adapter; explicit named cells. Adapter cost is high because it is async and generator-based.
-
-### 6. Matchina — state-machine store
-
-Matchina is a state-machine-first library. Its `createStoreMachine` gives event-driven typed updates.
-
-```ts
-import { createStoreMachine } from 'matchina'
-
-const store = createStoreMachine<Workspace, {
-  setCell: (datasetId: string, rowId: string, measureKey: string, value: number) => Workspace
-  setDataset: (dataset: Dataset) => Workspace
-  // ...
-}>(initialWorkspace, {
-  setCell: (ws, datasetId, rowId, measureKey, value) => {
-    // return next workspace
-  },
-  // ...
-})
-
-store.subscribe((change) => {
-  chart.update(store.getState().datasets[0])
-})
-
-store.dispatch('setCell', 'ds-1', 'n1', 'value', 42)
-```
-
-`matchina` is about typed lifecycle and transitions, not a generic signal. It can hold a `Dataset` as state, but it is not a reactive graph like `bireactive`. For a kernel, it would need an adapter layer (event dispatch → dataset update → chart notification).
-
-### What the kernel interface could look like
-
-If we want a substrate-agnostic kernel, the smallest interface is:
-
-```ts
-interface Kernel<T = Dataset> {
-  get(): T
-  set(value: T): void
-  subscribe(fn: (value: T) => void): () => void
-  batch?: (fn: () => void) => void
-}
-
-// Bireactive adapter
-const bireactiveKernel: Kernel<BiNode> = {
-  get: () => root.peek(),
-  set: (next) => /* reconcile into root */,
-  subscribe: (fn) => effect(() => fn(root)),
-  batch,
-}
-
-// Coarse store adapter
-const coarseKernel: Kernel<Workspace> = {
-  get: () => ws,
-  set: (next) => commit(next),
-  subscribe: (fn) => { listeners.add(fn); return () => listeners.delete(fn) },
-}
-
-// D3-direct adapter
-const d3Kernel: Kernel<Dataset> = {
-  get: () => dataset,
-  set: (next) => { dataset = next; chart.update(next.nodes) },
-  subscribe: () => () => {}, // updates are explicit
-}
-```
-
-The real question is whether the kernel holds the **dataset** (rows/nodes) or a **live tree** (`BiNode`). If it holds a `Dataset`, the backend can convert it to a live tree. If it holds a `BiNode`, the backend is already `bireactive` and D3-direct is an afterthought.
-
----
-
-## 3b. Reactive lingua franca
-
-The braid/crdt idea points to a **doc + patch** model. The lingua franca has two parts: a **snapshot** of the doc and a **patch** that describes a change. Each substrate materializes the snapshot in its own state shape and knows how to apply the patch.
-
-### What are our diff shapes today?
-
-| Substrate | State shape | Change / diff shape | How observed | Batch primitive |
-|---|---|---|---|---|
-| **bireactive** | `TreeNode<Writable<Num>>` graph | per-cell value write | `effect(() => root.value.total.value)` | `batch(fn)` |
-| **coarse store** | plain `Workspace` snapshot | whole `Workspace` replaced | `listener()` after `commit(next)` | manual commit |
-| **D3-direct** | chart-internal `d3.hierarchy` | `chart.update(nodes)` call | `update(...)` is the observer | the `update` call itself |
-| **matchina** | `StoreMachine<Doc>` | typed `dispatch(event, ...)` | `subscribe(change)` | `dispatch` sequence |
-
-`bireactive` is the most implicit: a write to a `Num` cell propagates through lenses and effects. The "diff" is the graph of cells. `coarse store` is the most explicit at the other extreme: a new `Workspace` object is the diff. `D3-direct` is batch-only: there is no diff, the chart just re-renders from a new dataset.
-
-### Other reactive interfaces to consider
-
-- **Solid** — `createSignal`/`createMemo`/`createEffect`; getter/setter, no `.value`.
-- **Preact Signals** — `signal.value`, `computed.value`, `effect()`.
-- **nanostores** — `atom`, `computed`, `effect()`.
-- **MobX** — `observable` + `action` + `autorun`.
-- **Valtio** — proxy snapshots + `subscribe`.
-- **Immer** — `produce` returns next state and can emit `Patch` objects.
-- **XState** — state machine, `send(event)`, `getState()`, `subscribe`.
-- **RxJS** — streams; not state, but can back a state cell.
-- **Yjs** — `Y.Doc` with shared types (`Y.Map`, `Y.Array`). Changes are binary `update` events. `doc.on('update', ...)` / `Y.applyUpdate(doc, update)` / `doc.transact(fn)`.
-- **Automerge** — immutable JSON-like doc. `Automerge.change(doc, d => ...)` produces `Change[]`. `getChanges(oldDoc, newDoc)` / `applyChanges(doc, changes)`.
-- **Observable runtime** — `Runtime` + `Module` + `Variable`; generator-based `value` observers.
-
-### Common denominator
-
-The 2026 signal consensus (`flexblox-design.md` §3) converges on:
-
-```ts
-interface Signal<T> { get(): T; set(value: T): void; }
-interface Computed<T> { get(): T; }
-interface Effect { (fn: () => (() => void) | void): () => void; }
-interface Batch { <R>(fn: () => R): R; }
-```
-
-For a doc-based lingua franca, we can add a patch dimension:
-
-```ts
-interface Doc<T> {
-  get(): T
-  set(value: T): void
-  // or patch-oriented
-  apply(patch: Patch): void
-  subscribe(fn: (patch: Patch | null, snapshot: T) => void): () => void
-  transact(fn: () => void): void
-  origin?: unknown
-}
-
-// Example patch language for our domain
-type Patch =
-  | { op: 'setCell'; datasetId: string; nodeId: string; measureKey: string; value: number; origin?: unknown }
-  | { op: 'setNodes'; datasetId: string; nodes: VizNode[]; origin?: unknown }
-  | { op: 'reorder'; datasetId: string; nodeIds: string[]; origin?: unknown }
-  | { op: 'setDrill'; drillKey: string; nodeId: string | null; origin?: unknown }
-  // ...
-```
-
-### Yjs-style doc API as the lingua franca
-
-Yjs exposes a `Y.Doc` with shared types and an `update` event. Translating that shape to our domain:
-
-```ts
-interface HotbookDoc {
-  getDataset(id: string): DatasetSnapshot
-  getDatasetArray(): Array<DatasetSnapshot>
-  setCell(datasetId: string, nodeId: string, measureKey: string, value: number): void
-  setNodes(datasetId: string, nodes: VizNode[]): void
-
-  // changes flow out as patches
-  on(event: 'update', cb: (patch: Patch) => void): () => void
-
-  // batch changes into one patch
-  transact(fn: () => void): void
-
-  // for sync/undo/crdt
-  getUpdates(): Patch[]
-  applyUpdate(update: Patch[]): void
-}
-```
-
-Each substrate then maps `HotbookDoc` to its own state:
-
-- **bireactive**: `getNodes()` returns a `TreeNode`; `setCell` writes a `Writable<Num>`; `on('update')` is `effect(...)`.
-- **coarse store**: `getDataset()` returns a plain `Dataset`; `setCell` builds a new `Dataset`; `on('update')` triggers `render()`.
-- **D3-direct**: `getDataset()` returns the last `Dataset`; `setCell` triggers `chart.update()`; `on('update')` is not needed.
-- **Yjs**: `HotbookDoc` is literally a `Y.Doc` with `Y.Map`/`Y.Array` types; patches are `update` events.
-- **Automerge**: `HotbookDoc` is an `Automerge.Doc<HotbookState>`; patches are `Change` lists.
-
-The **lingua franca** is then the patch shape, not the state representation. The kernel owns the doc and emits patches. The substrate is a patch applier with a snapshot.
-
-### Implications
-
-- **Cross-substrate sync** is free because every substrate consumes the same patch stream.
-- **Conservation** can be a kernel-level patch transformer (`setCell` → `setCell` + redistributed sibling `setCell`s) before the patch reaches the substrate.
-- **Undo/redo** is a patch log.
-- **Remote sync** is patch transport.
-- **The hard part** is defining the patch language and the snapshot boundary. Is the doc `Dataset` only, or `Workspace`? `Workspace` adds dashboards/tiles/dock as patches, which is more powerful but also more surface area.
+Do we want the kernel to own the `NodeStore` instance, or does the surface pass a `NodeStore` into the chart? The former is one source of truth; the latter lets different tiles use different substrates in the same surface.
 
 ---
 
@@ -425,9 +227,8 @@ Two competing frames:
 - Path: lift existing code, not greenfield.
 
 ### B. Flexblox / matchina frame
-- Build `@hotbook/core` as a substrate-agnostic kernel with `Signal`/`Store` interfaces.
-- Add `matchina` state machine for lifecycle.
-- Wire `@hotbook/bireactive` and `@hotbook/d3` as kernel adapters.
+- Build `@hotbook/core` as a substrate-agnostic kernel with `NodeStore` / `Patch` interfaces.
+- Wire `@hotbook/bireactive` and `@hotbook/d3` as `NodeStore` strategies.
 - Path: design then conform.
 
 ```mermaid
@@ -436,15 +237,15 @@ flowchart TB
       a1["@hotbook/bireactive charts"] -->|owns coordination| a2["@hotbook/core<br/>types only"]
     end
 
-    subgraph flexblox
-      f1["@hotbook/core<br/>kernel + state machine"] --> f2["@hotbook/bireactive adapter"]
-      f1 --> f3["@hotbook/d3 adapter"]
+    subgraph strategy
+      f1["@hotbook/core<br/>NodeStore + Patch"] --> f2["BireactiveNodeStore"]
+      f1 --> f3["ArrayNodeStore"]
       f2 --> f4["chart elements"]
       f3 --> f4
     end
 ```
 
-Decision needed: which frame? Mix? A first, then B later?
+Decision needed: which frame? A first, then B later? Or B now with `NodeStore` as the abstraction?
 
 ---
 
@@ -468,10 +269,10 @@ flowchart TD
 
 ### Top decisions
 
-1. **Substrate strategy** — bireactive first? D3-direct equal? matchina as lifecycle backend? Mixed?
-2. **Kernel boundary** — keep coordination in `@hotbook/bireactive` or extract to `@hotbook/core` now?
+1. **Substrate strategy** — `BireactiveNodeStore` first, `ArrayNodeStore` as first-class, or mixed? Is `NodeStore` the right abstraction?
+2. **Kernel boundary** — keep coordination in `@hotbook/bireactive` or extract a `NodeStore`/`Patch` kernel to `@hotbook/core` now?
 3. **Dock strategy** — adopt `dockview-core` or build fresh? Single-page or stacked pages?
-4. **Core scope** — types/colors only, or state machine + edit primitives?
+4. **Core scope** — types/colors only, or `NodeStore` + `Patch` + conservation transformer?
 5. **Package list** — which `@hotbook/*` packages exist? Do we need `@hotbook/dock`, `@hotbook/ui`, `@hotbook/layercharts`, `@hotbook/observable-runtime`?
 6. **Tile spec vocabulary** — `measureKey`/`sortBy`/`xKey`/`yKey` vs `xField`/`valueField`/`sortDir`?
 7. **Svelte/LayerChart fate** — keep alias, promote to package, or remove?
@@ -525,7 +326,7 @@ This DAG is draft only. It depends on the substrate/kernel decision.
 
 ## 7. Notes / scratch
 
-- `@hotbook/d3` currently depends on `@hotbook/bireactive` because the tile-binder uses `bireactive` primitives. If we want a pure D3-direct substrate, the tile-binder needs to be split or the dependency inverted.
+- `@hotbook/d3` currently depends on `@hotbook/bireactive` because the tile-binder uses `bireactive` primitives. If we want a pure D3-direct substrate, the `ArrayNodeStore` + `D3Chart` consumer pattern removes the need for `bireactive` in the D3 path.
 - `apps/hotbook` has `persistence/` and `store/` — these are host-level, not kernel-level. The kernel should be ephemeral.
-- `matchina` is a typed state-machine library. It is not installed yet. If we adopt it, it would be a backend adapter, not a hard dependency of `@hotbook/core`.
+- `matchina` is a typed state-machine library. It is not installed yet. It is a lifecycle utility, not a `NodeStore` strategy.
 - The `bireactive` version in `package.json` is `^0.3.5` in root but `^0.3.4` in packages. Align.
