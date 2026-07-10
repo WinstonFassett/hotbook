@@ -52,11 +52,11 @@ graph LR
 ## Quick start
 
 ```sh
-npm install @winstonfassett/vizform-react @winstonfassett/vizform-core
+npm install @hotbook/react @hotbook/core
 ```
 
 ```tsx
-import { Viz } from '@winstonfassett/vizform-react'
+import { Viz } from '@hotbook/react'
 
 const goals = [
   { id: 'a', name: 'Alpha', color: '#e06c75', measurements: { value: 40 }, archived: false, tags: [], urgent: false, important: false, createdAt: '', updatedAt: '' },

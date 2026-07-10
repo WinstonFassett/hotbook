@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "paths": {
+      "@hotbook/core": ["./packages/core/src"],
+      "@hotbook/bireactive": ["./packages/bireactive/src"],
+      "@hotbook/d3": ["./packages/d3/src"],
+      "@hotbook/react-d3": ["./packages/react-d3/src"],
+      "@hotbook/layout": ["./packages/layout/src"],
+      "@hotbook/apitable": ["./packages/apitable/src"]
+    }
+  }
+}

@@ -8,15 +8,15 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 echo "==> Building packages..."
-npm run build -w packages/vizform-charts
-npm run build -w packages/vizform-vanilla-d3
-npm run build -w packages/vizform-react-d3
+npm run build -w packages/bireactive
+npm run build -w packages/d3
+npm run build -w packages/react-d3
 
 echo "==> Building docs..."
 npm run build -w apps/docs
 
-echo "==> Building sliceboard..."
-(cd apps/sliceboard && npx vite build --base /sliceboard/)
+echo "==> Building hotbook..."
+(cd apps/hotbook && npx vite build --base /hotbook/)
 
 echo "==> Building bireactive layercharts demo..."
 (cd apps/vanilla-bireactive-layercharts-spike && npx vite build --base /demos/bireactive-layercharts/)
@@ -24,15 +24,15 @@ echo "==> Building bireactive layercharts demo..."
 echo "==> Building bireactive demo..."
 (cd apps/vanilla-bireactive-spike && npx vite build --base /demos/bireactive/)
 
-echo "==> Building bireactive native layout demo..."
-(cd packages/vizform-layout && npx vite build --base /demos/bireactive-native-layout/)
+echo "==> Building layout demo..."
+(cd packages/layout && npx vite build --base /demos/layout/)
 
 echo "==> Assembling site..."
 # Copy demo builds into docs dist at their subpaths
-cp -r apps/sliceboard/dist apps/docs/dist/sliceboard
+cp -r apps/hotbook/dist apps/docs/dist/hotbook
 mkdir -p apps/docs/dist/demos
 cp -r apps/vanilla-bireactive-layercharts-spike/dist apps/docs/dist/demos/bireactive-layercharts
 cp -r apps/vanilla-bireactive-spike/dist apps/docs/dist/demos/bireactive
-cp -r packages/vizform-layout/dist apps/docs/dist/demos/bireactive-native-layout
+cp -r packages/layout/dist apps/docs/dist/demos/layout
 
 echo "==> Site built at apps/docs/dist"

@@ -2,7 +2,7 @@
 
 > Handoff for an autonomous agent. **Execute in order. Do not ask questions.**
 > **Prerequisite:** the charts extraction (`docs/plan-extract-vizform-charts.md`)
-> must be landed first — this plan binds against the packaged `@winstonfassett/vizform-charts`.
+> must be landed first — this plan binds against the packaged `@hotbook/charts`.
 
 ## Goal
 

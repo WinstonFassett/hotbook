@@ -84,7 +84,7 @@ export type { BiNode } from './lib/tree'
 Mirror `packages/vizform-vanilla-d3/package.json` exactly for `type`, `exports`
 (the `node` → `./src/index.ts` condition is REQUIRED for no-build HMR),
 `publishConfig`, `files`, `scripts`, `license: MIT`. Set:
-- `"name": "@winstonfassett/vizform-charts"`, `"version": "0.1.0"`.
+- `"name": "@hotbook/charts"`, `"version": "0.1.0"`.
 - `dependencies`: `bireactive` `^0.3.4`, `d3-array` `^3.2.4`, `d3-hierarchy`
   `^3.1.2`, `d3-scale` `^4.0.2`, `d3-shape` `^3.2.0`.
 - `devDependencies`: matching `@types/d3-*`, `typescript`, `vite`, `vite-plugin-dts`.
@@ -92,9 +92,9 @@ Mirror `packages/vizform-vanilla-d3/package.json` exactly for `type`, `exports`
 
 ### 4. Repoint sliceboard
 - `apps/sliceboard/src/viz/br/BrLcCharts.tsx`: replace the 14 `@br-lc/demos/*`
-  imports with named imports from `@winstonfassett/vizform-charts`. The tag
+  imports with named imports from `@hotbook/charts`. The tag
   registry/`useBrElement`/dispatch code stays unchanged.
-- `apps/sliceboard/package.json`: add `"@winstonfassett/vizform-charts": "*"` to
+- `apps/sliceboard/package.json`: add `"@hotbook/charts": "*"` to
   dependencies.
 - `apps/sliceboard/vite.config.ts`:
   - Remove the `'@br-lc'` alias (now a real package). **Keep `'@svelte-lc'`.**
@@ -103,10 +103,10 @@ Mirror `packages/vizform-vanilla-d3/package.json` exactly for `type`, `exports`
 
 ### 5. Repoint the spike app (keep it as a demo harness on the package)
 - `apps/vanilla-bireactive-layercharts-spike/src/main.ts`: change the
-  `./demos/*` class imports to `@winstonfassett/vizform-charts`. The registration
+  `./demos/*` class imports to `@hotbook/charts`. The registration
   loop, repro-hash harness, and `experiments[]` list stay.
 - `apps/vanilla-bireactive-layercharts-spike/package.json`: add
-  `"@winstonfassett/vizform-charts": "*"`.
+  `"@hotbook/charts": "*"`.
 - Its `vite.config.ts` needs the same `conditions: ['browser','node']` so it
   resolves the package to source for live dev (copy from sliceboard).
 
@@ -130,7 +130,7 @@ Then a behavior smoke (per repo memory — real Playwright, not synthetic events
 - `packages/vizform-charts` has a clean `index.ts`, MIT license, `node` export
   condition, and depends only on bireactive + granular d3-*.
 - sliceboard, the spike app, and the package each depend on
-  `@winstonfassett/vizform-charts` via `*`.
+  `@hotbook/charts` via `*`.
 
 ## Out of scope (explicitly deferred — do not start)
 - Lifting `applyView`/sort/group into `@vizform/core`.

@@ -1,0 +1,31 @@
+{
+  "name": "hotbook",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "portless hotbook vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@types/d3": "^7.4.3",
+    "@hotbook/bireactive": "*",
+    "@hotbook/core": "*",
+    "@hotbook/d3": "*",
+    "bireactive": "^0.3.4",
+    "d3": "^7.9.0",
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^5.1.1",
+    "@types/react": "^18.0.0",
+    "@types/react-dom": "^18.0.0",
+    "@vitejs/plugin-react": "^4.0.0",
+    "@winstonfassett/webdev-vite": "^0.1.0-alpha.0",
+    "typescript": "^5.7.2",
+    "vite": "^6.3.5",
+    "vitest": "^4.1.10"
+  }
+}

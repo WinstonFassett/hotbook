@@ -1,0 +1,16 @@
+# Netlify config for standalone hotbook app deployment
+# This builds hotbook without a base path (served at root)
+
+[build]
+  base    = ""
+  command = "npm run build:hotbook"
+  publish = "apps/hotbook/dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# SPA fallback for hotbook
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
+  status = 200

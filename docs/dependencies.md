@@ -43,7 +43,7 @@ graph TD
 Solid arrows = real `package.json` dependencies. Dotted arrows = **vite source
 aliases** in `apps/sliceboard/vite.config.ts` — sliceboard imports the svelte spike
 app's `src/` directly (`@svelte-lc`) for no-build live HMR; it is
-*not* a workspace package dep. (The `@winstonfassett/vizform-charts` package is a
+*not* a workspace package dep. (The `@hotbook/charts` package is a
 real workspace dep — no alias needed.)
 
 ## The package split (post-rename nuance)
@@ -213,7 +213,7 @@ public surface; npm scope (`@vizform/*` vs `@winstonfassett/*`).
 
 1. The `vizform-*-d3` packages expose a `node` export condition → `./src/index.ts`,
    so sliceboard resolves them to **TS source**, not built `dist`.
-2. `@winstonfassett/vizform-charts` also exposes a `node` export condition → `./src/index.ts` for the same reason. The `@svelte-lc` alias still points at the svelte spike's `src/`.
+2. `@hotbook/charts` also exposes a `node` export condition → `./src/index.ts` for the same reason. The `@svelte-lc` alias still points at the svelte spike's `src/`.
 3. `dedupe: ['react','react-dom']` forces a single React copy across all
    source-resolved packages (else a second instance crashes hooks).
 

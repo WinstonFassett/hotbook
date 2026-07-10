@@ -20,8 +20,8 @@ import {
   MdTreetableLC,
   leaf,
   group,
-} from '@winstonfassett/vizform-charts';
-import type { ColumnDef } from '@winstonfassett/vizform-charts';
+} from '@hotbook/bireactive';
+import type { ColumnDef } from '@hotbook/bireactive';
 
 // Expose tree constructors for console poking and the e2e lifecycle tests.
 (window as unknown as Record<string, unknown>).vizformCharts = { leaf, group };
