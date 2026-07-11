@@ -4,7 +4,6 @@ export type {
   MeasureDef,
   DimDef,
   Dataset,
-  RetiredTileKind,
   TileKind,
   Tile,
   Dashboard,

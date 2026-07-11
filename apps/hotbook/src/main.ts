@@ -32,7 +32,7 @@ const TILE_KINDS: TileKind[] = [
 ]
 
 const TILE_LABELS: Record<TileKind, string> = {
-  'treetable':            'Table',
+  'treetable':      'Table',
   'bar':            'Bar',
   'bands':          'Bands',
   'line':           'Line',
@@ -45,23 +45,11 @@ const TILE_LABELS: Record<TileKind, string> = {
   'gauge-segmented':'Gauge (segmented)',
   'pack':           'Pack',
   'treemap':        'Treemap',
-  'treetable':      'Treetable',
   'icicle':         'Icicle',
   'sunburst':       'Sunburst',
   'sankey':         'Sankey',
   'tree':           'Tree',
   'gantt':          'Gantt',
-  'h-treemap':            'H-Treemap (retired)',
-  'h-icicle':             'Icicle (retired)',
-  'h-radial':             'Sunburst (retired)',
-  'treemap':              'Treemap (retired)',
-  'radial':               'Radial (retired)',
-  'bands':                'Bands (retired)',
-  'svelte-sunburst':'Sunburst (Svelte, retired)',
-  'svelte-icicle':  'Icicle (Svelte, retired)',
-  'svelte-pack':    'Pack (Svelte, retired)',
-  'svelte-treemap': 'Treemap (Svelte, retired)',
-  'svelte-treemap-demo':  'Treemap demo (Svelte, retired)',
 }
 
 function tileLabel(tile: Tile): string {

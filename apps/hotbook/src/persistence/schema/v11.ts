@@ -46,14 +46,6 @@ export interface Dataset {
 
 // ─── Dashboard tile ───────────────────────────────────────────────────────────
 
-// Gen-0 and Svelte variants are retired from the picker but kept as string literals
-// so old persisted dashboards don't crash if encountered.
-export type RetiredTileKind =
-  | 'treemap' | 'radial' | 'bands'           // gen-0 flat morph trio
-  | 'h-treemap' | 'h-icicle' | 'h-radial'   // gen-0 hier D3
-  | 'treetable'                              // replaced by treetable
-  | 'svelte-sunburst' | 'svelte-icicle' | 'svelte-pack' | 'svelte-treemap' | 'svelte-treemap-demo'
-
 export type TileKind =
   // bireactive LC-port charts (canon)
   | 'bar'
@@ -74,7 +66,6 @@ export type TileKind =
   | 'sankey'
   | 'tree'
   | 'gantt'
-  | RetiredTileKind
 
 export interface Tile {
   id: string
