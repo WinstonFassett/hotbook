@@ -409,12 +409,11 @@ export class MdConcentricArcLC extends Diagram {
       else if (ke.key === "ArrowDown") { mutateDatum(target, -step); ke.preventDefault(); }
     });
 
-    s(label(Vec.derive(() => ({ x: Wc.value / 2, y: 20 })), derive(() => {
-      void data.value;
-      const p = selected.value ?? hover.value;
-      if (!p) return "ConcentricArc — hover · click ring · drag handle · Tab/←/→ nav · ↑/↓ edit · cmd+wheel";
-      return `${p.label}  ${Math.round(p.value)}%`;
-    }), { size: 11, align: Anchor.Center, opacity: 0.7 }));
+    s(label(
+      Vec.derive(() => ({ x: Wc.value / 2, y: 20 })),
+      "ConcentricArc — hover · click ring · drag handle · Tab/←/→ nav · ↑/↓ edit · cmd+wheel",
+      { size: 11, align: Anchor.Center, opacity: 0.7 },
+    ));
 
     // Cross-tile hover/select sync bridge — keyed on the datum's stable id.
     const idOf = (d: Ring | null) => d?.id ?? null;

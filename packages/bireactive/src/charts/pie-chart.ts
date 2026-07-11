@@ -325,7 +325,7 @@ export class MdPieChartLC extends Diagram {
     });
 
     s(label(
-      Vec.derive(() => ({ x: Wc.value / 2, y: 14 })),
+      Vec.derive(() => ({ x: Wc.value / 2, y: 20 })),
       "PieChart — click · ←/→ navigate · ↑/↓ edit · cmd+wheel",
       { size: 11, align: Anchor.Center, opacity: 0.7 },
     ));
