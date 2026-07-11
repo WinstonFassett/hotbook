@@ -32,7 +32,7 @@ function makeData(): Bar[] {
 }
 
 const V_PAD = { top: 16, right: 24, bottom: 36, left: 48 };
-const H_PAD = { top: 16, right: 64, bottom: 16, left: 16 };
+const H_PAD = { top: 16, right: 64, bottom: 36, left: 16 };
 const V_BAR_STEP = 56; // px per bar in vertical overflow
 const H_BAND_STEP = 44; // px per band in horizontal overflow
 
@@ -620,11 +620,7 @@ export class MdBarChartLC extends Diagram {
     }
 
     // ─── Status label ─────────────────────────────────────────────────────
-    s(label(Vec.derive(() => ({ x: Wc.value / 2, y: 8 })), derive(() => {
-      const p = selected.value ?? hover.value;
-      if (!p) return "Bar — hover · click · navigate · edit · ctrl+wheel · drag end";
-      return `${p.label}  ${p.value}`;
-    }), { size: 11, align: Anchor.Center, opacity: 0.7 }));
+    s(label(Vec.derive(() => ({ x: Wc.value / 2, y: 8 })), "Bar — hover · click · navigate · edit · ctrl+wheel · drag end", { size: 11, align: Anchor.Center, opacity: 0.7 }));
 
     // ─── Cross-tile sync bridge ───────────────────────────────────────────
     this.#bridge(data, hover, selected);

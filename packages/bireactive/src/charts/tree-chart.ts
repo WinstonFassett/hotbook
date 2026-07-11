@@ -228,8 +228,11 @@ export class MdTreeChart extends Diagram {
       const lx = num(lseed.x), ly = num(lseed.y);
       posCells.set(node, { lx, ly });
       const ltarget = derive(() => {
-        const nd = layout.value.map.get(node);
-        return { x: nd?.x ?? 0, y: nd?.y ?? 0 };
+        const l = layout.value;
+        const nd = l.map.get(node);
+        const x = nd?.x ?? 0, y = nd?.y ?? 0;
+        // d3 tree() puts breadth in .x and depth in .y; horizontal renders depth on screen-X.
+        return l.isHorizontal ? { x: y, y: x } : { x, y };
       });
       let lcancel: (() => void) | null = null;
       let lInited = false;

@@ -23,6 +23,7 @@ import {
 } from "bireactive";
 import { Diagram } from "../lib/diagram";
 import { dragCancelable } from "../lib/esc-contract";
+import type { BiNode } from "../lib/tree";
 
 interface Category {
   label: string;
@@ -104,13 +105,61 @@ export class MdBudgetTree extends Diagram {
       outline: none;
     }
   `
+  /** Shared BiNode hierarchy (root → categories → leaves). When set, the
+   *  chart renders those cells directly, so edits round-trip with any other
+   *  view bound to the same tree. Falls back to the built-in budget data. */
+  externalRoot?: BiNode;
+
   protected scene(s: Mount): void {
     const view = this.view(W, H);
     this.tabIndex = -1;
     this.style.outline = "none";
-    const budget = makeBudget();
-    void asTree(budget);
     const selected = cell<Writable<Num> | null>(null);
+
+    let rootTotal: Writable<Num>;
+    let rootLabel: string;
+    let catCells: Writable<Num>[];
+    let catLabels: string[];
+    let catFills: string[];
+    const leafCells: Writable<Num>[] = [];
+    const leafLabels: string[] = [];
+    const leafFills: string[] = [];
+
+    const ext = this.externalRoot;
+    if (ext) {
+      const cats = ext.children as BiNode[];
+      rootTotal = ext.value.total;
+      rootLabel = (ext.value.label ?? "TOTAL").toUpperCase();
+      catCells = cats.map((c) => c.value.total);
+      catLabels = cats.map((c) => c.value.label ?? "");
+      catFills = cats.map((c, i) => c.value.color ?? CAT_FILLS[i % CAT_FILLS.length]!);
+      let f = 0;
+      for (const c of cats) {
+        for (const l of c.children as BiNode[]) {
+          leafCells.push(l.value.total);
+          leafLabels.push(l.value.label ?? "");
+          leafFills.push(l.value.color ?? LEAF_FILLS[f % LEAF_FILLS.length]!);
+          f++;
+        }
+      }
+    } else {
+      const budget = makeBudget();
+      void asTree(budget);
+      rootTotal = budget.rootTotal;
+      rootLabel = "TOTAL";
+      catCells = budget.categories.map((c) => c.total);
+      catLabels = budget.categories.map((c) => c.label);
+      catFills = CAT_FILLS.slice();
+      let f = 0;
+      for (const c of budget.categories) {
+        for (const l of c.leaves) {
+          leafCells.push(l.cell);
+          leafLabels.push(l.label);
+          leafFills.push(LEAF_FILLS[f % LEAF_FILLS.length]!);
+          f++;
+        }
+      }
+    }
 
     s(
       label(
@@ -119,24 +168,8 @@ export class MdBudgetTree extends Diagram {
       ),
     );
 
-    this.renderRow(s, Y_ROOT, BAR_X0, BAR_W, [budget.rootTotal], ["TOTAL"], ["#222"], true, selected);
-
-    const catCells = budget.categories.map((c) => c.total);
-    const catLabels = budget.categories.map((c) => c.label);
-    this.renderRow(s, Y_CAT, BAR_X0, BAR_W, catCells, catLabels, CAT_FILLS, false, selected);
-
-    const leafCells: Writable<Num>[] = [];
-    const leafLabels: string[] = [];
-    const leafFills: string[] = [];
-    let f = 0;
-    for (const c of budget.categories) {
-      for (const l of c.leaves) {
-        leafCells.push(l.cell);
-        leafLabels.push(l.label);
-        leafFills.push(LEAF_FILLS[f % LEAF_FILLS.length]!);
-        f++;
-      }
-    }
+    this.renderRow(s, Y_ROOT, BAR_X0, BAR_W, [rootTotal], [rootLabel], ["#222"], true, selected);
+    this.renderRow(s, Y_CAT, BAR_X0, BAR_W, catCells, catLabels, catFills, false, selected);
     this.renderRow(s, Y_LEAF, BAR_X0, BAR_W, leafCells, leafLabels, leafFills, false, selected);
 
     s(

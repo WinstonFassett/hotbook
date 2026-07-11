@@ -18,12 +18,22 @@ function fmtNum(v: number): string {
   return Math.round(v).toString();
 }
 
-function computeVisible(root: BiNode, collapsed: Set<string>, maxDepth?: number): VisibleRow[] {
+// Leaves-only subtree sum, matching buildHierarchy's .sum() semantics.
+function subtreeValue(n: BiNode): number {
+  const kids = n.children as BiNode[];
+  if (kids.length === 0) return n.value.total.value;
+  return kids.reduce((s, c) => s + subtreeValue(c), 0);
+}
+
+function computeVisible(root: BiNode, collapsed: Set<string>, maxDepth?: number, sortBy?: 'index' | 'value'): VisibleRow[] {
   const out: VisibleRow[] = [];
 
   function walk(node: BiNode, depth: number) {
-    const children = node.children as BiNode[];
+    let children = node.children as BiNode[];
     const hasKids = children.length > 0;
+    if (hasKids && sortBy === 'value') {
+      children = children.slice().sort((a, b) => subtreeValue(b) - subtreeValue(a));
+    }
 
     // Add node (skip root at depth 0)
     if (depth > 0) {
@@ -63,6 +73,13 @@ export interface ColumnDef {
  */
 export class MdTreetableLC extends HTMLElement {
   externalRoot?: BiNode;
+  private _sortBy: 'index' | 'value' = 'index';
+  get sortBy(): 'index' | 'value' { return this._sortBy; }
+  set sortBy(v: 'index' | 'value') {
+    if (v === this._sortBy) return;
+    this._sortBy = v;
+    if (this.isConnected && this.root) this.render();
+  }
   maxDepth?: number;
   drillKey?: string;
   drillNodeId?: string | null;
@@ -263,7 +280,7 @@ export class MdTreetableLC extends HTMLElement {
       this.root.appendChild(this.body);
     }
 
-    const visible = computeVisible(rootNode, this.collapsed, this.maxDepth);
+    const visible = computeVisible(rootNode, this.collapsed, this.maxDepth, this._sortBy);
     const allNodeIds: string[] = [];
 
     // Keyed update
@@ -409,6 +426,11 @@ export class MdTreetableLC extends HTMLElement {
     for (const listener of this.renderListeners) {
       listener(allNodeIds);
     }
+  }
+
+  /** Re-render against the current externalRoot (e.g. after rebinding it). */
+  refresh(): void {
+    if (this.isConnected && this.root) this.render();
   }
 
   // API for React wrapper
