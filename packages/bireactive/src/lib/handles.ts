@@ -1,5 +1,5 @@
 import type { AnyShape, Val } from "bireactive";
-import { circle, rect, derive, effect as biEffect, cell } from "bireactive";
+import { circle, rect, derive } from "bireactive";
 
 /**
  * Semantic mode for a handle — determines its color rule.
@@ -117,34 +117,20 @@ export function lineHandle(
       : "#0b0d12";
   }
 
+  // Rotate the pill so its long axis aligns with the divider.
+  // Rect() rotates around its own center (origin is derived from x/y/w/h).
+  const rotate = derive(() => {
+    const o = typeof orient === "object" && "value" in orient ? orient.value : orient;
+    return typeof o === "number" ? o : (o === "vert" ? Math.PI / 2 : 0);
+  });
+
   const handle = rect(x, y, width, height, {
     fill,
     stroke,
     strokeWidth: 1.5,
     corner: shortAxis / 2,  // fully rounded pill
     thin: true,
-  });
-
-  // Apply rotation via CSS transform
-  // The rotation is anchored at the center of the rect
-  handle.el.style.transformOrigin = "center";
-
-  // Reactively update rotation when orientation changes
-  biEffect(() => {
-    const o = typeof orient === "object" && "value" in orient ? orient.value : orient;
-    let rotation: string;
-
-    if (typeof o === "number") {
-      // Radians to degrees, then rotate
-      // The pill is horizontal by default, so we rotate to match the radial angle
-      const degrees = (o * 180) / Math.PI;
-      rotation = `rotate(${degrees}deg)`;
-    } else {
-      // Binary horiz/vert for icicle
-      rotation = o === "vert" ? "rotate(90deg)" : "";
-    }
-
-    handle.el.style.transform = rotation;
+    rotate,
   });
 
   return handle;
