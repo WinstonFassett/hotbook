@@ -24,6 +24,12 @@ export interface BrSyncBridge {
   onSelect(cb: (id: string | null) => void): () => void;
   /** Subscribe to drill events (dblclick on a node with children). Returns an unsubscribe. */
   onDrill?(cb: (drillKey: string, id: string | null) => void): () => void;
+  /** Emit a hover event to the chart's onHover subscribers. */
+  emitHover(id: string | null): void;
+  /** Emit a select event to the chart's onSelect subscribers. */
+  emitSelect(id: string | null): void;
+  /** Emit a drill event to the chart's onDrill subscribers. */
+  emitDrill(drillKey: string, id: string | null): void;
 }
 
 export interface ElementWithBridge extends HTMLElement {
@@ -36,11 +42,7 @@ export function makeBridge(opts: {
   setHover: (id: string | null) => void;
   setSelect: (id: string | null) => void;
   setDrill?: (id: string | null) => void;
-}): BrSyncBridge & {
-  emitHover: (id: string | null) => void;
-  emitSelect: (id: string | null) => void;
-  emitDrill: (drillKey: string, id: string | null) => void;
-} {
+}): BrSyncBridge {
   const hoverCbs = new Set<(id: string | null) => void>();
   const selectCbs = new Set<(id: string | null) => void>();
   const drillCbs = new Set<(drillKey: string, id: string | null) => void>();
