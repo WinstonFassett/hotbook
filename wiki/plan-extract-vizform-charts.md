@@ -71,7 +71,6 @@ export { MdTreemapLC } from './demos/treemap'
 export { MdIcicleLC } from './demos/icicle'
 export { MdSunburstLC } from './demos/sunburst'
 export { MdSankeySimple, MdSankeyComplex, MdSankeyHierarchy } from './demos/sankey'
-export { MdSankeyFlow } from './demos/sankey-flow'
 export { MdTreeChart } from './demos/tree-chart'
 export { MdBudgetTree } from './demos/budget-tree'
 // Public lib types consumers may need:

@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import {
   BrLcBar, BrLcLine, BrLcArea, BrLcScatter, BrLcPie, BrLcRadar, BrLcConcentricArc,
-  BrLcPack, BrLcTreemap, BrLcTreetable, BrLcIcicle, BrLcSunburst, BrLcSankey, BrLcSankeyFlow, BrLcTree,
+  BrLcPack, BrLcTreemap, BrLcTreetable, BrLcIcicle, BrLcSunburst, BrLcSankey, BrLcTree,
   BrLcGantt,
 } from '../viz/br/BrLcCharts'
 import type { VizNode, PEdge } from '../persistence'
@@ -113,10 +113,6 @@ const DEMOS: DemoDef[] = [
     slug: 'br-lc-sankey', label: 'Sankey', fixtureName: 'supply-edges', fixture: SUPPLY,
     initEdges: SUPPLY.edges,
     render: (_rows, edges) => <BrLcSankey edges={edges} />,
-  },
-  {
-    slug: 'br-lc-sankey-flow', label: 'Sankey Flow', fixtureName: '(built-in)', fixture: { note: 'conservation-flow demo uses element internal data' },
-    render: () => <BrLcSankeyFlow />,
   },
   {
     slug: 'br-lc-gantt', label: 'Gantt', fixtureName: 'gantt-tasks', fixture: GANTT,

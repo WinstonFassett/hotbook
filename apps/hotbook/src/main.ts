@@ -28,7 +28,7 @@ const TILE_KINDS: TileKind[] = [
   'treetable',
   'br-lc-bar', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie',
   'br-lc-radar', 'br-lc-concentric-arc', 'br-lc-gauge', 'br-lc-gauge-segmented',
-  'br-lc-pack', 'br-lc-treemap', 'br-lc-treetable', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-sankey-flow', 'br-lc-tree', 'br-lc-gantt',
+  'br-lc-pack', 'br-lc-treemap', 'br-lc-treetable', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree', 'br-lc-gantt',
 ]
 
 const TILE_LABELS: Record<TileKind, string> = {
@@ -49,7 +49,6 @@ const TILE_LABELS: Record<TileKind, string> = {
   'br-lc-icicle':         'Icicle',
   'br-lc-sunburst':       'Sunburst',
   'br-lc-sankey':         'Sankey',
-  'br-lc-sankey-flow':    'Sankey Flow',
   'br-lc-tree':           'Tree',
   'br-lc-gantt':          'Gantt',
   'h-treemap':            'H-Treemap (retired)',

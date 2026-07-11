@@ -72,7 +72,6 @@ export type TileKind =
   | 'br-lc-icicle'
   | 'br-lc-sunburst'
   | 'br-lc-sankey'
-  | 'br-lc-sankey-flow'
   | 'br-lc-tree'
   | 'br-lc-gantt'
   | RetiredTileKind

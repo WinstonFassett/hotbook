@@ -88,11 +88,6 @@ export const CHART_METADATA: Record<string, ChartMetadata> = {
     maturity: 'experimental',
     description: 'Sankey flow diagram'
   },
-  'sankey-flow': {
-    name: 'Sankey Flow',
-    maturity: 'experimental',
-    description: 'Animated sankey flow'
-  },
   'tree-chart': {
     name: 'Tree Chart',
     maturity: 'experimental',

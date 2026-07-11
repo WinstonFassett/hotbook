@@ -124,9 +124,7 @@ hooks' bodies. Reuse the existing spec fields (`build`/`readValue`/`writeValue`/
 4. **Delete** from `BrLcCharts.tsx`: `useLiveFlatElement`, `useLiveHierElement`,
    the `lastRef`/`commitTick`/`gestureActive` React machinery, the `vkey`/shapeKey
    helpers that only existed to drive React deps (move any still-needed key
-   computation into the `make*Source` factories). `BrLcSankey`/`BrLcSankeyFlow`
-   (which use the simpler `useBrElement`) can stay as-is or also route through
-   `bindTile` — keep them working, don't gold-plate.
+   computation into the `make*Source` factories).
 5. **Re-evaluate `dedupe: ['react','react-dom']`** in `apps/sliceboard/vite.config.ts`:
    keep it (App is still React). Leave `bireactive` dedupe in place.
 

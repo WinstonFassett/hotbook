@@ -49,7 +49,6 @@ const TAGS = [
   ['v-br-icicle',         MdIcicleLC],
   ['v-br-sunburst',       MdSunburstLC],
   ['v-br-sankey',         MdSankeySimple],
-  ['v-br-sankey-flow',    MdSankeyFlow],
   ['v-br-tree',           MdTreeChart],
   ['v-br-gantt',          MdGanttChartLC],
 ] as const
@@ -429,10 +428,6 @@ export function buildSimpleMount(ctx: TileRenderContext): ((el: HTMLElement) => 
     return (el: any) => { el.externalData = data }
   }
 
-  if (kind === 'br-lc-sankey-flow') {
-    return (_el: HTMLElement) => {}
-  }
-
   return null
 }
 
@@ -442,7 +437,6 @@ export function simpleTag(kind: string): string | null {
     'br-lc-gauge': 'v-br-gauge',
     'br-lc-gauge-segmented': 'v-br-gauge-segmented',
     'br-lc-sankey': 'v-br-sankey',
-    'br-lc-sankey-flow': 'v-br-sankey-flow',
     'br-lc-gantt': 'v-br-gantt',
   }
   return map[kind] ?? null

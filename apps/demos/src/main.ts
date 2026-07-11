@@ -51,7 +51,6 @@ const experiments: Array<{ id: string; title: string; tag: string; ctor: CustomE
   { id: "sankey-simple", title: "Sankey (simple, editable)", tag: "v-sankey-simple", ctor: MdSankeySimple },
   { id: "sankey-complex", title: "Sankey (UK energy)", tag: "v-sankey-complex", ctor: MdSankeyComplex },
   { id: "sankey-hierarchy", title: "Sankey (hierarchy → flow)", tag: "v-sankey-hierarchy", ctor: MdSankeyHierarchy },
-  { id: "sankey-flow", title: "Sankey (conservation flow, drag handles)", tag: "v-sankey-flow", ctor: MdSankeyFlow },
   { id: "tree-chart", title: "Tree (node-link dendrogram)", tag: "v-tree-chart", ctor: MdTreeChart },
   { id: "budget-tree", title: "Budget Tree (drag boundary handles)", tag: "v-budget-tree", ctor: MdBudgetTree },
 ];

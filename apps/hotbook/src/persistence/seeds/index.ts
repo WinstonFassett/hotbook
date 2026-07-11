@@ -27,7 +27,7 @@ export function buildSeedWorkspace(): Workspace {
     'br-lc-pack', 'br-lc-treemap', 'br-lc-treetable', 'br-lc-icicle', 'br-lc-sunburst',
     'br-lc-bar', 'br-lc-bands', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie',
     'br-lc-radar', 'br-lc-concentric-arc',
-    'br-lc-sankey', 'br-lc-sankey-flow', 'br-lc-tree', 'br-lc-gantt',
+    'br-lc-sankey', 'br-lc-tree', 'br-lc-gantt',
   ]
 
   const GROUPBY_KINDS = new Set<TileKind>([

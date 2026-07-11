@@ -43,7 +43,6 @@ const TAGS = [
   ['v-br-icicle',         MdIcicleLC],
   ['v-br-sunburst',       MdSunburstLC],
   ['v-br-sankey',         MdSankeySimple],
-  ['v-br-sankey-flow',    MdSankeyFlow],
   ['v-br-tree',           MdTreeChart],
   ['v-br-gantt',          MdGanttChartLC],
 ] as const
@@ -195,11 +194,6 @@ export function BrLcSankey({ edges }: SankeyProps) {
   const data = { nodes: nodeNames, links }
   const ref = useBrElement<MdSankeySimple>('v-br-sankey', el => { el.externalData = data }, [JSON.stringify(data)])
   if (edges.length === 0) return <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.4, fontSize: 12 }}>No edge data — dataset needs a flat edge list</div>
-  return <div ref={ref} style={{ width: '100%', height: '100%' }} />
-}
-
-export function BrLcSankeyFlow() {
-  const ref = useBrElement<MdSankeyFlow>('v-br-sankey-flow', () => {}, [])
   return <div ref={ref} style={{ width: '100%', height: '100%' }} />
 }
 
