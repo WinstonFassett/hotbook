@@ -1,3 +1,6 @@
+// Register bireactive adapter with @hotbook/core registry
+import './register-adapter'
+
 export { MdBarChartLC } from './charts/bar-chart'
 export { MdLineChartLC } from './charts/line-chart'
 export { MdAreaChartLC } from './charts/area-chart'
@@ -25,3 +28,6 @@ export { group, leaf, leaves } from './lib/tree'
 export { numberDrag, type NumberDragOpts } from './lib/number-drag'
 // Chart metadata:
 export { CHART_METADATA, getChartMaturity, type ChartMaturity, type ChartMetadata } from './metadata'
+// Adapters:
+export { bireactiveValueStore } from './adapters/bireactive-value-store'
+export type { BiNode as BireactiveNode } from './adapters/bireactive-value-store'
