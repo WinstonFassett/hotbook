@@ -1,6 +1,5 @@
 import {
   Anchor,
-  circle,
   derive,
   effect as biEffect,
   forEach,
@@ -15,6 +14,7 @@ import {
   rect,
   Vec,
 } from "bireactive";
+import { lineHandle } from "../lib/handles";
 import { Diagram } from "../lib/diagram";
 import { partition, type HierarchyRectangularNode } from "d3-hierarchy";
 import { depthFill, labelInk } from "../lib/depth-color";
@@ -591,22 +591,22 @@ export class MdIcicleLC extends Diagram {
           return { x: remapX(lx), y: remapY(ly) };
         });
         const active = cell(false);
-        const dot = circle(knobPos, 5, {
-          fill: aNode.value.color,
-          stroke: derive(() => active.value ? "#fff" : "#000"),
-          strokeWidth: 1.5,
+        const orient = derive(() => isHoriz.value ? "horiz" : "vert");
+        const handle = lineHandle(knobPos, orient, {
+          kind: "divider",
+          active,
         });
-        const dispose = dragCancelable(dot, knob, [a, b], {
+        const dispose = dragCancelable(handle, knob, [a, b], {
           host: this,
-          onStart: () => { active.value = true; dot.el.style.cursor = "grabbing"; },
-          onEnd: () => { active.value = false; dot.el.style.cursor = "grab"; },
+          onStart: () => { active.value = true; handle.el.style.cursor = "grabbing"; },
+          onEnd: () => { active.value = false; handle.el.style.cursor = "grab"; },
         });
-        dot.track(dispose);
-        biEffect(() => { dot.el.style.cursor = isHoriz.value ? "ns-resize" : "ew-resize"; });
-        dot.el.addEventListener("pointerenter", () => { active.value = true; });
-        dot.el.addEventListener("pointerleave", () => { active.value = false; });
+        handle.track(dispose);
+        biEffect(() => { handle.el.style.cursor = isHoriz.value ? "ns-resize" : "ew-resize"; });
+        handle.el.addEventListener("pointerenter", () => { active.value = true; });
+        handle.el.addEventListener("pointerleave", () => { active.value = false; });
 
-        return dot;
+        return handle;
       }, { key: ({ bNode }) => bNode.value.id ?? "" });
     }
 

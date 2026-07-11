@@ -673,7 +673,7 @@ export function sankeyScene(
 
       const grip = s(circle(gripVis, derive(() => active.value ? 6 : 4), {
         fill: "#0b0d12",
-        stroke: derive(() => active.value ? "#fff" : (nodeColors.value[n] ?? "#6ab0f5")),
+        stroke: derive(() => active.value ? "#fff" : "rgba(0,0,0,0.55)"),
         strokeWidth: 2,
         opacity: derive(() => (active.value || hovered.value === li || focused.value === li) ? 1 : 0.5),
       }));
@@ -756,7 +756,7 @@ export function sankeyScene(
 
       const grip = s(circle(gripVis, derive(() => active.value ? 6 : 4), {
         fill: "#0b0d12",
-        stroke: derive(() => active.value ? "#fff" : (nodeColors.value[n] ?? "#6ab0f5")),
+        stroke: derive(() => active.value ? "#fff" : "rgba(0,0,0,0.55)"),
         strokeWidth: 2,
         opacity: derive(() => (active.value || hovered.value === li || focused.value === li) ? 1 : 0.5),
       }));

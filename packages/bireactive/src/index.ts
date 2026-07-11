@@ -22,5 +22,6 @@ export { wheelController, dragController, realModifierDown } from './lib/interac
 export type { BiNode } from './lib/tree'
 export { group, leaf, leaves } from './lib/tree'
 export { numberDrag, type NumberDragOpts } from './lib/number-drag'
+export { circleHandle, lineHandle, type HandleKind, type HandleStyle } from './lib/handles'
 // Chart metadata:
 export { CHART_METADATA, getChartMaturity, type ChartMaturity, type ChartMetadata } from './metadata'

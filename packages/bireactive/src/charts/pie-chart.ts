@@ -1,4 +1,5 @@
 import { Anchor, annularSector, cell, circle, derive, easeOut, effect as biEffect, label, type Mount, Num, num, tween, untracked, Vec, type Writable } from "bireactive";
+import { circleHandle } from "../lib/handles";
 import { Diagram } from "../lib/diagram";
 import { pie } from "d3-shape";
 import { wheelController, dynamicWheelStep, realModifierDown } from "../lib/interaction";
@@ -268,24 +269,22 @@ export class MdPieChartLC extends Diagram {
           return { x: cx.value + Math.cos(ang) * rOuter.value, y: cy.value + Math.sin(ang) * rOuter.value };
         });
 
-        const color = PALETTE[i % PALETTE.length]!;
         const active = cell(false);
-        const dot = s(circle(knobPos, 5, {
-          fill: color,
-          stroke: derive(() => active.value ? "#fff" : "#000"),
-          strokeWidth: 1.5,
+        const handle = s(circleHandle(knobPos, {
+          kind: "divider",
+          active,
         }));
         // Cancelable divider drag: snapshots [a,b] on down, redistributes between
         // the two adjacent slices. Pie layout is .sort(null) (never reorders), so
         // there is no sort-order concern here.
-        dragCancelable(dot, knob, [a, b], {
+        dragCancelable(handle, knob, [a, b], {
           host: this,
-          onStart: () => { active.value = true; setGestureActive(true); dot.el.style.cursor = "grabbing"; },
-          onEnd: (canceled: boolean) => { active.value = false; setGestureActive(false); dot.el.style.cursor = "grab"; this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } })); },
+          onStart: () => { active.value = true; setGestureActive(true); handle.el.style.cursor = "grabbing"; },
+          onEnd: (canceled: boolean) => { active.value = false; setGestureActive(false); handle.el.style.cursor = "grab"; this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } })); },
         });
-        dot.el.style.cursor = "grab";
-        dot.el.addEventListener("pointerenter", () => { active.value = true; });
-        dot.el.addEventListener("pointerleave", () => { if (!(this as any).gestureActive) active.value = false; });
+        handle.el.style.cursor = "grab";
+        handle.el.addEventListener("pointerenter", () => { active.value = true; });
+        handle.el.addEventListener("pointerleave", () => { if (!(this as any).gestureActive) active.value = false; });
       }
     }
 
