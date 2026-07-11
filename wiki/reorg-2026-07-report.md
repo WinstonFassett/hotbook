@@ -3,7 +3,7 @@
 ## What changed
 
 - Renamed `PNode` → `VizNode` and `Dataset.rows` → `Dataset.nodes` across the
-  workspace (`vizform-core`, `sliceboard`, `vizform-react-d3`, `vizform-vanilla-d3`,
+  workspace (`vizform-core`, `sliceboard`, `vizform-react-d3`, `hotbook-d3`,
   `vizform-apitable`).
 - Updated `PEdge` to the new shape (`sourceId`, `targetId`, `measures`, `dims`).
 - Removed the duplicate/dead `apps/sliceboard/src/viz/br/tree.ts` file.
@@ -30,7 +30,7 @@
 |---|---|---|
 | `apps/sliceboard` | ✅ | |
 | `packages/vizform-core` | ✅ | |
-| `packages/vizform-vanilla-d3` | ✅ | |
+| `packages/hotbook-d3` | ✅ | |
 | `packages/vizform-react-d3` | ✅ | |
 | `packages/vizform-layout` | ✅ | |
 | `packages/vizform-apitable` | ✅ | |
@@ -43,7 +43,7 @@
 
 `npm run build` succeeded for:
 
-- `packages/vizform-vanilla-d3`
+- `packages/hotbook-d3`
 - `packages/vizform-react-d3`
 - `packages/vizform-charts`
 - `apps/sliceboard`

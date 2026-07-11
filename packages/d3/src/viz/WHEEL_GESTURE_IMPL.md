@@ -1,6 +1,6 @@
 # Gen-1 VizRenderer wheel-edit cancel — implementation notes
 
-Scope: `packages/vizform-vanilla-d3/src/viz/VizRenderer.ts`. Brings the gen-1
+Scope: `packages/hotbook-d3/src/viz/VizRenderer.ts`. Brings the gen-1
 flat charts (bands / radial / treemap) up to the same Ctrl+wheel-edit +
 Ctrl+Esc-revert contract the spike's 7 BR-LC charts already have.
 

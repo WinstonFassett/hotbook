@@ -11,7 +11,7 @@ graph LR
   subgraph lib["lib"]
     core["vizform-core"]
     charts["vizform-charts"]
-    vanilla["vizform-vanilla-d3"]
+    vanilla["hotbook-d3"]
   end
   subgraph app["app"]
     apitable["vizform-apitable"]
@@ -29,7 +29,7 @@ graph LR
 |---|---|
 | [`vizform-core`](packages/vizform-core) | Core data structures and utilities. Framework-agnostic. |
 | [`vizform-charts`](packages/vizform-charts) | Chart type definitions and metadata. |
-| [`vizform-vanilla-d3`](packages/vizform-vanilla-d3) | Pure D3 + TypeScript visualization engine, zero framework deps. |
+| [`hotbook-d3`](packages/hotbook-d3) | Pure D3 + TypeScript visualization engine, zero framework deps. |
 | [`vizform-apitable`](packages/vizform-apitable) | APITable widget wrapping `vizform-react-d3`. |
 | [`apps/sliceboard`](apps/sliceboard) | Multi-board demo: editable table + live viz with multiple chart types. |
 
@@ -70,7 +70,7 @@ const goals = [
 packages/
   vizform-core/       # Core data structures
   vizform-charts/     # Chart definitions
-  vizform-vanilla-d3/ # D3 rendering engine
+  hotbook-d3/ # D3 rendering engine
   vizform-apitable/   # APITable widget
 apps/
   sliceboard/         # Demo app (Netlify)
@@ -88,7 +88,7 @@ npm run build        # builds core → react → sliceboard in order
 To develop a specific package:
 
 ```sh
-npm run dev -w packages/vizform-vanilla-d3  # watch mode
+npm run dev -w packages/hotbook-d3  # watch mode
 npm run dev -w apps/sliceboard              # Vite dev server
 npm run dev -w apps/docs                    # Docs site dev server
 ```

@@ -21,7 +21,7 @@ elements and owns *policy* (which data, what sort, what layout); elements own *m
 - Not a general chart library. North star is allocation/direct-manipulation tooling
   ([[project_north_star]]); charts exist to serve that, breadth is opportunistic.
 - No framework in the spine. React/Svelte adapters are optional leaves, never load-bearing.
-- No backward compatibility with gen-1 (`vizform-vanilla-d3`) or the Svelte spike. Rebuild
+- No backward compatibility with gen-1 (`hotbook-d3`) or the Svelte spike. Rebuild
   means those retire; port *knowledge* (gesture model, Esc contract, transitions doc), not code.
 
 **The one-sentence test for every design decision:** *could the docs demo wire this chart
@@ -355,7 +355,7 @@ Export rules:
   no-build live-dev flow: edit `src/` → HMR in any app, no rebuild).
 - **Fixtures are a subpath export**, never a fallback inside chart code.
 
-Retired, not ported: `vizform-vanilla-d3`, `vizform-element-d3`, `vizform-react-d3`
+Retired, not ported: `hotbook-d3`, `vizform-element-d3`, `vizform-react-d3`
 (incl. `HTreetable.tsx` and the `onRender`/`getRoot` React-wrapper API on treetable),
 `svelte-layerchart-spike`, all `*-spike` apps, `BrLcCharts.tsx`, `bindTile.ts`,
 `hud-bridge.ts` (superseded by SyncHub), zombie React `Icicle/Sunburst/Treemap.tsx`.

@@ -7,7 +7,7 @@
  *
  * All generic binding logic (TileSource, makeFlatSource, makeHierSource,
  * makeHierRootFlatSource, hierShapeKey, hierValueKey, etc.) lives in:
- *   packages/vizform-vanilla-d3/src/host/tile-binder.ts
+ *   packages/hotbook-d3/src/host/tile-binder.ts
  */
 
 import {

@@ -10,7 +10,7 @@ export default defineConfig({
     lib: {
       entry: resolve(__dirname, 'src/index.ts'),
       name: 'VizformCore',
-      fileName: 'vizform-vanilla-d3',
+      fileName: 'hotbook-d3',
     },
     rollupOptions: {
       external: [],

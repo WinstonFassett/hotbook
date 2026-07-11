@@ -13,7 +13,7 @@ npm workspaces: `packages/*` + `apps/*`. Internal deps use `"*"` (workspace-loca
 graph TD
   subgraph pkgs["packages/ (libraries)"]
     core["vizform-core<br/><i>shared types + colors</i>"]
-    vanilla["vizform-vanilla-d3<br/><i>d3 renderer: VizRenderer, hviz</i>"]
+    vanilla["hotbook-d3<br/><i>d3 renderer: VizRenderer, hviz</i>"]
     elem["vizform-element-d3<br/><i>web-component wrapper</i>"]
     reactd3["vizform-react-d3<br/><i>React wrapper</i>"]
     apitable["vizform-apitable<br/><i>APITable binding</i>"]
@@ -50,7 +50,7 @@ real workspace dep — no alias needed.)
 
 `vizform-core` was **split, not renamed**:
 
-- The d3 renderer guts (`VizRenderer`, `hviz/*`, `viz/*`) moved to **`vizform-vanilla-d3`**.
+- The d3 renderer guts (`VizRenderer`, `hviz/*`, `viz/*`) moved to **`hotbook-d3`**.
 - A thin **`vizform-core`** survives holding only `colors.ts`, `types.ts`, `index.ts`
   — framework-agnostic contracts (`PNode`, `PEdge`, `ColumnSchema`, color helpers).
 
@@ -65,7 +65,7 @@ safe to delete.
 | Package | Role | Internal deps | Notable external |
 |---|---|---|---|
 | `vizform-core` | Shared types + colors | — | (none) |
-| `vizform-vanilla-d3` | d3 renderer | core | `d3-drag/ease/hierarchy/interpolate/scale/selection/shape/transition` |
+| `hotbook-d3` | d3 renderer | core | `d3-drag/ease/hierarchy/interpolate/scale/selection/shape/transition` |
 | `vizform-element-d3` | Web-component wrapper | vanilla-d3 | — |
 | `vizform-react-d3` | React wrapper | vanilla-d3 | `react >=17` |
 | `vizform-apitable` | APITable binding | core, react-d3 | `react ^17` |
@@ -203,7 +203,7 @@ to the **custom element** deletes that whole class of bug — and lets the
   persistence shared across surfaces, or does each surface own that? Decides how
   much logic lives in the library vs. per-surface.
 
-Open calls: keep the legacy `vizform-vanilla-d3` / `-react-d3` gen-1 chain as a
+Open calls: keep the legacy `hotbook-d3` / `-react-d3` gen-1 chain as a
 deprecated path or retire it; whether `element` or `svelte` is the canonical
 public surface; npm scope (`@vizform/*` vs `@winstonfassett/*`).
 

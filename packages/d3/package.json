@@ -12,8 +12,8 @@
     "access": "public"
   },
   "type": "module",
-  "main": "./dist/vizform-vanilla-d3.umd.cjs",
-  "module": "./dist/vizform-vanilla-d3.js",
+  "main": "./dist/hotbook-d3.umd.cjs",
+  "module": "./dist/hotbook-d3.js",
   "exports": {
     ".": {
       "node": {
@@ -21,8 +21,8 @@
         "import": "./src/index.ts"
       },
       "types": "./dist/index.d.ts",
-      "import": "./dist/vizform-vanilla-d3.js",
-      "require": "./dist/vizform-vanilla-d3.umd.cjs"
+      "import": "./dist/hotbook-d3.js",
+      "require": "./dist/hotbook-d3.umd.cjs"
     },
     "./host/tile-binder": {
       "node": {
@@ -30,7 +30,7 @@
         "import": "./src/host/tile-binder.ts"
       },
       "types": "./dist/index.d.ts",
-      "import": "./dist/vizform-vanilla-d3.js"
+      "import": "./dist/hotbook-d3.js"
     }
   },
   "types": "./dist/index.d.ts",

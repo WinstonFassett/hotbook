@@ -38,7 +38,7 @@ and behave **identically** afterward.
   no cross-app imports.
 - `d3-sankey` appears **only in comments** (`lib/sankey.ts`, `lib/sankey-layout.ts`)
   — it is NOT imported. Do not add it as a dependency.
-- Template for the no-build `node` export condition: `packages/vizform-vanilla-d3/package.json`.
+- Template for the no-build `node` export condition: `packages/hotbook-d3/package.json`.
 - sliceboard vite resolve uses `conditions: ['browser','node']` + `dedupe` — see
   `apps/sliceboard/vite.config.ts`.
 
@@ -81,7 +81,7 @@ export type { BiNode } from './lib/tree'
 (Adjust the type re-exports to whatever actually compiles — keep classes complete.)
 
 ### 3. Package `package.json`
-Mirror `packages/vizform-vanilla-d3/package.json` exactly for `type`, `exports`
+Mirror `packages/hotbook-d3/package.json` exactly for `type`, `exports`
 (the `node` → `./src/index.ts` condition is REQUIRED for no-build HMR),
 `publishConfig`, `files`, `scripts`, `license: MIT`. Set:
 - `"name": "@hotbook/charts"`, `"version": "0.1.0"`.
