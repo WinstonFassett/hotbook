@@ -1,4 +1,12 @@
-html, body { margin: 0; background: #0b0d12; color: #e6e8ee; font-family: ui-sans-serif, system-ui, sans-serif; }
+:root {
+  --fg: #e6e8ee;
+  --bg: #0b0d12;
+  --muted: #9aa0a8;
+  --border: #2a2f3d;
+  --accent: #2563eb;
+}
+
+html, body { margin: 0; background: var(--bg); color: var(--fg); font-family: ui-sans-serif, system-ui, sans-serif; }
 header { padding: 18px 24px 8px; max-width: 960px; margin: 0 auto; }
 header h1 { margin: 0 0 4px; font-size: 18px; font-weight: 600; color: #e6e8ee; }
 header .sub { margin: 0; font-size: 12px; color: #9aa0a8; }
@@ -45,4 +53,49 @@ details.diagram-source-panel md-syntax {
   line-height: 1.5;
   color: #c9d1d9;
   white-space: pre;
+}
+
+/* Layout demo UI */
+.shared-controls {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 13px;
+  padding: 10px 0;
+  color: var(--fg);
+}
+
+.shared-controls button {
+  padding: 4px 10px;
+  background: transparent;
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.shared-controls button:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.shared-controls select {
+  background: transparent;
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: inherit;
+  padding: 2px 4px;
+}
+
+.shared-controls option {
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.status {
+  font-size: 12px;
+  color: var(--muted);
+  margin-left: 8px;
 }

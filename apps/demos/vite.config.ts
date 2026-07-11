@@ -1,5 +1,4 @@
 import { defineConfig } from "vite";
-import { resolve } from "path";
 
 export default defineConfig({
   server: { host: true },
@@ -18,12 +17,6 @@ export default defineConfig({
     minify: 'terser',
     terserOptions: {
       keep_classnames: true,
-    },
-    rollupOptions: {
-      input: {
-        main: resolve(__dirname, 'index.html'),
-        layout: resolve(__dirname, 'src/layout/index.html'),
-      },
     },
   },
 });

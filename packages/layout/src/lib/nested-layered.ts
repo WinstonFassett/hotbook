@@ -1,8 +1,7 @@
-// Spike 5 — nested-layered (recursive solveGroup).
+// Nested-layered layout chart (recursive solveGroup).
 //
-// The bireactive "layered() applied to itself" pattern, from
-// inspo/bireactive/site/elements/md-subgraphs.ts, generalized to arbitrary
-// nesting depth. Each group runs its own `layered()` solve over its
+// The bireactive "layered() applied to itself" pattern, generalized to
+// arbitrary nesting depth. Each group runs its own `layered()` solve over its
 // direct children; child groups appear to the parent solve as opaque
 // rectangles sized by their (already-solved) inner extent + chrome.
 //
@@ -17,8 +16,11 @@
 // constraints per crossed layer.
 
 import {
+  arr,
+  Arr,
   box,
   type Box as BoxT,
+  cell,
   Diagram,
   effect,
   group,
@@ -43,9 +45,10 @@ import {
   leafIds,
   rowsById,
   items,
+  type Row,
   type TreeNode,
+  type Edge,
 } from "./data";
-import { getLayoutRows, getLayoutEdges } from "./data-registry";
 import { direction } from "./diagram-settings";
 import { measure, type Measured } from "./measure";
 import { FONT_PX, renderEdgeStyled, renderHull, renderNode } from "./render";
@@ -106,6 +109,14 @@ export class MdNestedLayered extends Diagram {
   #fitTranslate = vec(0, 0);
   #fitted = false;
 
+  private _rowsCell = cell<Arr<Row>>(arr<Row>([]));
+  get rows(): Arr<Row> { return this._rowsCell.value; }
+  set rows(rows: Arr<Row>) { this._rowsCell.value = rows; }
+
+  private _edgesCell = cell<Arr<Edge>>(arr<Edge>([]));
+  get edges(): Arr<Edge> { return this._edgesCell.value; }
+  set edges(edges: Arr<Edge>) { this._edgesCell.value = edges; }
+
   disconnectedCallback(): void {
     for (const d of [...this.#teardown, ...this.#persist]) d();
     this.#teardown = [];
@@ -131,8 +142,8 @@ export class MdNestedLayered extends Diagram {
 
     this.#persist.push(
       effect(() => {
-        const rows = items(getLayoutRows());
-        void getLayoutEdges().cells;
+        const rows = items(this.rows);
+        void this.edges.cells;
         void sharedSelection.value;
         void direction.value;
         // Subscribe to per-row direction so layout reflows when the
@@ -170,7 +181,7 @@ export class MdNestedLayered extends Diagram {
    *  cell. New entries get placeholder targets — #buildAll seeds the
    *  visible pos/box from those targets after layout writes them. */
   #syncMaps(): void {
-    const leaves = leafIds(getLayoutRows());
+    const leaves = leafIds(this.rows);
     const live = new Set(leaves);
     for (const id of [...this.#nodes.keys()]) {
       if (!live.has(id)) this.#nodes.delete(id);
@@ -190,7 +201,7 @@ export class MdNestedLayered extends Diagram {
     }
 
     const allGroups = new Set<string>();
-    for (const r of items(getLayoutRows())) {
+    for (const r of items(this.rows)) {
       const pid = r.parentId.value;
       if (pid != null) allGroups.add(pid);
     }
@@ -217,8 +228,8 @@ export class MdNestedLayered extends Diagram {
     this.#edgesGfx.clear();
     this.#nodesGfx.clear();
 
-    const byId = rowsById(getLayoutRows());
-    const leaves = leafIds(getLayoutRows());
+    const byId = rowsById(this.rows);
+    const leaves = leafIds(this.rows);
 
     // Seed entering leaves: visible pos starts AT the target so the
     // rect grows in place via the scale spring (instead of flying in
@@ -240,7 +251,7 @@ export class MdNestedLayered extends Diagram {
 
     // Render hulls outermost first so nested ones paint on top.
     const hullMount = mount(this.#hullsGfx);
-    const forest = containmentForest(getLayoutRows());
+    const forest = containmentForest(this.rows);
     const drawHulls = (nodes: TreeNode[]): void => {
       for (const n of nodes) {
         if (n.children.length === 0) continue;
@@ -296,10 +307,10 @@ export class MdNestedLayered extends Diagram {
     const edgeMount = mount(this.#edgesGfx);
     const resolveAnchor = (id: string): Shape | null => {
       if (shapeOf.has(id)) return shapeOf.get(id)!;
-      const ds = [...descendantsOf(getLayoutRows(), id)].filter((d) => shapeOf.has(d));
+      const ds = [...descendantsOf(this.rows, id)].filter((d) => shapeOf.has(d));
       return ds[0] ? shapeOf.get(ds[0])! : null;
     };
-    for (const e of items(getLayoutEdges())) {
+    for (const e of items(this.edges)) {
       const u = e.from.value;
       const v = e.to.value;
       const su = resolveAnchor(u);
@@ -312,15 +323,15 @@ export class MdNestedLayered extends Diagram {
   }
 
   #applyLayout(): void {
-    const byId = rowsById(getLayoutRows());
-    const leaves = leafIds(getLayoutRows());
+    const byId = rowsById(this.rows);
+    const leaves = leafIds(this.rows);
     if (leaves.length === 0) return;
 
-    const measured: Measured = measure(getLayoutRows(), getLayoutEdges());
+    const measured: Measured = measure(this.rows, this.edges);
 
-    // Build child-id index from getLayoutRows().
+    // Build child-id index from this.rows.
     const childrenOf = new Map<string | null, string[]>();
-    for (const r of items(getLayoutRows())) {
+    for (const r of items(this.rows)) {
       const pid = r.parentId.value;
       if (!childrenOf.has(pid)) childrenOf.set(pid, []);
       childrenOf.get(pid)!.push(r.id);
@@ -360,7 +371,7 @@ export class MdNestedLayered extends Diagram {
     };
 
     const edgesAtLevel = new Map<string | null, Array<[string, string]>>();
-    for (const e of items(getLayoutEdges())) {
+    for (const e of items(this.edges)) {
       const u = e.from.value;
       const v = e.to.value;
       const L = lca(u, v); // null = root
