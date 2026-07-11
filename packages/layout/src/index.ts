@@ -1,9 +1,5 @@
 /**
-<<<<<<< HEAD
  * @hotbook/layout — graph/network layout engine.
-=======
- * hotbook-layout — graph/network layout engine experiments.
->>>>>>> main
  *
  * Exports the nested-layered chart and supporting utilities.
  */

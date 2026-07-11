@@ -21,7 +21,7 @@ import {
   MdGanttChartLC,
 } from "@hotbook/bireactive";
 import { MdNestedLayered } from "@hotbook/layout";
-import { portfolio } from "./fixtures/portfolio";
+import { dataModelFor } from "./data-models";
 import { sharedRows, sharedEdges } from "./layout/demo-data";
 import { mountControls } from "./layout/controls";
 import { mountSidebar } from "./layout/sidebar";
@@ -33,15 +33,6 @@ class MdBandsChartLC extends MdBarChartLC {
 class MdGanttEnforcedLC extends MdGanttChartLC {
   constructor() { super(); this.enforceDeps = true; }
 }
-
-const HIER_TAGS = new Set([
-  'v-pack',
-  'v-treemap',
-  'v-icicle',
-  'v-sunburst',
-  'v-tree-chart',
-  'v-treetable',
-]);
 
 const experiments: Array<{
   id: string;
@@ -79,10 +70,7 @@ for (const e of experiments) {
     try {
       customElements.define(e.tag, e.ctor as any);
     } catch (err) {
-      // Constructor already registered by another module (e.g., when loaded in hotbook).
-      // Create a wrapper class that extends the original so we can register under our tag.
       if (err instanceof DOMException && err.name === 'NotSupportedError') {
-        // Dynamic wrapper class — each one unique so the registry accepts it.
         const WrapperClass = class extends (e.ctor as any) {};
         customElements.define(e.tag, WrapperClass as any);
       } else {
@@ -93,23 +81,12 @@ for (const e of experiments) {
 }
 
 // --- Repro config: drive charts into the states that only break in hotbook ---
-// Static SPA, no server/router — so config rides the URL HASH (client-only, no reload).
-// The hash is ALSO used for section anchors (#concentric-arc etc.), so config lives
-// under a reserved `cfg:` segment and bare anchors are left untouched for scroll-nav:
-//   #cfg:sort=value;width=320           config only
-//   #concentric-arc                     plain anchor, ignored by config
-//   #cfg:width=320|concentric-arc       config + anchor coexist ( '|' separates )
-//   sort=value   sortBy='value' on every chart that has a sortBy prop
-//   width=320    constrain each demo box width (trips narrow-tile bugs, e.g. Bug 2)
-//   only=a,b     render only these experiment ids
 const CFG_PREFIX = 'cfg:';
 function parseHash(): { cfg: URLSearchParams; anchor: string } {
   const raw = location.hash.replace(/^#/, '');
-  // Split config segment from a trailing bare anchor on '|'.
   const [a, b] = raw.split('|');
   const cfgSeg = a.startsWith(CFG_PREFIX) ? a.slice(CFG_PREFIX.length) : '';
   const anchor = a.startsWith(CFG_PREFIX) ? (b ?? '') : a;
-  // Hash uses ';' between config keys so '&' isn't needed and anchors stay readable.
   return { cfg: new URLSearchParams(cfgSeg.replace(/;/g, '&')), anchor };
 }
 interface ReproConfig { sort: 'index' | 'value'; width: number | null; only: string[] | null; }
@@ -126,7 +103,6 @@ function readConfig(): ReproConfig {
 let config = readConfig();
 
 function applyConfig(el: HTMLElement, demo: HTMLElement) {
-  // Only set sortBy on charts that declare it (index/value charts).
   if ('sortBy' in el) (el as any).sortBy = config.sort;
   if (config.width != null) {
     demo.style.width = config.width + 'px';
@@ -154,9 +130,22 @@ function mountLayoutSection(section: HTMLElement, demo: HTMLElement, el: HTMLEle
   const sidebar = document.createElement('div');
   sidebar.style.cssText = 'align-self:flex-start;';
 
+  const dataWrap = document.createElement('div');
+  dataWrap.style.cssText = 'width:260px;min-width:260px;height:420px;overflow:hidden;border:1px solid var(--border);border-radius:6px;';
+
   stage.appendChild(el);
   demo.appendChild(stage);
   demo.appendChild(sidebar);
+  demo.appendChild(dataWrap);
+
+  const nested = dataModelFor('nested-layered');
+  if (nested) {
+    const treetable = document.createElement('v-treetable') as any;
+    treetable.style.cssText = 'width:100%;height:100%;';
+    treetable.externalRoot = nested.root;
+    if (nested.columns) treetable.columns = nested.columns;
+    dataWrap.appendChild(treetable);
+  }
 
   mountControls(toolbar);
   mountSidebar(sidebar);
@@ -175,11 +164,9 @@ function buildConfigBar(): HTMLElement {
     if (cfgStr) parts.push(CFG_PREFIX + cfgStr);
     location.hash = anchor ? `${parts[0] ?? ''}|${anchor}` : (parts[0] ?? '');
   };
-  // sort toggle
   const sortBtn = document.createElement('button');
   sortBtn.textContent = `sort: ${config.sort}`;
   sortBtn.onclick = () => set('sort', config.sort === 'value' ? 'index' : 'value');
-  // width presets
   const widthLabel = document.createElement('span');
   widthLabel.textContent = `width: ${config.width ?? 'full'}`;
   const mkW = (w: string, label: string) => {
@@ -193,7 +180,6 @@ function buildConfigBar(): HTMLElement {
 }
 
 const app = document.getElementById("app");
-// Track mounted elements so a live hash change re-applies config without reload.
 const mounted: Array<{ el: HTMLElement; demo: HTMLElement }> = [];
 if (app) {
   app.prepend(buildConfigBar());
@@ -212,18 +198,18 @@ if (app) {
     demo.className = "demo";
     const el = document.createElement(e.tag) as HTMLElement;
     el.setAttribute("no-source", "");
-    if (HIER_TAGS.has(e.tag)) {
-      (el as any).externalRoot = portfolio();
+
+    const dataModel = dataModelFor(e.id);
+    if (dataModel) {
+      dataModel.setChartData(el);
     }
 
-    // Source expander rendered outside the demo box
     const srcDetails = document.createElement("details");
     srcDetails.className = "diagram-source-panel";
     const srcSummary = document.createElement("summary");
     srcSummary.textContent = "source";
     const srcCode = document.createElement("md-syntax") as any;
     srcCode.setAttribute("lang", "ts");
-    // scene() source is available after upgrade; grab it lazily on first open
     srcDetails.addEventListener("toggle", () => {
       if (srcDetails.open && !srcCode.textContent) {
         const proto = Object.getPrototypeOf(el);
@@ -240,20 +226,37 @@ if (app) {
     if (e.custom) {
       e.custom(section, demo, el);
     } else {
-      demo.appendChild(el);
+      const stage = document.createElement('div');
+      stage.style.cssText = 'flex:1;min-width:0;height:100%;overflow:hidden;';
+      stage.appendChild(el);
+
+      const tableWrap = document.createElement('div');
+      tableWrap.style.cssText = 'width:240px;min-width:240px;height:100%;overflow:hidden;border-left:1px solid var(--border);';
+
+      const treetable = document.createElement('v-treetable') as any;
+      treetable.style.cssText = 'width:100%;height:100%;';
+      if (dataModel) {
+        treetable.externalRoot = dataModel.root;
+        if (dataModel.columns) treetable.columns = dataModel.columns;
+        dataModel.sync(el);
+      }
+      tableWrap.appendChild(treetable);
+
+      demo.style.display = 'flex';
+      demo.style.overflow = 'hidden';
+      demo.appendChild(stage);
+      demo.appendChild(tableWrap);
+
       applyConfig(el, demo);
       mounted.push({ el, demo });
     }
   }
 }
 
-// Live hash changes: width re-applies in place; sort/only change construction → reload.
-// Bare anchor jumps (#concentric-arc) carry no cfg: segment — let the browser scroll,
-// don't reparse/reload (readConfig would return defaults and wipe state otherwise).
 let lastCfgSeg = parseHash().cfg.toString();
 window.addEventListener('hashchange', () => {
   const cfgSeg = parseHash().cfg.toString();
-  if (cfgSeg === lastCfgSeg) return; // anchor-only change → ignore
+  if (cfgSeg === lastCfgSeg) return;
   lastCfgSeg = cfgSeg;
   const next = readConfig();
   const needsReload = next.sort !== config.sort
