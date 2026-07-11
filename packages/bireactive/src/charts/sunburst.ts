@@ -492,9 +492,8 @@ export class MdSunburstLC extends Diagram {
         );
 
         const active = cell(false);
-        // For radial dividers, the handle should be tangent to the circle (perpendicular to the radius).
-        // The radial angle is θ, so the tangent angle is θ + π/2
-        const tangentAngle = derive(() => boundaryAngDisplay.value + Math.PI / 2);
+        // For radial dividers, the handle aligns with the radial divider line.
+        const tangentAngle = derive(() => boundaryAngDisplay.value);
         const handle = lineHandle(knobPos, tangentAngle, {
           kind: "divider",
           active,
