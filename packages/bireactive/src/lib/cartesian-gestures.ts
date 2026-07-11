@@ -151,7 +151,7 @@ export function attachCartesianGestures<TData>(
       // Invert two points separated by deltaY to get the value-space delta.
       // Use the gesture-start scale so mid-gesture domain changes don't cause spikes.
       const valueDelta = wheelStartScale.invert(scaledDeltaY) - wheelStartScale.invert(0);
-      mutateDatum(target, -valueDelta); // negative: wheel down = decrease
+      mutateDatum(target, valueDelta); // wheel up (deltaY<0) → valueDelta>0 → increase
     } else {
       // Fallback for non-invertible scales (unlikely in cartesian charts).
       const step = dynamicWheelStep(ctx.yAcc(target) as number, we.shiftKey);
