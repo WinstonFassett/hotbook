@@ -1,4 +1,4 @@
-# Plan — extract `@vizform/charts` (Foundation only)
+# Plan — extract `@hotbook/charts` (Foundation only)
 
 > Handoff for an autonomous agent. **Execute steps in order. Do not ask
 > questions — every decision is made here.** Scope is deliberately narrow:
@@ -8,7 +8,7 @@
 
 Lift the bireactive charts out of the spike app
 `apps/demos/src` into a real publishable package
-`packages/vizform-charts`, and make both consumers (sliceboard, the spike app)
+`packages/hotbook-charts`, and make both consumers (sliceboard, the spike app)
 import from the package instead of the `@br-lc` source alias. Charts must render
 and behave **identically** afterward.
 
@@ -18,14 +18,14 @@ and behave **identically** afterward.
 - **DO NOT** move sort/group/identity logic out of sliceboard. `sortedNodes` /
   `applyGroupBy` / `colorByGroup` stay in `App.tsx`. (That lift is a *later* plan.)
 - **DO NOT** de-React sliceboard. The `BrLcCharts.tsx` React wrappers stay.
-- **DO NOT** touch `@vizform/core` contents — it already holds the shared types
+- **DO NOT** touch `@hotbook/core` contents — it already holds the shared types
   and colors. Charts don't import it; leave it alone.
 - **DO NOT** move `@svelte-lc` (the Svelte charts) — leave that app and its alias
   untouched. Deferred.
 - **DO NOT** ship demo/seed data: `lib/portfolio.ts` is fixture data — it stays in
   the spike app, not in the package's public exports.
 - **Keep the npm scope `@winstonfassett/`** (matches existing packages). The
-  `@vizform/*` names in `docs/dependencies.md` are aspirational; renaming the
+  `@hotbook/*` names in `docs/dependencies.md` are aspirational; renaming the
   scope is out of scope here.
 - **Stash, never reset** (per CLAUDE.md). Work on a branch.
 
@@ -34,7 +34,7 @@ and behave **identically** afterward.
 - sliceboard imports `@br-lc` from **one file only**: `apps/sliceboard/src/viz/br/BrLcCharts.tsx`,
   14 imports, all `@br-lc/demos/*` (no `@br-lc/lib/*`).
 - The chart code is self-contained: only imports `bireactive` + `d3-array`,
-  `d3-hierarchy`, `d3-scale`, `d3-shape`, and relative `./`. No `vizform-core`,
+  `d3-hierarchy`, `d3-scale`, `d3-shape`, and relative `./`. No `hotbook-core`,
   no cross-app imports.
 - `d3-sankey` appears **only in comments** (`lib/sankey.ts`, `lib/sankey-layout.ts`)
   — it is NOT imported. Do not add it as a dependency.
@@ -45,10 +45,10 @@ and behave **identically** afterward.
 ## Steps
 
 ### 1. Create the package skeleton
-- New dir `packages/vizform-charts/`.
+- New dir `packages/hotbook-charts/`.
 - `git mv` the reusable source from the spike app into it:
-  - `apps/demos/src/demos/`  → `packages/vizform-charts/src/demos/`
-  - `apps/demos/src/lib/`    → `packages/vizform-charts/src/lib/`
+  - `apps/demos/src/demos/`  → `packages/hotbook-charts/src/demos/`
+  - `apps/demos/src/lib/`    → `packages/hotbook-charts/src/lib/`
   - **Leave behind** in the spike app: `main.ts`, `index.html`, `style.css`,
     `vite.config.ts`, `tsconfig.json`, `package.json`.
   - **EXCEPTION:** `lib/portfolio.ts` is fixture data — `git mv` it back into the
@@ -56,7 +56,7 @@ and behave **identically** afterward.
     and fix the demo importers' relative paths. (It must not be a package export.)
 
 ### 2. Package `index.ts`
-Create `packages/vizform-charts/src/index.ts` that re-exports every chart class
+Create `packages/hotbook-charts/src/index.ts` that re-exports every chart class
 (so consumers import from the package root, not `demos/*`):
 ```ts
 export { MdBarChartLC } from './demos/bar-chart'
@@ -112,7 +112,7 @@ Mirror `packages/hotbook-d3/package.json` exactly for `type`, `exports`
 ### 6. Install + verify (all must pass; do not skip)
 ```bash
 npm install                                   # relink workspaces
-npx vite build packages/vizform-charts        # package builds (dist + d.ts)
+npx vite build packages/hotbook-charts        # package builds (dist + d.ts)
 npx vite build apps/demos   # demo app builds
 npx vite build apps/sliceboard                # main app builds
 ```
@@ -126,13 +126,13 @@ Then a behavior smoke (per repo memory — real Playwright, not synthetic events
 ## Done when
 - All four builds pass; sliceboard + spike app render identically to before.
 - `git grep '@br-lc'` returns **nothing** (alias fully removed).
-- `packages/vizform-charts` has a clean `index.ts`, MIT license, `node` export
+- `packages/hotbook-charts` has a clean `index.ts`, MIT license, `node` export
   condition, and depends only on bireactive + granular d3-*.
 - sliceboard, the spike app, and the package each depend on
   `@hotbook/charts` via `*`.
 
 ## Out of scope (explicitly deferred — do not start)
-- Lifting `applyView`/sort/group into `@vizform/core`.
+- Lifting `applyView`/sort/group into `@hotbook/core`.
 - **De-Reacting sliceboard / removing `selfSig`/dedupe machinery — this is the
   IMMEDIATE NEXT plan (Winston wants it very soon). Do not start it here, but
   keep this extraction's diff a clean pure-move so the de-React lands on a stable
@@ -140,6 +140,6 @@ Then a behavior smoke (per repo memory — real Playwright, not synthetic events
   echo-suppression + `shapeKey`/`commitTick`/`gestureActive` membrane collapse to
   one framework-agnostic `bindTile(el, source)`.
 - Moving the Svelte charts (`@svelte-lc`) into the package.
-- npm-scope rename to `@vizform/*`.
+- npm-scope rename to `@hotbook/*`.
 - apitable peer surface.
 - Renaming the package's internal `demos/` dir to `charts/`.

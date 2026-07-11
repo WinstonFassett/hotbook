@@ -1,6 +1,6 @@
 # @hotbook/apitable
 
-[APITable](https://aitable.ai) widget that renders a datasheet view as a vizform visualization. Supports all six viz modes (treemap, radial, bands, h-treemap, h-icicle, h-radial) driven by real datasheet records.
+[APITable](https://aitable.ai) widget that renders a datasheet view as a hotbook visualization. Supports all six viz modes (treemap, radial, bands, h-treemap, h-icicle, h-radial) driven by real datasheet records.
 
 ## Setup
 

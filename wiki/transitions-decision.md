@@ -6,7 +6,7 @@
 
 **Use CSS transitions on the rendered SVG element.** Reach for a bireactive tween cell only for the narrow set of effects CSS cannot express (stagger, multi-property choreography, easing on non-CSS-animatable values).
 
-Timing tokens, easing, the reduced-motion check, and the gesture-suppression class all live in one place: `packages/vizform-charts/src/lib/transitions.ts`. Per Interaction Principle 10, every duration is a multiplier of `TRANSITION_BASE_MS` (100ms) — there is no hardcoded ms scattered through gesture handlers.
+Timing tokens, easing, the reduced-motion check, and the gesture-suppression class all live in one place: `packages/hotbook-charts/src/lib/transitions.ts`. Per Interaction Principle 10, every duration is a multiplier of `TRANSITION_BASE_MS` (100ms) — there is no hardcoded ms scattered through gesture handlers.
 
 ## Spike summary
 
@@ -72,8 +72,8 @@ So during a drag or ctrl+wheel every descendant temporarily has no transition �
 
 ## What landed in this PR
 
-- `packages/vizform-charts/src/lib/transitions.ts` — timing tokens, easing, `settleTransition()` / `hoverTransition()`, `prefersReducedMotion()`, `GESTURE_ACTIVE_CLASS`, `GESTURE_SUPPRESSION_CSS`.
-- `packages/vizform-charts/src/demos/bar-chart.ts` — gesture-suppression CSS in `static styles`; `setGestureActive` wired into both wheel and drag configs (both orientations); settle transition on bar rect `y` / `height` / `fill` (vertical) and `width` / `fill` (horizontal); existing inline `opacity 0.1s` routed through `hoverTransition()`.
+- `packages/hotbook-charts/src/lib/transitions.ts` — timing tokens, easing, `settleTransition()` / `hoverTransition()`, `prefersReducedMotion()`, `GESTURE_ACTIVE_CLASS`, `GESTURE_SUPPRESSION_CSS`.
+- `packages/hotbook-charts/src/demos/bar-chart.ts` — gesture-suppression CSS in `static styles`; `setGestureActive` wired into both wheel and drag configs (both orientations); settle transition on bar rect `y` / `height` / `fill` (vertical) and `width` / `fill` (horizontal); existing inline `opacity 0.1s` routed through `hoverTransition()`.
 - This decision doc.
 
 ## What's NOT in this PR (split as sub-issues)

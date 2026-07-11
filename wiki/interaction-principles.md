@@ -1,4 +1,4 @@
-# VizForm Interaction Principles
+# hotbook Interaction Principles
 
 Design rules for gesture-based data visualization. Priority-ordered — higher rules win when they conflict with lower ones.
 

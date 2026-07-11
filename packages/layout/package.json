@@ -5,7 +5,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/WinstonFassett/vizform.git",
+    "url": "https://github.com/WinstonFassett/hotbook.git",
     "directory": "packages/layout"
   },
   "type": "module",

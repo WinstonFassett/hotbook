@@ -47,8 +47,8 @@ with sync_playwright() as p:
     # ── 1. data AFTER append ────────────────────────────────────────────────
     r1 = page.evaluate(
         """async () => {
-            const charts = window.vizformCharts;
-            if (!charts) return { err: 'window.vizformCharts not exposed by demos harness' };
+            const charts = window.hotbookCharts;
+            if (!charts) return { err: 'window.hotbookCharts not exposed by demos harness' };
             const { leaf, group } = charts;
             const mk = (suffix, a, b) => group('r' + suffix, 'Root' + suffix, '#333', [
               group('g1' + suffix, 'G1' + suffix, '#5b8def', [
@@ -84,7 +84,7 @@ with sync_playwright() as p:
         """async () => {
             const el = window.__el, mk = window.__mkTree;
             // cardinality change: two extra leaves under g1Y
-            const { leaf, group } = window.vizformCharts;
+            const { leaf, group } = window.hotbookCharts;
             const swap = group('rY', 'RootY', '#333', [
               group('g1Y', 'G1Y', '#5b8def', [
                 leaf('aY', 'AY', 10, '#86acf5'),

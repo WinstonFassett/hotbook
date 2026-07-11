@@ -9,7 +9,7 @@ export default defineConfig({
   build: {
     lib: {
       entry: resolve(__dirname, 'src/index.ts'),
-      name: 'VizformCore',
+      name: 'hotbookCore',
       fileName: 'hotbook-d3',
     },
     rollupOptions: {

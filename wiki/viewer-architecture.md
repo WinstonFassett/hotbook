@@ -1,4 +1,4 @@
-# VizForm Viewer Architecture — diagram / viewer / container
+# hotbook Viewer Architecture — diagram / viewer / container
 
 Status: **design** (no full implementation yet). The pure-function sankey
 (`apps/demos/src/lib/sankey-layout.ts` +

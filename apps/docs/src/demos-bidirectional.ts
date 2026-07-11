@@ -24,7 +24,7 @@ import {
 import type { ColumnDef } from '@hotbook/bireactive';
 
 // Expose tree constructors for console poking and the e2e lifecycle tests.
-(window as unknown as Record<string, unknown>).vizformCharts = { leaf, group };
+(window as unknown as Record<string, unknown>).hotbookCharts = { leaf, group };
 
 // Register custom elements once
 if (!customElements.get('v-br-bar')) {

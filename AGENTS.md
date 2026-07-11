@@ -1,4 +1,4 @@
-# AGENTS.md — vizform
+# AGENTS.md — hotbook
 
 ## bireactive `rect()` overload gotcha
 

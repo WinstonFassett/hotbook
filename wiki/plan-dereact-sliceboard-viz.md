@@ -1,7 +1,7 @@
 # Plan — de-React sliceboard's viz layer (collapse the React membrane)
 
 > Handoff for an autonomous agent. **Execute in order. Do not ask questions.**
-> **Prerequisite:** the charts extraction (`docs/plan-extract-vizform-charts.md`)
+> **Prerequisite:** the charts extraction (`docs/plan-extract-hotbook-charts.md`)
 > must be landed first — this plan binds against the packaged `@hotbook/charts`.
 
 ## Goal
@@ -153,4 +153,4 @@ Then real-browser parity smoke (per repo memory — Playwright, pierce shadow DO
 - Replace the React app shell (App.tsx, grid layout, panels, dispatch, hudStore
   consumption) with vanilla + Svelte-when-needed. `bindTile.ts` is reused
   verbatim — that's the payoff of making it framework-agnostic now.
-- Lift `applyView`/sort/group/color into `@vizform/core` so both surfaces share it.
+- Lift `applyView`/sort/group/color into `@hotbook/core` so both surfaces share it.

@@ -1,5 +1,5 @@
 /**
- * vizform-layout — graph/network layout engine experiments.
+ * hotbook-layout — graph/network layout engine experiments.
  *
  * Exports the current spike backends as custom element classes. Consumers
  * import a backend, call `.define()` once, and mount the tag in the DOM.

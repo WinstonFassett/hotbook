@@ -1,9 +1,9 @@
 {
   "name": "@hotbook/apitable",
   "version": "0.1.1",
-  "description": "APITable widget adapter for vizform",
+  "description": "APITable widget adapter for hotbook",
   "license": "AGPL-3.0",
-  "repository": { "type": "git", "url": "https://github.com/WinstonFassett/vizform.git", "directory": "apitable" },
+  "repository": { "type": "git", "url": "https://github.com/WinstonFassett/hotbook.git", "directory": "apitable" },
   "publishConfig": { "access": "public" },
   "main": "src/index.tsx",
   "files": [

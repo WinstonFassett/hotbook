@@ -88,18 +88,18 @@ export interface HVizCallbacks {
   onLeafClick?: (id: string) => void
 }
 
-export interface VizFormChangeEvent {
+export interface hotbookChangeEvent {
   type: 'change'
   id: string
   patch: Partial<Goal>
 }
 
-export interface VizFormClickEvent {
+export interface hotbookClickEvent {
   type: 'click'
   goal: Goal
 }
 
-export type VizFormEvent = VizFormChangeEvent | VizFormClickEvent
+export type hotbookEvent = hotbookChangeEvent | hotbookClickEvent
 
 export type Cleanup = () => void
 

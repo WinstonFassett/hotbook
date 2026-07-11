@@ -53,7 +53,7 @@ function makeHierarchy(goals: GoalSpec[]) {
 
 const LIFE_GOALS: GoalSpec[] = [
   {
-    name: 'Ship vizform v1',
+    name: 'Ship hotbook v1',
     color: PALETTE[0],
     projects: [
       {
@@ -112,7 +112,7 @@ const LIFE_GOALS: GoalSpec[] = [
         ],
       },
       {
-        name: 'vizform-react pkg', status: 'todo',
+        name: 'hotbook-react pkg', status: 'todo',
         subs: [
           { name: 'NPM publish', tasks: [
             { name: 'Clean up exports', status: 'todo', est: 2 },
