@@ -1,6 +1,8 @@
 # hotbook
 
-D3-based proportional and hierarchical visualization library — framework-agnostic core with React and web-component adapters, plus an [APITable](https://aitable.ai) widget integration.
+Experimental proportional and hierarchical visualization kit. It leans on [bireactive](https://github.com/WinstonFassett/bireactive) for fine-grained reactivity, uses a small set of D3 modules for layout and scales, and takes heavy inspiration from [LayerCharts](https://github.com/techniq/layercharts). React has been stripped out of the core packages; the surfaces are framework-agnostic custom elements.
+
+This is an experiment. The APIs, package names, and overall direction will change.
 
 **Live demo:** [hotbook-build.netlify.app](https://hotbook-build.netlify.app)
 
@@ -8,104 +10,81 @@ D3-based proportional and hierarchical visualization library — framework-agnos
 
 ```mermaid
 graph LR
-  subgraph lib["lib"]
-    core["hotbook-core"]
-    charts["hotbook-charts"]
-    vanilla["hotbook-d3"]
+  subgraph packages["packages"]
+    core["@hotbook/core"]
+    bireactive["@hotbook/bireactive"]
+    d3["@hotbook/d3"]
+    layout["@hotbook/layout"]
+    apitable["@hotbook/apitable"]
   end
-  subgraph app["app"]
-    apitable["hotbook-apitable"]
+  subgraph apps["apps"]
     hotbook["hotbook"]
+    demos["hotbook-demos"]
+    docs["docs"]
   end
 
-  vanilla --> core
-  vanilla --> charts
-  react --> vanilla
-  apitable --> react
-  hotbook --> vanilla
+  d3 --> bireactive
+  d3 --> core
+  layout --> bireactive
+  apitable --> bireactive
+  apitable --> core
+  hotbook --> bireactive
+  hotbook --> d3
+  hotbook --> core
+  demos --> bireactive
+  demos --> layout
+  docs --> bireactive
 ```
 
 | Package | Description |
 |---|---|
-| [`hotbook-core`](packages/hotbook-core) | Core data structures and utilities. Framework-agnostic. |
-| [`hotbook-charts`](packages/hotbook-charts) | Chart type definitions and metadata. |
-| [`hotbook-d3`](packages/hotbook-d3) | Pure D3 + TypeScript visualization engine, zero framework deps. |
-| [`hotbook-apitable`](packages/hotbook-apitable) | APITable widget wrapping `hotbook-react-d3`. |
-| [`apps/hotbook`](apps/hotbook) | Multi-board demo: editable table + live viz with multiple chart types. |
-
-## Visualization modes
-
-**Flat** (single-level data): `treemap` · `radial` · `bands`
-
-| treemap | radial | bands |
-|---|---|---|
-| ![treemap](docs/screenshots/treemap.png) | ![radial](docs/screenshots/radial.png) | ![bands](docs/screenshots/bands.png) |
-
-**Hierarchical** (nested data): `h-treemap` · `h-icicle` · `h-radial`
-
-| h-treemap | h-icicle | h-radial |
-|---|---|---|
-| ![h-treemap](docs/screenshots/h-treemap.png) | ![h-icicle](docs/screenshots/h-icicle.png) | ![h-radial](docs/screenshots/h-radial.png) |
-
-## Quick start
-
-```sh
-npm install @hotbook/react @hotbook/core
-```
-
-```tsx
-import { Viz } from '@hotbook/react'
-
-const goals = [
-  { id: 'a', name: 'Alpha', color: '#e06c75', measurements: { value: 40 }, archived: false, tags: [], urgent: false, important: false, createdAt: '', updatedAt: '' },
-  { id: 'b', name: 'Beta',  color: '#61afef', measurements: { value: 60 }, archived: false, tags: [], urgent: false, important: false, createdAt: '', updatedAt: '' },
-]
-
-<Viz goals={goals} mode="treemap" activeUnit="value" unitKind="size" />
-```
+| [`@hotbook/core`](packages/core) | Shared types, data model, state machine, and edit primitives. |
+| [`@hotbook/bireactive`](packages/bireactive) | Fine-grained reactive surfaces for charts, graphs, and tables. |
+| [`@hotbook/d3`](packages/d3) | D3-backed rendering surfaces and tile binders. |
+| [`@hotbook/layout`](packages/layout) | Bireactive 2D graph layout primitives (state machines, flow diagrams, etc.). |
+| [`@hotbook/apitable`](packages/apitable) | APITable widget adapter. Currently stale and not actively maintained. |
 
 ## Monorepo layout
 
 ```
 packages/
-  hotbook-core/       # Core data structures
-  hotbook-charts/     # Chart definitions
-  hotbook-d3/ # D3 rendering engine
-  hotbook-apitable/   # APITable widget
+  core/         # Shared types and data model
+  bireactive/   # Reactive chart/table/graph surfaces
+  d3/           # D3 rendering engine
+  layout/       # Bireactive 2D layout
+  apitable/     # APITable widget (stale)
 apps/
-  hotbook/         # Demo app (Netlify)
-  docs/               # Documentation site
-inspo/                # gitignored — reference/scratch material
+  hotbook/      # Main demo app (Netlify)
+  demos/        # Consolidated single-page chart demos
+  docs/         # Documentation site (Astro)
 ```
 
 ## Development
 
 ```sh
 npm install
-npm run build        # builds core → react → hotbook in order
+npm run build        # builds the full docs site with demos + hotbook app
 ```
 
-To develop a specific package:
+To develop a specific app:
 
 ```sh
-npm run dev -w packages/hotbook-d3  # watch mode
-npm run dev -w apps/hotbook              # Vite dev server
-npm run dev -w apps/docs                    # Docs site dev server
+npm run dev                  # hotbook app + demos
+npm run dev:hotbook          # hotbook app
+npm run dev:demos            # consolidated demos page
+npm run dev:docs             # Astro docs site
 ```
 
-### Chart demos
-
-The hotbook app hosts a `/demos` surface (hash route: `#/demos`) that renders
-each chart in isolation against a small checked-in fixture — no tile plumbing,
-no persistence, no config UI. Use it as the canonical testing surface when
-developing or debugging a single chart.
+To build a single package:
 
 ```sh
-npm run dev -w apps/hotbook
-# then visit /#/demos
+npm run build -w packages/bireactive
+npm run build -w packages/d3
 ```
 
-Fixtures live in [`apps/hotbook/src/demos/fixtures/`](apps/hotbook/src/demos/fixtures).
+### Demos
+
+`npm run dev:demos` serves the chart demos at `/demos/`.
 
 ## License
 
