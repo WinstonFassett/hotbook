@@ -150,6 +150,9 @@ function mountLayoutSection(section: HTMLElement, demo: HTMLElement, el: HTMLEle
     treetable.externalRoot = nested.root;
     if (nested.columns) treetable.columns = nested.columns;
     dataWrap.appendChild(treetable);
+    // Track this treetable so it gets sort updates.
+    applySort(el, treetable, nested);
+    mounted.push({ el, treetable, model: nested });
   }
 
   mountControls(toolbar);
@@ -246,7 +249,7 @@ if (app) {
       demo.appendChild(stage);
       demo.appendChild(tableWrap);
 
-      if (config.sort !== 'index') applySort(el, treetable, dataModel);
+      applySort(el, treetable, dataModel);
       mounted.push({ el, treetable, model: dataModel });
     }
   }
