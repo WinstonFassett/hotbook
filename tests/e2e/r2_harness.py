@@ -82,8 +82,8 @@ class R2Harness:
     def _activate(self, tab_label: str):
         # Match the tab by EXACT label and activate via pointerdown/up — NOT
         # page.click("text=..."). Two reasons the naive form failed:
-        #   1. `text=` is a substring match, so "br-lc-tree" also matched
-        #      "br-lc-treetable"/"br-lc-treemap" (a prefix collision) and clicked
+        #   1. `text=` is a substring match, so "tree" also matched
+        #      "treetable"/"treemap" (a prefix collision) and clicked
         #      the wrong tab.
         #   2. Dock tabs activate on pointerdown→pointerup (a non-drag click path
         #      in DockView._startTabDrag), not on the DOM `click` event, so a plain
@@ -234,7 +234,7 @@ class R2Harness:
         self._require_hook()
         # Mount the chart-under-test. No driver tile needed — the hook writes
         # directly to the workspace, so dock layout doesn't matter.
-        self._activate(f"br-lc-{short}")
+        self._activate(f"{short}")
         if not self.page.evaluate("(t) => !!document.querySelector(t)", tag):
             self._fail(f"{short}: chart-under-test not mounted (tab not found?)")
             return
@@ -275,7 +275,7 @@ class R2Harness:
                 f"differ from final (R2 violation; first divergent frame #{drifting[0]})"
             )
 
-    def check_structural_animates(self, tag: str, sort_select_label="br-lc-"):
+    def check_structural_animates(self, tag: str, sort_select_label=""):
         """Trigger a sort-by-value reorder on the chart-under-test and assert its
         geometry animates (early != late).
 
@@ -287,7 +287,7 @@ class R2Harness:
         Resets sortBy back to 'index' afterward so this check can't contaminate a
         following value-immediate check on the same page session."""
         short = _short(tag)
-        self._activate(f"br-lc-{short}")
+        self._activate(f"{short}")
         prev = self.page.evaluate(
             """(tag) => { const el = document.querySelector(tag);
                  if (!el || !('sortBy' in el)) return null;

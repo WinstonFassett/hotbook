@@ -51,29 +51,29 @@ export interface Dataset {
 export type RetiredTileKind =
   | 'treemap' | 'radial' | 'bands'           // gen-0 flat morph trio
   | 'h-treemap' | 'h-icicle' | 'h-radial'   // gen-0 hier D3
-  | 'treetable'                              // replaced by br-lc-treetable
-  | 'svelte-br-lc-sunburst' | 'svelte-br-lc-icicle' | 'svelte-br-lc-pack' | 'svelte-br-lc-treemap' | 'svelte-treemap-demo'
+  | 'treetable'                              // replaced by treetable
+  | 'svelte-sunburst' | 'svelte-icicle' | 'svelte-pack' | 'svelte-treemap' | 'svelte-treemap-demo'
 
 export type TileKind =
   // bireactive LC-port charts (canon)
-  | 'br-lc-bar'
-  | 'br-lc-bands'
-  | 'br-lc-line'
-  | 'br-lc-area'
-  | 'br-lc-scatter'
-  | 'br-lc-pie'
-  | 'br-lc-radar'
-  | 'br-lc-concentric-arc'
-  | 'br-lc-gauge'
-  | 'br-lc-gauge-segmented'
-  | 'br-lc-pack'
-  | 'br-lc-treemap'
-  | 'br-lc-treetable'
-  | 'br-lc-icicle'
-  | 'br-lc-sunburst'
-  | 'br-lc-sankey'
-  | 'br-lc-tree'
-  | 'br-lc-gantt'
+  | 'bar'
+  | 'bands'
+  | 'line'
+  | 'area'
+  | 'scatter'
+  | 'pie'
+  | 'radar'
+  | 'concentric-arc'
+  | 'gauge'
+  | 'gauge-segmented'
+  | 'pack'
+  | 'treemap'
+  | 'treetable'
+  | 'icicle'
+  | 'sunburst'
+  | 'sankey'
+  | 'tree'
+  | 'gantt'
   | RetiredTileKind
 
 export interface Tile {

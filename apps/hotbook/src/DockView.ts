@@ -645,7 +645,7 @@ export class DockView extends HTMLElement {
     }
 
     if (pickers.orientation) {
-      const orientation = tile.orientation ?? (tile.kind === 'br-lc-bar' ? 'vertical' : 'horizontal')
+      const orientation = tile.orientation ?? (tile.kind === 'bar' ? 'vertical' : 'horizontal')
       const sel = document.createElement('select')
       sel.className = 'tile-measure-select'
       sel.title = 'Orientation'

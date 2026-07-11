@@ -40,9 +40,9 @@ def main():
             tab.dispatchEvent(new PointerEvent('pointerdown', {bubbles: true, button: 0}));
             tab.dispatchEvent(new PointerEvent('pointerup', {bubbles: true, button: 0}));
             return true;
-        }""", "br-lc-sankey")
+        }""", "sankey")
         if not ok:
-            failures.append("could not activate br-lc-sankey tab")
+            failures.append("could not activate sankey tab")
             return report(failures)
         page.wait_for_timeout(1500)
 

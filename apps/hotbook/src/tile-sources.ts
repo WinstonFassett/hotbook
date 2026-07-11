@@ -162,11 +162,11 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
   const { kind } = tile
 
   // ── Flat charts ──────────────────────────────────────────────────────────
-  if (kind === 'br-lc-bar' || kind === 'br-lc-bands') {
-    const orientation = tile.orientation ?? (kind === 'br-lc-bar' ? 'vertical' : 'horizontal')
-    const colorMode = kind === 'br-lc-bands' ? 'palette' : (tile.colorMode ?? 'single')
-    const labelMode = kind === 'br-lc-bands' ? 'inside' : (tile.labelMode ?? 'axis')
-    const valueMode = kind === 'br-lc-bands' ? 'inside' : (tile.valueMode ?? 'none')
+  if (kind === 'bar' || kind === 'bands') {
+    const orientation = tile.orientation ?? (kind === 'bar' ? 'vertical' : 'horizontal')
+    const colorMode = kind === 'bands' ? 'palette' : (tile.colorMode ?? 'single')
+    const labelMode = kind === 'bands' ? 'inside' : (tile.labelMode ?? 'axis')
+    const valueMode = kind === 'bands' ? 'inside' : (tile.valueMode ?? 'none')
     const minBandSize = tile.minBandSize ?? 0
     const maxItems = tile.maxItems
     const leaves = leavesOfNodes(sorted)
@@ -193,7 +193,7 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
     })
   }
 
-  if (kind === 'br-lc-pie') {
+  if (kind === 'pie') {
     const leaves = leavesOfNodes(sorted)
     const ids = leaves.map(n => n.id)
     // shapeKey excludes valueBinding — measure changes flow through applyData (sets
@@ -209,7 +209,7 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
     })
   }
 
-  if (kind === 'br-lc-radar') {
+  if (kind === 'radar') {
     // For hierarchical datasets, render/edit root-level (top-level category)
     // totals instead of dozens of task-level leaves. Backed by a live BiNode
     // tree (makeHierRootFlatSource) so a root's value is a real Num.lens over
@@ -253,7 +253,7 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
     })
   }
 
-  if (kind === 'br-lc-concentric-arc') {
+  if (kind === 'concentric-arc') {
     const leaves = leavesOfNodes(sorted)
     const ids = leaves.map(n => n.id)
     const maxItems = tile.maxItems
@@ -272,7 +272,7 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
     })
   }
 
-  if (kind === 'br-lc-scatter') {
+  if (kind === 'scatter') {
     const xKey = xBinding ?? '_index'
     const yKey = yBinding ?? valueBinding
     const leaves = leavesOfNodes(sorted)
@@ -309,7 +309,7 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
     })
   }
 
-  if (kind === 'br-lc-line') {
+  if (kind === 'line') {
     const leaves = leavesOfNodes(sorted)
     const ids = leaves.map(n => n.id)
     // shapeKey excludes valueBinding — measure changes flow through applyData (sets
@@ -328,7 +328,7 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
     })
   }
 
-  if (kind === 'br-lc-area') {
+  if (kind === 'area') {
     const leaves = leavesOfNodes(sorted)
     const ids = leaves.map(n => n.id)
     // shapeKey excludes valueBinding — measure changes flow through applyData (sets
@@ -347,17 +347,17 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
 
   // ── Hierarchical charts ──────────────────────────────────────────────────
   const hierTags: Record<string, string> = {
-    'br-lc-pack': 'v-br-pack',
-    'br-lc-treemap': 'v-br-treemap',
-    'br-lc-treetable': 'v-br-treetable',
-    'br-lc-icicle': 'v-br-icicle',
-    'br-lc-sunburst': 'v-br-sunburst',
-    'br-lc-tree': 'v-br-tree',
+    'pack': 'v-br-pack',
+    'treemap': 'v-br-treemap',
+    'treetable': 'v-br-treetable',
+    'icicle': 'v-br-icicle',
+    'sunburst': 'v-br-sunburst',
+    'tree': 'v-br-tree',
     'treetable': 'v-br-treetable',
   }
   if (kind in hierTags) {
     const tag = hierTags[kind]!
-    const orientationProp = kind === 'br-lc-icicle' ? (tile.orientation ?? 'horizontal') : undefined
+    const orientationProp = kind === 'icicle' ? (tile.orientation ?? 'horizontal') : undefined
     const sortKey = orderBinding === 'value' || orderBinding === '_value' ? valueBinding : orderBinding
     // Hierarchical elements can sort by value (desc) internally; otherwise rely on pre-sorted nodes + 'index'.
     const hierSortBy: 'index' | 'value' = sortKey === valueBinding && orderDir === 'desc' ? 'value' : 'index'
@@ -391,8 +391,8 @@ export function buildSimpleMount(ctx: TileRenderContext): ((el: HTMLElement) => 
   const leaves = rawNodes.filter(n => !rawNodes.some(m => m.parentId === n.id))
   const { kind } = tile
 
-  if (kind === 'br-lc-gantt') {
-    // br-lc-gantt expects GanttTask[] with start/end dates
+  if (kind === 'gantt') {
+    // gantt expects GanttTask[] with start/end dates
     // For now, construct a simple timeline from the data rows
     const tasks = leaves.map((n, i) => ({
       id: n.id,
@@ -406,21 +406,21 @@ export function buildSimpleMount(ctx: TileRenderContext): ((el: HTMLElement) => 
     }
   }
 
-  if (kind === 'br-lc-gauge') {
+  if (kind === 'gauge') {
     const value = leaves.reduce((a, b) => a + (b.measures[valueBinding] ?? 0), 0)
     const text = tile.title ?? valueBinding
     const data = { value, min: 0, max: 100, label: text }
     return (el: any) => { el.externalData = data }
   }
 
-  if (kind === 'br-lc-gauge-segmented') {
+  if (kind === 'gauge-segmented') {
     const value = leaves.reduce((a, b) => a + (b.measures[valueBinding] ?? 0), 0)
     const text = tile.title ?? valueBinding
     const data = { value, min: 0, max: 100, label: text, segments: 24 }
     return (el: any) => { el.externalData = data }
   }
 
-  if (kind === 'br-lc-sankey') {
+  if (kind === 'sankey') {
     const edges = ds.edges ?? []
     const nodeNames = [...new Set(edges.flatMap(e => [e.source, e.target]))]
     const links = edges.map(e => ({ source: e.source, target: e.target, value: e.value }))
@@ -434,10 +434,10 @@ export function buildSimpleMount(ctx: TileRenderContext): ((el: HTMLElement) => 
 /** The custom element tag for a simple-mount tile kind */
 export function simpleTag(kind: string): string | null {
   const map: Record<string, string> = {
-    'br-lc-gauge': 'v-br-gauge',
-    'br-lc-gauge-segmented': 'v-br-gauge-segmented',
-    'br-lc-sankey': 'v-br-sankey',
-    'br-lc-gantt': 'v-br-gantt',
+    'gauge': 'v-br-gauge',
+    'gauge-segmented': 'v-br-gauge-segmented',
+    'sankey': 'v-br-sankey',
+    'gantt': 'v-br-gantt',
   }
   return map[kind] ?? null
 }
@@ -449,13 +449,13 @@ export function simpleDataKey(ctx: TileRenderContext): string {
   const rawNodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.nodes, tile.groupBy) : ds.nodes)
   const leaves = rawNodes.filter(n => !rawNodes.some(m => m.parentId === n.id))
   const { kind } = tile
-  if (kind === 'br-lc-gauge' || kind === 'br-lc-gauge-segmented') {
+  if (kind === 'gauge' || kind === 'gauge-segmented') {
     return `${kind}|${valueBinding}|${leaves.reduce((a, b) => a + (b.measures[valueBinding] ?? 0), 0)}`
   }
-  if (kind === 'br-lc-sankey') {
+  if (kind === 'sankey') {
     return `sankey|${JSON.stringify(ds.edges ?? [])}`
   }
-  if (kind === 'br-lc-gantt') {
+  if (kind === 'gantt') {
     return `gantt|${valueBinding}|${ds.nodes.length}`
   }
   return kind

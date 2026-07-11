@@ -34,32 +34,32 @@ const HIER_FULL_ORIENT: VizConfigSchema = {
 
 export const TILE_CONFIG_SCHEMAS: Map<TileKind, VizConfigSchema> = new Map([
   // ─── bireactive LC-port flat charts ───────────────────────────────────────
-  ['br-lc-bar',             SORT_ORIENT],
-  ['br-lc-bands',           SORT_ORIENT],
-  ['br-lc-line',            SORT_ONLY],
-  ['br-lc-area',            SORT_ONLY],
-  ['br-lc-pie',             SORT_ONLY],
-  ['br-lc-radar',           SORT_ONLY],
-  ['br-lc-concentric-arc',  SORT_ONLY],
+  ['bar',             SORT_ORIENT],
+  ['bands',           SORT_ORIENT],
+  ['line',            SORT_ONLY],
+  ['area',            SORT_ONLY],
+  ['pie',             SORT_ONLY],
+  ['radar',           SORT_ONLY],
+  ['concentric-arc',  SORT_ONLY],
 
   // ─── scatter — its own X/Y key pickers, no shared measure picker ─────────
-  ['br-lc-scatter', {
+  ['scatter', {
     pickers: { sort: true, xKey: true, yKey: true },
   }],
 
   // ─── bireactive LC-port hier charts ───────────────────────────────────────
-  ['br-lc-pack',      HIER_FULL],
-  ['br-lc-treemap',   HIER_FULL],
-  ['br-lc-treetable', HIER_FULL],
-  ['br-lc-icicle',    HIER_FULL_ORIENT],
-  ['br-lc-sunburst',  HIER_FULL],
+  ['pack',      HIER_FULL],
+  ['treemap',   HIER_FULL],
+  ['treetable', HIER_FULL],
+  ['icicle',    HIER_FULL_ORIENT],
+  ['sunburst',  HIER_FULL],
 
   // ─── bireactive LC-port graph charts ──────────────────────────────────────
-  ['br-lc-sankey', {
+  ['sankey', {
     pickers: { measure: true, sort: true },
     scrollBody: true,
   }],
-  ['br-lc-tree', HIER_FULL_ORIENT],
+  ['tree', HIER_FULL_ORIENT],
 
   // ─── Retired kinds: no pickers, no scroll — entries exist so a lookup
   //     never returns undefined for a legacy persisted tile.
@@ -69,10 +69,10 @@ export const TILE_CONFIG_SCHEMAS: Map<TileKind, VizConfigSchema> = new Map([
   ['h-treemap',                EMPTY],
   ['h-icicle',                 EMPTY],
   ['h-radial',                 EMPTY],
-  ['svelte-br-lc-sunburst',    EMPTY],
-  ['svelte-br-lc-icicle',      EMPTY],
-  ['svelte-br-lc-pack',        EMPTY],
-  ['svelte-br-lc-treemap',     EMPTY],
+  ['svelte-sunburst',    EMPTY],
+  ['svelte-icicle',      EMPTY],
+  ['svelte-pack',        EMPTY],
+  ['svelte-treemap',     EMPTY],
   ['svelte-treemap-demo',      EMPTY],
 ])
 

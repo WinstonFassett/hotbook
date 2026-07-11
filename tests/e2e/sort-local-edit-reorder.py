@@ -89,7 +89,7 @@ with sync_playwright() as p:
     page.goto(URL, wait_until="networkidle")
     page.wait_for_timeout(1000)
 
-    page.click("text=br-lc-bar")
+    page.click("text=bar")
     page.wait_for_timeout(600)
 
     # Set the bar tile's Order dropdown to Value (3rd <select> in DOM order).

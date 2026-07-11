@@ -61,7 +61,7 @@ with R2Harness() as h:
         h.check_structural_animates(tag)
 
         # 3. NEW: measureKey swap must animate (the WIN-143 fix)
-        h._activate(f"br-lc-{short}")
+        h._activate(f"{short}")
         h._wait_geo_stable(tag)
         result = _change_measure_dropdown(h.page, short)
         if not result:

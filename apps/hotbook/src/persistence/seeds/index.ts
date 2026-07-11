@@ -24,14 +24,14 @@ export function buildSeedWorkspace(): Workspace {
   // Canon viz kinds for seed dashboard (retired gen-0/Svelte kinds excluded).
   // Hierarchical charts first (top row) for drill dogfooding.
   const ALL_KINDS: TileKind[] = [
-    'br-lc-pack', 'br-lc-treemap', 'br-lc-treetable', 'br-lc-icicle', 'br-lc-sunburst',
-    'br-lc-bar', 'br-lc-bands', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie',
-    'br-lc-radar', 'br-lc-concentric-arc',
-    'br-lc-sankey', 'br-lc-tree', 'br-lc-gantt',
+    'pack', 'treemap', 'treetable', 'icicle', 'sunburst',
+    'bar', 'bands', 'line', 'area', 'scatter', 'pie',
+    'radar', 'concentric-arc',
+    'sankey', 'tree', 'gantt',
   ]
 
   const GROUPBY_KINDS = new Set<TileKind>([
-    'br-lc-pack', 'br-lc-treemap', 'br-lc-treetable', 'br-lc-icicle', 'br-lc-sunburst', 'br-lc-sankey', 'br-lc-tree',
+    'pack', 'treemap', 'treetable', 'icicle', 'sunburst', 'sankey', 'tree',
   ])
 
   function makeAllVizDash(prefix: string, flatGroupBy?: string) {
@@ -55,10 +55,10 @@ export function buildSeedWorkspace(): Workspace {
   const fruitViz = makeAllVizDash('fr', 'group')
   const teamViz  = makeAllVizDash('tm', 'role')
 
-  const supplyTiles = [{ id: 'sp-0', kind: 'br-lc-sankey' as const, title: 'Supply chain' }]
+  const supplyTiles = [{ id: 'sp-0', kind: 'sankey' as const, title: 'Supply chain' }]
   const supplyLayout = [{ i: 'sp-0', x: 0, y: 0, w: 12, h: 8 }]
 
-  const ganttTiles = [{ id: 'gt-0', kind: 'br-lc-gantt' as const, title: 'Project schedule' }]
+  const ganttTiles = [{ id: 'gt-0', kind: 'gantt' as const, title: 'Project schedule' }]
   const ganttLayout = [{ i: 'gt-0', x: 0, y: 0, w: 12, h: 8 }]
 
   return {

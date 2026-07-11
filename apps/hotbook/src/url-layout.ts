@@ -32,20 +32,20 @@ import type { TileKind, Dashboard, Tile } from './persistence'
 
 // Common shorthands
 const shorthands: Record<string, TileKind> = {
-  'treetable': 'br-lc-treetable',
-  'bar': 'br-lc-bar',
-  'line': 'br-lc-line',
-  'area': 'br-lc-area',
-  'scatter': 'br-lc-scatter',
-  'pie': 'br-lc-pie',
-  'radar': 'br-lc-radar',
-  'pack': 'br-lc-pack',
-  'treemap': 'br-lc-treemap',
-  'icicle': 'br-lc-icicle',
-  'sunburst': 'br-lc-sunburst',
-  'sankey': 'br-lc-sankey',
-  'tree': 'br-lc-tree',
-  'gantt': 'br-lc-gantt',
+  'treetable': 'treetable',
+  'bar': 'bar',
+  'line': 'line',
+  'area': 'area',
+  'scatter': 'scatter',
+  'pie': 'pie',
+  'radar': 'radar',
+  'pack': 'pack',
+  'treemap': 'treemap',
+  'icicle': 'icicle',
+  'sunburst': 'sunburst',
+  'sankey': 'sankey',
+  'tree': 'tree',
+  'gantt': 'gantt',
 }
 
 const reverseShorthands: Record<TileKind, string> = {} as Record<TileKind, string>
@@ -54,7 +54,7 @@ for (const [short, kind] of Object.entries(shorthands)) {
 }
 
 /** Expand shorthand chart names to full TileKind.
- *  bar → br-lc-bar, line → br-lc-line, etc. */
+ *  bar → bar, line → line, etc. */
 function expandShorthand(kindStr: string): TileKind {
   return (shorthands[kindStr] || kindStr) as TileKind
 }

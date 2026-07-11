@@ -12,11 +12,11 @@ function genId(): string {
 
 // Valid tile kinds that can be rendered (includes retired kinds that still work)
 const VALID_TILE_KINDS = new Set<TileKind>([
-  'br-lc-bar', 'br-lc-bands', 'br-lc-line', 'br-lc-area', 'br-lc-scatter', 'br-lc-pie',
-  'br-lc-radar', 'br-lc-concentric-arc',
-  'br-lc-gauge', 'br-lc-gauge-segmented',
-  'br-lc-pack', 'br-lc-treemap', 'br-lc-treetable', 'br-lc-icicle', 'br-lc-sunburst',
-  'br-lc-sankey', 'br-lc-tree', 'br-lc-gantt',
+  'bar', 'bands', 'line', 'area', 'scatter', 'pie',
+  'radar', 'concentric-arc',
+  'gauge', 'gauge-segmented',
+  'pack', 'treemap', 'treetable', 'icicle', 'sunburst',
+  'sankey', 'tree', 'gantt',
   'treetable', // retired but still renders via vanilla treetable
 ])
 

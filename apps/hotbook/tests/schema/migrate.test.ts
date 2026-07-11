@@ -28,7 +28,7 @@ const FIXTURE_V11: Workspace = {
       name: 'Test Dashboard',
       createdAt: '2026-05-13T12:00:00.000Z',
       layout: [{ i: 'tile-1', x: 0, y: 0, w: 6, h: 8 }],
-      tiles: [{ id: 'tile-1', kind: 'br-lc-bar', title: 'Bar Chart' }],
+      tiles: [{ id: 'tile-1', kind: 'bar', title: 'Bar Chart' }],
       measureKey: 'value',
       drills: { default: 'r1' },
     },
@@ -63,7 +63,7 @@ const FIXTURE_V10: Workspace = {
       name: 'Legacy Dashboard',
       createdAt: '2026-05-01T12:00:00.000Z',
       layout: [{ i: 'tile-2', x: 0, y: 0, w: 12, h: 8 }],
-      tiles: [{ id: 'tile-2', kind: 'br-lc-treemap', title: 'Treemap' }],
+      tiles: [{ id: 'tile-2', kind: 'treemap', title: 'Treemap' }],
       measureKey: 'budget',
       drillNodeId: 'child',  // v10 format: single drill scope
     } as any, // Type override for v10 fixture
