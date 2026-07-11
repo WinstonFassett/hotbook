@@ -53,7 +53,7 @@ export interface ColumnDef {
 /**
  * MdTreetableLC - HTML-based hierarchical treetable for BiNode data.
  * Does NOT extend Diagram because tables need HTML DOM for proper scrolling
- * and text layout. Registers as a custom element for integration with sliceboard.
+ * and text layout. Registers as a custom element for integration with hotbook.
  *
  * Supports reactive value updates and editing of both leaves AND parents via
  * the bireactive sum-redistribute lens pattern.

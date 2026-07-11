@@ -7,7 +7,7 @@ export default defineConfig({
   vite: {
     resolve: {
       // 'node' condition resolves workspace packages (hotbook-charts) to SOURCE
-      // (same mechanism as sliceboard) — live HMR, never a stale dist.
+      // (same mechanism as hotbook) — live HMR, never a stale dist.
       conditions: ['browser', 'node'],
       // One bireactive instance across all modules — two copies silently kill
       // cross-element reactivity.

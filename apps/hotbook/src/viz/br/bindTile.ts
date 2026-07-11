@@ -1,9 +1,9 @@
 /**
- * bindTile.ts — sliceboard facade over the shared TileBinder module.
+ * bindTile.ts — hotbook facade over the shared TileBinder module.
  *
  * This file now only owns:
- *   - bindHudSync: wires a BR-LC element to sliceboard's hudStore
- *   - bindTile: wraps the shared bindTile with sliceboard's bindHudSync
+ *   - bindHudSync: wires a BR-LC element to hotbook's hudStore
+ *   - bindTile: wraps the shared bindTile with hotbook's bindHudSync
  *
  * All generic binding logic (TileSource, makeFlatSource, makeHierSource,
  * makeHierRootFlatSource, hierShapeKey, hierValueKey, etc.) lives in:
@@ -44,7 +44,7 @@ interface BrSyncBridge {
 interface ElWithBrSync extends HTMLElement { brSync?: BrSyncBridge }
 
 /**
- * Wire a mounted BR-LC element to the sliceboard hudStore in both directions.
+ * Wire a mounted BR-LC element to the hotbook hudStore in both directions.
  * Echo-suppressed: we skip pushing a value the element just reported.
  * Returns a disposer.
  */
@@ -112,10 +112,10 @@ export function bindHudSync(el: ElWithBrSync): () => void {
   return () => { offHover(); offSelect(); offDrill(); unsub() }
 }
 
-// ─── bindTile (sliceboard entry point) ───────────────────────────────────────
+// ─── bindTile (hotbook entry point) ───────────────────────────────────────
 
 /**
- * Sliceboard-specific wrapper: passes bindHudSync as the HUD binding function.
+ * Hotbook-specific wrapper: passes bindHudSync as the HUD binding function.
  * This is the only symbol BrLcTile.tsx needs to call directly.
  */
 export function bindTile(container: HTMLElement, source: TileSource): TileController {

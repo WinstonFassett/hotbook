@@ -75,7 +75,7 @@ const LIFE_GOALS: GoalSpec[] = [
         ],
       },
       {
-        name: 'Sliceboard app', status: 'doing',
+        name: 'Hotbook app', status: 'doing',
         subs: [
           { name: 'Data layer', status: 'doing', tasks: [
             { name: 'Persistence + seed', status: 'done', est: 3, act: 2 },

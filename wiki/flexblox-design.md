@@ -61,7 +61,7 @@ flexblox wires the everything-else. That's the product.
 
 ```
 surfaces (peers, not packages)
-  sliceboard · docs site · apitable · nextjs demo
+  hotbook · docs site · apitable · nextjs demo
   each is a host that mounts blocks + owns layout
         │
         ▼
@@ -624,7 +624,7 @@ Contract guarantees:
 The kernel must be proven across multiple surface shapes, not just charts:
 
 1. **Charts** — direct manipulation, cross-tile sync, conservation propagation.
-   (Current sliceboard use case.)
+   (Current hotbook use case.)
 2. **Dock** — layout coordination, keep-alive across tab switches, spring
    transitions on resize/split. (WIN-111 scope.)
 3. **Page/block layout** — document-shaped surfaces. Block-level editing, nested
@@ -715,8 +715,8 @@ library with ideas above its station.
    deep element contract. Then breadth.
 5. **`flexblox-dock`** — layout engine, events at boundary, spring transitions.
 6. **`flexblox-matchina` adapter** — premium lifecycle backend.
-7. **sliceboard** — integration test harness. Dock + charts + persistence.
+7. **hotbook** — integration test harness. Dock + charts + persistence.
 8. **Other backends** (Solid, Preact, nanostores) — on demand.
 
-The order matters: kernel before charts, charts before dock, dock before sliceboard.
+The order matters: kernel before charts, charts before dock, dock before hotbook.
 Each layer proves the one below it.

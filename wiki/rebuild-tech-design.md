@@ -13,7 +13,7 @@
 **Vision.** A chart is a custom element. Its entire wiring contract is: *give it reactive
 data*. Edits flow both ways through shared cells — drag the chart, the table moves; edit
 the table, the chart moves. No events to subscribe, no stores to bridge, no lifecycle
-choreography. A host (docs page, sliceboard, APITable surface, someone else's app) mounts
+choreography. A host (docs page, hotbook, APITable surface, someone else's app) mounts
 elements and owns *policy* (which data, what sort, what layout); elements own *mechanics*
 (rendering, gestures, transitions, hit-testing).
 
@@ -25,7 +25,7 @@ elements and owns *policy* (which data, what sort, what layout); elements own *m
   means those retire; port *knowledge* (gesture model, Esc contract, transitions doc), not code.
 
 **The one-sentence test for every design decision:** *could the docs demo wire this chart
-in ≤6 lines, and could sliceboard host it with zero chart-specific glue?* If either answer
+in ≤6 lines, and could hotbook host it with zero chart-specific glue?* If either answer
 is no, the complexity is in the wrong layer.
 
 ---
@@ -59,7 +59,7 @@ graph TD
 
   subgraph surfaces["surfaces — PEERS, consume elements directly"]
     docs["docs site (Astro)<br/>demo harnesses"]
-    slice["sliceboard<br/>dock host · persistence"]
+    slice["hotbook<br/>dock host · persistence"]
     apit["apitable integration<br/><b>AGPL leaf</b>"]
   end
 
@@ -198,7 +198,7 @@ Contract guarantees (these are the tests — see §9):
 2. **Edits are origin-tagged.** A host effect watching cells can distinguish "the user
    dragged this chart" from "someone else wrote the cell" via the edit scope. Echo
    suppression, `lastRef` maps, quantize-and-compare — all dead.
-3. **`editcommit` carries the full delta.** Hosts that persist (sliceboard, APITable)
+3. **`editcommit` carries the full delta.** Hosts that persist (hotbook, APITable)
    subscribe to one event with real data; hosts that don't (docs demos) ignore it and
    cells are already correct.
 4. **Park, don't die.** Tab switches and dock moves are disconnect/reconnect — element
@@ -287,7 +287,7 @@ document.querySelector("vf-treetable")!.data = root;
 Note charts can now be **declared in HTML** (tags are package-registered) and wired with
 one property assignment each. That's the vision, mechanically enforced.
 
-### 6.2 Sliceboard (dock host)
+### 6.2 Hotbook (dock host)
 
 Becomes policy-only. Per tile:
 
@@ -330,7 +330,7 @@ packages/
   hotbook-svelte/      # optional shim                                     (leaf)
 apps/
   docs/                # Astro site: landing + per-example harness pages
-  sliceboard/          # dock host (policy only)
+  hotbook/          # dock host (policy only)
   apitable/            # AGPL leaf surface
 ```
 
@@ -379,7 +379,7 @@ graph LR
   p1["<b>P1</b> VizElement base<br/>park/resume · editScope ·<br/>SyncHub · InteractionContext ·<br/>contract test suite"]
   p2["<b>P2</b> two proof charts<br/>bar (Cartesian) +<br/>icicle (Hier) + treetable<br/>docs demo ≤6 lines incl. FLAT bar"]
   p3["<b>P3</b> chart sweep<br/>port remaining charts onto<br/>the two base classes ·<br/>registry meta per chart"]
-  p4["<b>P4</b> sliceboard rehost<br/>tile source = 6 lines ·<br/>dock decision (WIN-111) ·<br/>delete glue layer"]
+  p4["<b>P4</b> hotbook rehost<br/>tile source = 6 lines ·<br/>dock decision (WIN-111) ·<br/>delete glue layer"]
   p5["<b>P5</b> publish + surfaces<br/>npm scope · apitable leaf ·<br/>optional shims"]
   p0 --> p1 --> p2 --> p3 --> p4 --> p5
 ```
@@ -390,7 +390,7 @@ graph LR
 - **P3 is parallelizable** (agent-friendly): each chart is an isolated port onto a frozen
   base-class interface — exactly the shape that avoided the add-then-revert churn the
   history shows, because agents patch behind the seam instead of inventing host glue.
-- Sliceboard stays on the old stack until P4; no long dual-generation period *inside* the
+- Hotbook stays on the old stack until P4; no long dual-generation period *inside* the
   new packages (the history's core lesson: never two live generations in one surface).
 
 ---
@@ -462,7 +462,7 @@ bulldozes the chart and rebuilds it from zero. Concretely lost on every move:
 - scroll position (treetable)
 - and the rebuild re-runs layout + mounts hundreds of shapes — a visible hitch
 
-**The evidence this hurts.** Sliceboard keeps inactive tabs mounted with `display:none`
+**The evidence this hurts.** Hotbook keeps inactive tabs mounted with `display:none`
 instead of unmounting (DockView's hidden-not-removed logic) purely to dodge this. Git
 history shows keep-alive tab caching added (`796bdaa`) and reverted (`25841c8`) — a
 symptom-level fight with the lifecycle. Every host pays this tax its own way.
@@ -515,7 +515,7 @@ hotbook inverts both load-bearing assumptions simultaneously: data is injected a
 (the vision), hosts are dynamic (dock/tabs reparent constantly). Even then, the failure is
 not data loss — shared cells live outside the element and survive — it's **view state**
 (drill, selection, scroll, in-flight gesture/tween) plus the rebuild hitch. Hence the pain
-concentrates in sliceboard while the docs demos (documents — bireactive's home regime)
+concentrates in hotbook while the docs demos (documents — bireactive's home regime)
 feel fine. Framing for upstream: not "your lifecycle is broken" but "extend `Diagram` into
 a second regime" — which is also the argument for defaulting to path 2 (own the lifecycle).
 
@@ -572,14 +572,14 @@ Consequences:
 | Design element | Status | Evidence / what's missing |
 |---|---|---|
 | `@hotbook/core` | **~60%** | `hotbook-core` has PNode/Dataset/schema/colors, zero deps. Missing: `applyView` (inline in `tile-sources.ts:104-115`), real `ViewSpec` type (today: persistence's `tile`). |
-| `@hotbook/data` | **~25%** | Kernel exists: `charts/src/lib/tree.ts` leaf/group + sum-redistribute lens. Missing: `list()`, named `AggPolicy`, `Coll` children, `fromDataset` incremental (exists wrongly as `bindTile.applyData`, per-host). Fold in sliceboard's duplicate `buildBiTree` (119 lines). |
+| `@hotbook/data` | **~25%** | Kernel exists: `charts/src/lib/tree.ts` leaf/group + sum-redistribute lens. Missing: `list()`, named `AggPolicy`, `Coll` children, `fromDataset` incremental (exists wrongly as `bindTile.applyData`, per-host). Fold in hotbook's duplicate `buildBiTree` (119 lines). |
 | Chart mechanics (render/gesture/transition) | **~70% — PORTS** | ~7k LOC of d3 adapters, drill tweens, wheel/drag + `applyDelta`, Esc contract, `useHostSize`, touch. Survives as implementation behind the new interface. |
 | **Element contract (VizElement)** | **~10% — THE WORK** | No chart follows constructor-scope-cells + pure-scene (all `peek()` in `scene()`). No edit origin, no `editcommit` payload, no injectable SyncHub, `portfolio()` fallback everywhere, two data models (bar/line plain arrays, pie hybrid). Bar carries ~300-line orientation clone. |
 | Registry / define() | **~30%** | `metadata.ts` maturity exists; config schemas app-side; two duplicated TAG registries; no `define()`/tag constants. |
 | Motion policy | **removal work** | Gesture tracking already write-through; blanket `settleTransition` on values must die (WIN-94). |
 | Contract test suite | **0%** | Nothing tests elements through their interface. |
 | Docs surface | **~70%** | Current branch IS the Astro+vanilla-harness shape; bar demo's fake wiring is the known failing case. |
-| Sliceboard rehost | **mostly deletion** | ~2,800+ lines scheduled to die: bindTile (599), tile-sources (373), BrLcCharts (504), app tree.ts (119), hud retry/echo, gen-1 chain, Svelte spike, zombie React charts. Dock decision (WIN-111) open but low-stakes post-P1. |
+| Hotbook rehost | **mostly deletion** | ~2,800+ lines scheduled to die: bindTile (599), tile-sources (373), BrLcCharts (504), app tree.ts (119), hud retry/echo, gen-1 chain, Svelte spike, zombie React charts. Dock decision (WIN-111) open but low-stakes post-P1. |
 | apitable surface | **furthest** | Still on gen-1 React chain. |
 
 Phase read: **P0 ~70% done · P1 ~10% (the real work) · P2–P3 = conversions of

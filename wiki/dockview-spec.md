@@ -1,6 +1,6 @@
 # Dockview-class layout — behavioral spec
 
-Working spec for the sliceboard "Splits" layout to grow into something in the
+Working spec for the hotbook "Splits" layout to grow into something in the
 class of [dockview.dev](https://dockview.dev/) / VS Code editor groups. This
 is the *behavioral* surface — what the user can do and what the layout
 guarantees. Implementation choices (CSS Grid vs Flex, virtual DOM vs DOM
@@ -269,7 +269,7 @@ Existing `split` branches keep their shape.
 ### Phase C — Multi-page surface (Option B)
 - Vertical page stack of dockview roots.
 - Inter-page gutter and "Add page below."
-- Whether to keep this in sliceboard or extract a `@winstonfassett/dock`
+- Whether to keep this in hotbook or extract a `@winstonfassett/dock`
   package — decide once Phase A is committed and the API is real.
 
 ---

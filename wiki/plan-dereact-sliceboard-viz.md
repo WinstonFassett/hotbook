@@ -1,4 +1,4 @@
-# Plan — de-React sliceboard's viz layer (collapse the React membrane)
+# Plan — de-React hotbook's viz layer (collapse the React membrane)
 
 > Handoff for an autonomous agent. **Execute in order. Do not ask questions.**
 > **Prerequisite:** the charts extraction (`docs/plan-extract-hotbook-charts.md`)
@@ -6,7 +6,7 @@
 
 ## Goal
 
-Kill the React membrane in `apps/sliceboard/src/viz/br/BrLcCharts.tsx`. Today
+Kill the React membrane in `apps/hotbook/src/viz/br/BrLcCharts.tsx`. Today
 that file is ~650 lines bridging TWO reactive runtimes (React VDOM + bireactive
 cells) + the `hudStore`. All of its accidental complexity — echo suppression,
 `shapeKey` remount engineering, `gestureActive` freeze, `commitTick` nudge,
@@ -25,9 +25,9 @@ not the charts and not the sort/data model.
 ## Scope guardrails (DO / DO NOT)
 
 - **DO NOT** change chart visuals, gestures, or the edit/redistribute behavior.
-- **DO NOT** move sort/group/identity out of sliceboard — `applyView`/`sortedNodes`
+- **DO NOT** move sort/group/identity out of hotbook — `applyView`/`sortedNodes`
   in `App.tsx` stay. Charts stay dumb renderers ([sort/identity architecture]).
-- **DO NOT** rewrite the whole sliceboard shell to vanilla/Svelte here. App.tsx,
+- **DO NOT** rewrite the whole hotbook shell to vanilla/Svelte here. App.tsx,
   the grid layout, panels, and the `tile.kind` dispatch stay React **for now**.
   This plan only de-Reacts the chart *binding*. (Full-shell de-React is the next,
   separate plan — see "Follow-on".)
@@ -56,7 +56,7 @@ not the charts and not the sort/data model.
 plain object — no hooks, no JSX:
 
 ```ts
-// apps/sliceboard/src/viz/br/bindTile.ts
+// apps/hotbook/src/viz/br/bindTile.ts
 export interface TileSource {
   tag: string                      // 'v-br-bar' | 'v-br-icicle' | …
   shapeKey: string                 // rebuild element only when this changes
@@ -97,7 +97,7 @@ hooks' bodies. Reuse the existing spec fields (`build`/`readValue`/`writeValue`/
 
 ## Steps
 
-1. **Add `apps/sliceboard/src/viz/br/bindTile.ts`** with `bindTile`,
+1. **Add `apps/hotbook/src/viz/br/bindTile.ts`** with `bindTile`,
    `bindHudSync` (moved from BrLcCharts.tsx), `makeFlatSource`, `makeHierSource`.
    Port the exact logic from `useLiveFlatElement` / `useLiveHierElement` — same
    echo suppression, freeze, commit re-sort, batching. No React imports in this file.
@@ -125,12 +125,12 @@ hooks' bodies. Reuse the existing spec fields (`build`/`readValue`/`writeValue`/
    the `lastRef`/`commitTick`/`gestureActive` React machinery, the `vkey`/shapeKey
    helpers that only existed to drive React deps (move any still-needed key
    computation into the `make*Source` factories).
-5. **Re-evaluate `dedupe: ['react','react-dom']`** in `apps/sliceboard/vite.config.ts`:
+5. **Re-evaluate `dedupe: ['react','react-dom']`** in `apps/hotbook/vite.config.ts`:
    keep it (App is still React). Leave `bireactive` dedupe in place.
 
 ## Verify (must pass)
 ```bash
-npx vite build apps/sliceboard
+npx vite build apps/hotbook
 ```
 Then real-browser parity smoke (per repo memory — Playwright, pierce shadow DOM):
 - Flat (bar) + hier (icicle): hover highlights cross-tile, wheel-edit changes a
@@ -147,7 +147,7 @@ Then real-browser parity smoke (per repo memory — Playwright, pierce shadow DO
 - All sync/freeze/echo/batch logic lives in framework-agnostic `bindTile.ts`.
 - The only React in the viz path is `BrLcTile`'s two trivial effects (mount-once
   + push-data). React is now a dumb host.
-- sliceboard builds; behavior is identical to pre-refactor.
+- hotbook builds; behavior is identical to pre-refactor.
 
 ## Follow-on (next plan, not here)
 - Replace the React app shell (App.tsx, grid layout, panels, dispatch, hudStore

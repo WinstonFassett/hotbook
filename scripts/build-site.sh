@@ -10,7 +10,7 @@ set -euo pipefail
 #                  every chart, gantt, treetable, layout demo lives here as a
 #                  hash-anchored section (#gantt, #treetable, #layout-nested, ...)
 #   /demos/bidirectional/  bidirectional-binding demos (Astro page)
-#   /hotbook/      hotbook sliceboard app (vite build)
+#   /hotbook/      hotbook hotbook app (vite build)
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"

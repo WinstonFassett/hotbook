@@ -2,7 +2,7 @@
 
 Demo app for [hotbook](../../README.md). Multi-board data table with live proportional and hierarchical visualizations.
 
-**Live:** [hotbook.netlify.app](https://hotbook.netlify.app)
+**Live:** [hotbook-build.netlify.app](https://hotbook-build.netlify.app)
 
 ## What it does
 

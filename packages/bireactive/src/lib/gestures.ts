@@ -138,7 +138,7 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
     const node = state.hovered.current ?? state.focused.value;
     if (!node || node === root) return;
     if ((node.children as BiNode[]).length === 0) return;
-    // Drill directly — the chart owns its drill state. Emit for sliceboard's
+    // Drill directly — the chart owns its drill state. Emit for hotbook's
     // benefit (breadcrumb, persistence, sibling-tile propagation) but don't
     // wait for a round-trip to actually drill.
     const host2 = host as any;

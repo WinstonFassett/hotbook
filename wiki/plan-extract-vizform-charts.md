@@ -8,16 +8,16 @@
 
 Lift the bireactive charts out of the spike app
 `apps/demos/src` into a real publishable package
-`packages/hotbook-charts`, and make both consumers (sliceboard, the spike app)
+`packages/hotbook-charts`, and make both consumers (hotbook, the spike app)
 import from the package instead of the `@br-lc` source alias. Charts must render
 and behave **identically** afterward.
 
 ## Scope guardrails (DO / DO NOT)
 
 - **DO NOT** touch chart visuals, gestures, or logic. This is a move + repackage.
-- **DO NOT** move sort/group/identity logic out of sliceboard. `sortedNodes` /
+- **DO NOT** move sort/group/identity logic out of hotbook. `sortedNodes` /
   `applyGroupBy` / `colorByGroup` stay in `App.tsx`. (That lift is a *later* plan.)
-- **DO NOT** de-React sliceboard. The `BrLcCharts.tsx` React wrappers stay.
+- **DO NOT** de-React hotbook. The `BrLcCharts.tsx` React wrappers stay.
 - **DO NOT** touch `@hotbook/core` contents — it already holds the shared types
   and colors. Charts don't import it; leave it alone.
 - **DO NOT** move `@svelte-lc` (the Svelte charts) — leave that app and its alias
@@ -31,7 +31,7 @@ and behave **identically** afterward.
 
 ## Facts already verified (don't re-investigate)
 
-- sliceboard imports `@br-lc` from **one file only**: `apps/sliceboard/src/viz/br/BrLcCharts.tsx`,
+- hotbook imports `@br-lc` from **one file only**: `apps/hotbook/src/viz/br/BrLcCharts.tsx`,
   14 imports, all `@br-lc/demos/*` (no `@br-lc/lib/*`).
 - The chart code is self-contained: only imports `bireactive` + `d3-array`,
   `d3-hierarchy`, `d3-scale`, `d3-shape`, and relative `./`. No `hotbook-core`,
@@ -39,8 +39,8 @@ and behave **identically** afterward.
 - `d3-sankey` appears **only in comments** (`lib/sankey.ts`, `lib/sankey-layout.ts`)
   — it is NOT imported. Do not add it as a dependency.
 - Template for the no-build `node` export condition: `packages/hotbook-d3/package.json`.
-- sliceboard vite resolve uses `conditions: ['browser','node']` + `dedupe` — see
-  `apps/sliceboard/vite.config.ts`.
+- hotbook vite resolve uses `conditions: ['browser','node']` + `dedupe` — see
+  `apps/hotbook/vite.config.ts`.
 
 ## Steps
 
@@ -89,16 +89,16 @@ Mirror `packages/hotbook-d3/package.json` exactly for `type`, `exports`
 - `devDependencies`: matching `@types/d3-*`, `typescript`, `vite`, `vite-plugin-dts`.
 - Add a `vite.config.ts` + `tsconfig.json` mirroring vanilla-d3's (lib build).
 
-### 4. Repoint sliceboard
-- `apps/sliceboard/src/viz/br/BrLcCharts.tsx`: replace the 14 `@br-lc/demos/*`
+### 4. Repoint hotbook
+- `apps/hotbook/src/viz/br/BrLcCharts.tsx`: replace the 14 `@br-lc/demos/*`
   imports with named imports from `@hotbook/charts`. The tag
   registry/`useBrElement`/dispatch code stays unchanged.
-- `apps/sliceboard/package.json`: add `"@hotbook/charts": "*"` to
+- `apps/hotbook/package.json`: add `"@hotbook/charts": "*"` to
   dependencies.
-- `apps/sliceboard/vite.config.ts`:
+- `apps/hotbook/vite.config.ts`:
   - Remove the `'@br-lc'` alias (now a real package). **Keep `'@svelte-lc'`.**
   - Add `'bireactive'` to `dedupe` (alongside react/react-dom) so the
-    source-resolved package and sliceboard share ONE bireactive runtime.
+    source-resolved package and hotbook share ONE bireactive runtime.
 
 ### 5. Repoint the spike app (keep it as a demo harness on the package)
 - `apps/demos/src/main.ts`: change the
@@ -107,33 +107,33 @@ Mirror `packages/hotbook-d3/package.json` exactly for `type`, `exports`
 - `apps/demos/package.json`: add
   `"@hotbook/charts": "*"`.
 - Its `vite.config.ts` needs the same `conditions: ['browser','node']` so it
-  resolves the package to source for live dev (copy from sliceboard).
+  resolves the package to source for live dev (copy from hotbook).
 
 ### 6. Install + verify (all must pass; do not skip)
 ```bash
 npm install                                   # relink workspaces
 npx vite build packages/hotbook-charts        # package builds (dist + d.ts)
 npx vite build apps/demos   # demo app builds
-npx vite build apps/sliceboard                # main app builds
+npx vite build apps/hotbook                # main app builds
 ```
 Then a behavior smoke (per repo memory — real Playwright, not synthetic events):
-- Start sliceboard dev; confirm BR-LC tiles render (charts in shadow DOM —
+- Start hotbook dev; confirm BR-LC tiles render (charts in shadow DOM —
   pierce `el.shadowRoot`).
 - Verify one flat chart (bar) and one hier chart (icicle): hover highlights,
   wheel-edit changes a value, drag-resize works, Esc reverts. No console errors.
 - Confirm cross-tile hover/select still syncs.
 
 ## Done when
-- All four builds pass; sliceboard + spike app render identically to before.
+- All four builds pass; hotbook + spike app render identically to before.
 - `git grep '@br-lc'` returns **nothing** (alias fully removed).
 - `packages/hotbook-charts` has a clean `index.ts`, MIT license, `node` export
   condition, and depends only on bireactive + granular d3-*.
-- sliceboard, the spike app, and the package each depend on
+- hotbook, the spike app, and the package each depend on
   `@hotbook/charts` via `*`.
 
 ## Out of scope (explicitly deferred — do not start)
 - Lifting `applyView`/sort/group into `@hotbook/core`.
-- **De-Reacting sliceboard / removing `selfSig`/dedupe machinery — this is the
+- **De-Reacting hotbook / removing `selfSig`/dedupe machinery — this is the
   IMMEDIATE NEXT plan (Winston wants it very soon). Do not start it here, but
   keep this extraction's diff a clean pure-move so the de-React lands on a stable
   packaged target.** Target end state: `BrLcCharts.tsx`'s two mega-hooks +

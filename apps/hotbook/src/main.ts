@@ -352,7 +352,7 @@ function renderTopbar(ws: Workspace) {
 
   const wordmark = document.createElement('span')
   wordmark.className = 'sb-wordmark'
-  wordmark.textContent = 'sliceboard'
+  wordmark.textContent = 'hotbook'
   topbar.appendChild(wordmark)
 
   const sep1 = document.createElement('span')

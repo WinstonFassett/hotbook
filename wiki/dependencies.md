@@ -20,7 +20,7 @@ graph TD
   end
 
   subgraph apps["apps/"]
-    slice["sliceboard<br/><b>main app</b>"]
+    slice["hotbook<br/><b>main app</b>"]
     brlc["layercharts-bireactive-spike<br/><i>spike/demo harness</i>"]
     sveltelc["layerchart-direct-spike<br/><i>@svelte-lc source</i>"]
     brspike["bireactive-spike"]
@@ -41,7 +41,7 @@ graph TD
 ```
 
 Solid arrows = real `package.json` dependencies. Dotted arrows = **vite source
-aliases** in `apps/sliceboard/vite.config.ts` — sliceboard imports the svelte spike
+aliases** in `apps/hotbook/vite.config.ts` — hotbook imports the svelte spike
 app's `src/` directly (`@svelte-lc`) for no-build live HMR; it is
 *not* a workspace package dep. (The `@hotbook/charts` package is a
 real workspace dep — no alias needed.)
@@ -75,7 +75,7 @@ safe to delete.
 
 | App (dir) | package name | Internal / alias | Notable external |
 |---|---|---|---|
-| `sliceboard` | sliceboard | react-d3 + `@webdev/vite`; `hotbook-charts`; alias `@svelte-lc` | `bireactive ^0.3.4`, `d3 ^7`, `react ^18.3` |
+| `hotbook` | hotbook | react-d3 + `@webdev/vite`; `hotbook-charts`; alias `@svelte-lc` | `bireactive ^0.3.4`, `d3 ^7`, `react ^18.3` |
 | `demos` | layercharts-bireactive-spike | `hotbook-charts` (workspace dep) | `bireactive`, `d3-array/hierarchy/sankey/scale/scale-chromatic/shape` |
 
 ## ⚠️ Version conflicts & packaging smells
@@ -95,7 +95,7 @@ but **will** bite on publish/consume:
    depend on it. The actual bireactive charts (BR-LC) live inside the *spike apps*
    and are consumed by vite source-alias — **not packaged.** If the bireactive
    charts are the product, they're currently unshippable.
-4. **d3 dual-style.** sliceboard pulls full `d3@^7` (large); `vanilla-d3` uses
+4. **d3 dual-style.** hotbook pulls full `d3@^7` (large); `vanilla-d3` uses
    granular `d3-*@^3` / `d3-scale@^4`. Compatible (d3@7 re-exports these) but
    inconsistent — pick granular everywhere to keep bundles lean.
 5. **`*` internal version specifier** is workspace-only. For publish, switch to
@@ -110,7 +110,7 @@ charts (the canon direction). Two design constraints drive the whole shape:
 1. **Licensing firewall.** APITable is **AGPL-3.0** — anything that imports
    apitable code inherits AGPL. So deps point *down* into a permissive (MIT) core,
    and the apitable integration sits at a **leaf nothing else imports**. The two
-   product surfaces (sliceboard, apitable) are **peers** — same widgets from a
+   product surfaces (hotbook, apitable) are **peers** — same widgets from a
    user's view, neither built from the other; they share the library down-stack,
    never sideways.
 2. **Custom elements are the interop boundary — no host framework in the spine.**
@@ -126,7 +126,7 @@ graph TD
   tcharts --> tcore
 
   subgraph surfaces["product surfaces — PEERS · consume custom elements DIRECTLY"]
-    tslice["sliceboard host<br/><i>vanilla + Svelte-when-needed</i><br/>layout · persistence · local data → Dataset"]
+    tslice["hotbook host<br/><i>vanilla + Svelte-when-needed</i><br/>layout · persistence · local data → Dataset"]
     tapit["apitable integration<br/><i>fusion API → Dataset</i><br/><b>AGPL leaf</b>"]
   end
   tslice --> tcharts
@@ -149,7 +149,7 @@ Key moves vs today:
 - **No framework in any surface's dep path.** Charts are custom elements; the host
   mounts them directly. `bireactive` and Svelte are *authoring paths inside
   `charts`* that both emit custom elements — not wrapper layers above them.
-- **sliceboard migrates off React → vanilla + Svelte (Svelte only where component
+- **hotbook migrates off React → vanilla + Svelte (Svelte only where component
   ergonomics earn it).** The viz layer never knew it was inside a framework, so
   the host shell can change with zero impact on charts.
 - **`@hotbook/react` is optional and off to the side** — a paper-thin shim for
@@ -164,9 +164,9 @@ Key moves vs today:
 
 | Layer | Owns | Current code today | Must NOT contain |
 |---|---|---|---|
-| **`@hotbook/core`** (pure TS, zero deps) | Data shapes; the **view spec** type; the **sort/group/filter transform** (pure fns); color | `hotbook-core/src/types.ts` (`PNode`,`PEdge`,`ColumnSchema`,`Dataset`); a `DataView`/`TileSpec` type (today sliceboard's `tile` in `persistence.ts`); `applyView`=`applyGroupBy`+`colorByGroup`+sort+reindex (today **inline in `App.tsx`** as `sortedNodes`); `colors.ts` (`PALETTE`,`colorFor`) | DOM, d3, bireactive, React |
+| **`@hotbook/core`** (pure TS, zero deps) | Data shapes; the **view spec** type; the **sort/group/filter transform** (pure fns); color | `hotbook-core/src/types.ts` (`PNode`,`PEdge`,`ColumnSchema`,`Dataset`); a `DataView`/`TileSpec` type (today hotbook's `tile` in `persistence.ts`); `applyView`=`applyGroupBy`+`colorByGroup`+sort+reindex (today **inline in `App.tsx`** as `sortedNodes`); `colors.ts` (`PALETTE`,`colorFor`) | DOM, d3, bireactive, React |
 | **`@hotbook/charts`** (bireactive + d3 → custom elements) | Layout math; gesture mechanics; hit-test; reactive draw; edit emission | `demos/*` chart classes (`MdBarChartLC`…`MdBudgetTree`); `lib/*`: `chart-context` (scale substrate), `axis`,`area`,`spline` (path math), `cartesian-gestures`,`gestures`,`interaction` (singleton wheel/drag + `applyDelta` redistribute), `esc-contract`, `host-size` (RO→fill), `hud-bridge` (id-based hover/select contract), `tree` (BiNode build), `sankey-layout` (pure solver) | sort *policy*, which dataset, tile arrangement, persistence |
-| **surface** (sliceboard; later apitable) | Data **source**→Dataset; `tile.kind`→element **dispatch**; view-edit **UI**; view **persistence**; cross-tile HUD; tile **layout** | `persistence.ts` (localStorage→Dataset), the `if (tile.kind===…)` ladder in `App.tsx`, sort/groupBy/measure/depth pickers, `hudStore`, `react-grid-layout`, **`BrLcCharts.tsx` React wrappers (throwaway — die with React)** | chart internals, layout math, gesture mechanics |
+| **surface** (hotbook; later apitable) | Data **source**→Dataset; `tile.kind`→element **dispatch**; view-edit **UI**; view **persistence**; cross-tile HUD; tile **layout** | `persistence.ts` (localStorage→Dataset), the `if (tile.kind===…)` ladder in `App.tsx`, sort/groupBy/measure/depth pickers, `hudStore`, `react-grid-layout`, **`BrLcCharts.tsx` React wrappers (throwaway — die with React)** | chart internals, layout math, gesture mechanics |
 
 **The runtime seam (the contract every surface obeys):**
 
@@ -179,7 +179,7 @@ Key moves vs today:
 The "sortable data view" = **`DataView` type + `applyView` fn (both core)** + dumb
 chart element (charts) + sort control & storage (surface). The chart never sorts
 ([[project_sort_identity_architecture]]); the surface owns only the control and
-where the choice is saved. That split is what lets sliceboard and apitable share
+where the choice is saved. That split is what lets hotbook and apitable share
 the view logic — both call `applyView`, differing only in data source + storage.
 
 > **Demo/seed data is not chart code.** `portfolio.ts` (hard-coded
@@ -210,9 +210,9 @@ public surface; npm scope (`@hotbook/*` vs `@winstonfassett/*`).
 ## No-build live dev (why edits ripple instantly)
 
 1. The `hotbook-*-d3` packages expose a `node` export condition → `./src/index.ts`,
-   so sliceboard resolves them to **TS source**, not built `dist`.
+   so hotbook resolves them to **TS source**, not built `dist`.
 2. `@hotbook/charts` also exposes a `node` export condition → `./src/index.ts` for the same reason. The `@svelte-lc` alias still points at the svelte spike's `src/`.
 3. `dedupe: ['react','react-dom']` forces a single React copy across all
    source-resolved packages (else a second instance crashes hooks).
 
-Net: edit any package or spike `src/` → HMR into sliceboard, no rebuild.
+Net: edit any package or spike `src/` → HMR into hotbook, no rebuild.

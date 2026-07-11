@@ -449,7 +449,7 @@ sb-dock-view {
 .tile-body:not(.tile-body--scroll) > * { touch-action: none; }
 
 /* ─── Mobile (≤640px) ────────────────────────────────────────────────────────
-   Sliceboard's DockView renders splits inline (flex-direction set via
+   Hotbook's DockView renders splits inline (flex-direction set via
    element.style), so overrides here need !important. On narrow viewports we:
    - Collapse row splits to a vertical stack so each pane gets the full width.
    - Widen split gutters into a proper touch-sized hit area between panes;

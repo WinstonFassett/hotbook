@@ -2,7 +2,7 @@
 
 D3-based proportional and hierarchical visualization library — framework-agnostic core with React and web-component adapters, plus an [APITable](https://aitable.ai) widget integration.
 
-**Live demo:** [sliceboard.netlify.app](https://sliceboard.netlify.app)
+**Live demo:** [hotbook-build.netlify.app](https://hotbook-build.netlify.app)
 
 ## Packages
 
@@ -15,14 +15,14 @@ graph LR
   end
   subgraph app["app"]
     apitable["hotbook-apitable"]
-    sliceboard["sliceboard"]
+    hotbook["hotbook"]
   end
 
   vanilla --> core
   vanilla --> charts
   react --> vanilla
   apitable --> react
-  sliceboard --> vanilla
+  hotbook --> vanilla
 ```
 
 | Package | Description |
@@ -31,7 +31,7 @@ graph LR
 | [`hotbook-charts`](packages/hotbook-charts) | Chart type definitions and metadata. |
 | [`hotbook-d3`](packages/hotbook-d3) | Pure D3 + TypeScript visualization engine, zero framework deps. |
 | [`hotbook-apitable`](packages/hotbook-apitable) | APITable widget wrapping `hotbook-react-d3`. |
-| [`apps/sliceboard`](apps/sliceboard) | Multi-board demo: editable table + live viz with multiple chart types. |
+| [`apps/hotbook`](apps/hotbook) | Multi-board demo: editable table + live viz with multiple chart types. |
 
 ## Visualization modes
 
@@ -73,7 +73,7 @@ packages/
   hotbook-d3/ # D3 rendering engine
   hotbook-apitable/   # APITable widget
 apps/
-  sliceboard/         # Demo app (Netlify)
+  hotbook/         # Demo app (Netlify)
   docs/               # Documentation site
 inspo/                # gitignored — reference/scratch material
 ```
@@ -82,30 +82,30 @@ inspo/                # gitignored — reference/scratch material
 
 ```sh
 npm install
-npm run build        # builds core → react → sliceboard in order
+npm run build        # builds core → react → hotbook in order
 ```
 
 To develop a specific package:
 
 ```sh
 npm run dev -w packages/hotbook-d3  # watch mode
-npm run dev -w apps/sliceboard              # Vite dev server
+npm run dev -w apps/hotbook              # Vite dev server
 npm run dev -w apps/docs                    # Docs site dev server
 ```
 
 ### Chart demos
 
-The sliceboard app hosts a `/demos` surface (hash route: `#/demos`) that renders
+The hotbook app hosts a `/demos` surface (hash route: `#/demos`) that renders
 each chart in isolation against a small checked-in fixture — no tile plumbing,
 no persistence, no config UI. Use it as the canonical testing surface when
 developing or debugging a single chart.
 
 ```sh
-npm run dev -w apps/sliceboard
+npm run dev -w apps/hotbook
 # then visit /#/demos
 ```
 
-Fixtures live in [`apps/sliceboard/src/demos/fixtures/`](apps/sliceboard/src/demos/fixtures).
+Fixtures live in [`apps/hotbook/src/demos/fixtures/`](apps/hotbook/src/demos/fixtures).
 
 ## License
 

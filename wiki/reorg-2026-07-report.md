@@ -3,10 +3,10 @@
 ## What changed
 
 - Renamed `PNode` → `VizNode` and `Dataset.rows` → `Dataset.nodes` across the
-  workspace (`hotbook-core`, `sliceboard`, `hotbook-react-d3`, `hotbook-d3`,
+  workspace (`hotbook-core`, `hotbook`, `hotbook-react-d3`, `hotbook-d3`,
   `hotbook-apitable`).
 - Updated `PEdge` to the new shape (`sourceId`, `targetId`, `measures`, `dims`).
-- Removed the duplicate/dead `apps/sliceboard/src/viz/br/tree.ts` file.
+- Removed the duplicate/dead `apps/hotbook/src/viz/br/tree.ts` file.
 - Removed `packages/hotbook-charts/src/lib/portfolio.ts` and moved
   `portfolio()` / `walkWithDepth` into `packages/hotbook-charts/src/lib/tree.ts`.
 - Updated chart fallback imports (`treemap`, `tree-chart`, `sunburst`, `pack`,
@@ -16,9 +16,9 @@
 - Fixed `apps/demos/src/fixtures/portfolio.ts` and
   `src/main.ts` for the new `group` / `leaf` signatures and wired `externalRoot`
   for hierarchical charts.
-- Fixed `apps/sliceboard/src/main.ts` missing `DockView` import and `Array.at` ES2022
+- Fixed `apps/hotbook/src/main.ts` missing `DockView` import and `Array.at` ES2022
   usage.
-- Added `serializeLayout` to `apps/sliceboard/src/url-layout.ts` so Vite can scan
+- Added `serializeLayout` to `apps/hotbook/src/url-layout.ts` so Vite can scan
   `test-parser.html` and the dev server starts cleanly.
 - Added new files: `packages/hotbook-core/tsconfig.json` and
   `packages/hotbook-react-d3/src/types.ts`.
@@ -28,7 +28,7 @@
 
 | package | `tsc --noEmit` | notes |
 |---|---|---|
-| `apps/sliceboard` | ✅ | |
+| `apps/hotbook` | ✅ | |
 | `packages/hotbook-core` | ✅ | |
 | `packages/hotbook-d3` | ✅ | |
 | `packages/hotbook-react-d3` | ✅ | |
@@ -46,24 +46,24 @@
 - `packages/hotbook-d3`
 - `packages/hotbook-react-d3`
 - `packages/hotbook-charts`
-- `apps/sliceboard`
+- `apps/hotbook`
 
 ## Dogfood / webapp testing
 
-- Started `npm run dev -w apps/sliceboard` on `http://127.0.0.1:4347/`.
+- Started `npm run dev -w apps/hotbook` on `http://127.0.0.1:4347/`.
 - Used `agent-browser` to load the app and take snapshots.
-- The SLICEBOARD shell, dataset/workspace dropdowns, and all tile panels render.
+- The HOTBOOK shell, dataset/workspace dropdowns, and all tile panels render.
 - Clicked the "Life areas" dropdown — it opened with no console errors.
 - Console was clean except for Vite/webdev debug logs; no JS errors.
 
 Screenshots:
 
-- `dogfood-output/screenshots/sliceboard-initial.png`
-- `dogfood-output/screenshots/sliceboard-life-areas-dropdown.png`
+- `dogfood-output/screenshots/hotbook-initial.png`
+- `dogfood-output/screenshots/hotbook-life-areas-dropdown.png`
 
 ## Decisions
 
-- `@svelte-lc` alias: keep. `apps/sliceboard/src/vite-env.d.ts` declares
+- `@svelte-lc` alias: keep. `apps/hotbook/src/vite-env.d.ts` declares
   `declare module '@svelte-lc/*'`, and the Vite alias maps `@svelte-lc` to
   `apps/svelte-layerchart-spike/src`.
 - Chart fallback data: remove `portfolio.ts` from `hotbook-charts`; hosts are now

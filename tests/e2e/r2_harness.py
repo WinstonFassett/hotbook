@@ -17,7 +17,7 @@ Two assertions every chart in the sweep must pass:
       (R1; opt-in per chart since not every chart reorders.)
 
 Value-edit driver: `window.__hotbook.setCell(dsId, rowId, measureKey, v)` is
-registered by apps/sliceboard/src/main.ts (DEV builds only) and takes the exact
+registered by apps/hotbook/src/main.ts (DEV builds only) and takes the exact
 same code path as a treetable numberDrag commit — `commit(updateRow(ws, ...))`.
 This retires the earlier driver-tile approach (numberDrag scrubber on a
 co-mounted treetable/scatter), which was blocked by:
@@ -49,7 +49,7 @@ import sys
 from playwright.sync_api import sync_playwright
 
 BASE = os.environ.get("BASE_URL", "http://hotbook.localhost:1355")
-URL = f"{BASE}/sliceboard/"
+URL = f"{BASE}/hotbook/"
 
 def _short(tag: str) -> str:
     return tag.replace("v-br-", "")
@@ -114,8 +114,8 @@ class R2Harness:
         )
         if not ok:
             raise RuntimeError(
-                "window.__hotbook.setCell is not available — is this a DEV build of sliceboard? "
-                "The hook is registered in apps/sliceboard/src/main.ts under `if (import.meta.env.DEV)`."
+                "window.__hotbook.setCell is not available — is this a DEV build of hotbook? "
+                "The hook is registered in apps/hotbook/src/main.ts under `if (import.meta.env.DEV)`."
             )
 
     # ── geometry sampling ─────────────────────────────────────────────────────
@@ -183,7 +183,7 @@ class R2Harness:
           3. window.__hotbook.rowIds(dsId) — first row of the active dataset;
              works for any chart that renders every dataset row.
         Measure key picking order:
-          1. el.measureKey property (all sliceboard charts expose this).
+          1. el.measureKey property (all hotbook charts expose this).
           2. window.__hotbook.measureKeys(dsId)[0] — first numeric measure.
         """
         info = self.page.evaluate(

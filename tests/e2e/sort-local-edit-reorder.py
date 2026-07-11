@@ -1,7 +1,7 @@
 # Regression test — local same-chart edit must trigger sort reorder.
 #
 #   uv run --with playwright python tests/e2e/sort-local-edit-reorder.py
-#   BASE_URL=http://hotbook.localhost:1355 to target another sliceboard host.
+#   BASE_URL=http://hotbook.localhost:1355 to target another hotbook host.
 #
 # Guards the bug where a bar/bands chart sorted by value would NOT reorder when
 # an item's value was edited from WITHIN that same chart (wheel/drag), even though
@@ -24,7 +24,7 @@ import sys
 from playwright.sync_api import sync_playwright
 
 BASE = os.environ.get("BASE_URL", "http://hotbook.localhost:1355")
-URL = f"{BASE}/sliceboard/"
+URL = f"{BASE}/hotbook/"
 
 failures: list[str] = []
 errors: list[str] = []

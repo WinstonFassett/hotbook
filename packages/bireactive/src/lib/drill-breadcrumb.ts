@@ -3,7 +3,7 @@
 // used by every hierarchical chart (treemap, pack, sunburst, icicle).
 //
 // This lives INSIDE the chart custom element (in the chrome layer above the
-// SVG), not in the sliceboard container and not duplicated per-demo. Fixes
+// SVG), not in the hotbook container and not duplicated per-demo. Fixes
 // WIN-190: the breadcrumb appears immediately on drill because the chart
 // owns it and reacts to its own drillNodeId cell — no round-trip through
 // hudStore, no container add-vs-replace bug.

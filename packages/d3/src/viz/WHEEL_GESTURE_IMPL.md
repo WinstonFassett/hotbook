@@ -101,7 +101,7 @@ private wheelReleaseTeardown: (() => void) | null = null
 
 - **Verification is the one thing not done.** Per the prior session: drive a
   REAL Ctrl+wheel-then-Ctrl+Esc-while-held over a bands/radial/treemap atom in
-  sliceboard and read the value back. Synthetic WheelEvents are unreliable on
+  hotbook and read the value back. Synthetic WheelEvents are unreliable on
   these elements. Do not assert it works until traced.
 - Does `_cancelResizeDrag` nulling `radialResizeDrag`/`bandsResizeDrag` and
   resetting body styles cause any surprise during a wheel gesture? (Believed

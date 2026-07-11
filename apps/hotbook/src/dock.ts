@@ -1,4 +1,4 @@
-// Dockview-class layout primitives for sliceboard. Phase A of WIN-57.
+// Dockview-class layout primitives for hotbook. Phase A of WIN-57.
 //
 // Tree shape:
 //   Group = { kind: 'group', panels[], activeId }

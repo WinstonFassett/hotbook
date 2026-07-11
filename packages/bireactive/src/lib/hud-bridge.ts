@@ -1,6 +1,6 @@
 // Cross-tile hover/select bridge for BR-LC custom elements.
 //
-// The sliceboard syncs hover + selection across every tile by PNode id via its
+// The hotbook syncs hover + selection across every tile by PNode id via its
 // `hudStore`. First-gen d3 charts read/write that store directly. The BR-LC
 // custom elements keep their hover/focus as internal bireactive cells with no
 // outside access, so they can't participate. This bridge exposes a tiny,

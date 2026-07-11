@@ -41,7 +41,7 @@ The bireactive package surface (`bireactive` 0.3.4) exposes `cell`, `derive`, `e
 
 **Cons:**
 - Significant net-new infrastructure (tween cell, scheduler, teardown, interruption semantics, reduced-motion plumbing) when the platform already gives you most of it for free.
-- Doubles the cell graph for every animated property — one raw cell, one tween cell — which interacts subtly with the reactive flush in embeddings (sliceboard). The existing `applyDelta` batching is carefully tuned to fire ONE flush per gesture step; tween cells would fire ~16 flushes/sec for the duration of every settle.
+- Doubles the cell graph for every animated property — one raw cell, one tween cell — which interacts subtly with the reactive flush in embeddings (hotbook). The existing `applyDelta` batching is carefully tuned to fire ONE flush per gesture step; tween cells would fire ~16 flushes/sec for the duration of every settle.
 - Mid-gesture interruption (Principle 11) requires explicit "read current animated value, restart from there" handling at every call site. CSS transitions do this automatically.
 
 ### Why CSS wins for this codebase

@@ -407,7 +407,7 @@ export class MdBarChartLC extends Diagram {
     ));
 
     // ─── Bars — identity-keyed, tweened x/y/w/h with gate ─────────────────
-    // orderHash detects sort (reorder) — id sequence changes when sliceboard
+    // orderHash detects sort (reorder) — id sequence changes when hotbook
     // hands data in a new display order. Tween on sort/orientation/measure;
     // snap on value edits (same datum, different value).
     const orderHash = derive(() => (data.value as Bar[]).map(d => d.id ?? d.label).join(','));

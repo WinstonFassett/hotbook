@@ -1,5 +1,5 @@
 """
-Retake all 6 viz-mode screenshots from the live sliceboard deploy.
+Retake all 6 viz-mode screenshots from the live hotbook deploy.
 
 Usage:
     python3 docs/screenshots/capture.py
@@ -28,7 +28,7 @@ HIER_MODES = [
 with sync_playwright() as p:
     browser = p.chromium.launch(headless=True)
     page = browser.new_page(viewport={'width': 1280, 'height': 720})
-    page.goto('https://sliceboard.netlify.app')
+    page.goto('https://hotbook-build.netlify.app')
     page.wait_for_load_state('networkidle')
 
     for _ in range(4):

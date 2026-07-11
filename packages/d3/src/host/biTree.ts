@@ -1,7 +1,7 @@
 /**
  * biTree.ts — bireactive node tree builder for BR-LC charts.
  *
- * Ported from apps/sliceboard/src/viz/br/tree.ts.
+ * Ported from apps/hotbook/src/viz/br/tree.ts.
  * Builds a BiNode tree (bireactive Num lenses for every measure at every node)
  * from a flat VizNode array. Used by tile-binder.ts source factories.
  */

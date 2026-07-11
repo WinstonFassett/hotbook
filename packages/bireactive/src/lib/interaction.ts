@@ -84,7 +84,7 @@ export function applyDelta(
   // batch so the edit fires a single reactive flush. Every sibling is written
   // exactly once from pre-computed sums (poolSum / sibSum / shares captured
   // before any write), so deferred backward writes coalescing inside the batch
-  // is safe. The single flush matters in embeddings (e.g. sliceboard) where
+  // is safe. The single flush matters in embeddings (e.g. hotbook) where
   // each separate flush would round-trip through an external store and
   // interleave, snapping the tree back between writes; standalone it's just
   // one tidy update.

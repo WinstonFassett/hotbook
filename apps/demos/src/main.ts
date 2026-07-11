@@ -79,7 +79,7 @@ for (const e of experiments) {
     try {
       customElements.define(e.tag, e.ctor as any);
     } catch (err) {
-      // Constructor already registered by another module (e.g., when loaded in sliceboard).
+      // Constructor already registered by another module (e.g., when loaded in hotbook).
       // Create a wrapper class that extends the original so we can register under our tag.
       if (err instanceof DOMException && err.name === 'NotSupportedError') {
         // Dynamic wrapper class — each one unique so the registry accepts it.
@@ -92,7 +92,7 @@ for (const e of experiments) {
   }
 }
 
-// --- Repro config: drive charts into the states that only break in sliceboard ---
+// --- Repro config: drive charts into the states that only break in hotbook ---
 // Static SPA, no server/router — so config rides the URL HASH (client-only, no reload).
 // The hash is ALSO used for section anchors (#concentric-arc etc.), so config lives
 // under a reserved `cfg:` segment and bare anchors are left untouched for scroll-nav:

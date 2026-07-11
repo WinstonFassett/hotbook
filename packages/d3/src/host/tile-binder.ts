@@ -2,10 +2,10 @@
  * tile-binder.ts — framework-agnostic binding layer between a reactive store
  * and BR-LC custom elements.
  *
- * Extracted from apps/sliceboard/src/viz/br/bindTile.ts.
- * No React imports. No sliceboard-specific imports.
+ * Extracted from apps/hotbook/src/viz/br/bindTile.ts.
+ * No React imports. No hotbook-specific imports.
  *
- * The host (e.g. sliceboard's BrLcTile.tsx) calls:
+ * The host (e.g. hotbook's BrLcTile.tsx) calls:
  *   bindTile(container, source, bindHud)
  * where `bindHud` is a host-supplied function that wires the element's
  * hover/select/drill to whatever HUD store the host uses.
@@ -66,7 +66,7 @@ export interface TileController {
  *
  * @param bindHud  Host-supplied function that wires the element to its HUD
  *                 store (hover/select/drill). Returns a disposer. This is the
- *                 only host-specific seam: sliceboard passes its `bindHudSync`;
+ *                 only host-specific seam: hotbook passes its `bindHudSync`;
  *                 other hosts supply their own or pass `() => () => {}`.
  */
 export function bindTile(

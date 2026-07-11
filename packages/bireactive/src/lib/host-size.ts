@@ -8,7 +8,7 @@
 // so the chart reflows to the tile's true dimensions.
 //
 // The observer tracks BOTH width and height independently so the chart fills
-// height-constrained containers (sliceboard tiles) without baking in an aspect
+// height-constrained containers (hotbook tiles) without baking in an aspect
 // ratio. `svg { height: 100% }` is safe here because `:host` is always
 // height-constrained by the tile — the SVG cannot feed its own height back into
 // the observer since the host size is set by the tile, not the SVG.
@@ -27,7 +27,7 @@ export interface HostSize {
 const observers = new WeakMap<HTMLElement, ResizeObserver>();
 
 // Override the base `Diagram` `:host`/`svg` rules so the chart fills its tile.
-// Both width and height are 100% — safe because sliceboard tiles are always
+// Both width and height are 100% — safe because hotbook tiles are always
 // height-constrained (fixed-size flex/grid cells).
 export const FILL_STYLE = `
   :host { display:block; width:100%; height:100%; max-width:none; margin:0; }
