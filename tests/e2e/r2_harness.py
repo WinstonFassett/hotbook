@@ -40,7 +40,7 @@ Usage from a per-chart fixture:
 Run directly to self-test against treemap (WIN-127 fix landed):
     uv run --with playwright python tests/e2e/r2_harness.py
 
-Env: BASE_URL (default http://sliceboard.localhost:1355). Point at a Netlify
+Env: BASE_URL (default http://hotbook.localhost:1355). Point at a Netlify
 deploy preview to verify a PR without a local dev server.
 """
 
@@ -48,7 +48,7 @@ import os
 import sys
 from playwright.sync_api import sync_playwright
 
-BASE = os.environ.get("BASE_URL", "http://sliceboard.localhost:1355")
+BASE = os.environ.get("BASE_URL", "http://hotbook.localhost:1355")
 URL = f"{BASE}/sliceboard/"
 
 def _short(tag: str) -> str:
