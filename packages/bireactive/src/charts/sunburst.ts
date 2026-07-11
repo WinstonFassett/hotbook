@@ -492,25 +492,10 @@ export class MdSunburstLC extends Diagram {
         );
 
         const active = cell(false);
-        // For radial dividers, calculate handle orientation perpendicular to the radial angle
-        const orient = derive(() => {
-          const ang = boundaryAngDisplay.value;
-          // Normalize to [0, 2π)
-          const normAng = ang < 0 ? ang + 2 * Math.PI : ang;
-          // If angle is closer to 0/2π (horizontal) or π (horizontal), handle is vertical ("vert")
-          // If angle is closer to π/2 or 3π/2 (vertical), handle is horizontal ("horiz")
-          const angleToNearestVertical = Math.min(
-            Math.abs(normAng - Math.PI / 2),
-            Math.abs(normAng - 3 * Math.PI / 2)
-          );
-          const angleToNearestHorizontal = Math.min(
-            Math.abs(normAng),
-            Math.abs(normAng - Math.PI),
-            Math.abs(normAng - 2 * Math.PI)
-          );
-          return angleToNearestVertical < angleToNearestHorizontal ? "horiz" : "vert";
-        });
-        const handle = lineHandle(knobPos, orient, {
+        // For radial dividers, the handle should be tangent to the circle (perpendicular to the radius).
+        // The radial angle is θ, so the tangent angle is θ + π/2
+        const tangentAngle = derive(() => boundaryAngDisplay.value + Math.PI / 2);
+        const handle = lineHandle(knobPos, tangentAngle, {
           kind: "divider",
           active,
         });

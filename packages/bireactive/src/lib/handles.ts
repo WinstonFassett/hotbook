@@ -69,17 +69,16 @@ export function circleHandle(
  * Oriented parallel to the divider using CSS rotation (not dimension swapping).
  *
  * The pill is always created with the same dimensions (long × short) and then rotated
- * 90° when needed to align with vertical dividers. This keeps the handle anchored to
- * the divider line properly.
+ * to align with the divider. This keeps the handle anchored to the divider line properly.
  *
  * @param pos Center position (reactive or static {x, y})
- * @param orient Divider orientation — determines rotation (horiz = 0°, vert = 90°)
+ * @param orient Divider orientation — either "horiz"/"vert" for axis-aligned, or an angle in radians for arbitrary rotation
  * @param style Handle appearance and semantic mode
  * @returns Rect shape ready for dragCancelable(...)
  */
 export function lineHandle(
   pos: Val<{ x: number; y: number }>,
-  orient: Val<"horiz" | "vert">,
+  orient: Val<"horiz" | "vert" | number>,
   style: HandleStyle,
 ): AnyShape {
   const longAxis = style.size ?? 14;  // along the divider
@@ -126,14 +125,26 @@ export function lineHandle(
     thin: true,
   });
 
-  // Apply rotation via CSS transform for vertical orientation
+  // Apply rotation via CSS transform
   // The rotation is anchored at the center of the rect
   handle.el.style.transformOrigin = "center";
 
   // Reactively update rotation when orientation changes
   biEffect(() => {
     const o = typeof orient === "object" && "value" in orient ? orient.value : orient;
-    handle.el.style.transform = o === "vert" ? "rotate(90deg)" : "";
+    let rotation: string;
+
+    if (typeof o === "number") {
+      // Radians to degrees, then rotate
+      // The pill is horizontal by default, so we rotate to match the radial angle
+      const degrees = (o * 180) / Math.PI;
+      rotation = `rotate(${degrees}deg)`;
+    } else {
+      // Binary horiz/vert for icicle
+      rotation = o === "vert" ? "rotate(90deg)" : "";
+    }
+
+    handle.el.style.transform = rotation;
   });
 
   return handle;
