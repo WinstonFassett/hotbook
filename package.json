@@ -13,7 +13,7 @@
     "dev:demos": "npm run dev -w apps/demos",
     "dev:layout": "npm run demo -w packages/layout",
     "dev": "concurrently -n hotbook,demos \"npm run dev -w apps/hotbook\" \"npm run dev -w apps/demos\"",
-    "postinstall": "patch-package",
+    "postinstall": "patch-package && node scripts/patch-bireactive-package-json.js",
     "knip": "knip"
   },
   "devDependencies": {
