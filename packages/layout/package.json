@@ -19,15 +19,11 @@
     }
   },
   "files": ["src", "dist"],
-  "scripts": {
-    "demo": "vite"
-  },
+  "scripts": {},
   "dependencies": {
-    "bireactive": "^0.3.5",
-    "@dagrejs/dagre": "^1.1.4"
+    "bireactive": "^0.3.5"
   },
   "devDependencies": {
-    "typescript": "^5.7.2",
-    "vite": "^6.3.5"
+    "typescript": "^5.7.2"
   }
 }

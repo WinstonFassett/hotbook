@@ -9,8 +9,9 @@
 
 import { effect } from "bireactive";
 
-import { descendantsOf, sharedEdges, sharedRows, items, removeRow, removeEdge, type Edge, type Row } from "./data";
-import { clearSelection, sharedSelection, type Selection } from "./selection";
+import { descendantsOf, type Edge, type Row } from "@hotbook/layout";
+import { sharedEdges, sharedRows, items, removeRow, removeEdge } from "./demo-data";
+import { clearSelection, sharedSelection } from "@hotbook/layout";
 
 export function mountSidebar(host: HTMLElement): () => void {
   host.innerHTML = "";

@@ -42,11 +42,10 @@ import {
   flatGraph,
   leafIds,
   rowsById,
-  sharedEdges,
-  sharedRows,
   items,
   type TreeNode,
 } from "./data";
+import { getLayoutRows, getLayoutEdges } from "./data-registry";
 import { direction } from "./diagram-settings";
 import { measure, type Measured } from "./measure";
 import { FONT_PX, renderEdgeStyled, renderHull, renderNode } from "./render";
@@ -132,8 +131,8 @@ export class MdNestedLayered extends Diagram {
 
     this.#persist.push(
       effect(() => {
-        const rows = items(sharedRows);
-        void sharedEdges.cells;
+        const rows = items(getLayoutRows());
+        void getLayoutEdges().cells;
         void sharedSelection.value;
         void direction.value;
         // Subscribe to per-row direction so layout reflows when the
@@ -171,7 +170,7 @@ export class MdNestedLayered extends Diagram {
    *  cell. New entries get placeholder targets — #buildAll seeds the
    *  visible pos/box from those targets after layout writes them. */
   #syncMaps(): void {
-    const leaves = leafIds(sharedRows);
+    const leaves = leafIds(getLayoutRows());
     const live = new Set(leaves);
     for (const id of [...this.#nodes.keys()]) {
       if (!live.has(id)) this.#nodes.delete(id);
@@ -191,7 +190,7 @@ export class MdNestedLayered extends Diagram {
     }
 
     const allGroups = new Set<string>();
-    for (const r of items(sharedRows)) {
+    for (const r of items(getLayoutRows())) {
       const pid = r.parentId.value;
       if (pid != null) allGroups.add(pid);
     }
@@ -218,8 +217,8 @@ export class MdNestedLayered extends Diagram {
     this.#edgesGfx.clear();
     this.#nodesGfx.clear();
 
-    const byId = rowsById(sharedRows);
-    const leaves = leafIds(sharedRows);
+    const byId = rowsById(getLayoutRows());
+    const leaves = leafIds(getLayoutRows());
 
     // Seed entering leaves: visible pos starts AT the target so the
     // rect grows in place via the scale spring (instead of flying in
@@ -241,7 +240,7 @@ export class MdNestedLayered extends Diagram {
 
     // Render hulls outermost first so nested ones paint on top.
     const hullMount = mount(this.#hullsGfx);
-    const forest = containmentForest(sharedRows);
+    const forest = containmentForest(getLayoutRows());
     const drawHulls = (nodes: TreeNode[]): void => {
       for (const n of nodes) {
         if (n.children.length === 0) continue;
@@ -297,10 +296,10 @@ export class MdNestedLayered extends Diagram {
     const edgeMount = mount(this.#edgesGfx);
     const resolveAnchor = (id: string): Shape | null => {
       if (shapeOf.has(id)) return shapeOf.get(id)!;
-      const ds = [...descendantsOf(sharedRows, id)].filter((d) => shapeOf.has(d));
+      const ds = [...descendantsOf(getLayoutRows(), id)].filter((d) => shapeOf.has(d));
       return ds[0] ? shapeOf.get(ds[0])! : null;
     };
-    for (const e of items(sharedEdges)) {
+    for (const e of items(getLayoutEdges())) {
       const u = e.from.value;
       const v = e.to.value;
       const su = resolveAnchor(u);
@@ -313,15 +312,15 @@ export class MdNestedLayered extends Diagram {
   }
 
   #applyLayout(): void {
-    const byId = rowsById(sharedRows);
-    const leaves = leafIds(sharedRows);
+    const byId = rowsById(getLayoutRows());
+    const leaves = leafIds(getLayoutRows());
     if (leaves.length === 0) return;
 
-    const measured: Measured = measure(sharedRows, sharedEdges);
+    const measured: Measured = measure(getLayoutRows(), getLayoutEdges());
 
-    // Build child-id index from sharedRows.
+    // Build child-id index from getLayoutRows().
     const childrenOf = new Map<string | null, string[]>();
-    for (const r of items(sharedRows)) {
+    for (const r of items(getLayoutRows())) {
       const pid = r.parentId.value;
       if (!childrenOf.has(pid)) childrenOf.set(pid, []);
       childrenOf.get(pid)!.push(r.id);
@@ -361,7 +360,7 @@ export class MdNestedLayered extends Diagram {
     };
 
     const edgesAtLevel = new Map<string | null, Array<[string, string]>>();
-    for (const e of items(sharedEdges)) {
+    for (const e of items(getLayoutEdges())) {
       const u = e.from.value;
       const v = e.to.value;
       const L = lca(u, v); // null = root

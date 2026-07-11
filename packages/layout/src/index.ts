@@ -1,16 +1,58 @@
 /**
- * vizform-layout — graph/network layout engine experiments.
+ * @hotbook/layout — graph/network layout engine.
  *
- * Exports the current spike backends as custom element classes. Consumers
- * import a backend, call `.define()` once, and mount the tag in the DOM.
+ * Exports the nested-layered backend and supporting utilities.
  */
 
-export { MdPropSugiyama } from "./lib/spike1-prop-sugiyama";
-export { MdForceAdapt } from "./lib/spike3-force-adapt";
-export { MdDagreWrap } from "./lib/spike4-dagre-wrap";
-export { MdColaAdapt } from "./lib/spike2-cola-adapt";
+// Main component
 export { MdNestedLayered } from "./lib/spike5-nested-layered";
 
-// Re-export shared helpers that may be useful outside the spikes.
-export { mountControls } from "./lib/controls";
-export { mountSidebar } from "./lib/sidebar";
+// Data registry (consumer must call setLayoutData before mounting)
+export { setLayoutData } from "./lib/data-registry";
+
+// Data model
+export {
+  makeRow,
+  makeEdge,
+  parentIdOf,
+  indexOf,
+  containmentForest,
+  leafIds,
+  containerIds,
+  descendantsOf,
+  flatGraph,
+  rowsById,
+  items,
+  type Row,
+  type Edge,
+  type TreeNode,
+  type FlatGraph,
+} from "./lib/data";
+
+// Settings
+export {
+  edgeStyle,
+  direction,
+  type EdgeStyle,
+  type Direction,
+} from "./lib/diagram-settings";
+
+// Selection
+export {
+  sharedSelection,
+  select,
+  clearSelection,
+  type Selection,
+} from "./lib/selection";
+
+// Layout utilities
+export { layeredTight } from "./lib/layered-tight";
+export { measure, type Measured } from "./lib/measure";
+
+// Rendering utilities
+export {
+  FONT_PX,
+  renderEdgeStyled,
+  renderHull,
+  renderNode,
+} from "./lib/render";

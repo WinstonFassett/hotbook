@@ -4,8 +4,9 @@
 // together — the same intent (add/reparent/remove) lands as a different
 // layout on each tab.
 
-import { descendantsOf, makeEdge, makeRow, sharedEdges, sharedRows, leafIds, containerIds, flatGraph, items, insertRow, insertEdge, removeRow, removeEdge } from "./data";
-import { direction, edgeStyle, type Direction, type EdgeStyle } from "./diagram-settings";
+import { descendantsOf, makeEdge, makeRow, leafIds, containerIds, flatGraph } from "@hotbook/layout";
+import { sharedEdges, sharedRows, items, removeRow, removeEdge } from "./demo-data";
+import { direction, edgeStyle, type Direction, type EdgeStyle } from "@hotbook/layout";
 
 let counter = 100; // start above the seed ids so we don't collide
 
