@@ -18,7 +18,11 @@ import {
   MdTreeChart,
   MdBudgetTree,
 } from "@hotbook/bireactive";
+import { MdNestedLayered } from "@hotbook/layout";
 import { portfolio } from "./fixtures/portfolio";
+import { sharedRows, sharedEdges } from "./layout/demo-data";
+import { mountControls } from "./layout/controls";
+import { mountSidebar } from "./layout/sidebar";
 
 class MdBandsChartLC extends MdBarChartLC {
   constructor() { super(); this.orientation = 'horizontal'; this.colorMode = 'palette'; this.labelMode = 'inside'; this.valueMode = 'inside'; }
@@ -32,7 +36,13 @@ const HIER_TAGS = new Set([
   'v-tree-chart',
 ]);
 
-const experiments: Array<{ id: string; title: string; tag: string; ctor: CustomElementConstructor }> = [
+const experiments: Array<{
+  id: string;
+  title: string;
+  tag: string;
+  ctor: CustomElementConstructor;
+  custom?: (section: HTMLElement, demo: HTMLElement, el: HTMLElement) => void;
+}> = [
   { id: "line-chart", title: "LineChart", tag: "v-line-chart", ctor: MdLineChartLC },
   { id: "area-chart", title: "AreaChart", tag: "v-area-chart", ctor: MdAreaChartLC },
   { id: "bar-chart", title: "BarChart (vertical)", tag: "v-bar-chart", ctor: MdBarChartLC },
@@ -52,6 +62,7 @@ const experiments: Array<{ id: string; title: string; tag: string; ctor: CustomE
   { id: "sankey-hierarchy", title: "Sankey (hierarchy → flow)", tag: "v-sankey-hierarchy", ctor: MdSankeyHierarchy },
   { id: "tree-chart", title: "Tree (node-link dendrogram)", tag: "v-tree-chart", ctor: MdTreeChart },
   { id: "budget-tree", title: "Budget Tree (drag boundary handles)", tag: "v-budget-tree", ctor: MdBudgetTree },
+  { id: "nested-layered", title: "Nested-layered layout", tag: "md-nested-layered", ctor: MdNestedLayered, custom: mountLayoutSection },
 ];
 
 for (const e of experiments) {
@@ -117,6 +128,33 @@ function applyConfig(el: HTMLElement, demo: HTMLElement) {
   }
 }
 
+function mountLayoutSection(section: HTMLElement, demo: HTMLElement, el: HTMLElement): void {
+  const md = el as any;
+  md.rows = sharedRows;
+  md.edges = sharedEdges;
+
+  demo.style.height = 'auto';
+  demo.style.minHeight = '440px';
+  demo.style.display = 'flex';
+  demo.style.gap = '16px';
+  demo.style.alignItems = 'flex-start';
+
+  const toolbar = document.createElement('div');
+  const stage = document.createElement('div');
+  stage.style.cssText = 'flex:1;min-width:0;padding:16px;border:1px solid var(--border);border-radius:6px;';
+  const sidebar = document.createElement('div');
+  sidebar.style.cssText = 'align-self:flex-start;';
+
+  stage.appendChild(el);
+  demo.appendChild(stage);
+  demo.appendChild(sidebar);
+
+  mountControls(toolbar);
+  mountSidebar(sidebar);
+
+  section.insertBefore(toolbar, demo);
+}
+
 function buildConfigBar(): HTMLElement {
   const bar = document.createElement('div');
   bar.className = 'repro-config-bar';
@@ -168,9 +206,6 @@ if (app) {
     if (HIER_TAGS.has(e.tag)) {
       (el as any).externalRoot = portfolio();
     }
-    demo.appendChild(el);
-    applyConfig(el, demo);
-    mounted.push({ el, demo });
 
     // Source expander rendered outside the demo box
     const srcDetails = document.createElement("details");
@@ -192,6 +227,14 @@ if (app) {
 
     section.append(h2, demo, srcDetails);
     app.appendChild(section);
+
+    if (e.custom) {
+      e.custom(section, demo, el);
+    } else {
+      demo.appendChild(el);
+      applyConfig(el, demo);
+      mounted.push({ el, demo });
+    }
   }
 }
 

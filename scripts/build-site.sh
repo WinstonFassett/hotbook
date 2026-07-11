@@ -17,13 +17,13 @@ npm run build -w apps/docs
 echo "==> Building hotbook..."
 (cd apps/hotbook && npx vite build --base /demos/hotbook/)
 
-echo "==> Building layout demo..."
-(cd packages/layout && npx vite build --base /demos/layout/)
+echo "==> Building chart demos (includes layout)..."
+(cd apps/demos && npx vite build --base /demos/charts/)
 
 echo "==> Assembling site..."
 # Copy demo builds into docs dist at their subpaths
 mkdir -p apps/docs/dist/demos
 cp -r apps/hotbook/dist apps/docs/dist/demos/hotbook
-cp -r packages/layout/dist apps/docs/dist/demos/layout
+cp -r apps/demos/dist apps/docs/dist/demos/charts
 
 echo "==> Site built at apps/docs/dist"

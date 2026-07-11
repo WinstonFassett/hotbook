@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@hotbook/bireactive": "*",
+    "@hotbook/layout": "*",
     "bireactive": "^0.3.4"
   },
   "devDependencies": {
