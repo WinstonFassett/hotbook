@@ -27,6 +27,10 @@ class MdBandsChartLC extends MdBarChartLC {
   constructor() { super(); this.orientation = 'horizontal'; this.colorMode = 'palette'; this.labelMode = 'inside'; this.valueMode = 'inside'; }
 }
 
+class MdGanttEnforcedLC extends MdGanttChartLC {
+  constructor() { super(); this.enforceDeps = true; }
+}
+
 const HIER_TAGS = new Set([
   'v-pack',
   'v-treemap',
@@ -57,7 +61,7 @@ const experiments: Array<{ id: string; title: string; tag: string; ctor: CustomE
   { id: "tree-chart", title: "Tree (node-link dendrogram)", tag: "v-tree-chart", ctor: MdTreeChart },
   { id: "budget-tree", title: "Budget Tree (drag boundary handles)", tag: "v-budget-tree", ctor: MdBudgetTree },
   { id: "treetable", title: "Treetable (hierarchical, editable rows)", tag: "v-treetable", ctor: MdTreetableLC as unknown as CustomElementConstructor },
-  { id: "gantt", title: "Gantt (drag ends, dependency arrows)", tag: "v-gantt", ctor: MdGanttChartLC as unknown as CustomElementConstructor },
+  { id: "gantt", title: "Gantt (drag propagates through dependencies, zero-slack enforced)", tag: "v-gantt", ctor: MdGanttEnforcedLC as unknown as CustomElementConstructor },
   { id: "layout-nested", title: "Layout — nested-layered (recursive graph layout)", tag: "md-nested-layered", ctor: MdNestedLayered as unknown as CustomElementConstructor },
 ];
 
