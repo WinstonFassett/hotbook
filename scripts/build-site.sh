@@ -10,7 +10,6 @@ cd "$ROOT"
 echo "==> Building packages..."
 npm run build -w packages/bireactive
 npm run build -w packages/d3
-npm run build -w packages/react-d3
 
 echo "==> Building docs..."
 npm run build -w apps/docs

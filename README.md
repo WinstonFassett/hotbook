@@ -12,7 +12,6 @@ graph LR
     core["vizform-core"]
     charts["vizform-charts"]
     vanilla["vizform-vanilla-d3"]
-    react["vizform-react-d3"]
   end
   subgraph app["app"]
     apitable["vizform-apitable"]
@@ -31,7 +30,6 @@ graph LR
 | [`vizform-core`](packages/vizform-core) | Core data structures and utilities. Framework-agnostic. |
 | [`vizform-charts`](packages/vizform-charts) | Chart type definitions and metadata. |
 | [`vizform-vanilla-d3`](packages/vizform-vanilla-d3) | Pure D3 + TypeScript visualization engine, zero framework deps. |
-| [`vizform-react-d3`](packages/vizform-react-d3) | React adapter for vizform-vanilla-d3 charts. |
 | [`vizform-apitable`](packages/vizform-apitable) | APITable widget wrapping `vizform-react-d3`. |
 | [`apps/sliceboard`](apps/sliceboard) | Multi-board demo: editable table + live viz with multiple chart types. |
 
@@ -66,8 +64,6 @@ const goals = [
 <Viz goals={goals} mode="treemap" activeUnit="value" unitKind="size" />
 ```
 
-For hierarchical data, use `<HViz>` with a `GoalTree` — see [`vizform-react-d3`](packages/vizform-react-d3/README.md).
-
 ## Monorepo layout
 
 ```
@@ -75,7 +71,6 @@ packages/
   vizform-core/       # Core data structures
   vizform-charts/     # Chart definitions
   vizform-vanilla-d3/ # D3 rendering engine
-  vizform-react-d3/   # React components
   vizform-apitable/   # APITable widget
 apps/
   sliceboard/         # Demo app (Netlify)

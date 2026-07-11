@@ -29,7 +29,6 @@ export default defineConfig({
       '@hotbook/core': path.resolve(__dirname, '../../packages/core/src'),
       '@hotbook/bireactive': path.resolve(__dirname, '../../packages/bireactive/src'),
       '@hotbook/d3': path.resolve(__dirname, '../../packages/d3/src'),
-      '@hotbook/react-d3': path.resolve(__dirname, '../../packages/react-d3/src'),
       '@hotbook/layout': path.resolve(__dirname, '../../packages/layout/src'),
       '@hotbook/apitable': path.resolve(__dirname, '../../packages/apitable/src'),
     },
