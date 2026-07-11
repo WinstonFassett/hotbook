@@ -9,8 +9,12 @@ import { makeFlatSource, makeHierSource, makeHierRootFlatSource, hierShapeKey, h
 import type { TileSource } from './viz/br/bindTile'
 import { hudStore } from './store'
 import { applyGroupBy } from './persistence'
-import { colorFor, leavesOf } from '@hotbook/core'
+import { leavesOf } from '@hotbook/core'
 import { mountTreetable } from '@hotbook/d3'
+import { buildTileView, resolveTileBindings, colorByGroup } from './tile-views'
+
+// Re-export for external consumers (docked here historically).
+export { resolveTileBindings } from './tile-views'
 
 import {
   MdBarChartLC,
@@ -86,51 +90,6 @@ function sumMeasureToRoot(nodes: VizNode[], rootId: string, measureKey: string):
   return sum
 }
 
-function colorByGroup(nodes: VizNode[]): VizNode[] {
-  const byId = new Map(nodes.map(n => [n.id, n]))
-  const nearestColor = (n: VizNode): string => {
-    let cur = n
-    while (true) {
-      if (cur.color) return cur.color
-      if (!cur.parentId || !byId.has(cur.parentId)) return colorFor(cur.name)
-      cur = byId.get(cur.parentId)!
-    }
-  }
-  return nodes.map(n => ({ ...n, color: n.color ?? nearestColor(n) }))
-}
-
-// ─── Axis binding helpers (WIN-144 tile spec gap) ─────────────────────────────
-
-/** Resolve tile bindings, falling back to deprecated aliases. */
-export function resolveTileBindings(tile: Tile, defaultValueBinding: string) {
-  const valueBinding = tile.valueBinding ?? tile.measureKey ?? defaultValueBinding
-  const xBinding = tile.xBinding ?? tile.xKey
-  const yBinding = tile.yBinding ?? tile.yKey
-  // orderBinding defaults to deprecated sortBy: 'index' | 'value'.
-  // 'value' means "sort by the value binding".
-  const orderBinding = tile.orderBinding ?? tile.sortBy ?? 'index'
-  // Default direction: 'desc' for value-sorted, 'asc' for index or named field.
-  const orderDir = tile.orderDir ?? (orderBinding === 'value' ? 'desc' : 'asc')
-  return { valueBinding, xBinding, yBinding, orderBinding, orderDir }
-}
-
-/** Sort nodes by orderBinding + orderDir. orderBinding can be:
- *  - 'index' or '_index': preserve/reverse input order
- *  - 'value' or '_value': sort by valueBinding
- *  - any measure key: sort by that measure
- */
-function sortNodes(nodes: VizNode[], orderBinding: string, valueBinding: string, orderDir: 'asc' | 'desc'): VizNode[] {
-  const sorted = [...nodes]
-  if (orderBinding === 'index' || orderBinding === '_index') {
-    sorted.sort((a, b) => a.index - b.index)
-  } else {
-    const key = orderBinding === 'value' || orderBinding === '_value' ? valueBinding : orderBinding
-    sorted.sort((a, b) => (a.measures[key] ?? 0) - (b.measures[key] ?? 0))
-  }
-  if (orderDir === 'desc') sorted.reverse()
-  return sorted
-}
-
 const SERIES_START = new Date(2026, 0, 1).getTime()
 const DAY_MS = 86400 * 1000
 
@@ -154,8 +113,16 @@ export interface TileRenderContext {
 export function buildTileSource(ctx: TileRenderContext): TileSource | null {
   const { tile, ds, measureKey, drillNodeId, onUpdate, onUpdateMany } = ctx
   const { valueBinding, xBinding, yBinding, orderBinding, orderDir } = resolveTileBindings(tile, measureKey)
-  const rawNodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.nodes, tile.groupBy) : ds.nodes)
-  const sorted = sortNodes(rawNodes, orderBinding, valueBinding, orderDir)
+
+  // WIN-245: route through the Source → QuerySource → Adapter seam.
+  // The view's querySource applies colorByGroup + applyGroupBy at the Source
+  // layer and the tile's sort at the Query layer, replacing the old inline
+  // colorByGroup(...) + sortNodes(...) pipeline. The bireactive adapter is
+  // constructed but not read here; gesture routing (updatePending/updateNow)
+  // through it lands in the follow-up ticket.
+  const view = buildTileView(tile, ds, valueBinding)
+  const rawNodes = view.source.getValue()
+  const sorted = view.querySource.getValue()
   const sortedWithIndex = sorted.map((n, i) => ({ ...n, index: i }))
   const depth = tile.depth || undefined
 

@@ -4,8 +4,10 @@
  * Implements the data-view seam from whiteboard §7. Each tile owns a View
  * runtime object: { spec, source, querySource, adapter, chart }.
  *
- * Replaces the ad-hoc tile-source resolution in tile-sources.ts with the
- * Source → QuerySource → Adapter → Chart pipeline.
+ * WIN-245 Option A (facade): buildTileSource routes rawNodes through the
+ * QuerySource returned here. The bireactive adapter is constructed but its
+ * getValue() is deferred until the gesture-migration follow-up (whiteboard §3
+ * updatePending/updateNow routing).
  */
 
 import type { VizNode, Tile, Dataset } from './persistence'
@@ -20,7 +22,32 @@ import {
 import { bireactiveValueStore } from '@hotbook/bireactive'
 import { applyGroupBy } from './persistence'
 import { colorFor } from '@hotbook/core'
-import { resolveTileBindings } from './tile-sources'
+
+// ─── Shared tile helpers (moved from tile-sources.ts to break circular import) ─
+
+/** Resolve tile bindings, falling back to deprecated aliases. */
+export function resolveTileBindings(tile: Tile, defaultValueBinding: string) {
+  const valueBinding = tile.valueBinding ?? tile.measureKey ?? defaultValueBinding
+  const xBinding = tile.xBinding ?? tile.xKey
+  const yBinding = tile.yBinding ?? tile.yKey
+  const orderBinding = tile.orderBinding ?? tile.sortBy ?? 'index'
+  const orderDir = tile.orderDir ?? (orderBinding === 'value' ? 'desc' : 'asc')
+  return { valueBinding, xBinding, yBinding, orderBinding, orderDir }
+}
+
+/** Color nodes by ancestor group color. */
+export function colorByGroup(nodes: VizNode[]): VizNode[] {
+  const byId = new Map(nodes.map(n => [n.id, n]))
+  const nearestColor = (n: VizNode): string => {
+    let cur = n
+    while (true) {
+      if (cur.color) return cur.color
+      if (!cur.parentId || !byId.has(cur.parentId)) return colorFor(cur.name)
+      cur = byId.get(cur.parentId)!
+    }
+  }
+  return nodes.map(n => ({ ...n, color: n.color ?? nearestColor(n) }))
+}
 
 // ─── View runtime ─────────────────────────────────────────────────────────────
 
@@ -42,20 +69,6 @@ export interface TileView {
   measureKey: string
 }
 
-/** Color nodes by ancestor group color */
-function colorByGroup(nodes: VizNode[]): VizNode[] {
-  const byId = new Map(nodes.map(n => [n.id, n]))
-  const nearestColor = (n: VizNode): string => {
-    let cur = n
-    while (true) {
-      if (cur.color) return cur.color
-      if (!cur.parentId || !byId.has(cur.parentId)) return colorFor(cur.name)
-      cur = byId.get(cur.parentId)!
-    }
-  }
-  return nodes.map(n => ({ ...n, color: n.color ?? nearestColor(n) }))
-}
-
 /** Build a View for a tile + dataset. */
 export function buildTileView(
   tile: Tile,
@@ -64,7 +77,7 @@ export function buildTileView(
 ): TileView {
   const { valueBinding, orderBinding, orderDir } = resolveTileBindings(tile, measureKey)
 
-  // 1. Source — plain mutable source from dataset nodes
+  // 1. Source — plain mutable source from dataset nodes (post groupBy + color)
   const rawNodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.nodes, tile.groupBy) : ds.nodes)
   const source = plainSource<VizNode[]>(rawNodes)
 
@@ -84,7 +97,9 @@ export function buildTileView(
   // 3. QuerySource — apply query to source
   const querySource = plainQuerySource(source, query)
 
-  // 4. Adapter — bireactive for all charts (WIN-244 bireactiveValueStore)
+  // 4. Adapter — bireactive for all charts (WIN-244 bireactiveValueStore).
+  //    Constructed but not read here; the gesture-migration follow-up will
+  //    route updatePending/updateNow patches through it.
   const adapter = bireactiveValueStore(querySource)
 
   return {
@@ -105,7 +120,6 @@ export function updateTileView(
   const { tile } = view
   const rawNodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.nodes, tile.groupBy) : ds.nodes)
 
-  // Apply full-value patch to the source
   view.source.applyPatch({
     unit: 'nodes',
     range: '',
