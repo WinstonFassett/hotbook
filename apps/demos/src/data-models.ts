@@ -1,11 +1,11 @@
-import { effect, num, treeNode as node, leavesOf, type Writable, type Num } from "bireactive";
+import { num, Num, treeNode as node, type Writable, type Num as NumType } from "bireactive";
 import { group, leaf, type BiNode, type ColumnDef } from "@hotbook/bireactive";
 import type { GanttTask } from "@hotbook/bireactive";
 import { sharedRows, items } from "./layout/demo-data";
 
 export interface DemoDataModel {
-  root: BiNode;
-  setChartData: (el: any) => void;
+  root?: BiNode;
+  setChartData(this: DemoDataModel, el: any): void;
   sync: (el: any) => () => void;
   columns?: ColumnDef[];
 }
@@ -21,8 +21,16 @@ const PALETTE = [
   "#8899b4",
 ];
 
-function bi(value: number): Writable<Num> {
+function bi(value: number): Writable<NumType> {
   return num(value);
+}
+
+function dataRoot(children: BiNode[]): BiNode {
+  const total = bi(0);
+  return node(
+    { id: "root", label: "Data", color: "#222", total, measures: { value: total } } as any,
+    children,
+  );
 }
 
 function valueLeaf(
@@ -39,35 +47,27 @@ function multiLeaf(
   id: string,
   label: string,
   color: string,
-  measures: Record<string, Writable<Num>>,
+  measures: Record<string, Writable<NumType>>,
 ): BiNode {
   const total = measures[Object.keys(measures)[0]!] ?? bi(0);
   return node({ id, label, color, total, measures } as any);
 }
 
-function dataRoot(children: BiNode[]): BiNode {
-  return node(
-    { id: "root", label: "Data", color: "#222", total: bi(0), measures: {} } as any,
-    children,
-  );
+function readItemValue(item: any): number {
+  const v = item?.value;
+  if (v && typeof v === "object" && typeof v.value === "number") {
+    return v.value;
+  }
+  return typeof v === "number" ? v : 0;
 }
 
-function shallowEqual(a: any, b: any): boolean {
-  if (a === b) return true;
-  if (typeof a !== typeof b) return false;
-  if (a == null || b == null) return false;
-  if (a instanceof Date && b instanceof Date) return a.getTime() === b.getTime();
-  if (Array.isArray(a) && Array.isArray(b)) {
-    if (a.length !== b.length) return false;
-    return a.every((v, i) => shallowEqual(v, b[i]));
+function writeItemValue(item: any, target: number): void {
+  const v = item?.value;
+  if (v && typeof v === "object" && typeof v.value === "number") {
+    v.value = target;
+  } else {
+    item.value = target;
   }
-  if (typeof a === 'object' && typeof b === 'object') {
-    const ka = Object.keys(a);
-    const kb = Object.keys(b);
-    if (ka.length !== kb.length) return false;
-    return ka.every((k) => shallowEqual(a[k], b[k]));
-  }
-  return a === b;
 }
 
 function valueData(
@@ -75,57 +75,30 @@ function valueData(
   items: { id: string; label: string; value: number; color: string }[],
   toChart: (values: { id: string; label: string; value: number; color: string }[]) => any,
 ): DemoDataModel {
-  const leaves = items.map((d) => valueLeaf(d.id, d.label, d.value, d.color));
-  const root = dataRoot(leaves);
-  const getValues = () =>
-    items.map((item, i) => ({
-      ...item,
-      value: (leaves[i]!.value as any).measures.value.value,
-    }));
-  const setChartData = (el: any) => {
-    el.externalData = toChart(getValues());
-  };
-  const sync = (el: any) => {
-    const toChartData = () => toChart(getValues());
-    const d1 = effect(() => {
-      const next = toChartData();
-      const cur = el.dataCell?.value;
-      if (!cur || !Array.isArray(cur)) {
-        el.externalData = next;
-        return;
-      }
-      if (
-        next.length !== cur.length ||
-        next.some((n: any, i: number) => !shallowEqual(n, cur[i]))
-      ) {
-        el.externalData = next;
-      }
-    });
-    const d2 = effect(() => {
-      const data = el.dataCell?.value;
-      if (!data) return;
-      data.forEach((item: any, i: number) => {
-        const leaf = leaves[i];
-        if (!leaf) return;
-        const cell = (leaf.value as any).measures.value;
-        const val =
-          item.value != null
-            ? item.value
-            : item.y != null
-            ? item.y
-            : item.value;
-        if (cell.value !== val) cell.value = val;
-      });
-    });
-    return () => {
-      d1();
-      d2();
-    };
-  };
   return {
-    root,
-    setChartData,
-    sync,
+    setChartData(el: any) {
+      el.externalData = toChart(items);
+      const data = el.dataCell;
+      const leaves = items.map((item, i) => {
+        const total = Num.lens(
+          data,
+          (d: any[]) => (d && d[i] ? readItemValue(d[i]) : 0),
+          (target: number, d: any[]) => {
+            const next = d.slice();
+            if (next[i]) writeItemValue(next[i], target);
+            return next;
+          },
+        );
+        return node({ id: item.id, label: item.label, color: item.color, total, measures: { value: total } } as any);
+      });
+      const rootTotal = Num.lens(
+        data,
+        (d: any[]) => d.reduce((sum, _, i) => sum + readItemValue(d[i]), 0),
+        (target, d) => d,
+      );
+      this.root = node({ id: "root", label: "Data", color: "#222", total: rootTotal, measures: { value: rootTotal } } as any, leaves);
+    },
+    sync: () => () => {},
     columns: [{ key: "value", label: "Value", width: 80 }],
   };
 }
@@ -142,56 +115,35 @@ function scatterData(): DemoDataModel {
       color: PALETTE[i % PALETTE.length]!,
     };
   });
-  const leaves = items.map((d) =>
-    multiLeaf(d.id, d.label, d.color, {
-      x: bi(d.x),
-      y: bi(d.y),
-    }),
-  );
-  const root = dataRoot(leaves);
-  const getValues = () =>
-    items.map((item, i) => {
-      const m = (leaves[i]!.value as any).measures;
-      return { id: item.id, x: m.x.value, y: m.y.value };
-    });
-  const setChartData = (el: any) => {
-    el.externalData = getValues();
-  };
-  const sync = (el: any) => {
-    const d1 = effect(() => {
-      const next = getValues();
-      const cur = el.dataCell?.value;
-      if (!cur || !Array.isArray(cur)) {
-        el.externalData = next;
-        return;
-      }
-      if (
-        next.length !== cur.length ||
-        next.some((n: any, i: number) => !shallowEqual(n, cur[i]))
-      ) {
-        el.externalData = next;
-      }
-    });
-    const d2 = effect(() => {
-      const data = el.dataCell?.value;
-      if (!data) return;
-      data.forEach((item: any, i: number) => {
-        const leaf = leaves[i];
-        if (!leaf) return;
-        const m = (leaf.value as any).measures;
-        if (m.x.value !== item.x) m.x.value = item.x;
-        if (m.y.value !== item.y) m.y.value = item.y;
-      });
-    });
-    return () => {
-      d1();
-      d2();
-    };
-  };
   return {
-    root,
-    setChartData,
-    sync,
+    setChartData(el: any) {
+      el.externalData = items.map((r) => ({ id: r.id, x: r.x, y: r.y }));
+      const data = el.dataCell;
+      const leaves = items.map((item, i) => {
+        const xCell = Num.lens(
+          data,
+          (d: any[]) => (d && d[i] ? d[i].x : 0),
+          (target: number, d: any[]) => {
+            const next = d.slice();
+            if (next[i]) next[i].x = target;
+            return next;
+          },
+        );
+        const yCell = Num.lens(
+          data,
+          (d: any[]) => (d && d[i] ? d[i].y : 0),
+          (target: number, d: any[]) => {
+            const next = d.slice();
+            if (next[i]) next[i].y = target;
+            return next;
+          },
+        );
+        return node({ id: item.id, label: item.label, color: item.color, total: yCell, measures: { x: xCell, y: yCell } } as any);
+      });
+      const rootTotal = num(0);
+      this.root = node({ id: "root", label: "Data", color: "#222", total: rootTotal, measures: { x: rootTotal, y: rootTotal } } as any, leaves);
+    },
+    sync: () => () => {},
     columns: [
       { key: "x", label: "X", width: 70 },
       { key: "y", label: "Y", width: 70 },
@@ -200,61 +152,34 @@ function scatterData(): DemoDataModel {
 }
 
 function gaugeData(segments?: number): DemoDataModel {
-  const leaves = [
-    valueLeaf("value", "Value", 65, PALETTE[3]!),
-    valueLeaf("min", "Min", 0, "#888"),
-    valueLeaf("max", "Max", 100, "#888"),
-    ...(segments != null ? [valueLeaf("segments", "Segments", segments, PALETTE[4]!)] : []),
-  ];
-  const root = dataRoot(leaves);
-
-  const valCell = () => (leaves[0]!.value as any).measures.value;
-  const minCell = () => (leaves[1]!.value as any).measures.value;
-  const maxCell = () => (leaves[2]!.value as any).measures.value;
-  const segCell = () => (segments != null ? (leaves[3]!.value as any).measures.value : undefined);
-
-  const getData = () => ({
-    value: valCell().value,
-    min: minCell().value,
-    max: maxCell().value,
-    color: PALETTE[3]!,
-    label: "Score",
-    ...(segments != null ? { segments: segCell().value } : {}),
-  });
-
-  const setChartData = (el: any) => {
-    el.externalData = getData();
-  };
-
-  const sync = (el: any) => {
-    const d1 = effect(() => {
-      const next = getData();
-      const cur = el.externalData;
-      if (!shallowEqual(next, cur)) {
-        el.externalData = next;
-      }
-    });
-
-    const d2 = effect(() => {
-      const cur = el.externalData;
-      if (!cur) return;
-      if (valCell().value !== cur.value) valCell().value = cur.value;
-      if (minCell().value !== cur.min) minCell().value = cur.min;
-      if (maxCell().value !== cur.max) maxCell().value = cur.max;
-      const seg = segCell();
-      if (seg && seg.value !== cur.segments) seg.value = cur.segments;
-    });
-
-    return () => {
-      d1();
-      d2();
-    };
-  };
-
+  const value = 65;
+  const min = 0;
+  const max = 100;
+  const seg = segments ?? 5;
   return {
-    root,
-    setChartData,
-    sync,
+    setChartData(el: any) {
+      el.externalData = {
+        value,
+        min,
+        max,
+        color: PALETTE[3]!,
+        label: "Score",
+        ...(segments != null ? { segments: seg } : {}),
+      };
+      const valueCell = el.valueCell as Writable<NumType>;
+      const minCell = num(min);
+      const maxCell = num(max);
+      const segCell = segments != null ? num(seg) : undefined;
+      const leaves = [
+        node({ id: "value", label: "Value", color: PALETTE[3]!, total: valueCell, measures: { value: valueCell } } as any),
+        node({ id: "min", label: "Min", color: "#888", total: minCell, measures: { value: minCell } } as any),
+        node({ id: "max", label: "Max", color: "#888", total: maxCell, measures: { value: maxCell } } as any),
+        ...(segCell ? [node({ id: "segments", label: "Segments", color: PALETTE[4]!, total: segCell, measures: { value: segCell } } as any)] : []),
+      ];
+      const rootTotal = num(value);
+      this.root = node({ id: "root", label: "Data", color: "#222", total: rootTotal, measures: { value: rootTotal } } as any, leaves);
+    },
+    sync: () => () => {},
     columns: [{ key: "value", label: "Value", width: 80 }],
   };
 }
@@ -270,73 +195,42 @@ function ganttData(): DemoDataModel {
     { id: "t5", label: "Launch", start: new Date(start + 33 * DAY), end: new Date(start + 36 * DAY), deps: ["t3", "t4"] },
   ];
 
-  const leaves = tasks.map((t) =>
-    multiLeaf(t.id, t.label, t.color ?? PALETTE[tasks.indexOf(t) % PALETTE.length]!, {
-      start: bi((t.start.getTime() - start) / DAY),
-      end: bi((t.end.getTime() - start) / DAY),
-    }),
-  );
-  const root = dataRoot(leaves);
-
-  const getTasks = () =>
-    tasks.map((t, i) => {
-      const m = (leaves[i]!.value as any).measures;
-      return {
-        ...t,
-        start: new Date(start + m.start.value * DAY),
-        end: new Date(start + m.end.value * DAY),
-      };
-    });
-
-  const setChartData = (el: any) => {
-    el.externalData = getTasks();
-  };
-
-  const sync = (el: any) => {
-    const d1 = effect(() => {
-      const next = getTasks();
-      const cur = el.dataCell?.value;
-      if (!cur || !Array.isArray(cur)) {
-        el.externalData = next;
-        return;
-      }
-      if (
-        next.length !== cur.length ||
-        next.some(
-          (n: any, i: number) =>
-            n.start.getTime() !== cur[i].start.getTime() ||
-            n.end.getTime() !== cur[i].end.getTime() ||
-            n.label !== cur[i].label,
-        )
-      ) {
-        el.externalData = next;
-      }
-    });
-
-    const d2 = effect(() => {
-      const data = el.dataCell?.value;
-      if (!data) return;
-      data.forEach((item: any, i: number) => {
-        const leaf = leaves[i];
-        if (!leaf) return;
-        const m = (leaf.value as any).measures;
-        const startDay = (item.start.getTime() - start) / DAY;
-        const endDay = (item.end.getTime() - start) / DAY;
-        if (m.start.value !== startDay) m.start.value = startDay;
-        if (m.end.value !== endDay) m.end.value = endDay;
-      });
-    });
-
-    return () => {
-      d1();
-      d2();
-    };
-  };
+  const dayOf = (date: Date) => (date.getTime() - start) / DAY;
+  const dateOf = (day: number) => new Date(start + day * DAY);
 
   return {
-    root,
-    setChartData,
-    sync,
+    setChartData(el: any) {
+      el.externalData = tasks;
+      const data = el.dataCell;
+      const leaves = tasks.map((t, i) => {
+        const startCell = Num.lens(
+          data,
+          (d: any[]) => (d && d[i] ? dayOf(d[i].start) : 0),
+          (target: number, d: any[]) => {
+            const next = d.slice();
+            if (next[i]) next[i].start = dateOf(target);
+            return next;
+          },
+        );
+        const endCell = Num.lens(
+          data,
+          (d: any[]) => (d && d[i] ? dayOf(d[i].end) : 0),
+          (target: number, d: any[]) => {
+            const next = d.slice();
+            if (next[i]) next[i].end = dateOf(target);
+            return next;
+          },
+        );
+        return node({ id: t.id, label: t.label, color: PALETTE[i % PALETTE.length]!, total: endCell, measures: { start: startCell, end: endCell } } as any);
+      });
+      const rootTotal = Num.lens(
+        data,
+        (d: any[]) => d.reduce((sum, t) => sum + (dayOf(t.end) - dayOf(t.start)), 0),
+        (target, d) => d,
+      );
+      this.root = node({ id: "root", label: "Data", color: "#222", total: rootTotal, measures: { start: rootTotal, end: rootTotal } } as any, leaves);
+    },
+    sync: () => () => {},
     columns: [
       { key: "start", label: "Start", width: 70 },
       { key: "end", label: "End", width: 70 },
@@ -417,21 +311,12 @@ function sankeyData(
       })
       .filter(Boolean) as { source: string; target: string; value: number }[];
 
-  const setChartData = (el: any) => {
-    el.externalData = { nodes, links: getLinks() };
-  };
-
-  const sync = (el: any) => {
-    // Sankey scene reads externalData once at mount; treetable edits cannot
-    // drive the already-rendered scene. The chart itself supports live editing.
-    return () => {};
-  };
-
   return {
     root,
-    setChartData,
-    sync,
-    columns: [{ key: "value", label: "Value", width: 80 }],
+    setChartData(this: DemoDataModel, el: any) {
+      el.externalData = { nodes, links: getLinks() };
+    },
+    sync: () => () => {},
   };
 }
 
@@ -458,14 +343,12 @@ function hierarchicalData(): DemoDataModel {
 
   return {
     root,
-    setChartData: (el: any) => {
+    setChartData(this: DemoDataModel, el: any) {
       el.externalRoot = root;
     },
     sync: () => () => {},
   };
 }
-
-// Deterministic data factories keyed by the experiment id used in main.ts.
 
 export function dataModelFor(id: string): DemoDataModel | undefined {
   switch (id) {
@@ -520,16 +403,7 @@ export function dataModelFor(id: string): DemoDataModel | undefined {
     case "bands-chart":
       return valueData(
         "bands",
-        [
-          "A",
-          "B",
-          "C",
-          "D",
-          "E",
-          "F",
-          "G",
-          "H",
-        ].map((m, i) => ({
+        ["A", "B", "C", "D", "E", "F", "G", "H"].map((m, i) => ({
           id: m,
           label: m,
           value: 20 + ((i * 11) % 70),
