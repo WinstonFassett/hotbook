@@ -85,8 +85,23 @@ function valueData(
 
   function apply(model: DemoDataModel, el: any, ordered: ValueItem[]) {
     applied = ordered;
-    el.externalData = toChart(ordered);
+    const chartData = toChart(ordered);
+    el.externalData = chartData;
     const data = el.dataCell;
+
+    // When reordering, update the chart's data array to match the new order
+    // so the index-based lenses read the right items.
+    if (data?.value) {
+      const current = data.value as any[];
+      for (let i = 0; i < chartData.length && i < current.length; i++) {
+        const chartItem = chartData[i];
+        const dataItem = current[i];
+        if (chartItem && dataItem) {
+          writeItemValue(dataItem, chartItem.value);
+        }
+      }
+    }
+
     const leaves = ordered.map((item, i) => {
       const total = Num.lens(
         data,
