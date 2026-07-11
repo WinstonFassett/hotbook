@@ -77,7 +77,6 @@ safe to delete.
 |---|---|---|---|
 | `sliceboard` | sliceboard | react-d3 + `@webdev/vite`; `vizform-charts`; alias `@svelte-lc` | `bireactive ^0.3.4`, `d3 ^7`, `react ^18.3` |
 | `vanilla-bireactive-layercharts-spike` | layercharts-bireactive-spike | `vizform-charts` (workspace dep) | `bireactive`, `d3-array/hierarchy/sankey/scale/scale-chromatic/shape` |
-| `svelte-layerchart-spike` | layerchart-direct-spike | — (consumed as `@svelte-lc`) | `bireactive`, `d3-hierarchy/sankey`, `layerchart ^1`, `svelte ^5` |
 
 ## ⚠️ Version conflicts & packaging smells
 

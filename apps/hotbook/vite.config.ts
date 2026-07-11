@@ -26,7 +26,6 @@ export default defineConfig({
     conditions: ['browser', 'node'],
     dedupe: ['bireactive'],
     alias: {
-      '@svelte-lc': path.resolve(__dirname, '../../apps/svelte-layerchart-spike/src'),
       '@hotbook/core': path.resolve(__dirname, '../../packages/core/src'),
       '@hotbook/bireactive': path.resolve(__dirname, '../../packages/bireactive/src'),
       '@hotbook/d3': path.resolve(__dirname, '../../packages/d3/src'),
