@@ -402,31 +402,34 @@ export class MdSunburstLC extends Diagram {
         const maxD = maxDepthCell.value;
         const maxWindow = maxD !== undefined && maxD > 0 ? fd + maxD : totalDepth;
 
-        // Group nodes by depth level
-        const byDepth = new Map<number, BiNode[]>();
+        // Group nodes by their parent (only siblings should have handles between them)
+        const byParent = new Map<BiNode | null, BiNode[]>();
         for (const n of renderedSet.value) {
           const d = nodeDepth.get(n) ?? 0;
           if (d <= fd || d > maxWindow) continue;
-          if (!byDepth.has(d)) byDepth.set(d, []);
-          byDepth.get(d)!.push(n);
+          const parent = parentOf(n) ?? null;
+          if (!byParent.has(parent)) byParent.set(parent, []);
+          byParent.get(parent)!.push(n);
         }
 
-        // For each depth level, sort nodes by angle and create handles
+        // For each parent's children, sort by angle and create handles between siblings
         const items: HandleItem[] = [];
         const lmap = layout.value;
 
-        for (const nodes of byDepth.values()) {
+        for (const siblings of byParent.values()) {
+          if (siblings.length < 2) continue;  // need at least 2 siblings for a handle
+
           // Sort by angular position
-          nodes.sort((a, b) => {
+          siblings.sort((a, b) => {
             const aLayout = lmap.get(a);
             const bLayout = lmap.get(b);
             if (!aLayout || !bLayout) return 0;
             return aLayout.x0 - bLayout.x0;
           });
 
-          // Create handles between all adjacent pairs at this depth
-          for (let i = 1; i < nodes.length; i++) {
-            items.push({ aNode: nodes[i - 1]!, bNode: nodes[i]! });
+          // Create handles between adjacent siblings
+          for (let i = 1; i < siblings.length; i++) {
+            items.push({ aNode: siblings[i - 1]!, bNode: siblings[i]! });
           }
         }
 
