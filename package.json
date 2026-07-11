@@ -3,7 +3,7 @@
   "private": true,
   "workspaces": [
     "packages/*",
-    "apps/*"    
+    "apps/*"
   ],
   "scripts": {
     "build": "bash scripts/build-site.sh",
@@ -13,12 +13,16 @@
     "dev:demos": "npm run dev -w apps/demos",
     "dev:layout": "npm run demo -w packages/layout",
     "dev": "concurrently -n hotbook,demos \"npm run dev -w apps/hotbook\" \"npm run dev -w apps/demos\"",
-    "postinstall": "patch-package"
+    "postinstall": "patch-package",
+    "knip": "knip"
   },
   "devDependencies": {
+    "@types/node": "^26.1.1",
     "concurrently": "^10.0.3",
+    "knip": "^6.26.0",
     "patch-package": "^8.0.1",
-    "postinstall-postinstall": "^2.1.0"
+    "postinstall-postinstall": "^2.1.0",
+    "typescript": "^7.0.2"
   },
   "dependencies": {
     "bireactive": "^0.3.5"
