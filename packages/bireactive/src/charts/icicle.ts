@@ -491,7 +491,7 @@ export class MdIcicleLC extends Diagram {
         const fd = focusDepth.value;
         const { nodeDepth, totalDepth } = structure.value;
         const rawMaxD = this._maxDepthCell.value;
-        const maxD = rawMaxD !== undefined && maxD > 0 ? rawMaxD : undefined;
+        const maxD = rawMaxD !== undefined && rawMaxD > 0 ? rawMaxD : undefined;
         const maxWindow = maxD !== undefined ? fd + maxD : totalDepth;
 
         // Group nodes by depth level
