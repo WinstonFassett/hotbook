@@ -32,8 +32,8 @@ import {
   vec,
   type Vec,
   type Writable,
-} from "@bireactive";
-import { extent, type Graph, type Placement } from "@bireactive/propagators";
+} from "bireactive";
+import { extent, type Graph, type Placement } from "bireactive/propagators";
 import { layeredTight } from "./layered-tight";
 
 import {

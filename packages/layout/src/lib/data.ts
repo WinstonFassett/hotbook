@@ -17,7 +17,7 @@
 // Adapters for specific domains (state machines, flow charts, org
 // charts) live on top of this generic model.
 
-import { arr, Arr, cell, type Cell, type Writable } from "@bireactive";
+import { arr, Arr, cell, type Cell, type Writable } from "bireactive";
 
 // ── nodes (the containment table) ────────────────────────────────────
 
@@ -107,7 +107,7 @@ export const sharedEdges: Arr<Edge> = arr<Edge>(SEED_EDGES);
 
 export const items = <T>(a: Arr<T>): readonly T[] => a.cells.map((c) => c.value);
 
-const findCell = <T>(a: Arr<T>, v: T): import("@bireactive").Cell<T> | undefined =>
+const findCell = <T>(a: Arr<T>, v: T): import("bireactive").Cell<T> | undefined =>
   a.cells.find((c) => c.value === v);
 
 export const insertRow = (row: Row): void => { sharedRows.insert(row); };

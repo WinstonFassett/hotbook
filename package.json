@@ -21,10 +21,6 @@
     "concurrently": "^10.0.3",
     "knip": "^6.26.0",
     "patch-package": "^8.0.1",
-    "postinstall-postinstall": "^2.1.0",
-    "typescript": "^7.0.2"
-  },
-  "dependencies": {
-    "bireactive": "^0.3.5"
+    "typescript": "^5.9.3"
   }
 }

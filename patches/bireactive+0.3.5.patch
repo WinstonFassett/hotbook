@@ -17,3 +17,22 @@ index 4d58959..f72f6b6 100644
          try {
              a.gen.return(undefined);
          }
+diff --git a/node_modules/bireactive/package.json b/node_modules/bireactive/package.json
+index 73c87fd..5389426 100644
+--- a/node_modules/bireactive/package.json
++++ b/node_modules/bireactive/package.json
+@@ -15,6 +15,14 @@
+       "types": "./dist/automerge/index.d.ts",
+       "import": "./dist/automerge/index.js"
+     },
++    "./constraints": {
++      "types": "./dist/constraints/index.d.ts",
++      "import": "./dist/constraints/index.js"
++    },
++    "./propagators": {
++      "types": "./dist/propagators/index.d.ts",
++      "import": "./dist/propagators/index.js"
++    },
+     "./jsx-runtime": {
+       "types": "./dist/jsx-runtime.d.ts",
+       "import": "./dist/jsx-runtime.js"

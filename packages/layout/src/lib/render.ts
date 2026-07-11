@@ -22,7 +22,7 @@ import {
   type Shape,
   Vec,
   type Writable,
-} from "@bireactive";
+} from "bireactive";
 import { edgeStyle, type EdgeStyle } from "./diagram-settings";
 
 // Heuristic glyph width (SVG can't measure synchronously). 0.6 of the

@@ -21,8 +21,8 @@ import {
   type Shape,
   spring,
   vec,
-} from "@bireactive";
-import { extent, type Graph, layered, type Placement, rank } from "@bireactive/propagators";
+} from "bireactive";
+import { extent, type Graph, layered, type Placement, rank } from "bireactive/propagators";
 
 import {
   containmentForest,

@@ -26,8 +26,8 @@ import {
   vec,
   type Vec,
   type Writable,
-} from "@bireactive";
-import { animate, physics, pin, repel, softTarget, spring } from "@bireactive/constraints";
+} from "bireactive";
+import { animate, physics, pin, repel, softTarget, spring } from "bireactive/constraints";
 
 import {
   containmentForest,

@@ -8,7 +8,7 @@
 // paints. If renderer chrome (chip dimensions, hull padding) changes,
 // update it here too — that's the whole point of consolidating.
 
-import type { Arr } from "@bireactive";
+import type { Arr } from "bireactive";
 import type { Edge, Row } from "./data";
 import { rowsById, leafIds, items } from "./data";
 import { CHIP_HEIGHT_TOTAL, nodeSize, type NodeSize } from "./render";

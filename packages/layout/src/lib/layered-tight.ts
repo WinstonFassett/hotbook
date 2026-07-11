@@ -1,4 +1,4 @@
-// `layeredTight` — local fork of @bireactive/propagators `layered()` with
+// `layeredTight` — local fork of bireactive/propagators `layered()` with
 // non-uniform layer spacing. Same Sugiyama machinery (rank → barycenter
 // sweeps → coordinate assignment), but each pair of adjacent layers is
 // placed at `(halfPrev + halfThis) / 1 + layerPad` instead of a uniform
@@ -9,9 +9,9 @@
 // touching inspo/bireactive. If a future inspo version exposes a
 // `layerGap: (l) => number` hook we can swap back.
 
-import { rank } from "@bireactive/propagators";
+import { rank } from "bireactive/propagators";
 
-import type { Graph, Placement, Size } from "@bireactive/propagators";
+import type { Graph, Placement, Size } from "bireactive/propagators";
 
 type Direction = "TB" | "BT" | "LR" | "RL";
 

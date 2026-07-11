@@ -7,7 +7,7 @@
 //
 // Pure DOM, no framework — bireactive's effect() does the reactivity.
 
-import { effect } from "@bireactive";
+import { effect } from "bireactive";
 
 import { descendantsOf, sharedEdges, sharedRows, items, removeRow, removeEdge, type Edge, type Row } from "./data";
 import { clearSelection, sharedSelection, type Selection } from "./selection";

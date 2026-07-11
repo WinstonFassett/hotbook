@@ -1,9 +1,17 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "tags": [
-    "-lintignore"
-  ],
+  "tags": ["-lintignore"],
+  "ignore": ["**/*.test.ts", "scripts/**", "*.local/**"],
+  "ignoreBinaries": ["portless"],
+  "rules": {
+    "exports": "off",
+    "types": "off"
+  },
   "workspaces": {
-    ".": {}
+    ".": {
+      "entry": ["scripts/build-site.sh", "package.json"]
+    },
+    "apps/*": {},
+    "packages/*": {}
   }
 }

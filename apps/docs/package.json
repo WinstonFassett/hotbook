@@ -14,8 +14,6 @@
   "dependencies": {
     "astro": "^7.0.6",
     "@hotbook/bireactive": "*",
-    "@hotbook/core": "*",
-    "bireactive": "^0.3.4",
-    "d3": "^7.9.0"
+    "bireactive": "^0.3.4"
   }
 }

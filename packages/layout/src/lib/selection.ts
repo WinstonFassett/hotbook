@@ -4,7 +4,7 @@
 // any UI can read from it (the sidebar in main.ts). Cleared when the
 // selected id no longer exists in sharedRows / sharedEdges.
 
-import { cell, type Cell, type Writable } from "@bireactive";
+import { cell, type Cell, type Writable } from "bireactive";
 
 export type SelectedKind = "node" | "group" | "edge";
 

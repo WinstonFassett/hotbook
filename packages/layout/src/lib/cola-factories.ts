@@ -7,9 +7,9 @@
 //   separation(a, b, axis, gap)  — a.<axis> + gap ≤ b.<axis>
 //   rectNonOverlap(a, b, halfW, halfH) — pairwise hard AABB non-overlap
 
-import type { Relation } from "@bireactive/constraints";
-import { generic } from "@bireactive/constraints";
-import type { Cell, Writable } from "@bireactive";
+import type { Relation } from "bireactive/constraints";
+import { generic } from "bireactive/constraints";
+import type { Cell, Writable } from "bireactive";
 
 type Vec2 = Writable<Cell<{ x: number; y: number }>>;
 

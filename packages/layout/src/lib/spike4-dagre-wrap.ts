@@ -23,7 +23,7 @@ import {
   vec,
   type Vec,
   type Writable,
-} from "@bireactive";
+} from "bireactive";
 
 import {
   containmentForest,

@@ -24,7 +24,7 @@
 // The renderer reads outer (panel + chip) and reads children's
 // footprints; never invents its own boxes.
 
-import { Box, box, Vec, vec, type Writable } from "@bireactive";
+import { Box, box, Vec, vec, type Writable } from "bireactive";
 
 export interface GroupChrome {
   /** Vertical space the chip header consumes inside outer.top. */

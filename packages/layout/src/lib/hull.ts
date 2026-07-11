@@ -2,7 +2,7 @@
 // the positions + sizes; padding can vary by container depth at the
 // call site. Used by every spike that draws containment hulls.
 
-import { Box, Vec, type Writable } from "@bireactive";
+import { Box, Vec, type Writable } from "bireactive";
 
 export type Size = { w: number; h: number };
 
