@@ -2,18 +2,8 @@
   "name": "hotbook",
   "private": true,
   "workspaces": [
-    "packages/core",
-    "packages/bireactive",
-    "packages/d3",
-    "packages/react-d3",
-    "packages/layout",
-    "packages/apitable",
-    "apps/hotbook",
-    "apps/docs",
-    "apps/svelte-layerchart-spike",
-    "apps/vanilla-bireactive-spike",
-    "apps/vanilla-bireactive-layercharts-spike",
-    "apps/pinch-test"
+    "packages/*",
+    "apps/*"    
   ],
   "scripts": {
     "build": "bash scripts/build-site.sh",
