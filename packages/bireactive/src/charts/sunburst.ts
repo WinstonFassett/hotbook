@@ -15,7 +15,7 @@ import {
   effect as biEffect,
   untracked,
 } from "bireactive";
-import { circleHandle } from "../lib/handles";
+import { circleHandle, lineHandle } from "../lib/handles";
 import { Diagram } from "../lib/diagram";
 import { partition, type HierarchyRectangularNode } from "d3-hierarchy";
 import { depthFill, labelInk } from "../lib/depth-color";
@@ -492,7 +492,25 @@ export class MdSunburstLC extends Diagram {
         );
 
         const active = cell(false);
-        const handle = circleHandle(knobPos, {
+        // For radial dividers, calculate handle orientation perpendicular to the radial angle
+        const orient = derive(() => {
+          const ang = boundaryAngDisplay.value;
+          // Normalize to [0, 2π)
+          const normAng = ang < 0 ? ang + 2 * Math.PI : ang;
+          // If angle is closer to 0/2π (horizontal) or π (horizontal), handle is vertical ("vert")
+          // If angle is closer to π/2 or 3π/2 (vertical), handle is horizontal ("horiz")
+          const angleToNearestVertical = Math.min(
+            Math.abs(normAng - Math.PI / 2),
+            Math.abs(normAng - 3 * Math.PI / 2)
+          );
+          const angleToNearestHorizontal = Math.min(
+            Math.abs(normAng),
+            Math.abs(normAng - Math.PI),
+            Math.abs(normAng - 2 * Math.PI)
+          );
+          return angleToNearestVertical < angleToNearestHorizontal ? "horiz" : "vert";
+        });
+        const handle = lineHandle(knobPos, orient, {
           kind: "divider",
           active,
         });
