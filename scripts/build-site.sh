@@ -21,9 +21,6 @@ echo "==> Building hotbook..."
 echo "==> Building bireactive layercharts demo..."
 (cd apps/vanilla-bireactive-layercharts-spike && npx vite build --base /demos/bireactive-layercharts/)
 
-echo "==> Building bireactive demo..."
-(cd apps/vanilla-bireactive-spike && npx vite build --base /demos/bireactive/)
-
 echo "==> Building layout demo..."
 (cd packages/layout && npx vite build --base /demos/layout/)
 
@@ -32,7 +29,6 @@ echo "==> Assembling site..."
 cp -r apps/hotbook/dist apps/docs/dist/hotbook
 mkdir -p apps/docs/dist/demos
 cp -r apps/vanilla-bireactive-layercharts-spike/dist apps/docs/dist/demos/bireactive-layercharts
-cp -r apps/vanilla-bireactive-spike/dist apps/docs/dist/demos/bireactive
 cp -r packages/layout/dist apps/docs/dist/demos/layout
 
 echo "==> Site built at apps/docs/dist"

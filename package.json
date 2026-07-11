@@ -10,7 +10,6 @@
     "build:hotbook": "npm run build -w packages/d3 && npm run build -w packages/react-d3 && npm run build -w apps/hotbook",
     "dev:docs": "npm run dev -w apps/docs",
     "dev:hotbook": "npm run dev -w apps/hotbook",
-    "dev:vanilla-bireactive": "npm run dev -w apps/vanilla-bireactive-spike",
     "dev:vanilla-bireactive-layercharts": "npm run dev -w apps/vanilla-bireactive-layercharts-spike",
     "dev:layout": "npm run demo -w packages/layout",
     "dev": "concurrently -n hotbook,vanilla-bireactive-layercharts \"npm run dev -w apps/hotbook\" \"npm run dev -w apps/vanilla-bireactive-layercharts-spike\"",
