@@ -1,5 +1,5 @@
-import type { AnyShape, BiVal, Cell } from "bireactive";
-import { circle, rect, derive } from "bireactive";
+import type { AnyShape, Val } from "bireactive";
+import { circle, rect, derive, effect as biEffect, cell } from "bireactive";
 
 /**
  * Semantic mode for a handle — determines its color rule.
@@ -18,7 +18,7 @@ export interface HandleStyle {
   /** Item color — required for `value` and `scale` modes. */
   itemColor?: string;
   /** Reactive active/focus state (drives highlight). */
-  active?: BiVal<boolean>;
+  active?: Val<boolean>;
   /** Size override — for circles, the radius; for line handles, the long axis. */
   size?: number;
 }
@@ -31,14 +31,14 @@ export interface HandleStyle {
  * @returns Circle shape ready for dragCancelable(...)
  */
 export function circleHandle(
-  pos: BiVal<{ x: number; y: number }>,
+  pos: Val<{ x: number; y: number }>,
   style: HandleStyle,
 ): AnyShape {
   const radius = style.size ?? 5;
 
   // Color rules per semantic mode
-  let fill: string | BiVal<string>;
-  let stroke: string | BiVal<string>;
+  let fill: string | Val<string>;
+  let stroke: string | Val<string>;
 
   if (style.kind === "divider") {
     // Neutral translucent for dividers
@@ -66,46 +66,42 @@ export function circleHandle(
 
 /**
  * Line/edge handle — oblong pill shape for divider handles on line-shaped dividers.
- * Oriented parallel to the divider (long axis) with short perpendicular thickness.
+ * Oriented parallel to the divider using CSS rotation (not dimension swapping).
+ *
+ * The pill is always created with the same dimensions (long × short) and then rotated
+ * 90° when needed to align with vertical dividers. This keeps the handle anchored to
+ * the divider line properly.
  *
  * @param pos Center position (reactive or static {x, y})
- * @param orient Divider orientation — determines whether handle is horizontal or vertical
+ * @param orient Divider orientation — determines rotation (horiz = 0°, vert = 90°)
  * @param style Handle appearance and semantic mode
  * @returns Rect shape ready for dragCancelable(...)
  */
 export function lineHandle(
-  pos: BiVal<{ x: number; y: number }>,
-  orient: BiVal<"horiz" | "vert">,
+  pos: Val<{ x: number; y: number }>,
+  orient: Val<"horiz" | "vert">,
   style: HandleStyle,
 ): AnyShape {
   const longAxis = style.size ?? 14;  // along the divider
   const shortAxis = 6;                // perpendicular thickness
 
-  // Compute width/height based on orientation
-  const width = derive(() => {
-    const o = typeof orient === "object" && "value" in orient ? orient.value : orient;
-    return o === "horiz" ? longAxis : shortAxis;
-  });
-  const height = derive(() => {
-    const o = typeof orient === "object" && "value" in orient ? orient.value : orient;
-    return o === "horiz" ? shortAxis : longAxis;
-  });
+  // Always create the pill horizontally (long × short), then rotate it
+  const width = longAxis;
+  const height = shortAxis;
 
   // Center the rect at pos
   const x = derive(() => {
     const p = typeof pos === "object" && "value" in pos ? pos.value : pos;
-    const w = typeof width === "object" && "value" in width ? width.value : width;
-    return p.x - w / 2;
+    return p.x - width / 2;
   });
   const y = derive(() => {
     const p = typeof pos === "object" && "value" in pos ? pos.value : pos;
-    const h = typeof height === "object" && "value" in height ? height.value : height;
-    return p.y - h / 2;
+    return p.y - height / 2;
   });
 
   // Color rules per semantic mode (same as circleHandle)
-  let fill: string | BiVal<string>;
-  let stroke: string | BiVal<string>;
+  let fill: string | Val<string>;
+  let stroke: string | Val<string>;
 
   if (style.kind === "divider") {
     fill = "rgba(0,0,0,0.55)";
@@ -122,11 +118,23 @@ export function lineHandle(
       : "#0b0d12";
   }
 
-  return rect(x, y, width, height, {
+  const handle = rect(x, y, width, height, {
     fill,
     stroke,
     strokeWidth: 1.5,
     corner: shortAxis / 2,  // fully rounded pill
     thin: true,
   });
+
+  // Apply rotation via CSS transform for vertical orientation
+  // The rotation is anchored at the center of the rect
+  handle.el.style.transformOrigin = "center";
+
+  // Reactively update rotation when orientation changes
+  biEffect(() => {
+    const o = typeof orient === "object" && "value" in orient ? orient.value : orient;
+    handle.el.style.transform = o === "vert" ? "rotate(90deg)" : "";
+  });
+
+  return handle;
 }
