@@ -61,12 +61,25 @@ export function attachCartesianGestures<TData>(
 
   const setGestureActive = (on: boolean) => { host.classList.toggle(GESTURE_ACTIVE_CLASS, on); (host as any).gestureActive = on; };
 
+  // Captured at wheel gesture start for scale-aware delta computation.
+  let wheelStartScale: any = null;
+
   // Per-gesture value-mapping handed to the SHARED wheel/drag controllers (app-
   // wide singletons; one pointer → one live gesture).
   const wheelConfig = {
-    snapshot: (d: TData) => { setGestureActive(true); return ctx.yAcc(d) as number; },
+    snapshot: (d: TData) => {
+      setGestureActive(true);
+      wheelStartScale = ctx.yScale.value;
+      return ctx.yAcc(d) as number;
+    },
     restore: (d: TData, v: number) => mutateDatum(d, v - (ctx.yAcc(d) as number)),
-    onEnd: (canceled: boolean) => { setGestureActive(false); state.hover.value = null; gestureOrder = null; host.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } })); },
+    onEnd: (canceled: boolean) => {
+      setGestureActive(false);
+      state.hover.value = null;
+      gestureOrder = null;
+      wheelStartScale = null;
+      host.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } }));
+    },
   };
 
   // Captured at pointerdown, read by dragConfig.snapshot (called inside begin()).
@@ -126,8 +139,24 @@ export function attachCartesianGestures<TData>(
     const target = wheelController.begin(state.hover.value ?? state.selected.value, wheelConfig, { pinch: isPinch });
     if (!target) return;
     we.preventDefault();
-    const step = dynamicWheelStep(ctx.yAcc(target) as number, we.shiftKey);
-    mutateDatum(target, we.deltaY < 0 ? +step : -step);
+
+    // Scale-aware delta: transform wheel deltaY pixels into value-space using
+    // the y-scale captured at gesture start, matching drag behavior. This makes
+    // wheel gestures feel predictable and proportional to the visible chart
+    // scale, rather than explosive on large domains or sluggish on small ones.
+    // Shift key reduces sensitivity by 10x (like fine-grained drag).
+    if (wheelStartScale?.invert) {
+      const pixelSensitivity = we.shiftKey ? 0.1 : 1.0;
+      const scaledDeltaY = we.deltaY * pixelSensitivity;
+      // Invert two points separated by deltaY to get the value-space delta.
+      // Use the gesture-start scale so mid-gesture domain changes don't cause spikes.
+      const valueDelta = wheelStartScale.invert(scaledDeltaY) - wheelStartScale.invert(0);
+      mutateDatum(target, -valueDelta); // negative: wheel down = decrease
+    } else {
+      // Fallback for non-invertible scales (unlikely in cartesian charts).
+      const step = dynamicWheelStep(ctx.yAcc(target) as number, we.shiftKey);
+      mutateDatum(target, we.deltaY < 0 ? +step : -step);
+    }
   };
 
   const onKeydown = (e: Event) => {
