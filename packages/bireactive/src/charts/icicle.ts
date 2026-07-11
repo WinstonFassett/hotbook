@@ -554,10 +554,8 @@ export class MdIcicleLC extends Diagram {
             const frac = sum === 0 ? 0.5 : va / sum;
             const along = s0 + frac * (s1 - s0);
             const across = (rowA0.peek() + rowA1.peek()) / 2;
-            const h = isHoriz.peek();
-            const lx = h ? across : along;
-            const ly = h ? along : across;
-            return { x: remapX(lx), y: remapY(ly) };
+            // remapX/remapY already handle the orientation swap internally
+            return { x: remapX(across), y: remapY(along) };
           },
           (target, vals) => {
             const [va, vb] = vals;
@@ -585,10 +583,9 @@ export class MdIcicleLC extends Diagram {
           const frac = sum === 0 ? 0.5 : va / sum;
           const along = s0 + frac * (s1 - s0);
           const across = (rowA0.value + rowA1.value) / 2;
-          const h = isHoriz.value;
-          const lx = h ? across : along;
-          const ly = h ? along : across;
-          return { x: remapX(lx), y: remapY(ly) };
+          // remapX/remapY already handle the orientation swap internally,
+          // so we always pass depth coord to remapX and sibling coord to remapY
+          return { x: remapX(across), y: remapY(along) };
         });
         const active = cell(false);
         const orient = derive(() => isHoriz.value ? "horiz" : "vert");
