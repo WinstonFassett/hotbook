@@ -643,7 +643,7 @@ library with ideas above its station.
 
 ---
 
-## 13. What gets ported vs rewritten (from current vizform)
+## 13. What gets ported vs rewritten (from current hotbook)
 
 **Port (knowledge, not code):**
 - `docs/interaction-principles.md` — the 17 rules. The product's behavioral spec.

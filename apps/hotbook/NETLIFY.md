@@ -12,13 +12,13 @@ Sliceboard is deployed in two contexts:
 
 This is the standalone sliceboard demo site.
 
-### 2. Part of vizform docs site
+### 2. Part of hotbook docs site
 
 **Config:** `netlify.toml` (repo root)
 **Build:** `npm run build` → `scripts/build-site.sh` (builds with `--base /sliceboard/`)
 **Served at:** Subpath `/sliceboard/`
 
-The main vizform docs site includes sliceboard at the `/sliceboard/` subpath.
+The main hotbook docs site includes sliceboard at the `/sliceboard/` subpath.
 
 ## Netlify Site Configuration
 

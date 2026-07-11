@@ -70,4 +70,4 @@ mounted.destroy()
 | `GoalTree` | type | Nested data record for hierarchical viz |
 | `ViewMode` | type | `'treemap' \| 'radial' \| 'bands' \| 'h-treemap' \| 'h-icicle' \| 'h-radial'` |
 
-Most users will want [`vizform-react`](../vizform-react) or [`vizform-element`](../vizform-element) instead of calling this directly.
+Most users will want [`hotbook-react`](../hotbook-react) or [`hotbook-element`](../hotbook-element) instead of calling this directly.

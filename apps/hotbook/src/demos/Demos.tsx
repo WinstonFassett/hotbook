@@ -193,7 +193,7 @@ function DemoIndex() {
       minHeight: '100vh', background: '#0e0e0e', color: '#ddd',
       fontFamily: 'system-ui, -apple-system, sans-serif', padding: '32px 48px',
     }}>
-      <h1 style={{ fontSize: 22, margin: '0 0 8px' }}>vizform — chart demos</h1>
+      <h1 style={{ fontSize: 22, margin: '0 0 8px' }}>hotbook — chart demos</h1>
       <p style={{ fontSize: 13, opacity: 0.7, margin: '0 0 24px', maxWidth: 640 }}>
         Each chart rendered in isolation against a small checked-in fixture. No sliceboard, no
         config UI, no persistence. Use this surface to develop and debug a single chart without

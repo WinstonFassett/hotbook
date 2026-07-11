@@ -315,7 +315,7 @@ flowchart TD
 6. **Tile spec vocabulary** — `measureKey`/`sortBy`/`xKey`/`yKey` vs `xField`/`valueField`/`sortDir`?
 7. **Svelte/LayerChart fate** — keep alias, promote to package, or remove?
 8. **APITable fate** — keep or drop?
-9. **Package scope** — `@hotbook/*` vs `@vizform/*` vs `@winstonfassett/*`?
+9. **Package scope** — `@hotbook/*` vs `@hotbook/*` vs `@winstonfassett/*`?
 10. **Test infrastructure** — Vitest for kernel/charts, Playwright for gestures? When?
 
 ---

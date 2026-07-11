@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 export default defineConfig({
   vite: {
     resolve: {
-      // 'node' condition resolves workspace packages (vizform-charts) to SOURCE
+      // 'node' condition resolves workspace packages (hotbook-charts) to SOURCE
       // (same mechanism as sliceboard) — live HMR, never a stale dist.
       conditions: ['browser', 'node'],
       // One bireactive instance across all modules — two copies silently kill

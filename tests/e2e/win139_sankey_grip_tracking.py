@@ -22,7 +22,7 @@ import sys
 import math
 from playwright.sync_api import sync_playwright
 
-BASE = os.environ.get("BASE_URL", "http://sliceboard.localhost:1355")
+BASE = os.environ.get("BASE_URL", "http://hotbook.localhost:1355")
 URL = f"{BASE}/sliceboard/"
 TOL = 2.0  # px tolerance for position matching in SVG coords
 

@@ -1,4 +1,4 @@
-# vizform
+# hotbook
 
 D3-based proportional and hierarchical visualization library — framework-agnostic core with React and web-component adapters, plus an [APITable](https://aitable.ai) widget integration.
 
@@ -9,12 +9,12 @@ D3-based proportional and hierarchical visualization library — framework-agnos
 ```mermaid
 graph LR
   subgraph lib["lib"]
-    core["vizform-core"]
-    charts["vizform-charts"]
+    core["hotbook-core"]
+    charts["hotbook-charts"]
     vanilla["hotbook-d3"]
   end
   subgraph app["app"]
-    apitable["vizform-apitable"]
+    apitable["hotbook-apitable"]
     sliceboard["sliceboard"]
   end
 
@@ -27,10 +27,10 @@ graph LR
 
 | Package | Description |
 |---|---|
-| [`vizform-core`](packages/vizform-core) | Core data structures and utilities. Framework-agnostic. |
-| [`vizform-charts`](packages/vizform-charts) | Chart type definitions and metadata. |
+| [`hotbook-core`](packages/hotbook-core) | Core data structures and utilities. Framework-agnostic. |
+| [`hotbook-charts`](packages/hotbook-charts) | Chart type definitions and metadata. |
 | [`hotbook-d3`](packages/hotbook-d3) | Pure D3 + TypeScript visualization engine, zero framework deps. |
-| [`vizform-apitable`](packages/vizform-apitable) | APITable widget wrapping `vizform-react-d3`. |
+| [`hotbook-apitable`](packages/hotbook-apitable) | APITable widget wrapping `hotbook-react-d3`. |
 | [`apps/sliceboard`](apps/sliceboard) | Multi-board demo: editable table + live viz with multiple chart types. |
 
 ## Visualization modes
@@ -68,10 +68,10 @@ const goals = [
 
 ```
 packages/
-  vizform-core/       # Core data structures
-  vizform-charts/     # Chart definitions
+  hotbook-core/       # Core data structures
+  hotbook-charts/     # Chart definitions
   hotbook-d3/ # D3 rendering engine
-  vizform-apitable/   # APITable widget
+  hotbook-apitable/   # APITable widget
 apps/
   sliceboard/         # Demo app (Netlify)
   docs/               # Documentation site

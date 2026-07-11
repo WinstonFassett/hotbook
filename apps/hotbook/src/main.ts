@@ -93,7 +93,7 @@ function commit(next: Workspace) {
 }
 
 // ─── E2E hook ─────────────────────────────────────────────────────────────────
-// Registers window.__vizform.setCell — the same commit path a treetable
+// Registers window.__hotbook.setCell — the same commit path a treetable
 // numberDrag reaches via `onUpdate → commit(updateRow(ws, …))`. The R2 e2e
 // harness (tests/e2e/r2_harness.py) uses it to drive value edits without
 // pointer choreography or dock coordination. Exposed in every build (including
@@ -101,12 +101,12 @@ function commit(next: Workspace) {
 // which is built with `vite build` (`import.meta.env.DEV === false`). No new
 // mutation is possible via this hook that the numberDrag UI does not already
 // expose.
-;(window as any).__vizform = {
+;(window as any).__hotbook = {
   setCell(datasetId: string, rowId: string, measureKey: string, value: number) {
     const ds = ws.datasets.find(d => d.id === datasetId)
-    if (!ds) throw new Error(`__vizform.setCell: unknown dataset ${datasetId}`)
+    if (!ds) throw new Error(`__hotbook.setCell: unknown dataset ${datasetId}`)
     const row = ds.nodes.find(r => r.id === rowId)
-    if (!row) throw new Error(`__vizform.setCell: unknown row ${rowId} in ${datasetId}`)
+    if (!row) throw new Error(`__hotbook.setCell: unknown row ${rowId} in ${datasetId}`)
     const measures = { ...(row.measures ?? {}), [measureKey]: value }
     commit(updateRow(ws, datasetId, rowId, { measures }))
   },

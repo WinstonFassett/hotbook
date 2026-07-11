@@ -3,15 +3,15 @@
 ## What changed
 
 - Renamed `PNode` → `VizNode` and `Dataset.rows` → `Dataset.nodes` across the
-  workspace (`vizform-core`, `sliceboard`, `vizform-react-d3`, `hotbook-d3`,
-  `vizform-apitable`).
+  workspace (`hotbook-core`, `sliceboard`, `hotbook-react-d3`, `hotbook-d3`,
+  `hotbook-apitable`).
 - Updated `PEdge` to the new shape (`sourceId`, `targetId`, `measures`, `dims`).
 - Removed the duplicate/dead `apps/sliceboard/src/viz/br/tree.ts` file.
-- Removed `packages/vizform-charts/src/lib/portfolio.ts` and moved
-  `portfolio()` / `walkWithDepth` into `packages/vizform-charts/src/lib/tree.ts`.
+- Removed `packages/hotbook-charts/src/lib/portfolio.ts` and moved
+  `portfolio()` / `walkWithDepth` into `packages/hotbook-charts/src/lib/tree.ts`.
 - Updated chart fallback imports (`treemap`, `tree-chart`, `sunburst`, `pack`,
   `icicle`, `treetable`) to source from `lib/tree`.
-- Fixed `packages/vizform-apitable/src/index.tsx` for the new 4-arg `group` / `leaf`
+- Fixed `packages/hotbook-apitable/src/index.tsx` for the new 4-arg `group` / `leaf`
   signatures.
 - Fixed `apps/demos/src/fixtures/portfolio.ts` and
   `src/main.ts` for the new `group` / `leaf` signatures and wired `externalRoot`
@@ -20,8 +20,8 @@
   usage.
 - Added `serializeLayout` to `apps/sliceboard/src/url-layout.ts` so Vite can scan
   `test-parser.html` and the dev server starts cleanly.
-- Added new files: `packages/vizform-core/tsconfig.json` and
-  `packages/vizform-react-d3/src/types.ts`.
+- Added new files: `packages/hotbook-core/tsconfig.json` and
+  `packages/hotbook-react-d3/src/types.ts`.
 - Added `dogfood-output/` to `.gitignore`.
 
 ## Typecheck status
@@ -29,14 +29,14 @@
 | package | `tsc --noEmit` | notes |
 |---|---|---|
 | `apps/sliceboard` | ✅ | |
-| `packages/vizform-core` | ✅ | |
+| `packages/hotbook-core` | ✅ | |
 | `packages/hotbook-d3` | ✅ | |
-| `packages/vizform-react-d3` | ✅ | |
-| `packages/vizform-layout` | ✅ | |
-| `packages/vizform-apitable` | ✅ | |
+| `packages/hotbook-react-d3` | ✅ | |
+| `packages/hotbook-layout` | ✅ | |
+| `packages/hotbook-apitable` | ✅ | |
 | `apps/demos` | ✅ | |
 | `apps/svelte-layerchart-spike` | ✅ | |
-| `packages/vizform-charts` | ❌ | pre-existing `bireactive` API errors (`Tween` → `Animator`, `BrSyncBridge` `emitDrill`, `sankey` read-only/value issues, etc.) |
+| `packages/hotbook-charts` | ❌ | pre-existing `bireactive` API errors (`Tween` → `Animator`, `BrSyncBridge` `emitDrill`, `sankey` read-only/value issues, etc.) |
 | `apps/vanilla-bireactive-spike` | ❌ | pre-existing `bireactive` `Vec`/`Range`/`Tween` and `d3-hierarchy` errors |
 
 ## Build status
@@ -44,8 +44,8 @@
 `npm run build` succeeded for:
 
 - `packages/hotbook-d3`
-- `packages/vizform-react-d3`
-- `packages/vizform-charts`
+- `packages/hotbook-react-d3`
+- `packages/hotbook-charts`
 - `apps/sliceboard`
 
 ## Dogfood / webapp testing
@@ -66,16 +66,16 @@ Screenshots:
 - `@svelte-lc` alias: keep. `apps/sliceboard/src/vite-env.d.ts` declares
   `declare module '@svelte-lc/*'`, and the Vite alias maps `@svelte-lc` to
   `apps/svelte-layerchart-spike/src`.
-- Chart fallback data: remove `portfolio.ts` from `vizform-charts`; hosts are now
+- Chart fallback data: remove `portfolio.ts` from `hotbook-charts`; hosts are now
   responsible for setting `externalRoot` on hierarchical chart elements.
 
 ## Remaining known issues
 
-- `packages/vizform-charts` and `apps/vanilla-bireactive-spike` still fail
+- `packages/hotbook-charts` and `apps/vanilla-bireactive-spike` still fail
   `tsc --noEmit` with pre-existing `bireactive` API type errors. These are not
   caused by the `PNode`/`VizNode` or `rows`/`nodes` rename.
 
 ## Commit
 
-- `c3c1803` — `refactor(vizform): complete PNode→VizNode and Dataset.rows→Dataset.nodes rename`
+- `c3c1803` — `refactor(hotbook): complete PNode→VizNode and Dataset.rows→Dataset.nodes rename`
 - 58 files changed, 427 insertions(+), 462 deletions(-)

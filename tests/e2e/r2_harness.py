@@ -5,7 +5,7 @@ Two assertions every chart in the sweep must pass:
 
   check_value_immediate(chart_tag, ...)
       A value edit committed through the SAME store path a UI numberDrag would
-      hit (window.__vizform.setCell → commit(updateRow(...))) must reach final
+      hit (window.__hotbook.setCell → commit(updateRow(...))) must reach final
       geometry within ~1 frame on the chart-under-test. Dense-samples early
       frames + a settled sample; PASS if every early frame already equals the
       final (no ~250ms settle morph). This is R2.
@@ -16,7 +16,7 @@ Two assertions every chart in the sweep must pass:
       two-lane fix must keep the structural tween while killing the value settle.
       (R1; opt-in per chart since not every chart reorders.)
 
-Value-edit driver: `window.__vizform.setCell(dsId, rowId, measureKey, v)` is
+Value-edit driver: `window.__hotbook.setCell(dsId, rowId, measureKey, v)` is
 registered by apps/sliceboard/src/main.ts (DEV builds only) and takes the exact
 same code path as a treetable numberDrag commit — `commit(updateRow(ws, ...))`.
 This retires the earlier driver-tile approach (numberDrag scrubber on a
@@ -40,7 +40,7 @@ Usage from a per-chart fixture:
 Run directly to self-test against treemap (WIN-127 fix landed):
     uv run --with playwright python tests/e2e/r2_harness.py
 
-Env: BASE_URL (default http://sliceboard.localhost:1355). Point at a Netlify
+Env: BASE_URL (default http://hotbook.localhost:1355). Point at a Netlify
 deploy preview to verify a PR without a local dev server.
 """
 
@@ -48,7 +48,7 @@ import os
 import sys
 from playwright.sync_api import sync_playwright
 
-BASE = os.environ.get("BASE_URL", "http://sliceboard.localhost:1355")
+BASE = os.environ.get("BASE_URL", "http://hotbook.localhost:1355")
 URL = f"{BASE}/sliceboard/"
 
 def _short(tag: str) -> str:
@@ -107,14 +107,14 @@ class R2Harness:
         return ok
 
     def _require_hook(self):
-        """Fail loudly if the DEV-only __vizform hook is missing (production build
+        """Fail loudly if the DEV-only __hotbook hook is missing (production build
         or old commit). Every value_immediate check depends on it."""
         ok = self.page.evaluate(
-            "() => typeof window.__vizform === 'object' && typeof window.__vizform.setCell === 'function'"
+            "() => typeof window.__hotbook === 'object' && typeof window.__hotbook.setCell === 'function'"
         )
         if not ok:
             raise RuntimeError(
-                "window.__vizform.setCell is not available — is this a DEV build of sliceboard? "
+                "window.__hotbook.setCell is not available — is this a DEV build of sliceboard? "
                 "The hook is registered in apps/sliceboard/src/main.ts under `if (import.meta.env.DEV)`."
             )
 
@@ -180,21 +180,21 @@ class R2Harness:
           1. el.dataCell / el.__data — bireactive charts expose their data cell.
           2. DOM data-id — the chart element has [data-id] marks (treemap, pack,
              sunburst, icicle, hier charts).
-          3. window.__vizform.rowIds(dsId) — first row of the active dataset;
+          3. window.__hotbook.rowIds(dsId) — first row of the active dataset;
              works for any chart that renders every dataset row.
         Measure key picking order:
           1. el.measureKey property (all sliceboard charts expose this).
-          2. window.__vizform.measureKeys(dsId)[0] — first numeric measure.
+          2. window.__hotbook.measureKeys(dsId)[0] — first numeric measure.
         """
         info = self.page.evaluate(
             """(tag) => {
               const el = document.querySelector(tag);
               if (!el) return {ok:false, reason:'no element'};
-              const dsId = window.__vizform.activeDatasetId();
+              const dsId = window.__hotbook.activeDatasetId();
               if (!dsId) return {ok:false, reason:'no active dataset'};
-              const measureKey = el.measureKey || window.__vizform.measureKeys(dsId)[0];
+              const measureKey = el.measureKey || window.__hotbook.measureKeys(dsId)[0];
               if (!measureKey) return {ok:false, reason:'no measureKey'};
-              const allIds = window.__vizform.rowIds(dsId);
+              const allIds = window.__hotbook.rowIds(dsId);
               // Row candidates, most-preferred first:
               //   1. Rows the chart renders via DOM [data-id] marks.
               //   2. Rows the chart's data cell / __data exposes.
@@ -215,13 +215,13 @@ class R2Harness:
               let rowId = null;
               let cur = 0;
               for (const cand of candidates) {
-                const v = window.__vizform.getCell(dsId, cand, measureKey);
+                const v = window.__hotbook.getCell(dsId, cand, measureKey);
                 if (typeof v === 'number' && v !== 0) { rowId = cand; cur = v; break; }
               }
               if (!rowId && candidates.length) rowId = candidates[0];
               if (!rowId) return {ok:false, reason:'no candidate rows in dataset'};
               const next = cur + Math.max(30, Math.abs(cur) * 0.5 || 30);
-              window.__vizform.setCell(dsId, rowId, measureKey, next);
+              window.__hotbook.setCell(dsId, rowId, measureKey, next);
               return {ok:true, rowId, measureKey, from: cur, to: next, candidateCount: candidates.length};
             }""",
             tag,

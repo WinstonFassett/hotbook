@@ -1,4 +1,4 @@
-# Vizform Rebuild — Tech Design
+# hotbook Rebuild — Tech Design
 
 > Greenfield design for achieving the original vision: **reusable bireactive components —
 > share a reactive dataset, get bidirectional charts, zero wiring.**
@@ -51,11 +51,11 @@ data model. Each becomes a hard requirement below.
 graph TD
   br["<b>bireactive</b> (external dep)<br/><i>cell · derive · effect · batch · Num.lens ·<br/>TreeNode · Coll/SortView · Diagram · shapes · anim</i>"]
 
-  core["<b>@vizform/core</b><br/><i>pure TS · zero deps · MIT firewall</i><br/>Dataset · schema · ViewSpec · applyView (sort/group/filter) · colors"]
+  core["<b>@hotbook/core</b><br/><i>pure TS · zero deps · MIT firewall</i><br/>Dataset · schema · ViewSpec · applyView (sort/group/filter) · colors"]
 
-  data["<b>@vizform/data</b><br/><i>the reactive data model</i><br/>VizNode tree · measures-as-cells · aggregate lenses ·<br/>Dataset ⇄ VizNode adapters · reconcile"]
+  data["<b>@hotbook/data</b><br/><i>the reactive data model</i><br/>VizNode tree · measures-as-cells · aggregate lenses ·<br/>Dataset ⇄ VizNode adapters · reconcile"]
 
-  charts["<b>@vizform/charts</b><br/><i>custom elements</i><br/>VizElement base · chart classes · gestures · Esc contract ·<br/>transitions · SyncHub · registry metadata"]
+  charts["<b>@hotbook/charts</b><br/><i>custom elements</i><br/>VizElement base · chart classes · gestures · Esc contract ·<br/>transitions · SyncHub · registry metadata"]
 
   subgraph surfaces["surfaces — PEERS, consume elements directly"]
     docs["docs site (Astro)<br/>demo harnesses"]
@@ -63,7 +63,7 @@ graph TD
     apit["apitable integration<br/><b>AGPL leaf</b>"]
   end
 
-  shims["@vizform/react · @vizform/svelte<br/><i>optional dumb shims, external users only</i>"]
+  shims["@hotbook/react · @hotbook/svelte<br/><i>optional dumb shims, external users only</i>"]
 
   data --> core
   data --> br
@@ -89,14 +89,14 @@ Dependency rules:
 
 ---
 
-## 4. The data model (`@vizform/data`)
+## 4. The data model (`@hotbook/data`)
 
 **One model. Everything is a tree of nodes whose measures are cells.** A flat chart is a
 one-level tree. This deletes the flat/hier split, the pie hybrid, private `mutateDatum`,
 and the entire class of "which property does this chart take" knowledge.
 
 ```ts
-// @vizform/data
+// @hotbook/data
 import { Num, Writable, TreeNode } from "bireactive";
 
 export interface NodeData {
@@ -155,7 +155,7 @@ graph LR
 
 ---
 
-## 5. The element contract (`@vizform/charts`)
+## 5. The element contract (`@hotbook/charts`)
 
 The heart of the rebuild. One base class, one interface, every chart implements it fully
 or isn't exported.
@@ -211,7 +211,7 @@ Contract guarantees (these are the tests — see §9):
    not an `(as any)` boolean. Esc contract stays centralized
    ([[project_esc_contract_centralized]]) and moves wholly inside the package.
 6. **Empty is empty.** No `portfolio()` fallback. Un-wired element renders an empty state.
-   Fixture data ships in `@vizform/charts/fixtures` for demos only.
+   Fixture data ships in `@hotbook/charts/fixtures` for demos only.
 7. **Interaction principles are element law.** Scale stability, speculative-until-commit,
    freeze-during-gesture, reduced-motion split (docs/interaction-principles.md) are
    implemented once in the base + gesture kit — never re-litigated per chart or per host.
@@ -323,11 +323,11 @@ el.addEventListener("editcommit", e => store.commit(e.detail));  // persist
 
 ```
 packages/
-  vizform-core/        # pure TS: Dataset, ViewSpec, applyView, colors     (MIT firewall)
-  vizform-data/        # VizNode, leaf/group/list, AggPolicy, fromDataset  (bireactive enters)
-  vizform-charts/      # VizElement, chart classes, gestures, SyncHub, registry, fixtures/
-  vizform-react/       # optional shim (generated if possible)             (leaf)
-  vizform-svelte/      # optional shim                                     (leaf)
+  hotbook-core/        # pure TS: Dataset, ViewSpec, applyView, colors     (MIT firewall)
+  hotbook-data/        # VizNode, leaf/group/list, AggPolicy, fromDataset  (bireactive enters)
+  hotbook-charts/      # VizElement, chart classes, gestures, SyncHub, registry, fixtures/
+  hotbook-react/       # optional shim (generated if possible)             (leaf)
+  hotbook-svelte/      # optional shim                                     (leaf)
 apps/
   docs/                # Astro site: landing + per-example harness pages
   sliceboard/          # dock host (policy only)
@@ -338,11 +338,11 @@ apps/
 
 | Package | License | Deps | Peer deps | Public exports (the WHOLE surface) |
 |---|---|---|---|---|
-| **`@vizform/core`** | MIT | *(none)* | — | `Dataset`, `Row`, `Schema`, `ViewSpec`, `applyView()`, `PALETTE`, `colorFor()`, `resolveColors()` |
-| **`@vizform/data`** | MIT | `core`, `bireactive` (pinned) | — | `VizNode`, `NodeData`, `leaf()`, `group()`, `list()`, `AggPolicy`, `fromDataset()`, `toDataset()`, tree walkers (`walk`, `leaves`, `byId`, `parentIndex`); **re-exports** `num`, `Num`, `cell`, `effect`, `batch`, `Writable` from bireactive |
-| **`@vizform/charts`** | MIT | `core`, `data`, `bireactive`, granular `d3-*` | — | `VizElement`, `CartesianChart`, `HierChart`, all chart classes + static `meta`, `define()`/`defineAll()`, tag-name constants, `createChart()`, `SyncHub`, `createSyncHub()`, `InteractionContext`, event types (`EditCommit`, `EditCancel`), `ElementView`; subpath `./fixtures` (portfolio, gantt tasks, sankey flows) |
-| **`@vizform/react`** | MIT | — | `react >=17`, `charts` | one dumb `<Chart kind=… data=… />` shim |
-| **`@vizform/svelte`** | MIT | — | `svelte >=5`, `charts` | same, Svelte flavor |
+| **`@hotbook/core`** | MIT | *(none)* | — | `Dataset`, `Row`, `Schema`, `ViewSpec`, `applyView()`, `PALETTE`, `colorFor()`, `resolveColors()` |
+| **`@hotbook/data`** | MIT | `core`, `bireactive` (pinned) | — | `VizNode`, `NodeData`, `leaf()`, `group()`, `list()`, `AggPolicy`, `fromDataset()`, `toDataset()`, tree walkers (`walk`, `leaves`, `byId`, `parentIndex`); **re-exports** `num`, `Num`, `cell`, `effect`, `batch`, `Writable` from bireactive |
+| **`@hotbook/charts`** | MIT | `core`, `data`, `bireactive`, granular `d3-*` | — | `VizElement`, `CartesianChart`, `HierChart`, all chart classes + static `meta`, `define()`/`defineAll()`, tag-name constants, `createChart()`, `SyncHub`, `createSyncHub()`, `InteractionContext`, event types (`EditCommit`, `EditCancel`), `ElementView`; subpath `./fixtures` (portfolio, gantt tasks, sankey flows) |
+| **`@hotbook/react`** | MIT | — | `react >=17`, `charts` | one dumb `<Chart kind=… data=… />` shim |
+| **`@hotbook/svelte`** | MIT | — | `svelte >=5`, `charts` | same, Svelte flavor |
 | **apitable surface** | AGPL | `core`, `data`, `charts` | — | app, not a library; nothing imports it |
 
 Export rules:
@@ -355,7 +355,7 @@ Export rules:
   no-build live-dev flow: edit `src/` → HMR in any app, no rebuild).
 - **Fixtures are a subpath export**, never a fallback inside chart code.
 
-Retired, not ported: `hotbook-d3`, `vizform-element-d3`, `vizform-react-d3`
+Retired, not ported: `hotbook-d3`, `hotbook-element-d3`, `hotbook-react-d3`
 (incl. `HTreetable.tsx` and the `onRender`/`getRoot` React-wrapper API on treetable),
 `svelte-layerchart-spike`, all `*-spike` apps, `BrLcCharts.tsx`, `bindTile.ts`,
 `hud-bridge.ts` (superseded by SyncHub), zombie React `Icicle/Sunburst/Treemap.tsx`.
@@ -430,7 +430,7 @@ graph LR
 4. **How fat is `ElementView`?** measureKey(s), orientation, depth, drill live on the
    element; sort/filter/group stay in the surface. Scatter needs xKey+yKey
    ([[project_scatter_dual_measure]]) — multi-measure view must be first-class from P1.
-5. **npm scope** — `@vizform/*` vs `@winstonfassett/*`. Cosmetic; decide at P5.
+5. **npm scope** — `@hotbook/*` vs `@winstonfassett/*`. Cosmetic; decide at P5.
 6. **Scope discipline.** Five eras in eight weeks happened by adding consumers instead of
    deepening interfaces. The counter-rule for this rebuild: **no new surface until the
    docs-demo budget holds for the current one.**
@@ -511,7 +511,7 @@ a regime where dispose-on-disconnect is *correct*:
    rAF loop on an IntersectionObserver (`rootMargin: "200px"`), so offscreen figures sleep.
    That's the park/resume an *article* needs; a *dock* needs it across DOM moves instead.
 
-Vizform inverts both load-bearing assumptions simultaneously: data is injected and shared
+hotbook inverts both load-bearing assumptions simultaneously: data is injected and shared
 (the vision), hosts are dynamic (dock/tabs reparent constantly). Even then, the failure is
 not data loss — shared cells live outside the element and survive — it's **view state**
 (drill, selection, scroll, in-flight gesture/tween) plus the rebuild hitch. Hence the pain
@@ -571,8 +571,8 @@ Consequences:
 
 | Design element | Status | Evidence / what's missing |
 |---|---|---|
-| `@vizform/core` | **~60%** | `vizform-core` has PNode/Dataset/schema/colors, zero deps. Missing: `applyView` (inline in `tile-sources.ts:104-115`), real `ViewSpec` type (today: persistence's `tile`). |
-| `@vizform/data` | **~25%** | Kernel exists: `charts/src/lib/tree.ts` leaf/group + sum-redistribute lens. Missing: `list()`, named `AggPolicy`, `Coll` children, `fromDataset` incremental (exists wrongly as `bindTile.applyData`, per-host). Fold in sliceboard's duplicate `buildBiTree` (119 lines). |
+| `@hotbook/core` | **~60%** | `hotbook-core` has PNode/Dataset/schema/colors, zero deps. Missing: `applyView` (inline in `tile-sources.ts:104-115`), real `ViewSpec` type (today: persistence's `tile`). |
+| `@hotbook/data` | **~25%** | Kernel exists: `charts/src/lib/tree.ts` leaf/group + sum-redistribute lens. Missing: `list()`, named `AggPolicy`, `Coll` children, `fromDataset` incremental (exists wrongly as `bindTile.applyData`, per-host). Fold in sliceboard's duplicate `buildBiTree` (119 lines). |
 | Chart mechanics (render/gesture/transition) | **~70% — PORTS** | ~7k LOC of d3 adapters, drill tweens, wheel/drag + `applyDelta`, Esc contract, `useHostSize`, touch. Survives as implementation behind the new interface. |
 | **Element contract (VizElement)** | **~10% — THE WORK** | No chart follows constructor-scope-cells + pure-scene (all `peek()` in `scene()`). No edit origin, no `editcommit` payload, no injectable SyncHub, `portfolio()` fallback everywhere, two data models (bar/line plain arrays, pie hybrid). Bar carries ~300-line orientation clone. |
 | Registry / define() | **~30%** | `metadata.ts` maturity exists; config schemas app-side; two duplicated TAG registries; no `define()`/tag constants. |
