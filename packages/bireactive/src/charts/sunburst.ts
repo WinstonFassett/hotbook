@@ -395,21 +395,40 @@ export class MdSunburstLC extends Diagram {
 
     // Windowed handle rendering.
     if (!this.hasAttribute("no-handles")) {
-      type HandleItem = { parent: BiNode; i: number; aNode: BiNode; bNode: BiNode };
+      type HandleItem = { aNode: BiNode; bNode: BiNode };
       const handleWindow = derive((): readonly HandleItem[] => {
         const fd = focusDepth.value;
         const maxD = maxDepthCell.value;
         const maxWindow = maxD !== undefined && maxD > 0 ? fd + maxD : totalDepth;
-        const items: HandleItem[] = [];
+
+        // Group nodes by depth level
+        const byDepth = new Map<number, BiNode[]>();
         for (const n of renderedSet.value) {
           const d = nodeDepth.get(n) ?? 0;
-          if (d <= fd || d >= maxWindow) continue;
-          const kids = n.children as BiNode[];
-          if (kids.length < 2) continue;
-          for (let i = 1; i < kids.length; i++) {
-            items.push({ parent: n, i, aNode: kids[i - 1]!, bNode: kids[i]! });
+          if (d <= fd || d > maxWindow) continue;
+          if (!byDepth.has(d)) byDepth.set(d, []);
+          byDepth.get(d)!.push(n);
+        }
+
+        // For each depth level, sort nodes by angle and create handles
+        const items: HandleItem[] = [];
+        const lmap = layout.value;
+
+        for (const nodes of byDepth.values()) {
+          // Sort by angular position
+          nodes.sort((a, b) => {
+            const aLayout = lmap.get(a);
+            const bLayout = lmap.get(b);
+            if (!aLayout || !bLayout) return 0;
+            return aLayout.x0 - bLayout.x0;
+          });
+
+          // Create handles between all adjacent pairs at this depth
+          for (let i = 1; i < nodes.length; i++) {
+            items.push({ aNode: nodes[i - 1]!, bNode: nodes[i]! });
           }
         }
+
         return items;
       });
 
