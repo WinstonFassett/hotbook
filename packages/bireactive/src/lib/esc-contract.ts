@@ -1,7 +1,7 @@
 // Cancelable shape-handle drag, built on the ONE app-wide drag controller
 // (dragController in interaction.ts).
 //
-// Interaction principle Rule 6 (docs/interaction-principles.md): gestures are
+// Interaction principle Rule 6 (wiki/interaction-principles.md): gestures are
 // speculative — Esc reverts to gesture-start state. The Esc listener lives INSIDE
 // the drag controller, armed on begin() and torn down on commit/cancel. There is
 // no global listener and no registry; exactly one gesture (hence one Esc

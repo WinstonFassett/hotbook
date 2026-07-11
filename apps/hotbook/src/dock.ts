@@ -6,7 +6,7 @@
 //   Panel = { id, tileId }
 // Sizes are flex weights; only ratios matter.
 //
-// Spec: docs/dockview-spec.md. Operations here are atomic — every helper
+// Spec: wiki/dockview-spec.md. Operations here are atomic — every helper
 // returns a new tree value and the old tree is the undo target.
 
 export type DockDir = 'row' | 'col'

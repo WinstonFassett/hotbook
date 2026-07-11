@@ -2,7 +2,7 @@
 // (Interaction Principle 10). Role-specific durations are explicit multipliers
 // of TRANSITION_BASE_MS — coherent rhythm from one tunable root.
 //
-// Decision: CSS transitions over tween cells. See docs/transitions-decision.md.
+// Decision: CSS transitions over tween cells. See wiki/transitions-decision.md.
 
 export const TRANSITION_BASE_MS = 100;
 export const TRANSITION_EASING = "cubic-bezier(0.4, 0.0, 0.2, 1)"; // ease-in-out
