@@ -509,7 +509,7 @@ export class MdSunburstLC extends Diagram {
         handle.el.addEventListener("pointerleave", () => { active.value = false; });
 
         return handle;
-      }, { key: ({ bNode }) => bNode.value.id });
+      }, { key: ({ aNode, bNode }) => `${aNode.value.id}:${bNode.value.id}` });
     }
 
     // Center hub rendered LAST so it sits above arcLayer and receives pointer events.

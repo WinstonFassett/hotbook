@@ -607,7 +607,7 @@ export class MdIcicleLC extends Diagram {
         handle.el.addEventListener("pointerleave", () => { active.value = false; });
 
         return handle;
-      }, { key: ({ bNode }) => bNode.value.id ?? "" });
+      }, { key: ({ aNode, bNode }) => `${aNode.value.id ?? ""}:${bNode.value.id ?? ""}` });
     }
 
     if (!this.hasAttribute('no-source')) s(label(view.bottom.up(10), derive(() => {
