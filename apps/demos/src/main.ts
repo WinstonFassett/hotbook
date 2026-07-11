@@ -17,8 +17,10 @@ import {
   MdSankeyHierarchy,
   MdTreeChart,
   MdBudgetTree,
+  MdGanttChartLC,
 } from "@hotbook/bireactive";
 import { portfolio } from "./fixtures/portfolio";
+import { ganttTasks } from "./fixtures/gantt-tasks";
 
 class MdBandsChartLC extends MdBarChartLC {
   constructor() { super(); this.orientation = 'horizontal'; this.colorMode = 'palette'; this.labelMode = 'inside'; this.valueMode = 'inside'; }
@@ -52,6 +54,8 @@ const experiments: Array<{ id: string; title: string; tag: string; ctor: CustomE
   { id: "sankey-hierarchy", title: "Sankey (hierarchy → flow)", tag: "v-sankey-hierarchy", ctor: MdSankeyHierarchy },
   { id: "tree-chart", title: "Tree (node-link dendrogram)", tag: "v-tree-chart", ctor: MdTreeChart },
   { id: "budget-tree", title: "Budget Tree (drag boundary handles)", tag: "v-budget-tree", ctor: MdBudgetTree },
+  { id: "gantt", title: "Gantt Chart", tag: "v-gantt", ctor: MdGanttChartLC },
+  { id: "gantt-enforced", title: "Gantt Chart (enforceDeps)", tag: "v-gantt-enforced", ctor: MdGanttChartLC },
 ];
 
 for (const e of experiments) {
@@ -167,6 +171,12 @@ if (app) {
     el.setAttribute("no-source", "");
     if (HIER_TAGS.has(e.tag)) {
       (el as any).externalRoot = portfolio();
+    }
+    if (e.tag === 'v-gantt' || e.tag === 'v-gantt-enforced') {
+      (el as any).externalData = ganttTasks();
+      if (e.tag === 'v-gantt-enforced') {
+        (el as any).enforceDeps = true;
+      }
     }
     demo.appendChild(el);
     applyConfig(el, demo);
