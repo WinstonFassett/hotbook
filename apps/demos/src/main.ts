@@ -17,7 +17,10 @@ import {
   MdSankeyHierarchy,
   MdTreeChart,
   MdBudgetTree,
+  MdTreetableLC,
+  MdGanttChartLC,
 } from "@hotbook/bireactive";
+import { MdNestedLayered } from "@hotbook/layout";
 import { portfolio } from "./fixtures/portfolio";
 
 class MdBandsChartLC extends MdBarChartLC {
@@ -30,6 +33,7 @@ const HIER_TAGS = new Set([
   'v-icicle',
   'v-sunburst',
   'v-tree-chart',
+  'v-treetable',
 ]);
 
 const experiments: Array<{ id: string; title: string; tag: string; ctor: CustomElementConstructor }> = [
@@ -52,6 +56,9 @@ const experiments: Array<{ id: string; title: string; tag: string; ctor: CustomE
   { id: "sankey-hierarchy", title: "Sankey (hierarchy → flow)", tag: "v-sankey-hierarchy", ctor: MdSankeyHierarchy },
   { id: "tree-chart", title: "Tree (node-link dendrogram)", tag: "v-tree-chart", ctor: MdTreeChart },
   { id: "budget-tree", title: "Budget Tree (drag boundary handles)", tag: "v-budget-tree", ctor: MdBudgetTree },
+  { id: "treetable", title: "Treetable (hierarchical, editable rows)", tag: "v-treetable", ctor: MdTreetableLC as unknown as CustomElementConstructor },
+  { id: "gantt", title: "Gantt (drag ends, dependency arrows)", tag: "v-gantt", ctor: MdGanttChartLC as unknown as CustomElementConstructor },
+  { id: "layout-nested", title: "Layout — nested-layered (recursive graph layout)", tag: "md-nested-layered", ctor: MdNestedLayered as unknown as CustomElementConstructor },
 ];
 
 for (const e of experiments) {

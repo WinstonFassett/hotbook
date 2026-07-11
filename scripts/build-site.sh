@@ -1,8 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Build the full docs site with demos mounted at subpaths.
+# Build the full docs site with the consolidated /demos/ page + hotbook app.
 # Output: apps/docs/dist (the Netlify publish directory)
+#
+# Layout:
+#   /              docs index (Astro)
+#   /demos/        consolidated single-page demo index (apps/demos vite build)
+#                  every chart, gantt, treetable, layout demo lives here as a
+#                  hash-anchored section (#gantt, #treetable, #layout-nested, ...)
+#   /demos/bidirectional/  bidirectional-binding demos (Astro page)
+#   /hotbook/      hotbook sliceboard app (vite build)
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -14,16 +22,17 @@ npm run build -w packages/d3
 echo "==> Building docs..."
 npm run build -w apps/docs
 
-echo "==> Building hotbook..."
-(cd apps/hotbook && npx vite build --base /demos/hotbook/)
+echo "==> Building demos (single consolidated page)..."
+(cd apps/demos && npx vite build --base /demos/)
 
-echo "==> Building layout demo..."
-(cd packages/layout && npx vite build --base /demos/layout/)
+echo "==> Building hotbook app..."
+(cd apps/hotbook && npx vite build --base /hotbook/)
 
 echo "==> Assembling site..."
-# Copy demo builds into docs dist at their subpaths
+# The demos page is /demos/ — copy over the top of any Astro-emitted /demos/
+# stubs (bidirectional/ stays because it lives at /demos/bidirectional/).
 mkdir -p apps/docs/dist/demos
-cp -r apps/hotbook/dist apps/docs/dist/demos/hotbook
-cp -r packages/layout/dist apps/docs/dist/demos/layout
+cp -r apps/demos/dist/. apps/docs/dist/demos/
+cp -r apps/hotbook/dist apps/docs/dist/hotbook
 
 echo "==> Site built at apps/docs/dist"
