@@ -21,10 +21,9 @@ import {
   MdGanttChartLC,
 } from "@hotbook/bireactive";
 import { MdNestedLayered } from "@hotbook/layout";
-import { dataModelFor } from "./data-models";
+import { dataModelFor, type DemoDataModel } from "./data-models";
 import { sharedRows, sharedEdges } from "./layout/demo-data";
 import { mountControls } from "./layout/controls";
-import { mountSidebar } from "./layout/sidebar";
 
 class MdBandsChartLC extends MdBarChartLC {
   constructor() { super(); this.orientation = 'horizontal'; this.colorMode = 'palette'; this.labelMode = 'inside'; this.valueMode = 'inside'; }
@@ -60,10 +59,16 @@ const experiments: Array<{
   { id: "sankey-hierarchy", title: "Sankey (hierarchy → flow)", tag: "v-sankey-hierarchy", ctor: MdSankeyHierarchy },
   { id: "tree-chart", title: "Tree (node-link dendrogram)", tag: "v-tree-chart", ctor: MdTreeChart },
   { id: "budget-tree", title: "Budget Tree (drag boundary handles)", tag: "v-budget-tree", ctor: MdBudgetTree },
-  { id: "treetable", title: "Treetable (hierarchical, editable rows)", tag: "v-treetable", ctor: MdTreetableLC as unknown as CustomElementConstructor },
+  // Hidden for now: demoing the treetable next to a treetable is redundant (WIN-255).
+  // { id: "treetable", title: "Treetable (hierarchical, editable rows)", tag: "v-treetable", ctor: MdTreetableLC as unknown as CustomElementConstructor },
   { id: "gantt", title: "Gantt (drag propagates through dependencies, zero-slack enforced)", tag: "v-gantt", ctor: MdGanttEnforcedLC as unknown as CustomElementConstructor },
   { id: "nested-layered", title: "Nested-layered layout (recursive graph layout)", tag: "md-nested-layered", ctor: MdNestedLayered as unknown as CustomElementConstructor, custom: mountLayoutSection },
 ];
+
+// The treetable demo section is hidden, but the side-by-side data tables still need the tag.
+if (!customElements.get("v-treetable")) {
+  customElements.define("v-treetable", MdTreetableLC as unknown as CustomElementConstructor);
+}
 
 for (const e of experiments) {
   if (!customElements.get(e.tag)) {
@@ -89,28 +94,31 @@ function parseHash(): { cfg: URLSearchParams; anchor: string } {
   const anchor = a.startsWith(CFG_PREFIX) ? (b ?? '') : a;
   return { cfg: new URLSearchParams(cfgSeg.replace(/;/g, '&')), anchor };
 }
-interface ReproConfig { sort: 'index' | 'value'; width: number | null; only: string[] | null; }
+interface ReproConfig { sort: 'index' | 'value'; only: string[] | null; }
 function readConfig(): ReproConfig {
   const { cfg } = parseHash();
-  const widthRaw = cfg.get('width');
   const onlyRaw = cfg.get('only');
   return {
     sort: cfg.get('sort') === 'value' ? 'value' : 'index',
-    width: widthRaw != null && widthRaw !== '' ? Number(widthRaw) : null,
     only: onlyRaw ? onlyRaw.split(',').map(s => s.trim()).filter(Boolean) : null,
   };
 }
 let config = readConfig();
 
-function applyConfig(el: HTMLElement, demo: HTMLElement) {
-  if ('sortBy' in el) (el as any).sortBy = config.sort;
-  if (config.width != null) {
-    demo.style.width = config.width + 'px';
-    demo.style.maxWidth = config.width + 'px';
-  } else {
-    demo.style.width = '';
-    demo.style.maxWidth = '';
+// Live sort: hierarchical charts expose a reactive sortBy and animate the
+// toggle themselves; flat charts tween on data-order changes, so their demo
+// data model re-feeds sorted data (setSort). Treetables re-sort via sortBy.
+function applySort(el: HTMLElement, treetable: HTMLElement | null, model: DemoDataModel | undefined) {
+  if ('sortBy' in el) {
+    (el as any).sortBy = config.sort;
+  } else if (model?.setSort) {
+    model.setSort(el, config.sort);
+    if (treetable) {
+      (treetable as any).externalRoot = model.root;
+      (treetable as any).refresh?.();
+    }
   }
+  if (treetable && 'sortBy' in treetable) (treetable as any).sortBy = config.sort;
 }
 
 function mountLayoutSection(section: HTMLElement, demo: HTMLElement, el: HTMLElement): void {
@@ -127,15 +135,12 @@ function mountLayoutSection(section: HTMLElement, demo: HTMLElement, el: HTMLEle
   const toolbar = document.createElement('div');
   const stage = document.createElement('div');
   stage.style.cssText = 'flex:1;min-width:0;padding:16px;border:1px solid var(--border);border-radius:6px;';
-  const sidebar = document.createElement('div');
-  sidebar.style.cssText = 'align-self:flex-start;';
 
   const dataWrap = document.createElement('div');
   dataWrap.style.cssText = 'width:260px;min-width:260px;height:420px;overflow:hidden;border:1px solid var(--border);border-radius:6px;';
 
   stage.appendChild(el);
   demo.appendChild(stage);
-  demo.appendChild(sidebar);
   demo.appendChild(dataWrap);
 
   const nested = dataModelFor('nested-layered');
@@ -148,10 +153,11 @@ function mountLayoutSection(section: HTMLElement, demo: HTMLElement, el: HTMLEle
   }
 
   mountControls(toolbar);
-  mountSidebar(sidebar);
 
   section.insertBefore(toolbar, demo);
 }
+
+let updateSortLabel: () => void = () => {};
 
 function buildConfigBar(): HTMLElement {
   const bar = document.createElement('div');
@@ -167,20 +173,13 @@ function buildConfigBar(): HTMLElement {
   const sortBtn = document.createElement('button');
   sortBtn.textContent = `sort: ${config.sort}`;
   sortBtn.onclick = () => set('sort', config.sort === 'value' ? 'index' : 'value');
-  const widthLabel = document.createElement('span');
-  widthLabel.textContent = `width: ${config.width ?? 'full'}`;
-  const mkW = (w: string, label: string) => {
-    const b = document.createElement('button');
-    b.textContent = label;
-    b.onclick = () => set('width', w);
-    return b;
-  };
-  bar.append(sortBtn, widthLabel, mkW('', 'full'), mkW('640', '640'), mkW('420', '420'), mkW('320', '320'), mkW('240', '240'));
+  bar.append(sortBtn);
+  updateSortLabel = () => { sortBtn.textContent = `sort: ${config.sort}`; };
   return bar;
 }
 
 const app = document.getElementById("app");
-const mounted: Array<{ el: HTMLElement; demo: HTMLElement }> = [];
+const mounted: Array<{ el: HTMLElement; treetable: HTMLElement | null; model?: DemoDataModel }> = [];
 if (app) {
   app.prepend(buildConfigBar());
   const shown = config.only
@@ -247,8 +246,8 @@ if (app) {
       demo.appendChild(stage);
       demo.appendChild(tableWrap);
 
-      applyConfig(el, demo);
-      mounted.push({ el, demo });
+      if (config.sort !== 'index') applySort(el, treetable, dataModel);
+      mounted.push({ el, treetable, model: dataModel });
     }
   }
 }
@@ -259,11 +258,11 @@ window.addEventListener('hashchange', () => {
   if (cfgSeg === lastCfgSeg) return;
   lastCfgSeg = cfgSeg;
   const next = readConfig();
-  const needsReload = next.sort !== config.sort
-    || JSON.stringify(next.only) !== JSON.stringify(config.only);
+  const needsReload = JSON.stringify(next.only) !== JSON.stringify(config.only);
   config = next;
   if (needsReload) { location.reload(); return; }
-  for (const { el, demo } of mounted) applyConfig(el, demo);
+  updateSortLabel();
+  for (const { el, treetable, model } of mounted) applySort(el, treetable, model);
 });
 
 function dedentFn(s: string): string {

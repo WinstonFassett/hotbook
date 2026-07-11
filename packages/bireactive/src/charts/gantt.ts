@@ -903,13 +903,7 @@ export class MdGanttChartLC extends Diagram {
     // ─── Caption / readout ────────────────────────────────────────────────
     s(label(
       Vec.derive(() => ({ x: Wc.value / 2, y: 12 })),
-      derive(() => {
-        const p = selected.value ?? hover.value;
-        if (!p) return "Gantt — click select · Tab navigate · ←/→ shift · ↑/↓ resize · drag body/handles · ctrl+wheel resize · Esc revert";
-        const fmt = (d: Date) => d.toLocaleDateString();
-        const days = Math.round((p.end.getTime() - p.start.getTime()) / DAY_MS);
-        return `${p.label}  ${fmt(p.start)} → ${fmt(p.end)}  (${days}d)`;
-      }),
+      "Gantt — click select · Tab navigate · ←/→ shift · ↑/↓ resize · drag body/handles · ctrl+wheel resize · Esc revert",
       { size: 11, align: Anchor.Center, opacity: 0.7 },
     ));
 

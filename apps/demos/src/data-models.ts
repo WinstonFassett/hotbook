@@ -6,6 +6,9 @@ import { sharedRows, items } from "./layout/demo-data";
 export interface DemoDataModel {
   root?: BiNode;
   setChartData(this: DemoDataModel, el: any): void;
+  /** Re-feed the chart's data in the given order (charts without a live
+   *  sortBy property tween on data-order changes instead). Rebuilds root. */
+  setSort?(this: DemoDataModel, el: any, sort: 'index' | 'value'): void;
   sync: (el: any) => () => void;
   columns?: ColumnDef[];
 }
@@ -70,33 +73,53 @@ function writeItemValue(item: any, target: number): void {
   }
 }
 
+type ValueItem = { id: string; label: string; value: number; color: string };
+
 function valueData(
-  title: string,
-  items: { id: string; label: string; value: number; color: string }[],
-  toChart: (values: { id: string; label: string; value: number; color: string }[]) => any,
+  _title: string,
+  items: ValueItem[],
+  toChart: (values: ValueItem[]) => any,
 ): DemoDataModel {
+  const byIndex = items.slice();
+  let applied = byIndex;
+
+  function apply(model: DemoDataModel, el: any, ordered: ValueItem[]) {
+    applied = ordered;
+    el.externalData = toChart(ordered);
+    const data = el.dataCell;
+    const leaves = ordered.map((item, i) => {
+      const total = Num.lens(
+        data,
+        (d: any[]) => (d && d[i] ? readItemValue(d[i]) : 0),
+        (target: number, d: any[]) => {
+          const next = d.slice();
+          if (next[i]) writeItemValue(next[i], target);
+          return next;
+        },
+      );
+      return node({ id: item.id, label: item.label, color: item.color, total, measures: { value: total } } as any);
+    });
+    const rootTotal = Num.lens(
+      data,
+      (d: any[]) => d.reduce((sum, _, i) => sum + readItemValue(d[i]), 0),
+      (target, d) => d,
+    );
+    model.root = node({ id: "root", label: "Data", color: "#222", total: rootTotal, measures: { value: rootTotal } } as any, leaves);
+  }
+
   return {
     setChartData(el: any) {
-      el.externalData = toChart(items);
-      const data = el.dataCell;
-      const leaves = items.map((item, i) => {
-        const total = Num.lens(
-          data,
-          (d: any[]) => (d && d[i] ? readItemValue(d[i]) : 0),
-          (target: number, d: any[]) => {
-            const next = d.slice();
-            if (next[i]) writeItemValue(next[i], target);
-            return next;
-          },
-        );
-        return node({ id: item.id, label: item.label, color: item.color, total, measures: { value: total } } as any);
-      });
-      const rootTotal = Num.lens(
-        data,
-        (d: any[]) => d.reduce((sum, _, i) => sum + readItemValue(d[i]), 0),
-        (target, d) => d,
-      );
-      this.root = node({ id: "root", label: "Data", color: "#222", total: rootTotal, measures: { value: rootTotal } } as any, leaves);
+      apply(this, el, byIndex);
+    },
+    setSort(el: any, sort: 'index' | 'value') {
+      // Fold the chart's current (possibly edited) values back into the item
+      // records before reordering, so edits survive a sort toggle.
+      const cur = el.dataCell?.value as any[] | undefined;
+      if (cur) applied.forEach((item, i) => { if (cur[i] != null) item.value = readItemValue(cur[i]); });
+      const next = sort === 'value'
+        ? byIndex.slice().sort((a, b) => b.value - a.value)
+        : byIndex.slice();
+      apply(this, el, next);
     },
     sync: () => () => {},
     columns: [{ key: "value", label: "Value", width: 80 }],
@@ -622,14 +645,15 @@ export function dataModelFor(id: string): DemoDataModel | undefined {
 
     case "nested-layered": {
       const rows = items(sharedRows);
-      const rowById = new Map(rows.map((r) => [r.id, r]));
       const build = (parentId: string | null): BiNode[] => {
         const children = rows
           .filter((r) => r.parentId.value === parentId)
           .sort((a, b) => a.index.value - b.index.value);
         return children.map((r) => {
           const kids = build(r.id);
-          const v = bi(r.index.value);
+          // Share the row's live index cell so treetable edits flow straight
+          // into sharedRows (and the diagram, which reads the same cells).
+          const v = r.index as unknown as Writable<NumType>;
           return node(
             { id: r.id, label: r.name.value, color: PALETTE[rows.indexOf(r) % PALETTE.length]!, total: v, measures: { index: v } } as any,
             kids,

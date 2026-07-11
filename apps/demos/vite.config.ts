@@ -11,12 +11,10 @@ export default defineConfig({
     dedupe: ['bireactive'],
   },
   build: {
-    // bireactive's Diagram subclasses derive their custom element tag name from
-    // the class name at runtime via static get tagName(). Rollup minifies class
-    // names to single letters (e.g. "f0"), making define() throw. Keep them.
-    minify: 'terser',
-    terserOptions: {
-      keep_classnames: true,
-    },
+    // The per-demo "source" panel prints scene.toString() at runtime, so the
+    // built bundle must keep readable multi-line method bodies. Class names
+    // must also survive: Diagram subclasses derive their custom element tag
+    // name from the class name via static get tagName().
+    minify: false,
   },
 });

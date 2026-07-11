@@ -413,12 +413,7 @@ export class MdRadarChartLC extends Diagram {
 
     s(label(
       Vec.derive(() => ({ x: Wc.value / 2, y: 20 })),
-      derive(() => {
-        void data.value;
-        const p = selected.value ?? hover.value;
-        if (!p) return "Radar — click dot · ←/→ nav · ↑/↓ edit · cmd+wheel";
-        return `${p.name}  ${p.value}`;
-      }),
+      "Radar — click dot · ←/→ nav · ↑/↓ edit · cmd+wheel",
       { size: 11, align: Anchor.Center, opacity: 0.7 },
     ));
 

@@ -4,7 +4,7 @@
 // cell. x is always date (static). Changing yBinding fires the tween gate
 // in chartContext — area animates to new values. No manual tween cells.
 
-import { cell, circle, derive, label, line, type Mount, Vec } from "bireactive";
+import { Anchor, cell, circle, derive, label, line, type Mount, Vec } from "bireactive";
 import { Diagram } from "../lib/diagram";
 import { area } from "../lib/area";
 import { axis } from "../lib/axis";
@@ -173,11 +173,8 @@ export class MdAreaChartLC extends Diagram {
 
     s(label(
       Vec.derive(() => ({ x: Wc.value / 2, y: 12 })),
-      derive(() => {
-        const p = selected.value ?? hover.value;
-        if (!p) return "AreaChart — hover · click to select · ←/→ navigate · ↑/↓ edit · cmd+wheel · drag marker";
-        return `${p.date.toLocaleDateString()}: ${Math.round(p.value)}`;
-      }),
+      "AreaChart — hover · click to select · ←/→ navigate · ↑/↓ edit · cmd+wheel · drag marker",
+      { size: 11, align: Anchor.Center, opacity: 0.7 },
     ));
   }
 }

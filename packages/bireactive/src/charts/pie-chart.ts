@@ -326,12 +326,7 @@ export class MdPieChartLC extends Diagram {
 
     s(label(
       Vec.derive(() => ({ x: Wc.value / 2, y: 14 })),
-      derive(() => {
-        const p = selected.value ?? hover.value;
-        if (!p) return "PieChart — click · ←/→ navigate · ↑/↓ edit · cmd+wheel";
-        const total = (data.value as Slice[]).reduce((a, b) => a + b.value.value, 0);
-        return `${p.label}  ${p.value.value.toFixed(0)}  (${((p.value.value / total) * 100).toFixed(1)}%)`;
-      }),
+      "PieChart — click · ←/→ navigate · ↑/↓ edit · cmd+wheel",
       { size: 11, align: Anchor.Center, opacity: 0.7 },
     ));
 
