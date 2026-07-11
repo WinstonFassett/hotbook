@@ -10,7 +10,6 @@ import type { TileSource } from './viz/br/bindTile'
 import { hudStore } from './store'
 import { applyGroupBy } from './persistence'
 import { colorFor, leavesOf } from '@hotbook/core'
-import { mountTreetable } from '@hotbook/d3'
 
 import {
   MdBarChartLC,
@@ -355,6 +354,7 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
     'br-lc-icicle': 'v-br-icicle',
     'br-lc-sunburst': 'v-br-sunburst',
     'br-lc-tree': 'v-br-tree',
+    'treetable': 'v-br-treetable',
   }
   if (kind in hierTags) {
     const tag = hierTags[kind]!
@@ -365,7 +365,7 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
     const shapeKey = hierShapeKey(tag, sortedWithIndex, valueBinding, depth)
     const valueKey = hierValueKey(sortedWithIndex, valueBinding)
     // Enable numberDrag for treetable
-    const enableNumberDrag = kind === 'br-lc-treetable'
+    const enableNumberDrag = tag === 'v-br-treetable'
       ? { selector: '[data-editable-value', pxPerUnit: 4 }
       : undefined
     const src = makeHierSource({
@@ -391,14 +391,6 @@ export function buildSimpleMount(ctx: TileRenderContext): ((el: HTMLElement) => 
   const rawNodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.nodes, tile.groupBy) : ds.nodes)
   const leaves = rawNodes.filter(n => !rawNodes.some(m => m.parentId === n.id))
   const { kind } = tile
-
-  if (kind === 'treetable') {
-    const nodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.nodes, tile.groupBy) : ds.nodes)
-    return (el: HTMLElement) => {
-      el.style.cssText = 'width:100%;height:100%;overflow:auto'
-      mountTreetable(el, nodes, valueBinding)
-    }
-  }
 
   if (kind === 'br-lc-gantt') {
     // br-lc-gantt expects GanttTask[] with start/end dates
@@ -447,7 +439,6 @@ export function buildSimpleMount(ctx: TileRenderContext): ((el: HTMLElement) => 
 /** The custom element tag for a simple-mount tile kind */
 export function simpleTag(kind: string): string | null {
   const map: Record<string, string> = {
-    'treetable': 'div',
     'br-lc-gauge': 'v-br-gauge',
     'br-lc-gauge-segmented': 'v-br-gauge-segmented',
     'br-lc-sankey': 'v-br-sankey',
@@ -464,9 +455,6 @@ export function simpleDataKey(ctx: TileRenderContext): string {
   const rawNodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.nodes, tile.groupBy) : ds.nodes)
   const leaves = rawNodes.filter(n => !rawNodes.some(m => m.parentId === n.id))
   const { kind } = tile
-  if (kind === 'treetable') {
-    return `treetable|${valueBinding}|${ds.nodes.length}`
-  }
   if (kind === 'br-lc-gauge' || kind === 'br-lc-gauge-segmented') {
     return `${kind}|${valueBinding}|${leaves.reduce((a, b) => a + (b.measures[valueBinding] ?? 0), 0)}`
   }
