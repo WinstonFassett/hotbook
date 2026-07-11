@@ -15,7 +15,6 @@ import {
   MdSankeySimple,
   MdSankeyComplex,
   MdSankeyHierarchy,
-  MdSankeyFlow,
   MdTreeChart,
   MdBudgetTree,
 } from "@hotbook/bireactive";
