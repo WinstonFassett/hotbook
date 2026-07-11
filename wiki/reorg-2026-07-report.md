@@ -13,7 +13,7 @@
   `icicle`, `treetable`) to source from `lib/tree`.
 - Fixed `packages/vizform-apitable/src/index.tsx` for the new 4-arg `group` / `leaf`
   signatures.
-- Fixed `apps/vanilla-bireactive-layercharts-spike/src/fixtures/portfolio.ts` and
+- Fixed `apps/demos/src/fixtures/portfolio.ts` and
   `src/main.ts` for the new `group` / `leaf` signatures and wired `externalRoot`
   for hierarchical charts.
 - Fixed `apps/sliceboard/src/main.ts` missing `DockView` import and `Array.at` ES2022
@@ -34,7 +34,7 @@
 | `packages/vizform-react-d3` | ✅ | |
 | `packages/vizform-layout` | ✅ | |
 | `packages/vizform-apitable` | ✅ | |
-| `apps/vanilla-bireactive-layercharts-spike` | ✅ | |
+| `apps/demos` | ✅ | |
 | `apps/svelte-layerchart-spike` | ✅ | |
 | `packages/vizform-charts` | ❌ | pre-existing `bireactive` API errors (`Tween` → `Animator`, `BrSyncBridge` `emitDrill`, `sankey` read-only/value issues, etc.) |
 | `apps/vanilla-bireactive-spike` | ❌ | pre-existing `bireactive` `Vec`/`Range`/`Tween` and `d3-hierarchy` errors |

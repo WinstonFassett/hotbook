@@ -1,10 +1,10 @@
 {
-  "name": "layercharts-bireactive-spike",
+  "name": "hotbook-demos",
   "version": "0.0.1",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "portless vanilla-bireactive-layercharts vite",
+    "dev": "portless hotbook-demos vite",
     "build": "vite build",
     "preview": "vite preview"
   },

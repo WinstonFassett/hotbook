@@ -7,7 +7,7 @@
 ## Goal
 
 Lift the bireactive charts out of the spike app
-`apps/vanilla-bireactive-layercharts-spike/src` into a real publishable package
+`apps/demos/src` into a real publishable package
 `packages/vizform-charts`, and make both consumers (sliceboard, the spike app)
 import from the package instead of the `@br-lc` source alias. Charts must render
 and behave **identically** afterward.
@@ -47,12 +47,12 @@ and behave **identically** afterward.
 ### 1. Create the package skeleton
 - New dir `packages/vizform-charts/`.
 - `git mv` the reusable source from the spike app into it:
-  - `apps/vanilla-bireactive-layercharts-spike/src/demos/`  → `packages/vizform-charts/src/demos/`
-  - `apps/vanilla-bireactive-layercharts-spike/src/lib/`    → `packages/vizform-charts/src/lib/`
+  - `apps/demos/src/demos/`  → `packages/vizform-charts/src/demos/`
+  - `apps/demos/src/lib/`    → `packages/vizform-charts/src/lib/`
   - **Leave behind** in the spike app: `main.ts`, `index.html`, `style.css`,
     `vite.config.ts`, `tsconfig.json`, `package.json`.
   - **EXCEPTION:** `lib/portfolio.ts` is fixture data — `git mv` it back into the
-    spike app at `apps/vanilla-bireactive-layercharts-spike/src/fixtures/portfolio.ts`
+    spike app at `apps/demos/src/fixtures/portfolio.ts`
     and fix the demo importers' relative paths. (It must not be a package export.)
 
 ### 2. Package `index.ts`
@@ -102,10 +102,10 @@ Mirror `packages/vizform-vanilla-d3/package.json` exactly for `type`, `exports`
     source-resolved package and sliceboard share ONE bireactive runtime.
 
 ### 5. Repoint the spike app (keep it as a demo harness on the package)
-- `apps/vanilla-bireactive-layercharts-spike/src/main.ts`: change the
+- `apps/demos/src/main.ts`: change the
   `./demos/*` class imports to `@hotbook/charts`. The registration
   loop, repro-hash harness, and `experiments[]` list stay.
-- `apps/vanilla-bireactive-layercharts-spike/package.json`: add
+- `apps/demos/package.json`: add
   `"@hotbook/charts": "*"`.
 - Its `vite.config.ts` needs the same `conditions: ['browser','node']` so it
   resolves the package to source for live dev (copy from sliceboard).
@@ -114,7 +114,7 @@ Mirror `packages/vizform-vanilla-d3/package.json` exactly for `type`, `exports`
 ```bash
 npm install                                   # relink workspaces
 npx vite build packages/vizform-charts        # package builds (dist + d.ts)
-npx vite build apps/vanilla-bireactive-layercharts-spike   # demo app builds
+npx vite build apps/demos   # demo app builds
 npx vite build apps/sliceboard                # main app builds
 ```
 Then a behavior smoke (per repo memory — real Playwright, not synthetic events):

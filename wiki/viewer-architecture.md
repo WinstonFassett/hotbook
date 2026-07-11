@@ -1,7 +1,7 @@
 # VizForm Viewer Architecture — diagram / viewer / container
 
 Status: **design** (no full implementation yet). The pure-function sankey
-(`apps/vanilla-bireactive-layercharts-spike/src/lib/sankey-layout.ts` +
+(`apps/demos/src/lib/sankey-layout.ts` +
 `lib/sankey.ts`) is the first chart built on the geometry half of this model and
 is the reference for the rest.
 

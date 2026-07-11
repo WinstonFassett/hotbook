@@ -10,9 +10,9 @@
     "build:hotbook": "npm run build -w packages/d3 && npm run build -w apps/hotbook",
     "dev:docs": "npm run dev -w apps/docs",
     "dev:hotbook": "npm run dev -w apps/hotbook",
-    "dev:vanilla-bireactive-layercharts": "npm run dev -w apps/vanilla-bireactive-layercharts-spike",
+    "dev:demos": "npm run dev -w apps/demos",
     "dev:layout": "npm run demo -w packages/layout",
-    "dev": "concurrently -n hotbook,vanilla-bireactive-layercharts \"npm run dev -w apps/hotbook\" \"npm run dev -w apps/vanilla-bireactive-layercharts-spike\"",
+    "dev": "concurrently -n hotbook,demos \"npm run dev -w apps/hotbook\" \"npm run dev -w apps/demos\"",
     "postinstall": "patch-package"
   },
   "devDependencies": {
