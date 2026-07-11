@@ -431,15 +431,12 @@ export class MdSunburstLC extends Diagram {
           const rawAng = angStart.value + frac * (angEnd.value - angStart.value);
           return remapAngle(rawAng);
         });
-        // Radial divider: thin annular sector spanning from inner to outer radius.
-        // Angular width determines visibility/drag area.
-        const DIVIDER_ANG_WIDTH = 0.008; // radians (~0.5 degrees)
-
-        const rIn = derive(() => remapRadius(rInRaw.value));
-        const rOut = derive(() => remapRadius(rOutRaw.value));
-
-        const dividerAng0 = derive(() => boundaryAngDisplay.value - DIVIDER_ANG_WIDTH / 2);
-        const dividerAng1 = derive(() => boundaryAngDisplay.value + DIVIDER_ANG_WIDTH / 2);
+        const knobPos = Vec.derive(() => {
+          const ang = boundaryAngDisplay.value;
+          const r = midRDisplay.value;
+          const c = center.value;
+          return { x: c.x + r * Math.cos(ang), y: c.y + r * Math.sin(ang) };
+        });
 
         const knob = Vec.lens(
           [a, b] as const,
@@ -475,30 +472,22 @@ export class MdSunburstLC extends Diagram {
         );
 
         const active = cell(false);
-        const divider = annularSector(
-          center,
-          rIn,
-          rOut,
-          dividerAng0,
-          dividerAng1,
-          {
-            fill: "black",
-            stroke: "black",
-            strokeWidth: 1,
-            opacity: 0.85,
-          }
-        );
-        const dispose = dragCancelable(divider, knob, [a, b], {
-          host: this,
-          onStart: () => { active.value = true; divider.el.style.cursor = "grabbing"; },
-          onEnd: () => { active.value = false; divider.el.style.cursor = "grab"; },
+        const dot = circle(knobPos, 5, {
+          fill: aNode.value.color,
+          stroke: derive(() => active.value ? "#fff" : "#000"),
+          strokeWidth: 1.5,
         });
-        divider.track(dispose);
-        divider.el.style.cursor = "grab";
-        divider.el.addEventListener("pointerenter", () => { active.value = true; });
-        divider.el.addEventListener("pointerleave", () => { active.value = false; });
+        const dispose = dragCancelable(dot, knob, [a, b], {
+          host: this,
+          onStart: () => { active.value = true; dot.el.style.cursor = "grabbing"; },
+          onEnd: () => { active.value = false; dot.el.style.cursor = "grab"; },
+        });
+        dot.track(dispose);
+        dot.el.style.cursor = "grab";
+        dot.el.addEventListener("pointerenter", () => { active.value = true; });
+        dot.el.addEventListener("pointerleave", () => { active.value = false; });
 
-        return divider;
+        return dot;
       }, { key: ({ bNode }) => bNode.value.id });
     }
 

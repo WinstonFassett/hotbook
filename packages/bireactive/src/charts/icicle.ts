@@ -556,85 +556,35 @@ export class MdIcicleLC extends Diagram {
           },
         );
 
-        // Divider pill: full-height/width bar at the boundary between siblings.
-        // For horizontal orientation: pill runs vertically (spans tile height).
-        // For vertical orientation: pill runs horizontally (spans tile width).
-        const boundaryPos = derive(() => {
+        const knobPos = Vec.derive(() => {
           const va = a.value, vb = b.value;
           const s0 = spanA0.value, s1 = spanA1.value;
           const sum = va + vb;
           const frac = sum === 0 ? 0.5 : va / sum;
           const along = s0 + frac * (s1 - s0);
-          return along;
-        });
-
-        const PILL_THICKNESS = 6;
-        const pillX = derive(() => {
+          const across = (rowA0.value + rowA1.value) / 2;
           const h = isHoriz.value;
-          if (h) {
-            // Horizontal mode: pill is vertical, x is at the depth midpoint
-            const across = (rowA0.value + rowA1.value) / 2;
-            return remapX(across) - PILL_THICKNESS / 2;
-          } else {
-            // Vertical mode: pill is horizontal, x is at the boundary position
-            return remapX(boundaryPos.value) - PILL_THICKNESS / 2;
-          }
+          const lx = h ? across : along;
+          const ly = h ? along : across;
+          return { x: remapX(lx), y: remapY(ly) };
         });
-        const pillY = derive(() => {
-          const h = isHoriz.value;
-          if (h) {
-            // Horizontal mode: pill is vertical, y is at the boundary position
-            return remapY(boundaryPos.value) - PILL_THICKNESS / 2;
-          } else {
-            // Vertical mode: pill is horizontal, y is at the depth midpoint
-            const across = (rowA0.value + rowA1.value) / 2;
-            return remapY(across) - PILL_THICKNESS / 2;
-          }
-        });
-        const pillW = derive(() => {
-          const h = isHoriz.value;
-          if (h) {
-            // Horizontal mode: pill is vertical, width spans the depth row
-            const r0 = remapX(rowA0.value);
-            const r1 = remapX(rowA1.value);
-            return Math.max(0, r1 - r0);
-          } else {
-            // Vertical mode: pill is horizontal, width is the thickness
-            return PILL_THICKNESS;
-          }
-        });
-        const pillH = derive(() => {
-          const h = isHoriz.value;
-          if (h) {
-            // Horizontal mode: pill is vertical, height is the thickness
-            return PILL_THICKNESS;
-          } else {
-            // Vertical mode: pill is horizontal, height spans the depth row
-            const r0 = remapY(rowA0.value);
-            const r1 = remapY(rowA1.value);
-            return Math.max(0, r1 - r0);
-          }
-        });
-
         const active = cell(false);
-        const pill = rect(pillX, pillY, pillW, pillH, {
-          fill: "black",
-          stroke: "black",
-          strokeWidth: 1,
-          corner: PILL_THICKNESS / 2,
-          opacity: 0.85,
+        const dot = circle(knobPos, 5, {
+          fill: aNode.value.color,
+          stroke: derive(() => active.value ? "#fff" : "#000"),
+          strokeWidth: 1.5,
         });
-        const dispose = dragCancelable(pill, knob, [a, b], {
+        const dispose = dragCancelable(dot, knob, [a, b], {
           host: this,
-          onStart: () => { active.value = true; pill.el.style.cursor = "grabbing"; },
-          onEnd: () => { active.value = false; pill.el.style.cursor = "grab"; },
+          onStart: () => { active.value = true; dot.el.style.cursor = "grabbing"; },
+          onEnd: () => { active.value = false; dot.el.style.cursor = "grab"; },
         });
-        pill.track(dispose);
-        biEffect(() => { pill.el.style.cursor = isHoriz.value ? "ns-resize" : "ew-resize"; });
-        pill.el.addEventListener("pointerenter", () => { active.value = true; });
-        pill.el.addEventListener("pointerleave", () => { active.value = false; });
+        dot.track(dispose);
+        biEffect(() => { dot.el.style.cursor = isHoriz.value ? "ns-resize" : "ew-resize"; });
+        dot.el.addEventListener("pointerenter", () => { active.value = true; });
+        dot.el.addEventListener("pointerleave", () => { active.value = false; });
 
-        return pill;
+        return dot;
       }, { key: ({ bNode }) => bNode.value.id ?? "" });
     }
 
