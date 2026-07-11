@@ -17,6 +17,7 @@ import {
   MdSankeyHierarchy,
   MdTreeChart,
   MdBudgetTree,
+  MdTreetableLC,
 } from "@hotbook/bireactive";
 import { portfolio } from "./fixtures/portfolio";
 
@@ -30,6 +31,7 @@ const HIER_TAGS = new Set([
   'v-icicle',
   'v-sunburst',
   'v-tree-chart',
+  'v-treetable',
 ]);
 
 const experiments: Array<{ id: string; title: string; tag: string; ctor: CustomElementConstructor }> = [
@@ -52,6 +54,7 @@ const experiments: Array<{ id: string; title: string; tag: string; ctor: CustomE
   { id: "sankey-hierarchy", title: "Sankey (hierarchy → flow)", tag: "v-sankey-hierarchy", ctor: MdSankeyHierarchy },
   { id: "tree-chart", title: "Tree (node-link dendrogram)", tag: "v-tree-chart", ctor: MdTreeChart },
   { id: "budget-tree", title: "Budget Tree (drag boundary handles)", tag: "v-budget-tree", ctor: MdBudgetTree },
+  { id: "treetable", title: "Treetable (hierarchical table)", tag: "v-treetable", ctor: MdTreetableLC },
 ];
 
 for (const e of experiments) {
