@@ -23,6 +23,8 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "flipping": "^1.1.0"
+    "@valibot/to-json-schema": "^1.7.1",
+    "flipping": "^1.1.0",
+    "valibot": "^1.4.2"
   }
 }

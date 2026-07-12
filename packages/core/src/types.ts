@@ -104,21 +104,3 @@ export type hotbookEvent = hotbookChangeEvent | hotbookClickEvent
 export type Cleanup = () => void
 
 export type ScalingMode = 'additive' | 'proportional-neighbor' | 'proportional-siblings'
-
-export interface VizConfigSchema {
-  pickers: {
-    measure?: boolean
-    depth?: boolean       // 1–5 level selector
-    sort?: boolean        // Order | Value
-    groupBy?: boolean
-    xKey?: boolean        // scatter only
-    yKey?: boolean        // scatter only
-    orientation?: boolean
-  }
-  gestureModes?: ScalingMode[]
-  cascadeSupported?: boolean
-  fixedTotalSupported?: boolean
-  scrollBody?: boolean    // replaces SCROLL_KINDS
-  drillKey?: string       // default "default" — tiles with same drillKey share drill context
-  showBreadcrumb?: boolean // default true for hier charts when drilled
-}

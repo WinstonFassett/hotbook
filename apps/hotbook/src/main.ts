@@ -22,35 +22,18 @@ import './DockView'
 import { createDockToolbar } from './DockViewToolbar'
 import { defaultDockTree, reconcile, addTileToDock, type DockNode } from './dock'
 import { readLayoutFromURL, parseLayout } from './url-layout'
+import { getAllChartSchemas } from '@hotbook/core'
+import '@hotbook/bireactive' // Import to trigger schema registration
 
-// ─── Tile metadata ─────────────────────────────────────────────────────────────
+// ─── Tile metadata (derived from schema registry) ────────────────────────────
 
-const TILE_KINDS: TileKind[] = [
-  'treetable',
-  'bar', 'line', 'area', 'scatter', 'pie',
-  'radar', 'concentric-arc', 'gauge', 'gauge-segmented',
-  'pack', 'treemap', 'treetable', 'icicle', 'sunburst', 'sankey', 'tree', 'gantt',
-]
+// Build TILE_KINDS and TILE_LABELS from the schema registry
+const allSchemas = getAllChartSchemas()
+const TILE_KINDS: TileKind[] = Array.from(allSchemas.keys()) as TileKind[]
 
-const TILE_LABELS: Record<TileKind, string> = {
-  'treetable':      'Table',
-  'bar':            'Bar',
-  'bands':          'Bands',
-  'line':           'Line',
-  'area':           'Area',
-  'scatter':        'Scatter',
-  'pie':            'Pie',
-  'radar':          'Radar',
-  'concentric-arc': 'Concentric Arc',
-  'gauge':          'Gauge',
-  'gauge-segmented':'Gauge (segmented)',
-  'pack':           'Pack',
-  'treemap':        'Treemap',
-  'icicle':         'Icicle',
-  'sunburst':       'Sunburst',
-  'sankey':         'Sankey',
-  'tree':           'Tree',
-  'gantt':          'Gantt',
+const TILE_LABELS: Record<string, string> = {}
+for (const [kind, schema] of allSchemas) {
+  TILE_LABELS[kind] = schema.label
 }
 
 function tileLabel(tile: Tile): string {

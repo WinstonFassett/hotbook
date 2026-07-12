@@ -52,8 +52,8 @@ export class MdPieChartLC extends Diagram {
   get valueBinding(): string { return this.measureKey }
   set valueBinding(v: string) { this.measureKey = v }
 
-  set externalData(v: { id?: string; label: string; value: number }[] | undefined) {
-    if (v) this.dataCell.value = v.map((d) => ({ id: d.id, label: d.label, value: num(d.value) }));
+  set externalData(v: { id?: string; label: string; value: number; valueOriginal?: number; value2Original?: number }[] | undefined) {
+    if (v) this.dataCell.value = v.map((d) => ({ id: d.id, label: d.label, value: num(d.value), valueOriginal: d.valueOriginal ?? d.value, value2Original: d.value2Original ?? d.value }));
   }
   get externalData(): { id?: string; label: string; value: number }[] | undefined {
     return this.dataCell.value.map((d) => ({ id: d.id, label: d.label, value: d.value.value }));

@@ -1,3 +1,6 @@
+// Auto-register chart schemas
+import './chart-schemas'
+
 export { MdBarChartLC } from './charts/bar-chart'
 export { MdLineChartLC } from './charts/line-chart'
 export { MdAreaChartLC } from './charts/area-chart'

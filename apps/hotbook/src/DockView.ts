@@ -26,7 +26,7 @@ import {
 } from './dock'
 import type { DockEdge } from './dock'
 import type { Tile, Dataset } from './persistence'
-import { schemaFor } from './tile-config-schemas'
+import { getChartSchema } from '@hotbook/core'
 import { bindTile } from './viz/br/bindTile'
 import type { TileController, TileSource } from './viz/br/bindTile'
 import { hudStore } from './store'
@@ -700,7 +700,7 @@ export class DockView extends HTMLElement {
     const tileRec = tiles.find(t => t.tile.id === tileId)
     if (!tileRec) return null
 
-    const schema = schemaFor(tileRec.tile.kind)
+    const schema = getChartSchema(tileRec.tile.kind)
     const { tile, ds } = tileRec
 
     const wrap = document.createElement('div')
@@ -717,7 +717,9 @@ export class DockView extends HTMLElement {
 
     // Chart body
     const body = document.createElement('div')
-    body.className = `tile-body${schema.scrollBody ? ' tile-body--scroll' : ''}${schema.drillKey ? ' tile-body--drill' : ''}`
+    const scrollClass = schema?.capabilities?.scrollBody ? ' tile-body--scroll' : ''
+    const drillClass = schema?.capabilities?.drillKey ? ' tile-body--drill' : ''
+    body.className = `tile-body${scrollClass}${drillClass}`
     body.style.cssText = 'flex:1;min-height:0;overflow:hidden;position:relative'
 
     this._mountChart(body, panelId, tileRec, wrap)
@@ -728,8 +730,7 @@ export class DockView extends HTMLElement {
 
   private _buildTileHeader(tileRec: TileRecord, tiles: TileRecord[]): HTMLElement {
     const { tile, ds, measureKey } = tileRec
-    const schema = schemaFor(tile.kind)
-    const pickers = schema.pickers
+    const schema = getChartSchema(tile.kind)
 
     const header = document.createElement('div')
     header.className = 'tile-header'
@@ -744,103 +745,125 @@ export class DockView extends HTMLElement {
 
     const availableMeasures = ds.measureDefs
 
-    if (pickers.depth) {
-      const sel = document.createElement('select')
-      sel.className = 'tile-measure-select'
-      sel.title = 'Levels to show'
-      ;[['0', 'All'], ['1', '1L'], ['2', '2L'], ['3', '3L'], ['4', '4L'], ['5', '5L']].forEach(([v, l]) => {
-        const opt = document.createElement('option')
-        opt.value = v; opt.textContent = l
-        sel.appendChild(opt)
-      })
-      sel.value = String(tile.depth ?? 0)
-      sel.addEventListener('change', () => tileRec.onDepthChange(Number(sel.value)))
-      actions.appendChild(sel)
-    }
+    // Render pickers from schema
+    if (schema) {
+      for (const field of schema.ui.fields) {
+        switch (field.type) {
+          case 'depth': {
+            const sel = document.createElement('select')
+            sel.className = 'tile-measure-select'
+            sel.title = field.label
+            ;[['0', 'All'], ['1', '1L'], ['2', '2L'], ['3', '3L'], ['4', '4L'], ['5', '5L']].forEach(([v, l]) => {
+              const opt = document.createElement('option')
+              opt.value = v; opt.textContent = l
+              sel.appendChild(opt)
+            })
+            sel.value = String(tile.depth ?? 0)
+            sel.addEventListener('change', () => tileRec.onDepthChange(Number(sel.value)))
+            actions.appendChild(sel)
+            break
+          }
 
-    if (pickers.sort) {
-      const sel = document.createElement('select')
-      sel.className = 'tile-measure-select'
-      sel.title = 'Sort order'
-      ;[['index', 'Order'], ['value', 'Value']].forEach(([v, l]) => {
-        const opt = document.createElement('option'); opt.value = v; opt.textContent = l; sel.appendChild(opt)
-      })
-      sel.value = tile.orderBinding ?? tile.sortBy ?? 'index'
-      sel.addEventListener('change', () => {
-        const orderBinding = sel.value
-        const orderDir = orderBinding === 'value' ? 'desc' : 'asc'
-        tileRec.onSortChange(orderBinding, orderDir)
-      })
-      actions.appendChild(sel)
-    }
+          case 'sort': {
+            const sel = document.createElement('select')
+            sel.className = 'tile-measure-select'
+            sel.title = field.label
+            ;[['index', 'Order'], ['value', 'Value']].forEach(([v, l]) => {
+              const opt = document.createElement('option'); opt.value = v; opt.textContent = l; sel.appendChild(opt)
+            })
+            sel.value = tile.orderBinding ?? tile.sortBy ?? 'index'
+            sel.addEventListener('change', () => {
+              const orderBinding = sel.value
+              const orderDir = orderBinding === 'value' ? 'desc' : 'asc'
+              tileRec.onSortChange(orderBinding, orderDir)
+            })
+            actions.appendChild(sel)
+            break
+          }
 
-    if (pickers.orientation) {
-      const orientation = tile.orientation ?? (tile.kind === 'bar' ? 'vertical' : 'horizontal')
-      const sel = document.createElement('select')
-      sel.className = 'tile-measure-select'
-      sel.title = 'Orientation'
-      ;[['horizontal', 'Horizontal'], ['vertical', 'Vertical']].forEach(([v, l]) => {
-        const opt = document.createElement('option'); opt.value = v; opt.textContent = l; sel.appendChild(opt)
-      })
-      sel.value = orientation
-      sel.addEventListener('change', () => tileRec.onOrientationChange(sel.value as 'vertical' | 'horizontal'))
-      actions.appendChild(sel)
-    }
+          case 'orientation': {
+            const orientation = tile.orientation ?? (tile.kind === 'bar' ? 'vertical' : 'horizontal')
+            const sel = document.createElement('select')
+            sel.className = 'tile-measure-select'
+            sel.title = field.label
+            ;[['horizontal', 'Horizontal'], ['vertical', 'Vertical']].forEach(([v, l]) => {
+              const opt = document.createElement('option'); opt.value = v; opt.textContent = l; sel.appendChild(opt)
+            })
+            sel.value = orientation
+            sel.addEventListener('change', () => tileRec.onOrientationChange(sel.value as 'vertical' | 'horizontal'))
+            actions.appendChild(sel)
+            break
+          }
 
-    if (pickers.xKey && pickers.yKey) {
-      const xLabel = document.createElement('label')
-      xLabel.className = 'tile-axis-label'
-      xLabel.textContent = 'X:'
-      actions.appendChild(xLabel)
+          case 'xKey': {
+            const xLabel = document.createElement('label')
+            xLabel.className = 'tile-axis-label'
+            xLabel.textContent = 'X:'
+            actions.appendChild(xLabel)
 
-      const xSel = document.createElement('select')
-      xSel.className = 'tile-measure-select'
-      const xOpt = document.createElement('option'); xOpt.value = '_index'; xOpt.textContent = 'Index'
-      xSel.appendChild(xOpt)
-      availableMeasures.forEach(m => {
-        const o = document.createElement('option'); o.value = m.key; o.textContent = m.label; xSel.appendChild(o)
-      })
-      xSel.value = tile.xBinding ?? tile.xKey ?? '_index'
-      xSel.addEventListener('change', () => tileRec.onXKeyChange(xSel.value))
-      actions.appendChild(xSel)
+            const xSel = document.createElement('select')
+            xSel.className = 'tile-measure-select'
+            const xOpt = document.createElement('option'); xOpt.value = '_index'; xOpt.textContent = 'Index'
+            xSel.appendChild(xOpt)
+            availableMeasures.forEach(m => {
+              const o = document.createElement('option'); o.value = m.key; o.textContent = m.label; xSel.appendChild(o)
+            })
+            xSel.value = tile.xBinding ?? tile.xKey ?? '_index'
+            xSel.addEventListener('change', () => tileRec.onXKeyChange(xSel.value))
+            actions.appendChild(xSel)
+            break
+          }
 
-      const yLabel = document.createElement('label')
-      yLabel.className = 'tile-axis-label'
-      yLabel.textContent = 'Y:'
-      actions.appendChild(yLabel)
+          case 'yKey': {
+            const yLabel = document.createElement('label')
+            yLabel.className = 'tile-axis-label'
+            yLabel.textContent = 'Y:'
+            actions.appendChild(yLabel)
 
-      const ySel = document.createElement('select')
-      ySel.className = 'tile-measure-select'
-      availableMeasures.forEach(m => {
-        const o = document.createElement('option'); o.value = m.key; o.textContent = m.label; ySel.appendChild(o)
-      })
-      ySel.value = tile.yBinding ?? tile.yKey ?? measureKey
-      ySel.addEventListener('change', () => tileRec.onYKeyChange(ySel.value))
-      actions.appendChild(ySel)
-    } else if (pickers.measure && availableMeasures.length > 1) {
-      const sel = document.createElement('select')
-      sel.className = 'tile-measure-select'
-      availableMeasures.forEach(m => {
-        const o = document.createElement('option'); o.value = m.key; o.textContent = m.label; sel.appendChild(o)
-      })
-      sel.value = tile.valueBinding ?? tile.measureKey ?? measureKey
-      sel.addEventListener('change', () => tileRec.onMeasureChange(sel.value))
-      actions.appendChild(sel)
-    }
+            const ySel = document.createElement('select')
+            ySel.className = 'tile-measure-select'
+            availableMeasures.forEach(m => {
+              const o = document.createElement('option'); o.value = m.key; o.textContent = m.label; ySel.appendChild(o)
+            })
+            ySel.value = tile.yBinding ?? tile.yKey ?? measureKey
+            ySel.addEventListener('change', () => tileRec.onYKeyChange(ySel.value))
+            actions.appendChild(ySel)
+            break
+          }
 
-    if (pickers.groupBy && ds.dimDefs.length > 0) {
-      const sel = document.createElement('select')
-      sel.className = 'tile-measure-select'
-      sel.title = 'Group by'
-      const noGroup = document.createElement('option')
-      noGroup.value = ''; noGroup.textContent = 'No group'
-      sel.appendChild(noGroup)
-      ds.dimDefs.forEach(d => {
-        const o = document.createElement('option'); o.value = d.key; o.textContent = d.label; sel.appendChild(o)
-      })
-      sel.value = tile.groupBy ?? ''
-      sel.addEventListener('change', () => tileRec.onGroupByChange(sel.value || undefined))
-      actions.appendChild(sel)
+          case 'measure': {
+            if (availableMeasures.length > 1) {
+              const sel = document.createElement('select')
+              sel.className = 'tile-measure-select'
+              availableMeasures.forEach(m => {
+                const o = document.createElement('option'); o.value = m.key; o.textContent = m.label; sel.appendChild(o)
+              })
+              sel.value = tile.valueBinding ?? tile.measureKey ?? measureKey
+              sel.addEventListener('change', () => tileRec.onMeasureChange(sel.value))
+              actions.appendChild(sel)
+            }
+            break
+          }
+
+          case 'groupBy': {
+            if (ds.dimDefs.length > 0) {
+              const sel = document.createElement('select')
+              sel.className = 'tile-measure-select'
+              sel.title = field.label
+              const noGroup = document.createElement('option')
+              noGroup.value = ''; noGroup.textContent = 'No group'
+              sel.appendChild(noGroup)
+              ds.dimDefs.forEach(d => {
+                const o = document.createElement('option'); o.value = d.key; o.textContent = d.label; sel.appendChild(o)
+              })
+              sel.value = tile.groupBy ?? ''
+              sel.addEventListener('change', () => tileRec.onGroupByChange(sel.value || undefined))
+              actions.appendChild(sel)
+            }
+            break
+          }
+        }
+      }
     }
 
     const closeBtn = document.createElement('button')
