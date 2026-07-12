@@ -17,9 +17,8 @@ import {
 } from "bireactive";
 import { circleHandle, lineHandle } from "../lib/handles";
 import { Diagram } from "../lib/diagram";
-import { partition, type HierarchyRectangularNode } from "d3-hierarchy";
+import { hierarchy, partition, type HierarchyRectangularNode } from "d3-hierarchy";
 import { depthFill, labelInk } from "../lib/depth-color";
-import { buildHierarchy } from "../lib/interaction";
 import { buildParentIndex, type BiNode, portfolio, walkWithDepth } from "../lib/tree";
 import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
@@ -90,15 +89,38 @@ export class MdSunburstLC extends Diagram {
 
     const Rfull = derive(() => Math.min(Wc.value, Hc.value) / 2 - 4);
 
+    // Rule 7 (interaction-principles): while a resize gesture is active, sibling
+    // order is frozen. sortBy='value' would otherwise re-rank siblings mid-drag
+    // as values shift, moving the sibling under the pointer to a new position —
+    // the divider handle would get destroyed by the forEach diff (WIN-257).
+    const gestureActiveCell = cell(false);
+    let frozenSortKey: Map<BiNode, number> | null = null;
+
     // Natural partition layout — no pre-scaling. Viewport does all fitting.
     const layout = derive(() => {
       const rfull = Rfull.value;
-      const h = buildHierarchy(root, this._sortByCell.value);
+      const active = gestureActiveCell.value;
+      const sortBy = this._sortByCell.value;
+      const h = hierarchy<BiNode>(root, (n) => n.children as BiNode[])
+        .sum((n) => (n.children.length > 0 ? 0 : n.value.total.value));
+      if (active && frozenSortKey) {
+        const snap = frozenSortKey;
+        h.sort((a, b) => (snap.get(a.data) ?? 0) - (snap.get(b.data) ?? 0));
+      } else if (sortBy === 'value') {
+        h.sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
+      }
       partition<BiNode>().size([2 * Math.PI, rfull])(h);
       const map = new Map<BiNode, HierarchyRectangularNode<BiNode>>();
       h.each((d) => map.set(d.data, d as HierarchyRectangularNode<BiNode>));
       return map;
     });
+
+    const snapshotSortKey = (): Map<BiNode, number> => {
+      const snap = new Map<BiNode, number>();
+      const lmap = untracked(() => layout.value);
+      for (const [node, ln] of lmap) snap.set(node, ln.x0);
+      return snap;
+    };
 
     // Viewport cells for angle (x) and radius (y) domains.
     const va0 = num(0);
@@ -500,8 +522,20 @@ export class MdSunburstLC extends Diagram {
         });
         const dispose = dragCancelable(handle, knob, [a, b], {
           host: this,
-          onStart: () => { active.value = true; handle.el.style.cursor = "grabbing"; },
-          onEnd: () => { active.value = false; handle.el.style.cursor = "grab"; },
+          onStart: () => {
+            active.value = true;
+            handle.el.style.cursor = "grabbing";
+            // Freeze sibling order for the gesture (WIN-257 / Rule 7). Snapshot
+            // AFTER cell writes so `layout` reflects any pending value setup.
+            frozenSortKey = snapshotSortKey();
+            gestureActiveCell.value = true;
+          },
+          onEnd: () => {
+            active.value = false;
+            handle.el.style.cursor = "grab";
+            gestureActiveCell.value = false;
+            frozenSortKey = null;
+          },
         });
         handle.track(dispose);
         handle.el.style.cursor = "grab";
