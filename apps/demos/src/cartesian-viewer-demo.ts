@@ -116,25 +116,36 @@ export class MdCartesianViewerDemo extends Diagram {
     const controls = document.createElement('div');
     controls.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;';
 
-    const buttons = [
-      { label: 'Reset', action: () => { this.viewer?.reset(); } },
-      { label: 'Zoom In', action: () => { this.viewer?.zoomBy(1.3); } },
-      { label: 'Zoom Out', action: () => { this.viewer?.zoomBy(1 / 1.3); } },
-      { label: 'Pan Left', action: () => { this.viewer?.pan(-5, 0); } },
-      { label: 'Pan Right', action: () => { this.viewer?.pan(5, 0); } },
-      { label: 'Pan Up', action: () => { this.viewer?.pan(0, -5); } },
-      { label: 'Pan Down', action: () => { this.viewer?.pan(0, 5); } },
-    ];
-
-    for (const btn of buttons) {
+    const addButton = (label: string, action: () => void): void => {
       const button = document.createElement('button');
-      button.textContent = btn.label;
+      button.textContent = label;
       button.style.cssText = 'padding:6px 12px;background:#2a2d34;border:1px solid #3a3d44;color:#cdd5e0;border-radius:4px;cursor:pointer;font-size:13px;';
-      button.addEventListener('click', btn.action);
+      button.addEventListener('click', action);
       button.addEventListener('mouseenter', () => { button.style.background = '#3a3d44'; });
       button.addEventListener('mouseleave', () => { button.style.background = '#2a2d34'; });
       controls.appendChild(button);
-    }
+    };
+
+    addButton('Reset', () => { this.viewer?.reset(); });
+    addButton('Zoom In', () => { this.viewer?.zoomBy(1.3); });
+    addButton('Zoom Out', () => { this.viewer?.zoomBy(1 / 1.3); });
+    addButton('Pan Left', () => { this.viewer?.pan(-5, 0); });
+    addButton('Pan Right', () => { this.viewer?.pan(5, 0); });
+    addButton('Pan Up', () => { this.viewer?.pan(0, -5); });
+    addButton('Pan Down', () => { this.viewer?.pan(0, 5); });
+    addButton('Set ViewBox', () => { this.viewer?.setViewBox({ xMin: 20, xMax: 40, yMin: 20, yMax: 40 }); });
+
+    const smoothBtn = document.createElement('button');
+    const updateSmoothLabel = () => { smoothBtn.textContent = this.viewer?.smooth ? 'Smooth: On' : 'Smooth: Off'; };
+    smoothBtn.style.cssText = 'padding:6px 12px;background:#2a2d34;border:1px solid #3a3d44;color:#cdd5e0;border-radius:4px;cursor:pointer;font-size:13px;';
+    smoothBtn.addEventListener('click', () => {
+      if (this.viewer) this.viewer.smooth = !this.viewer.smooth;
+      updateSmoothLabel();
+    });
+    smoothBtn.addEventListener('mouseenter', () => { smoothBtn.style.background = '#3a3d44'; });
+    smoothBtn.addEventListener('mouseleave', () => { smoothBtn.style.background = '#2a2d34'; });
+    updateSmoothLabel();
+    controls.appendChild(smoothBtn);
 
     this.chromeLayer.appendChild(controls);
 
@@ -144,7 +155,7 @@ export class MdCartesianViewerDemo extends Diagram {
     info.innerHTML = `
       <strong>Cartesian Viewer:</strong> Drag to pan • Scroll wheel to zoom • Notice axes rescale
       <br>
-      <em>This demonstrates D3-style axis-aware pan/zoom with scale updates</em>
+      <em>Programmatic pan/zoom/setViewBox now animate smoothly. Toggle "Smooth" off to see reduced-motion/immediate behavior.</em>
     `;
     this.chromeLayer.appendChild(info);
   }
