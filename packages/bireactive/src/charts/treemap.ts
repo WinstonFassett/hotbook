@@ -95,21 +95,9 @@ export class MdTreemapLC extends Diagram {
     // gesture-active class rather than managing a cell directly.
     const gestureActiveCell = cell(false);
     let frozenSortKey: Map<BiNode, number> | null = null;
-    let frozenLayout: Map<BiNode, HierarchyRectangularNode<BiNode>> | null = null;
 
     const layout = derive(() => {
       const active = gestureActiveCell.value;
-
-      // WIN-257: During active gesture, freeze both sort AND geometry.
-      // Lazy capture approach avoids timing issues.
-      if (active) {
-        if (frozenLayout) {
-          return frozenLayout;
-        }
-        if (!frozenSortKey) {
-          frozenSortKey = snapshotSortKey();
-        }
-      }
 
       const h = buildHierarchy(root, this._sortByCell.value);
       // WIN-257: During active gesture, override sort with frozen positions
@@ -126,15 +114,6 @@ export class MdTreemapLC extends Diagram {
         .round(false)(h);
       const map = new Map<BiNode, HierarchyRectangularNode<BiNode>>();
       h.each((d) => map.set(d.data, d as HierarchyRectangularNode<BiNode>));
-
-      // Capture frozen layout on first active derive
-      if (active && !frozenLayout) {
-        frozenLayout = new Map();
-        for (const [key, node] of map) {
-          frozenLayout.set(key, { ...node });
-        }
-      }
-
       return map;
     });
 
@@ -150,12 +129,14 @@ export class MdTreemapLC extends Diagram {
     const observer = new MutationObserver(() => {
       const isActive = this.classList.contains(GESTURE_ACTIVE_CLASS);
       if (isActive && !gestureActiveCell.value) {
-        // WIN-257 / Rule 7: Set gesture flag - layout derive will handle lazy capture
+        // WIN-257 / Rule 7: Capture sort order BEFORE setting gesture flag to avoid cycle
+        if (!frozenSortKey) {
+          frozenSortKey = snapshotSortKey();
+        }
         gestureActiveCell.value = true;
       } else if (!isActive && gestureActiveCell.value) {
         gestureActiveCell.value = false;
         frozenSortKey = null;
-        frozenLayout = null;
       }
     });
     observer.observe(this, { attributes: true, attributeFilter: ['class'] });

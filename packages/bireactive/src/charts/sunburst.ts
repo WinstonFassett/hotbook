@@ -124,12 +124,6 @@ export class MdSunburstLC extends Diagram {
       void this._reorderTickCell.value;
       const active = gestureActiveCell.value;
 
-      // WIN-257: During active gesture, freeze SORT ORDER but allow slices to resize.
-      // Lazy capture sort order on first active derive.
-      if (active && !frozenSortKey) {
-        frozenSortKey = snapshotSortKey();
-      }
-
       const h = buildHierarchy(root, this._sortByCell.value);
       // WIN-257: During active gesture, override sort with frozen positions
       if (active && frozenSortKey) {
@@ -760,7 +754,10 @@ export class MdSunburstLC extends Diagram {
           onStart: () => {
             active.value = true;
             handle.el.style.cursor = "grabbing";
-            // WIN-257 / Rule 7: Set gesture flag - layout derive will handle lazy capture
+            // WIN-257 / Rule 7: Capture sort order BEFORE setting gesture flag to avoid cycle
+            if (!frozenSortKey) {
+              frozenSortKey = snapshotSortKey();
+            }
             gestureActiveCell.value = true;
           },
           onEnd: () => {

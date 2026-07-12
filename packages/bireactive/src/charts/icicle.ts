@@ -194,17 +194,14 @@ export class MdIcicleLC extends Diagram {
       const maxD = rawMaxD !== undefined && rawMaxD > 0 ? rawMaxD : undefined;
       const active = gestureActiveCell.value;
 
-      // WIN-257: During active gesture, freeze SORT ORDER but allow tiles to resize.
-      // Lazy capture sort order on first active derive.
-      if (active && !frozenSortKey) {
-        frozenSortKey = snapshotSortKey();
-      }
-
       const h = buildHierarchy(rootCell.value, this._sortByCell.value);
       // WIN-257: During active gesture, override sort with frozen positions
       if (active && frozenSortKey) {
+        console.log('[WIN-257] Applying frozen sort, active=', active, 'frozenSortKey size=', frozenSortKey.size);
         const snap = frozenSortKey;
         h.sort((a, b) => (snap.get(a.data) ?? 0) - (snap.get(b.data) ?? 0));
+      } else if (active) {
+        console.log('[WIN-257] Active but no frozenSortKey!');
       }
       const td = h.height; // levels below root
       const visibleDepth = maxD !== undefined ? Math.min(maxD, td) : td;
@@ -850,9 +847,14 @@ export class MdIcicleLC extends Diagram {
         const dispose = dragCancelable(handle, knob, [a, b], {
           host: this,
           onStart: () => {
+            console.log('[WIN-257] onStart called');
             active.value = true;
             handle.el.style.cursor = "grabbing";
-            // WIN-257 / Rule 7: Set gesture flag - layout derive will handle lazy capture
+            // WIN-257 / Rule 7: Capture sort order BEFORE setting gesture flag to avoid cycle
+            if (!frozenSortKey) {
+              frozenSortKey = snapshotSortKey();
+              console.log('[WIN-257] Captured frozenSortKey, size=', frozenSortKey.size);
+            }
             gestureActiveCell.value = true;
           },
           onEnd: () => {
