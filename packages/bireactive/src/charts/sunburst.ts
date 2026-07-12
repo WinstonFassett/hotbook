@@ -28,6 +28,8 @@ import { dragCancelable } from "../lib/esc-contract";
 import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS } from "../lib/transitions";
 import { withExitDelay, enterExitFade, membershipCell } from "../lib/mark-lifecycle";
 import type { ElementWithBridge } from "../lib/hud-bridge";
+import { attachReorderGesture } from "../lib/reorder-gesture";
+import { REORDER_ELEVATION_CSS } from "../lib/transitions";
 
 const W = 480;
 const H = 480;
@@ -36,7 +38,7 @@ const DRILL_SEC = DRILL_DURATION / 1000; // s — bireactive anim clock runs in 
 const SORT_SEC = 0.35; // s — sort/reorder tween duration
 
 export class MdSunburstLC extends Diagram {
-  static styles = `:host { overflow: hidden; }text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}:host(.vf-gesture-active) circle[r="5"] { opacity: 0; } circle[r="5"] { transition: opacity 0.3s ease; }[data-focusable]:focus { outline: 2px solid #4a9eff; outline-offset: 2px; } [data-focusable]:focus:not(:focus-visible) { outline: none; }`
+  static styles = `:host { overflow: hidden; }text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}${REORDER_ELEVATION_CSS}:host(.vf-gesture-active) circle[r="5"] { opacity: 0; } circle[r="5"] { transition: opacity 0.3s ease; }[data-focusable]:focus { outline: 2px solid #4a9eff; outline-offset: 2px; } [data-focusable]:focus:not(:focus-visible) { outline: none; }`
   externalRoot?: BiNode
   drillKey?: string
 
@@ -56,6 +58,20 @@ export class MdSunburstLC extends Diagram {
   private _measureKeyCell = cell<string>('')
   get measureKey(): string { return this._measureKeyCell.value }
   set measureKey(v: string) { this._measureKeyCell.value = v }
+
+  // Drag-to-reorder (WIN-262). Enabled by the caller when sort is by natural
+  // order. Emits onReorder(parentId, orderedIds) at commit — hierarchical
+  // reorder is scoped to the dragged arc's parent ring.
+  private _canReorderCell = cell<boolean>(false)
+  get canReorder(): boolean { return this._canReorderCell.value }
+  set canReorder(v: boolean) { this._canReorderCell.value = v }
+  onReorder?: (parentId: string | null, orderedIds: string[]) => void
+
+  // Bumped when children are reordered so `layout` re-derives (buildHierarchy
+  // walks children fresh but doesn't track array mutation). The per-arc tween
+  // effect also watches this cell so it fires the sort-lane on commit even
+  // though sortBy hasn't toggled.
+  private _reorderTickCell = cell<number>(0)
 
   protected scene(s: Mount): void {
     const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
@@ -93,6 +109,11 @@ export class MdSunburstLC extends Diagram {
     // Natural partition layout — no pre-scaling. Viewport does all fitting.
     const layout = derive(() => {
       const rfull = Rfull.value;
+      // Track the reorder tick so children[] mutations force a re-derive
+      // (buildHierarchy walks children fresh but reads array-position, so we
+      // need an explicit invalidation signal — bireactive doesn't observe
+      // array mutations on their own).
+      void this._reorderTickCell.value;
       const h = buildHierarchy(root, this._sortByCell.value);
       partition<BiNode>().size([2 * Math.PI, rfull])(h);
       const map = new Map<BiNode, HierarchyRectangularNode<BiNode>>();
@@ -260,6 +281,18 @@ export class MdSunburstLC extends Diagram {
 
     const center = Vec.derive(() => ({ x: Wc.value / 2, y: Hc.value / 2 }));
 
+    // Per-arc cells hoisted so the reorder gesture can rewrite siblings' angles
+    // imperatively during preview. Populated inside the forEach callback below.
+    interface ArcCells {
+      la0: ReturnType<typeof num>;
+      la1: ReturnType<typeof num>;
+      lr0: ReturnType<typeof num>;
+      lr1: ReturnType<typeof num>;
+      arcEl: SVGGElement;
+    }
+    const arcCellsByNode = new Map<BiNode, ArcCells>();
+    const REORDER_SEC_LOCAL = SORT_SEC;
+
     // Windowed arc rendering.
     const arcLayer = s(group());
     forEach(arcLayer, renderedSet, (node) => {
@@ -280,25 +313,29 @@ export class MdSunburstLC extends Diagram {
       let lInited = false;
       let seenSortBy = untracked(() => this._sortByCell.value);
       let seenMeasureKey = untracked(() => this._measureKeyCell.value);
+      let seenReorderTick = untracked(() => this._reorderTickCell.value);
       biEffect(() => {
-        const t = ltarget.value; // track layout (reacts to sort + value + size)
+        const t = ltarget.value; // track layout (reacts to sort + value + size + reorder-tick)
         const sortBy = this._sortByCell.value; // track sort key so a toggle re-fires this effect
+        const reorderTick = this._reorderTickCell.value; // track reorder commits (WIN-262)
         const measureKey = untracked(() => this._measureKeyCell.value); // read untracked — effect fires on layout change (leaf writes), by which point measureKey is already set
         // WIN-155: freeze layout for arcs that have left the window so their
         // exit fade plays at the last visible position instead of remapping
         // through the drill viewport tween.
         if (lInited && !untracked(() => windowMembership.value.has(node))) return;
-        if (!lInited) { lInited = true; seenSortBy = sortBy; seenMeasureKey = measureKey; la0.value = t.x0; la1.value = t.x1; lr0.value = t.y0; lr1.value = t.y1; return; }
-        // Two-lane split. TWEEN for a real reorder (sort key toggled) or measure
-        // swap — arcs sweep to new angular slots. SNAP for everything else: active
-        // gesture (real-time drag), and — crucially — value edits / commits /
-        // resize, including REMOTE cross-tile edits that carry no gesture class
-        // (R2: value changes are write-through, no 250-350ms settle-lag).
+        if (!lInited) { lInited = true; seenSortBy = sortBy; seenMeasureKey = measureKey; seenReorderTick = reorderTick; la0.value = t.x0; la1.value = t.x1; lr0.value = t.y0; lr1.value = t.y1; return; }
+        // Two-lane split. TWEEN for a real reorder (sort key toggled, drag
+        // commit) or measure swap — arcs sweep to new angular slots. SNAP for
+        // everything else: active gesture (real-time drag), and — crucially —
+        // value edits / commits / resize, including REMOTE cross-tile edits
+        // that carry no gesture class (R2).
         const reordered = sortBy !== seenSortBy;
         const measureSwapped = measureKey !== seenMeasureKey;
+        const reorderCommitted = reorderTick !== seenReorderTick;
         seenSortBy = sortBy;
         seenMeasureKey = measureKey;
-        if ((reordered || measureSwapped) && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
+        seenReorderTick = reorderTick;
+        if ((reordered || measureSwapped || reorderCommitted) && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
           lcancel?.();
           lcancel = this.anim.start(
             tween(la0, t.x0, SORT_SEC, easeOut),
@@ -344,6 +381,193 @@ export class MdSunburstLC extends Diagram {
       arc.el.style.cursor = "pointer";
       arc.el.setAttribute('tabindex', '0');
       arc.el.setAttribute('data-focusable', 'arc');
+
+      // Register this arc's cells so the reorder gesture (attached below) can
+      // rewrite any sibling's angles imperatively during preview.
+      arcCellsByNode.set(node, { la0, la1, lr0, lr1, arcEl: arc.el as SVGGElement });
+
+      // ─── Drag-to-reorder (WIN-262) ────────────────────────────────────
+      // Reorder scoped to the dragged arc's parent ring. Root children are
+      // reorderable when dragged at depth 1. Leaves reorder within their
+      // parent's children ring.
+      let reorderDetach: (() => void) | null = null;
+      biEffect(() => {
+        const enabled = this._canReorderCell.value;
+        reorderDetach?.();
+        reorderDetach = null;
+        if (!enabled) { arc.el.style.cursor = 'pointer'; return; }
+        const parent = parentOf(node);
+        // Root itself never reorders (it has no siblings). Nodes without a
+        // parent (shouldn't happen for rendered arcs) skip too.
+        if (!parent) { arc.el.style.cursor = 'pointer'; return; }
+        const siblings = (parent.children as readonly BiNode[]);
+        if (siblings.length < 2) { arc.el.style.cursor = 'pointer'; return; }
+        arc.el.style.cursor = 'grab';
+
+        let startMouseAngle = Number.NaN;
+        let startMidAngle = 0;
+        let dragSpan = 0;
+        const initialMidById = new Map<string, number>();
+        const siblingTweenCancels = new Map<string, () => void>();
+        const lastAppliedIdx = new Map<string, number>();
+        // Raw angular range of the parent (in unremapped layout coords).
+        let parentA0 = 0;
+        let parentA1 = 2 * Math.PI;
+        let parentValue = 1;
+
+        const pointerAngle = (e: PointerEvent): number => {
+          const svg = arc.el.ownerSVGElement;
+          let px = e.clientX, py = e.clientY;
+          if (svg) {
+            const pt = svg.createSVGPoint();
+            pt.x = e.clientX; pt.y = e.clientY;
+            const ctm = svg.getScreenCTM();
+            if (ctm) { const p = pt.matrixTransform(ctm.inverse()); px = p.x; py = p.y; }
+          }
+          const c = center.peek();
+          const dispAng = Math.atan2(py - c.y, px - c.x);
+          // Convert display angle back into raw layout angle via the viewport.
+          const spanA = va1.peek() - va0.peek();
+          const rawAng = spanA === 0 ? dispAng : va0.peek() + ((dispAng + 2 * Math.PI) % (2 * Math.PI)) / (2 * Math.PI) * spanA;
+          return rawAng;
+        };
+
+        const shortestDelta = (from: number, to: number): number => {
+          let d = to - from;
+          while (d > Math.PI) d -= 2 * Math.PI;
+          while (d < -Math.PI) d += 2 * Math.PI;
+          return d;
+        };
+
+        // Compute new angular slots for siblings in a provisional order, given
+        // the parent's raw angular range and each child's value.
+        const computeSlots = (order: readonly string[]): Map<string, { x0: number; x1: number }> => {
+          const totalVal = siblings.reduce((s, c) => {
+            const ln = layout.peek().get(c);
+            return s + (ln?.value ?? 0);
+          }, 0) || 1;
+          const map = new Map<string, { x0: number; x1: number }>();
+          let cursor = parentA0;
+          for (const id of order) {
+            const c = siblings.find(x => x.value.id === id);
+            if (!c) continue;
+            const ln = layout.peek().get(c);
+            const v = ln?.value ?? 0;
+            const span = (v / totalVal) * (parentA1 - parentA0);
+            const x0 = cursor;
+            const x1 = cursor + span;
+            map.set(id, { x0, x1 });
+            cursor = x1;
+          }
+          return map;
+        };
+
+        const detach = attachReorderGesture({
+          hitEl: arc.el,
+          dragEl: arc.el,
+          itemId: node.value.id ?? '',
+          host: this,
+          getInitialOrder: () => siblings.map(x => x.value.id ?? ''),
+          computeTargetIndex: (e, order) => {
+            if (Number.isNaN(startMouseAngle)) return order.indexOf(node.value.id ?? '');
+            const cur = pointerAngle(e);
+            const delta = shortestDelta(startMouseAngle, cur);
+            const ghostMid = startMidAngle + delta;
+            const scored = order.map(id => ({
+              id,
+              mid: id === node.value.id ? ghostMid : (initialMidById.get(id) ?? 0),
+            }));
+            scored.sort((a, b) => a.mid - b.mid);
+            return scored.findIndex(s => s.id === node.value.id);
+          },
+          onActivate: () => {
+            const lmap = layout.peek();
+            // Parent range (in raw layout coords).
+            const pln = lmap.get(parent);
+            parentA0 = pln?.x0 ?? 0;
+            parentA1 = pln?.x1 ?? 2 * Math.PI;
+            parentValue = pln?.value ?? 1;
+            void parentValue;
+            initialMidById.clear();
+            for (const c of siblings) {
+              const ln = lmap.get(c);
+              if (!ln || !c.value.id) continue;
+              initialMidById.set(c.value.id, (ln.x0 + ln.x1) / 2);
+            }
+            const me = lmap.get(node);
+            startMidAngle = me ? (me.x0 + me.x1) / 2 : 0;
+            dragSpan = me ? (me.x1 - me.x0) : 0;
+            startMouseAngle = Number.NaN;
+            siblingTweenCancels.forEach(fn => fn());
+            siblingTweenCancels.clear();
+            lastAppliedIdx.clear();
+            siblings.forEach((c, i) => { if (c.value.id) lastAppliedIdx.set(c.value.id, i); });
+          },
+          onPreview: (order, e) => {
+            if (Number.isNaN(startMouseAngle)) startMouseAngle = pointerAngle(e);
+            const slots = computeSlots(order);
+            // Siblings tween to their new angular slots when their index flips.
+            for (let i = 0; i < order.length; i++) {
+              const id = order[i]!;
+              if (id === node.value.id) continue;
+              if (lastAppliedIdx.get(id) === i) continue;
+              lastAppliedIdx.set(id, i);
+              const c = siblings.find(x => x.value.id === id);
+              if (!c) continue;
+              const cells = arcCellsByNode.get(c);
+              const slot = slots.get(id);
+              if (!cells || !slot) continue;
+              siblingTweenCancels.get(id)?.();
+              const cancelA = this.anim.start(tween(cells.la0, slot.x0, REORDER_SEC_LOCAL, easeOut) as any);
+              const cancelB = this.anim.start(tween(cells.la1, slot.x1, REORDER_SEC_LOCAL, easeOut) as any);
+              const cancel = () => { cancelA?.(); cancelB?.(); };
+              siblingTweenCancels.set(id, cancel);
+            }
+            // Dragged arc: ghost centered on pointer's raw angle, keep original span.
+            const cur = pointerAngle(e);
+            const delta = shortestDelta(startMouseAngle, cur);
+            const ghostMid = startMidAngle + delta;
+            const meCells = arcCellsByNode.get(node);
+            if (meCells) {
+              meCells.la0.value = ghostMid - dragSpan / 2;
+              meCells.la1.value = ghostMid + dragSpan / 2;
+            }
+          },
+          onEnd: (finalOrder, canceled) => {
+            siblingTweenCancels.forEach(fn => fn());
+            siblingTweenCancels.clear();
+
+            const initial = siblings.map(x => x.value.id ?? '');
+            const changed = !canceled && finalOrder.some((id, i) => id !== initial[i]);
+            if (changed) {
+              // Mutate parent.children to match the committed order.
+              const byId = new Map(siblings.map(c => [c.value.id ?? '', c]));
+              const next = finalOrder.map(id => byId.get(id)).filter(Boolean) as BiNode[];
+              if (next.length === siblings.length) {
+                (parent.children as BiNode[]).splice(0, siblings.length, ...next);
+                // Force layout re-derive; the per-arc effect will tween each
+                // arc from its current (imperative) position to the new target
+                // via the reorderCommitted lane.
+                this._reorderTickCell.value = this._reorderTickCell.value + 1;
+                this.onReorder?.(parent.value.id ?? null, finalOrder.slice());
+              }
+              this.dispatchEvent(new CustomEvent('gesturecommit', { detail: { canceled: false, reorder: true } }));
+              return;
+            }
+            // Cancel or no-op: tween each sibling back to its initial slot.
+            const lmap = layout.peek();
+            for (const c of siblings) {
+              const cells = arcCellsByNode.get(c);
+              const ln = lmap.get(c);
+              if (!cells || !ln) continue;
+              this.anim.start(tween(cells.la0, ln.x0, REORDER_SEC_LOCAL, easeOut) as any);
+              this.anim.start(tween(cells.la1, ln.x1, REORDER_SEC_LOCAL, easeOut) as any);
+            }
+            this.dispatchEvent(new CustomEvent('gesturecommit', { detail: { canceled } }));
+          },
+        });
+        reorderDetach = detach;
+      });
 
       // WIN-155 enter/exit fade — arc fades in on mount, fades out when the
       // node leaves the drill window (held in renderedSet by withExitDelay).
