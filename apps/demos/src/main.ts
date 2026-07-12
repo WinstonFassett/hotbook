@@ -24,6 +24,8 @@ import { MdNestedLayered } from "@hotbook/layout";
 import { dataModelFor, type DemoDataModel } from "./data-models";
 import { sharedRows, sharedEdges } from "./layout/demo-data";
 import { mountControls } from "./layout/controls";
+import { getChartSchema } from "@hotbook/core";
+import "@hotbook/bireactive"; // Import to trigger schema registration
 
 class MdBandsChartLC extends MdBarChartLC {
   constructor() { super(); this.orientation = 'horizontal'; this.colorMode = 'palette'; this.labelMode = 'inside'; this.valueMode = 'inside'; }
@@ -31,6 +33,29 @@ class MdBandsChartLC extends MdBarChartLC {
 
 class MdGanttEnforcedLC extends MdGanttChartLC {
   constructor() { super(); this.enforceDeps = true; }
+}
+
+// Map demo IDs to chart kinds for schema lookup
+const demoIdToKind: Record<string, string> = {
+  'line-chart': 'line',
+  'area-chart': 'area',
+  'bar-chart': 'bar',
+  'bands-chart': 'bands',
+  'scatter-chart': 'scatter',
+  'pie-chart': 'pie',
+  'radar-chart': 'radar',
+  'concentric-arc': 'concentric-arc',
+  'gauge': 'gauge',
+  'gauge-segmented': 'gauge-segmented',
+  'pack': 'pack',
+  'treemap': 'treemap',
+  'icicle': 'icicle',
+  'sunburst': 'sunburst',
+  'sankey-simple': 'sankey',
+  'sankey-complex': 'sankey',
+  'tree-chart': 'tree',
+  'budget-tree': 'pack', // budget-tree uses pack schema
+  'gantt': 'gantt',
 }
 
 const experiments: Array<{
@@ -163,6 +188,99 @@ function mountLayoutSection(section: HTMLElement, demo: HTMLElement, el: HTMLEle
 
 let updateSortLabel: () => void = () => {};
 
+// Build schema-driven config UI for a demo chart
+function buildChartConfigUI(demoId: string, chartEl: HTMLElement, dataModel?: DemoDataModel): HTMLElement | null {
+  const kind = demoIdToKind[demoId];
+  if (!kind) return null;
+
+  const schema = getChartSchema(kind);
+  if (!schema || !schema.ui.fields.length) return null;
+
+  const controls = document.createElement('div');
+  controls.className = 'chart-config-controls';
+  controls.style.cssText = 'display:flex;gap:8px;align-items:center;padding:8px;border-bottom:1px solid var(--border);background:var(--bg-subtle,#1a1a1a);';
+
+  for (const field of schema.ui.fields) {
+    switch (field.type) {
+      case 'depth': {
+        const label = document.createElement('label');
+        label.textContent = 'Depth:';
+        label.style.cssText = 'font-size:12px;color:var(--text-muted,#999);';
+
+        const sel = document.createElement('select');
+        sel.style.cssText = 'padding:2px 4px;font-size:12px;';
+        ;[['0', 'All'], ['1', '1L'], ['2', '2L'], ['3', '3L'], ['4', '4L'], ['5', '5L']].forEach(([v, l]) => {
+          const opt = document.createElement('option');
+          opt.value = v; opt.textContent = l;
+          sel.appendChild(opt);
+        });
+        sel.value = String((chartEl as any).maxDepth ?? 0);
+        sel.addEventListener('change', () => {
+          (chartEl as any).maxDepth = Number(sel.value);
+        });
+        controls.appendChild(label);
+        controls.appendChild(sel);
+        break;
+      }
+
+      case 'orientation': {
+        const label = document.createElement('label');
+        label.textContent = 'Orient:';
+        label.style.cssText = 'font-size:12px;color:var(--text-muted,#999);margin-left:8px;';
+
+        const sel = document.createElement('select');
+        sel.style.cssText = 'padding:2px 4px;font-size:12px;';
+        ;[['horizontal', 'Horiz'], ['vertical', 'Vert']].forEach(([v, l]) => {
+          const opt = document.createElement('option'); opt.value = v; opt.textContent = l; sel.appendChild(opt);
+        });
+        sel.value = (chartEl as any).orientation ?? 'horizontal';
+        sel.addEventListener('change', () => {
+          (chartEl as any).orientation = sel.value;
+        });
+        controls.appendChild(label);
+        controls.appendChild(sel);
+        break;
+      }
+
+      case 'measure': {
+        // Skip measure picker for demos - would need dataset integration
+        break;
+      }
+
+      case 'sort': {
+        const label = document.createElement('label');
+        label.textContent = 'Sort:';
+        label.style.cssText = 'font-size:12px;color:var(--text-muted,#999);margin-left:8px;';
+
+        const sel = document.createElement('select');
+        sel.style.cssText = 'padding:2px 4px;font-size:12px;';
+        ;[['index', 'Order'], ['value', 'Value']].forEach(([v, l]) => {
+          const opt = document.createElement('option'); opt.value = v; opt.textContent = l; sel.appendChild(opt);
+        });
+        sel.value = (chartEl as any).sortBy ?? 'index';
+        sel.addEventListener('change', () => {
+          const newSort = sel.value as 'index' | 'value';
+          if ('sortBy' in chartEl) {
+            (chartEl as any).sortBy = newSort;
+          } else if (dataModel?.setSort) {
+            dataModel.setSort(chartEl, newSort);
+          }
+        });
+        controls.appendChild(label);
+        controls.appendChild(sel);
+        break;
+      }
+
+      case 'xKey':
+      case 'yKey':
+        // Skip x/y pickers for demos - would need measure list
+        break;
+    }
+  }
+
+  return controls.children.length > 0 ? controls : null;
+}
+
 function buildConfigBar(): HTMLElement {
   const bar = document.createElement('div');
   bar.className = 'repro-config-bar';
@@ -246,6 +364,16 @@ if (app) {
     if (e.custom) {
       e.custom(section, demo, el);
     } else {
+      // Build schema-driven config UI
+      const configUI = buildChartConfigUI(e.id, el, dataModel);
+      if (configUI) {
+        demo.style.flexDirection = 'column';
+        demo.appendChild(configUI);
+      }
+
+      const chartAndTableWrap = document.createElement('div');
+      chartAndTableWrap.style.cssText = 'display:flex;flex:1;min-height:0;overflow:hidden;';
+
       const stage = document.createElement('div');
       stage.style.cssText = 'flex:1;min-width:0;height:100%;overflow:hidden;';
       stage.appendChild(el);
@@ -262,10 +390,12 @@ if (app) {
       }
       tableWrap.appendChild(treetable);
 
+      chartAndTableWrap.appendChild(stage);
+      chartAndTableWrap.appendChild(tableWrap);
+
       demo.style.display = 'flex';
       demo.style.overflow = 'hidden';
-      demo.appendChild(stage);
-      demo.appendChild(tableWrap);
+      demo.appendChild(chartAndTableWrap);
 
       applySort(el, treetable, dataModel);
       mounted.push({ el, treetable, model: dataModel });
