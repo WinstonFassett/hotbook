@@ -23,7 +23,7 @@ import { buildParentIndex, type BiNode, portfolio, walkWithDepth } from "../lib/
 import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { mountDrillBreadcrumb } from "../lib/drill-breadcrumb";
-import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, ENTER_MS } from "../lib/transitions";
+import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, GESTURE_ACTIVE_GLOBAL_CLASS, ENTER_MS } from "../lib/transitions";
 import { withExitDelay, membershipCell } from "../lib/mark-lifecycle";
 import { numberDrag } from "../lib/number-drag";
 
@@ -78,12 +78,12 @@ export class MdPack extends Diagram {
     const hoverCell = cell<BiNode | null>(null);
     state.hoverCell = hoverCell;
 
-    // WIN-300: Watch global gesture state and apply GESTURE_ACTIVE_CLASS when
-    // ANY gesture is active (including table value drags). This freezes sort
-    // order during cross-component gestures.
+    // WIN-300: Watch global gesture state and apply GESTURE_ACTIVE_GLOBAL_CLASS
+    // when table value drags or other cross-component gestures are active.
+    // Uses separate class from local gestures to avoid conflicts.
     biEffect(() => {
       const active = globalGestureActive.value;
-      this.classList.toggle(GESTURE_ACTIVE_CLASS, active);
+      this.classList.toggle(GESTURE_ACTIVE_GLOBAL_CLASS, active);
     });
 
     const layout = derive(() => {
@@ -262,7 +262,9 @@ export class MdPack extends Diagram {
         const measureSwapped = measureKey !== seenMeasureKey;
         seenSortBy = sortBy;
         seenMeasureKey = measureKey;
-        if ((reordered || measureSwapped) && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
+        // WIN-300: Check for EITHER local or global gesture active
+        const gestureActive = this.classList.contains(GESTURE_ACTIVE_CLASS) || this.classList.contains(GESTURE_ACTIVE_GLOBAL_CLASS);
+        if ((reordered || measureSwapped) && !gestureActive) {
           lcancel?.();
           lcancel = this.anim.start(
             tween(lx, t.x, SORT_SEC, easeOut),

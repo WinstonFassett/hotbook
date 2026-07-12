@@ -294,7 +294,9 @@ export class MdTreemapLC extends Diagram {
       const measureSwapped = measureKey !== seenMeasureKey;
       seenSortBy = sortBy;
       seenMeasureKey = measureKey;
-      const animate = (reordered || measureSwapped) && !this.classList.contains(GESTURE_ACTIVE_CLASS);
+      // WIN-300: Check for EITHER local or global gesture active
+      const gestureActive = this.classList.contains(GESTURE_ACTIVE_CLASS) || this.classList.contains(GESTURE_ACTIVE_GLOBAL_CLASS);
+      const animate = (reordered || measureSwapped) && !gestureActive;
       // Defer past the forEach commit so tileGeo is fresh.
       requestAnimationFrame(() => {
         if (tileGeo.size > 0) {

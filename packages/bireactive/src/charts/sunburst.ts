@@ -25,7 +25,7 @@ import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { mountDrillBreadcrumb } from "../lib/drill-breadcrumb";
 import { dragCancelable } from "../lib/esc-contract";
-import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS } from "../lib/transitions";
+import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, GESTURE_ACTIVE_GLOBAL_CLASS } from "../lib/transitions";
 import { withExitDelay, enterExitFade, membershipCell } from "../lib/mark-lifecycle";
 import type { ElementWithBridge } from "../lib/hud-bridge";
 import { attachReorderGesture } from "../lib/reorder-gesture";
@@ -93,12 +93,12 @@ export class MdSunburstLC extends Diagram {
     const hoverCell = cell<BiNode | null>(null);
     state.hoverCell = hoverCell;
 
-    // WIN-300: Watch global gesture state and apply GESTURE_ACTIVE_CLASS when
-    // ANY gesture is active (including table value drags). This freezes sort
-    // order during cross-component gestures.
+    // WIN-300: Watch global gesture state and apply GESTURE_ACTIVE_GLOBAL_CLASS
+    // when table value drags or other cross-component gestures are active.
+    // Uses separate class from local gestures to avoid conflicts.
     biEffect(() => {
       const active = globalGestureActive.value;
-      this.classList.toggle(GESTURE_ACTIVE_CLASS, active);
+      this.classList.toggle(GESTURE_ACTIVE_GLOBAL_CLASS, active);
     });
 
     // Pre-build static maps (tree structure is immutable).
@@ -341,7 +341,9 @@ export class MdSunburstLC extends Diagram {
         seenSortBy = sortBy;
         seenMeasureKey = measureKey;
         seenReorderTick = reorderTick;
-        if ((reordered || measureSwapped || reorderCommitted) && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
+        // WIN-300: Check for EITHER local or global gesture active
+        const gestureActive = this.classList.contains(GESTURE_ACTIVE_CLASS) || this.classList.contains(GESTURE_ACTIVE_GLOBAL_CLASS);
+        if ((reordered || measureSwapped || reorderCommitted) && !gestureActive) {
           lcancel?.();
           lcancel = this.anim.start(
             tween(la0, t.x0, SORT_SEC, easeOut),

@@ -25,7 +25,7 @@ import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { mountDrillBreadcrumb } from "../lib/drill-breadcrumb";
 import { dragCancelable } from "../lib/esc-contract";
 import { attachReorderGesture } from "../lib/reorder-gesture";
-import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, settleTransition, REORDER_ELEVATION_CSS } from "../lib/transitions";
+import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, GESTURE_ACTIVE_GLOBAL_CLASS, settleTransition, REORDER_ELEVATION_CSS } from "../lib/transitions";
 import { withExitDelay, membershipCell } from "../lib/mark-lifecycle";
 import type { ElementWithBridge } from "../lib/hud-bridge";
 
@@ -176,12 +176,12 @@ export class MdIcicleLC extends Diagram {
     const hoverCell = cell<BiNode | null>(null);
     state.hoverCell = hoverCell;
 
-    // WIN-300: Watch global gesture state and apply GESTURE_ACTIVE_CLASS when
-    // ANY gesture is active (including table value drags). This freezes sort
-    // order during cross-component gestures.
+    // WIN-300: Watch global gesture state and apply GESTURE_ACTIVE_GLOBAL_CLASS
+    // when table value drags or other cross-component gestures are active.
+    // Uses separate class from local gestures to avoid conflicts.
     this._trackScene(biEffect(() => {
       const active = globalGestureActive.value;
-      this.classList.toggle(GESTURE_ACTIVE_CLASS, active);
+      this.classList.toggle(GESTURE_ACTIVE_GLOBAL_CLASS, active);
     }));
 
     // Partition layout — orientation-aware. The depth axis is scaled so one
@@ -434,7 +434,9 @@ export class MdIcicleLC extends Diagram {
         seenOrientation = orientation;
         seenMaxDepth = maxDepth;
         seenReorderTick = reorderTick;
-        if ((reordered || measureSwapped || orientationChanged || depthChanged || reorderCommitted) && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
+        // WIN-300: Check for EITHER local or global gesture active
+        const gestureActive = this.classList.contains(GESTURE_ACTIVE_CLASS) || this.classList.contains(GESTURE_ACTIVE_GLOBAL_CLASS);
+        if ((reordered || measureSwapped || orientationChanged || depthChanged || reorderCommitted) && !gestureActive) {
           lcancel?.();
           lcancel = this.anim.start(
             tween(lx0, t.x0, SORT_SEC, easeOut),

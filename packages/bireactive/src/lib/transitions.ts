@@ -56,9 +56,14 @@ export function hoverTransition(properties: string | readonly string[]): string 
  *  on the chart host; pair with the CSS rule emitted by `gestureSuppressionCss`. */
 export const GESTURE_ACTIVE_CLASS = "vf-gesture-active";
 
+/** Class name for global gestures (WIN-300). Used by cross-component gesture
+ *  coordination (e.g., table value drags) to signal all charts to freeze sort.
+ *  Separate from GESTURE_ACTIVE_CLASS to avoid conflicts with local gestures. */
+export const GESTURE_ACTIVE_GLOBAL_CLASS = "vf-gesture-active-global";
+
 /** CSS that disables `transition` on every descendant while a gesture is live.
- *  Inject once per chart `static styles`. */
-export const GESTURE_SUPPRESSION_CSS = `:host(.${GESTURE_ACTIVE_CLASS}) * { transition: none !important; }`;
+ *  Inject once per chart `static styles`. Covers BOTH local and global gestures. */
+export const GESTURE_SUPPRESSION_CSS = `:host(.${GESTURE_ACTIVE_CLASS}) * { transition: none !important; } :host(.${GESTURE_ACTIVE_GLOBAL_CLASS}) * { transition: none !important; }`;
 
 /** Centralized visual affordance for the dragged mark during a reorder gesture
  *  (WIN-262). The `attachReorderGesture` helper toggles `[data-reordering]` on
