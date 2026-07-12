@@ -15,7 +15,7 @@ import {
   effect as biEffect,
   untracked,
 } from "bireactive";
-import { circleHandle, lineHandle } from "../lib/handles";
+import { lineHandle } from "../lib/handles";
 import { Diagram } from "../lib/diagram";
 import { partition, type HierarchyRectangularNode } from "d3-hierarchy";
 import { depthFill, labelInk } from "../lib/depth-color";
@@ -41,6 +41,7 @@ export class MdSunburstLC extends Diagram {
   static styles = `:host { overflow: hidden; }text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}${REORDER_ELEVATION_CSS}:host(.vf-gesture-active) circle[r="5"] { opacity: 0; } circle[r="5"] { transition: opacity 0.3s ease; }[data-focusable]:focus { outline: 2px solid #4a9eff; outline-offset: 2px; } [data-focusable]:focus:not(:focus-visible) { outline: none; }`
   externalRoot?: BiNode
   drillKey?: string
+  showBreadcrumb?: boolean
 
   // Reactive so the levels dropdown drives enter/exit fades instead of a remount.
   private _maxDepthCell = cell<number | undefined>(undefined)
@@ -163,7 +164,6 @@ export class MdSunburstLC extends Diagram {
 
     let drillInited = false;
     let lastDrillId: string | null = null;
-    let lastMaxDepthSeen: number | undefined = undefined;
     let drillCancel: (() => void) | null = null;
     let drillClassTimer: ReturnType<typeof setTimeout> | null = null;
     biEffect(() => {
@@ -224,9 +224,7 @@ export class MdSunburstLC extends Diagram {
       }
 
       const drillChanged = id !== lastDrillId;
-      const depthChanged = maxDTracked !== lastMaxDepthSeen;
       lastDrillId = id;
-      lastMaxDepthSeen = maxDTracked;
       if (!drillInited) {
         va0.value = ta0; va1.value = ta1; vr0.value = tr0; vr1.value = tr1;
         drillInited = true;
@@ -386,6 +384,11 @@ export class MdSunburstLC extends Diagram {
       // rewrite any sibling's angles imperatively during preview.
       arcCellsByNode.set(node, { la0, la1, lr0, lr1, arcEl: arc.el as SVGGElement });
 
+      // Wrap the arc and its label in a per-row group so the drag-elevate
+      // raises the label with the arc (no label occlusion during drag).
+      const rowGroup = group();
+      rowGroup.add(arc);
+
       // ─── Drag-to-reorder (WIN-262) ────────────────────────────────────
       // Reorder scoped to the dragged arc's parent ring. Root children are
       // reorderable when dragged at depth 1. Leaves reorder within their
@@ -464,7 +467,9 @@ export class MdSunburstLC extends Diagram {
 
         const detach = attachReorderGesture({
           hitEl: arc.el,
-          dragEl: arc.el,
+          // Raise the whole forEach group (arc + label) so the label stays on
+          // top of the arc and is not occluded when the arc is re-appended.
+          dragEl: arc.el.parentElement as unknown as SVGGElement,
           itemId: node.value.id ?? '',
           host: this,
           getInitialOrder: () => siblings.map(x => x.value.id ?? ''),
@@ -614,8 +619,9 @@ export class MdSunburstLC extends Diagram {
       });
 
       // group(opts, ...children): first arg is OPTS — passing the arc there
-      // silently swallowed it (labels-only sunburst). Return both shapes.
-      return [arc, lbl];
+      // silently swallowed it (labels-only sunburst). Wrap both in a group.
+      rowGroup.add(lbl);
+      return rowGroup;
     }, { key: (n) => n.value.id });
 
     // Windowed handle rendering.
