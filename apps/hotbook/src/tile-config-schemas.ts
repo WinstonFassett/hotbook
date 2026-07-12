@@ -65,7 +65,6 @@ export const TILE_CONFIG_SCHEMAS: Map<TileKind, VizConfigSchema> = new Map([
   //     never returns undefined for a legacy persisted tile.
   ['treemap',                  EMPTY],
   ['radial',                   EMPTY],
-  ['bands',                    EMPTY],
   ['h-treemap',                EMPTY],
   ['h-icicle',                 EMPTY],
   ['h-radial',                 EMPTY],
