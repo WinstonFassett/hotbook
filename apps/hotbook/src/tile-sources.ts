@@ -9,7 +9,8 @@ import { makeFlatSource, makeHierSource, makeHierRootFlatSource, hierShapeKey, h
 import type { TileSource } from './viz/br/bindTile'
 import { hudStore } from './store'
 import { applyGroupBy } from './persistence'
-import { colorFor, leavesOf } from '@hotbook/core'
+import { colorFor, leavesOf, getChartSchema } from '@hotbook/core'
+import type { DataShape } from '@hotbook/core'
 
 import {
   MdBarChartLC,
@@ -32,7 +33,7 @@ import {
   MdGanttChartLC,
 } from '@hotbook/bireactive'
 
-// Register custom elements once
+// Register custom elements once and build kind→tag mapping
 const TAGS = [
   ['v-br-bar',            MdBarChartLC],
   ['v-br-line',           MdLineChartLC],
@@ -55,6 +56,28 @@ const TAGS = [
 
 for (const [tag, cls] of TAGS) {
   if (!customElements.get(tag)) customElements.define(tag, cls as CustomElementConstructor)
+}
+
+// Map chart kind to custom element tag (derived from TAGS array)
+const KIND_TO_TAG: Record<string, string> = {
+  'bar': 'v-br-bar',
+  'bands': 'v-br-bar',  // bands uses same element as bar
+  'line': 'v-br-line',
+  'area': 'v-br-area',
+  'scatter': 'v-br-scatter',
+  'pie': 'v-br-pie',
+  'radar': 'v-br-radar',
+  'concentric-arc': 'v-br-concentric-arc',
+  'gauge': 'v-br-gauge',
+  'gauge-segmented': 'v-br-gauge-segmented',
+  'pack': 'v-br-pack',
+  'treemap': 'v-br-treemap',
+  'treetable': 'v-br-treetable',
+  'icicle': 'v-br-icicle',
+  'sunburst': 'v-br-sunburst',
+  'sankey': 'v-br-sankey',
+  'tree': 'v-br-tree',
+  'gantt': 'v-br-gantt',
 }
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
@@ -346,16 +369,11 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
   }
 
   // ── Hierarchical charts ──────────────────────────────────────────────────
-  const hierTags: Record<string, string> = {
-    'pack': 'v-br-pack',
-    'treemap': 'v-br-treemap',
-    'treetable': 'v-br-treetable',
-    'icicle': 'v-br-icicle',
-    'sunburst': 'v-br-sunburst',
-    'tree': 'v-br-tree',
-  }
-  if (kind in hierTags) {
-    const tag = hierTags[kind]!
+  const schema = getChartSchema(kind)
+  if (schema?.dataShape === 'hierarchical') {
+    const tag = KIND_TO_TAG[kind]
+    if (!tag) return null
+
     const orientationProp =
       kind === 'icicle' || kind === 'tree'
         ? (tile.orientation ?? 'horizontal')
@@ -435,13 +453,11 @@ export function buildSimpleMount(ctx: TileRenderContext): ((el: HTMLElement) => 
 
 /** The custom element tag for a simple-mount tile kind */
 export function simpleTag(kind: string): string | null {
-  const map: Record<string, string> = {
-    'gauge': 'v-br-gauge',
-    'gauge-segmented': 'v-br-gauge-segmented',
-    'sankey': 'v-br-sankey',
-    'gantt': 'v-br-gantt',
+  // Simple mounts are charts without schemas (gauge, sankey, gantt)
+  if (!getChartSchema(kind)) {
+    return KIND_TO_TAG[kind] ?? null
   }
-  return map[kind] ?? null
+  return null
 }
 
 /** A simple data key for simple-mount tiles — used to detect when to remount */

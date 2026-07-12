@@ -21,36 +21,27 @@ import { DockView } from './DockView'
 import './DockView'
 import { defaultDockTree, reconcile, addTileToDock, type DockNode } from './dock'
 import { readLayoutFromURL, parseLayout } from './url-layout'
+import { getAllChartSchemas } from '@hotbook/core'
+import '@hotbook/bireactive' // Import to trigger schema registration
 
-// ─── Tile metadata ─────────────────────────────────────────────────────────────
+// ─── Tile metadata (derived from schema registry) ────────────────────────────
 
-const TILE_KINDS: TileKind[] = [
-  'treetable',
-  'bar', 'line', 'area', 'scatter', 'pie',
-  'radar', 'concentric-arc', 'gauge', 'gauge-segmented',
-  'pack', 'treemap', 'treetable', 'icicle', 'sunburst', 'sankey', 'tree', 'gantt',
-]
+// Build TILE_KINDS and TILE_LABELS from the schema registry
+const allSchemas = getAllChartSchemas()
+const TILE_KINDS: TileKind[] = Array.from(allSchemas.keys()) as TileKind[]
+// Add simple-mount kinds that don't have schemas
+TILE_KINDS.push('gauge', 'gauge-segmented', 'sankey', 'gantt')
 
-const TILE_LABELS: Record<TileKind, string> = {
-  'treetable':      'Table',
-  'bar':            'Bar',
-  'bands':          'Bands',
-  'line':           'Line',
-  'area':           'Area',
-  'scatter':        'Scatter',
-  'pie':            'Pie',
-  'radar':          'Radar',
-  'concentric-arc': 'Concentric Arc',
-  'gauge':          'Gauge',
-  'gauge-segmented':'Gauge (segmented)',
-  'pack':           'Pack',
-  'treemap':        'Treemap',
-  'icicle':         'Icicle',
-  'sunburst':       'Sunburst',
-  'sankey':         'Sankey',
-  'tree':           'Tree',
-  'gantt':          'Gantt',
+const TILE_LABELS: Record<string, string> = {}
+for (const [kind, schema] of allSchemas) {
+  TILE_LABELS[kind] = schema.label
 }
+// Add labels for simple-mount kinds
+TILE_LABELS['gauge'] = 'Gauge'
+TILE_LABELS['gauge-segmented'] = 'Gauge (segmented)'
+TILE_LABELS['sankey'] = 'Sankey'
+TILE_LABELS['gantt'] = 'Gantt'
+TILE_LABELS['bands'] = 'Bands'  // bands uses bar element
 
 function tileLabel(tile: Tile): string {
   return tile.title ?? TILE_LABELS[tile.kind] ?? tile.kind
