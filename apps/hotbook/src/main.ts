@@ -29,19 +29,11 @@ import '@hotbook/bireactive' // Import to trigger schema registration
 // Build TILE_KINDS and TILE_LABELS from the schema registry
 const allSchemas = getAllChartSchemas()
 const TILE_KINDS: TileKind[] = Array.from(allSchemas.keys()) as TileKind[]
-// Add simple-mount kinds that don't have schemas
-TILE_KINDS.push('gauge', 'gauge-segmented', 'sankey', 'gantt')
 
 const TILE_LABELS: Record<string, string> = {}
 for (const [kind, schema] of allSchemas) {
   TILE_LABELS[kind] = schema.label
 }
-// Add labels for simple-mount kinds
-TILE_LABELS['gauge'] = 'Gauge'
-TILE_LABELS['gauge-segmented'] = 'Gauge (segmented)'
-TILE_LABELS['sankey'] = 'Sankey'
-TILE_LABELS['gantt'] = 'Gantt'
-TILE_LABELS['bands'] = 'Bands'  // bands uses bar element
 
 function tileLabel(tile: Tile): string {
   return tile.title ?? TILE_LABELS[tile.kind] ?? tile.kind

@@ -56,6 +56,10 @@ const graphConfigSchema = v.object({
   orderDir: v.optional(v.union([v.literal('asc'), v.literal('desc')])),
 })
 
+const simpleConfigSchema = v.object({
+  valueBinding: v.optional(measureSchema),
+})
+
 // ─── Flat Charts (measure + sort) ─────────────────────────────────────────────
 
 const pieSchema: ChartSchema = {
@@ -300,6 +304,44 @@ const sankeySchema: ChartSchema = {
   },
 }
 
+// ─── Simple Charts (gauges, gantt) ────────────────────────────────────────────
+
+const gaugeSchema: ChartSchema = {
+  kind: 'gauge',
+  label: 'Gauge',
+  dataShape: 'flat',
+  config: simpleConfigSchema,
+  ui: {
+    fields: [
+      { type: 'measure', label: 'Measure', path: 'valueBinding' },
+    ],
+  },
+}
+
+const gaugeSegmentedSchema: ChartSchema = {
+  kind: 'gauge-segmented',
+  label: 'Gauge (segmented)',
+  dataShape: 'flat',
+  config: simpleConfigSchema,
+  ui: {
+    fields: [
+      { type: 'measure', label: 'Measure', path: 'valueBinding' },
+    ],
+  },
+}
+
+const ganttSchema: ChartSchema = {
+  kind: 'gantt',
+  label: 'Gantt',
+  dataShape: 'flat',
+  config: simpleConfigSchema,
+  ui: {
+    fields: [
+      { type: 'measure', label: 'Measure', path: 'valueBinding' },
+    ],
+  },
+}
+
 // ─── Register All Charts ──────────────────────────────────────────────────────
 
 export function registerAllChartSchemas(): void {
@@ -318,6 +360,9 @@ export function registerAllChartSchemas(): void {
   registerChart(icicleSchema)
   registerChart(treeSchema)
   registerChart(sankeySchema)
+  registerChart(gaugeSchema)
+  registerChart(gaugeSegmentedSchema)
+  registerChart(ganttSchema)
 }
 
 // Auto-register on import

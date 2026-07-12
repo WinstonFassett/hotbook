@@ -498,8 +498,9 @@ export function buildSimpleMount(ctx: TileRenderContext): ((el: HTMLElement) => 
 
 /** The custom element tag for a simple-mount tile kind */
 export function simpleTag(kind: string): string | null {
-  // Simple mounts are charts without schemas (gauge, sankey, gantt)
-  if (!getChartSchema(kind)) {
+  // Simple mounts use externalData instead of bindTile flow
+  const simpleMountKinds = ['gauge', 'gauge-segmented', 'sankey', 'gantt']
+  if (simpleMountKinds.includes(kind)) {
     return KIND_TO_TAG[kind] ?? null
   }
   return null
