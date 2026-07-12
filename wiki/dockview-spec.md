@@ -117,14 +117,26 @@ preview is required:
   currently-hovered zone. Edge drops show a thick coloured bar pinned to
   that edge (full-height for left/right, full-width for up/down). Center
   drops shade the whole panel.
+  - **Animation (WIN-158):** Zone indicators should spring into view when
+    the cursor enters a zone and spring out when it leaves. Target 120fps
+    (or match display refresh rate). Use spring physics (not linear easing)
+    for the "workspace understands your intent" feel.
 - The tab strip shows an **insertion caret** when the cursor is between
-  two tabs.
+  two tabs. Caret animates into position with spring easing.
 - The dragged tab tracks the cursor as a floating ghost (or fades from its
   source position — implementation choice).
+- **Preview ghost (WIN-158):** Consider showing a translucent ghost of where
+  the tab/group will land when dropped (outline of the new pane). Animates
+  to match cursor position + drop zone.
 
 The operation does NOT mutate the tree during the drag — drag is
 speculative until release (principle §6). Render the indicator, snapshot
 on dragstart, commit on drop.
+
+**Animation quality bar:** Spring-animated transitions per interaction-principles
+Rule 4 ("physics-appropriate easing"). All layout changes (split, merge, resize,
+tab move) should use spring physics, not linear/ease-in-out. Respect
+`prefers-reduced-motion` (principle §9).
 
 ### 2.3 Cancel
 
@@ -259,12 +271,27 @@ Existing `split` branches keep their shape.
 - Tab drag with the five drop zones (§2.1) and live drop indicators (§2.2).
 - Tab reorder within a strip.
 - Per-pane split buttons stay; they delegate to (§1.1) + (§1.2).
+- **Keyboard shortcuts (WIN-158 — split-oriented workflow):**
+  - `Ctrl+\` — split active panel right
+  - `Ctrl+K Ctrl+\` — split active panel down (VS Code parity)
+  - `Ctrl+W` — close active panel
+  - `Ctrl+1/2/3/...` — focus panel N (or cycle if >9 panels)
+  - These are additive to mouse drag; both interaction modes must work.
 
 ### Phase B — Polish
 - Group drag (move a whole group, not just a tab).
-- Keyboard: Ctrl+\ split right, Ctrl+K Ctrl+\ split down (VS Code parity).
 - Maximize/restore (§1.7).
 - Saved layout presets per dashboard.
+- **Programmatic API (WIN-158 — "remote control" pattern):**
+  ```ts
+  dockview.split(panelId: string, direction: 'left'|'right'|'up'|'down'): string
+  dockview.moveTab(tabId: string, targetGroupId: string, index?: number): void
+  dockview.focusPanel(panelId: string): void
+  dockview.closePanel(panelId: string): void
+  ```
+  Enables scripting, extensions, and keyboard shortcuts to invoke the same
+  operations as mouse drag. All operations animate with the same spring
+  physics as manual drag.
 
 ### Phase C — Multi-page surface (Option B)
 - Vertical page stack of dockview roots.
@@ -281,8 +308,15 @@ Existing `split` branches keep their shape.
   windows (deferred for us), maximize.
 - VS Code editor groups — same behavior class. Notable: VS Code hides the
   tab strip when only one tab is in a group (default).
-- Mitchell Hashimoto's tweet referenced in WIN-57 — a working
-  demonstration of the gestures we want.
+- Mitchell Hashimoto's split framework — "every frame perfect" animation with
+  SwiftUI + CoreAnimation. See WIN-158 research for details.
+- [Replit Splits](https://blog.replit.com/splits) — production example of
+  smooth, spring-animated split pane UX. Philosophy: "make it feel like the
+  workspace understands your intent."
+- **[supersplit-pattern-research.md](./supersplit-pattern-research.md)** (WIN-158) —
+  Research spike on animation-first, split-oriented patterns. Covers Mitchell
+  Hashimoto's work, Replit Splits, remote-control patterns, and animation
+  strategy recommendations.
 
 ---
 
@@ -301,3 +335,16 @@ Existing `split` branches keep their shape.
 4. Does TabGroup's tab strip need overflow behavior (scroll, dropdown)
    on Phase A, or can we defer that until panels-per-group routinely
    exceeds ~6?
+5. **Spring animation implementation (WIN-158):** CSS spring easing (via
+   `linear()` or custom cubic-bezier), JavaScript spring library (react-spring,
+   @motionone, svelte/motion), or Web Animations API with generated keyframes?
+   - JS library gives full control + interruptibility (interaction-principles
+     Rule 11) but adds dependency
+   - CSS is native performance but harder to interrupt mid-transition
+   - Decision deferred to implementation spike; see supersplit-pattern-research.md
+     for analysis
+6. **Tab vs Pane drag semantics (WIN-158):** When a TabGroup has only 1 panel,
+   should dragging that tab move the entire group (Replit behavior) or extract
+   just the tab? Replit's approach feels more intuitive (the tab becomes a
+   pane handle when alone), but may confuse users expecting consistent tab-only
+   behavior.
