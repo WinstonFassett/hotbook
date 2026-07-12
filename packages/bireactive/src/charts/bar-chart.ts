@@ -622,8 +622,8 @@ export class MdBarChartLC extends Diagram {
         const inPos = Vec.derive(() => {
           if (isVert.value) return { x: barCX.value, y: barY.value + 14 };
           if (labelPopped.value) return { x: barX.value + barW.value + OUT_GAP, y: barCY.value };
-          const valueX = barX.value + barW.value - VALUE_PAD;
-          return { x: valueX - valueWidth.value - VALUE_GAP, y: barCY.value };
+          // Place the item label at the left end of the bar with LABEL_PAD.
+          return { x: barX.value + LABEL_PAD, y: barCY.value };
         });
         inLbl = s(label(inPos, derive(() => di()?.label ?? ""),
           { size: 10, fill: inFill, opacity: inOpacity }));
@@ -650,7 +650,7 @@ export class MdBarChartLC extends Diagram {
             };
           }
           if (valuePopped.value) {
-            if (this.valueMode === 'inside' && labelPopped) {
+            if (labelPopped && labelPopped.value) {
               return {
                 x: barX.value + barW.value + OUT_GAP + labelWidth.value + VALUE_GAP,
                 y: barCY.value,
@@ -674,9 +674,9 @@ export class MdBarChartLC extends Diagram {
         });
         biEffect(() => {
           if (inLbl && labelPopped) {
-            const a = isVert.value ? Anchor.Center : (this.valueMode === 'inside'
-              ? (labelPopped.value ? Anchor.Left : Anchor.Right)
-              : (labelPopped.value ? Anchor.Right : Anchor.Left));
+            // Horizontal inside/popped labels always start at the left edge
+            // of the bar or just to the right of the bar end, so left-align.
+            const a = isVert.value ? Anchor.Center : Anchor.Left;
             inLbl.intrinsic.setAttribute('text-anchor', xAnchor(a.x));
             inLbl.intrinsic.setAttribute('dominant-baseline', yAnchor(a.y));
           }
@@ -710,7 +710,9 @@ export class MdBarChartLC extends Diagram {
     // visible instead of being clipped by the left edge of the chart.
     // For inline inside labels the whole label/value unit pops to the right,
     // so no extra left padding is needed.
-    if (labelWidths.length && !(this.labelMode === 'inside' && this.valueMode === 'inside')) {
+    // When the label is rendered inside, the label/value unit pops out to the
+    // right, so no extra left padding is needed.
+    if (labelWidths.length && this.labelMode !== 'inside') {
       biEffect(() => {
         const maxLabelWidth = Math.max(...labelWidths.map(w => w.value));
         leftRoom.value = Math.max(H_PAD.left, maxLabelWidth + OUT_GAP);
