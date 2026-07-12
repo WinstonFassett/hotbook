@@ -164,7 +164,7 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
   // ── Flat charts ──────────────────────────────────────────────────────────
   if (kind === 'bar' || kind === 'bands') {
     const orientation = tile.orientation ?? (kind === 'bar' ? 'vertical' : 'horizontal')
-    const colorMode = kind === 'bands' ? 'palette' : (tile.colorMode ?? 'single')
+    const colorMode = kind === 'bands' ? 'palette' : (tile.colorMode ?? 'palette')
     const labelMode = kind === 'bands' ? 'inside' : (tile.labelMode ?? 'axis')
     const valueMode = kind === 'bands' ? 'inside' : (tile.valueMode ?? 'none')
     const minBandSize = tile.minBandSize ?? 0
@@ -357,7 +357,10 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
   }
   if (kind in hierTags) {
     const tag = hierTags[kind]!
-    const orientationProp = kind === 'icicle' ? (tile.orientation ?? 'horizontal') : undefined
+    const orientationProp =
+      kind === 'icicle' || kind === 'tree'
+        ? (tile.orientation ?? 'horizontal')
+        : undefined
     const sortKey = orderBinding === 'value' || orderBinding === '_value' ? valueBinding : orderBinding
     // Hierarchical elements can sort by value (desc) internally; otherwise rely on pre-sorted nodes + 'index'.
     const hierSortBy: 'index' | 'value' = sortKey === valueBinding && orderDir === 'desc' ? 'value' : 'index'

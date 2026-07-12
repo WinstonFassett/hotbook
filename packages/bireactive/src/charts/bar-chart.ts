@@ -19,11 +19,11 @@ import {
 } from "../lib/transitions";
 import { lightenHex } from "../lib/color-utils";
 import { attachReorderGesture } from "../lib/reorder-gesture";
+import { PALETTE, type ColorStrategy, getColorByStrategy } from "@hotbook/core";
 
 const W = 720;
 const H = 360;
 const SINGLE_COLOR = "#7aaae8";
-const PALETTE = ['#e08888', '#d4a86c', '#ccc060', '#7ec87e', '#60c4c0', '#7aaae8', '#b090e0', '#8899b4'];
 const SORT_SEC = 0.35; // s — orientation/measure swap tween duration
 
 interface Bar { id?: string; label: string; value: number; }
@@ -71,7 +71,8 @@ export class MdBarChartLC extends Diagram {
   get valueBinding(): string { return this.measureKey }
   set valueBinding(v: string) { this.measureKey = v }
 
-  colorMode: 'single' | 'palette' = 'single';
+  colorMode: 'single' | 'palette' = 'palette';
+  colorStrategy: ColorStrategy = 'index'; // 'index' | 'value' | 'identity' | 'single'
   labelMode: 'axis' | 'inside' | 'both' = 'axis';
   valueMode: 'inside' | 'outside' | 'none' = 'outside';
 
@@ -95,11 +96,21 @@ export class MdBarChartLC extends Diagram {
     return this.dataCell.value as Bar[];
   }
 
-  #barColor(idx: number): string {
-    return this.colorMode === 'palette' ? PALETTE[idx % PALETTE.length]! : SINGLE_COLOR;
+  #barColor(idx: number, datum?: Bar): string {
+    if (this.colorMode === 'single') return SINGLE_COLOR;
+
+    const max = Math.max(1, ...(this.dataCell.value as Bar[]).map(d => d.value));
+    return getColorByStrategy(this.colorStrategy, {
+      index: idx,
+      value: datum?.value,
+      identity: datum?.id ?? datum?.label,
+      singleColor: SINGLE_COLOR,
+      palette: PALETTE,
+      valueScale: (v) => v / max
+    });
   }
-  #hoverColor(idx: number): string {
-    return lightenHex(this.#barColor(idx), 0.35);
+  #hoverColor(idx: number, datum?: Bar): string {
+    return lightenHex(this.#barColor(idx, datum), 0.35);
   }
 
   protected scene(s: Mount): void {
@@ -442,8 +453,16 @@ export class MdBarChartLC extends Diagram {
         return arr.findIndex(d => (d.id ?? d.label) === datumId);
       });
       const di = (): Bar | null => (data.value as Bar[])[cur.value] ?? null;
-      const base = this.#barColor(oi);
-      const hoverColor = this.#hoverColor(oi);
+
+      // Color derivation — must be plain strings, not nested cells
+      const baseColor = (): string => {
+        const d = di();
+        return d ? this.#barColor(cur.value, d) : SINGLE_COLOR;
+      };
+      const hoverBaseColor = (): string => {
+        const d = di();
+        return d ? this.#hoverColor(cur.value, d) : lightenHex(SINGLE_COLOR, 0.35);
+      };
 
       // Bar geometry targets — all four swap roles with orientation.
       const barXTarget = derive(() => {
@@ -527,8 +546,8 @@ export class MdBarChartLC extends Diagram {
         animCancel = tweens.length ? this.anim.start(...(tweens as any)) : null;
       });
 
-      const fill = derive(() => { const d = di(); return selected.value === d ? "#fff" : hover.value === d ? hoverColor : base; });
-      const labelFill = derive(() => { const d = di(); return selected.value === d ? base : "#fff"; });
+      const fill = derive(() => { const d = di(); return selected.value === d ? "#fff" : hover.value === d ? hoverBaseColor() : baseColor(); });
+      const labelFill = derive(() => { const d = di(); return selected.value === d ? baseColor() : "#fff"; });
 
       const tile = s(rect(barX, barY, barW, barH, { fill, corner: 2 }));
       tile.el.style.touchAction = "none";
@@ -639,7 +658,7 @@ export class MdBarChartLC extends Diagram {
       });
       const handleOpacity = derive(() => { const d = di(); return (hover.value === d || selected.value === d) ? 1 : 0; });
       const handle = s(circle(handlePos, derive(() => { const d = di(); return selected.value === d ? 6 : 5; }), {
-        fill: derive(() => { const d = di(); return selected.value === d ? "#fff" : hoverColor; }),
+        fill: derive(() => { const d = di(); return selected.value === d ? "#fff" : hoverBaseColor(); }),
         stroke: "#0b0d12", strokeWidth: 1.5, opacity: handleOpacity,
       }));
       handle.el.style.transition = hoverTransition("opacity");

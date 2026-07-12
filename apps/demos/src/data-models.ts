@@ -2,6 +2,7 @@ import { num, Num, treeNode as node, type Writable, type Num as NumType } from "
 import { group, leaf, type BiNode, type ColumnDef } from "@hotbook/bireactive";
 import type { GanttTask } from "@hotbook/bireactive";
 import { sharedRows, items } from "./layout/demo-data";
+import { PALETTE } from "@hotbook/core";
 
 export interface DemoDataModel {
   root?: BiNode;
@@ -17,17 +18,6 @@ export interface DemoDataModel {
   sync: (el: any) => () => void;
   columns?: ColumnDef[];
 }
-
-const PALETTE = [
-  "#e08888",
-  "#d4a86c",
-  "#ccc060",
-  "#7ec87e",
-  "#60c4c0",
-  "#7aaae8",
-  "#b090e0",
-  "#8899b4",
-];
 
 function bi(value: number): Writable<NumType> {
   return num(value);
