@@ -1,73 +1,47 @@
-# @hotbook/core
+# @hotbook/d3
 
-Pure D3 + TypeScript visualization engine. No framework dependencies. Renders proportional and hierarchical data as SVG into any container element.
+Pure D3 + TypeScript rendering engine for proportional and hierarchical visualizations. It has no framework dependencies and renders into SVG inside a container element. It is used by `@hotbook/bireactive` and the host apps for lower-level rendering and tile binding.
 
-## Install
+## What it does
+
+- `VizRenderer` renders single-level (flat) data across `treemap`, `radial`, and `bands` modes, with drag-to-edit and drag-to-reorder support.
+- `mountTreemap`, `mountIcicle`, and `mountSunburst` mount hierarchical visualizations from a `GoalTree`.
+- `tile-binder` connects reactive data sources to `bireactive` custom chart elements in a framework-agnostic way.
+- `biTree` builds `bireactive` tree nodes from flat `VizNode` arrays.
+
+## High-level structure
+
+```
+src/
+  viz/                  # Flat visualization engine
+    VizRenderer.ts      # Flat viz renderer
+    chrome/             # Radial and bands chrome
+    layout*.ts          # Treemap, bands, radial layout helpers
+    pathPrimitives.ts   # Shape morphing primitives
+  hviz/                 # Hierarchical visualization engine
+    treemap.ts          # mountTreemap
+    icicle.ts           # mountIcicle
+    sunburst.ts         # mountSunburst
+    pnodeUtils.ts       # Tree build and rollup helpers
+  host/                 # Glue for reactive charts
+    tile-binder.ts      # bindTile, TileSource, TileController
+    biTree.ts           # buildBiTree, biLeaf, biGroup
+  colors.ts             # pickColor, colorFor
+  types.ts              # Re-exported from @hotbook/core
+  index.ts              # Public exports
+```
+
+## Build / develop scripts
 
 ```sh
-npm install @hotbook/core
+npm run build      # vite build — produces dist/hotbook-d3.js, dist/hotbook-d3.umd.cjs, dist/index.d.ts
+npm run watch      # vite build --watch
+npm run test       # vitest run
+npm run test:watch # vitest
 ```
 
-## Flat visualizations
+The build output is published under `dist/`. `files` in `package.json` includes only `dist`.
 
-`VizRenderer` handles single-level (flat) data across three modes: `treemap`, `radial`, and `bands`.
+## License
 
-```ts
-import { VizRenderer } from '@hotbook/core'
-import type { Goal, ViewMode } from '@hotbook/core'
-
-const goals: Goal[] = [
-  { id: 'a', name: 'Alpha', color: '#e06c75', measurements: { value: 40 }, archived: false, tags: [], urgent: false, important: false, createdAt: '', updatedAt: '' },
-  { id: 'b', name: 'Beta',  color: '#61afef', measurements: { value: 60 }, archived: false, tags: [], urgent: false, important: false, createdAt: '', updatedAt: '' },
-]
-
-const renderer = new VizRenderer(containerEl, {
-  goals,
-  mode: 'treemap',
-  activeUnit: 'value',
-  unitKind: 'size',
-})
-
-// update later
-renderer.update({ mode: 'radial' })
-
-// clean up
-renderer.destroy()
-```
-
-## Hierarchical visualizations
-
-Three mount functions for nested data: `mountTreemap`, `mountIcicle`, `mountSunburst`.
-
-```ts
-import { mountTreemap } from '@hotbook/core'
-import type { GoalTree } from '@hotbook/core'
-
-const tree: GoalTree = {
-  id: '__root__', name: 'All', color: '#333', value: 0,
-  children: [
-    { id: 'g1', name: 'Group A', color: '#e06c75', value: 40 },
-    { id: 'g2', name: 'Group B', color: '#61afef', value: 60 },
-  ],
-}
-
-const mounted = mountTreemap(containerEl, tree)
-
-// clean up
-mounted.destroy()
-```
-
-## Exports
-
-| Export | Kind | Description |
-|---|---|---|
-| `VizRenderer` | class | Flat viz renderer (treemap / radial / bands) |
-| `mountTreemap` | function | Hierarchical treemap |
-| `mountIcicle` | function | Hierarchical icicle |
-| `mountSunburst` | function | Hierarchical sunburst |
-| `pickColor` | function | Default color palette by index |
-| `Goal` | type | Data record for flat viz |
-| `GoalTree` | type | Nested data record for hierarchical viz |
-| `ViewMode` | type | `'treemap' \| 'radial' \| 'bands' \| 'h-treemap' \| 'h-icicle' \| 'h-radial'` |
-
-Most users will want [`hotbook-react`](../hotbook-react) or [`hotbook-element`](../hotbook-element) instead of calling this directly.
+MIT
