@@ -113,7 +113,6 @@ export class MdSunburstLC extends Diagram {
     // the divider handle would get destroyed by the forEach diff (WIN-257).
     const gestureActiveCell = cell(false);
     let frozenSortKey: Map<BiNode, number> | null = null;
-    let frozenLayout: Map<BiNode, HierarchyRectangularNode<BiNode>> | null = null;
 
     // Natural partition layout — no pre-scaling. Viewport does all fitting.
     const layout = derive(() => {
@@ -125,15 +124,10 @@ export class MdSunburstLC extends Diagram {
       void this._reorderTickCell.value;
       const active = gestureActiveCell.value;
 
-      // WIN-257: During active gesture, freeze both sort AND geometry.
-      // Lazy capture approach avoids timing issues with onStart.
-      if (active) {
-        if (frozenLayout) {
-          return frozenLayout;
-        }
-        if (!frozenSortKey) {
-          frozenSortKey = snapshotSortKey();
-        }
+      // WIN-257: During active gesture, freeze SORT ORDER but allow slices to resize.
+      // Lazy capture sort order on first active derive.
+      if (active && !frozenSortKey) {
+        frozenSortKey = snapshotSortKey();
       }
 
       const h = buildHierarchy(root, this._sortByCell.value);
@@ -145,15 +139,6 @@ export class MdSunburstLC extends Diagram {
       partition<BiNode>().size([2 * Math.PI, rfull])(h);
       const map = new Map<BiNode, HierarchyRectangularNode<BiNode>>();
       h.each((d) => map.set(d.data, d as HierarchyRectangularNode<BiNode>));
-
-      // Capture frozen layout on first active derive
-      if (active && !frozenLayout) {
-        frozenLayout = new Map();
-        for (const [key, node] of map) {
-          frozenLayout.set(key, { ...node });
-        }
-      }
-
       return map;
     });
 
@@ -783,7 +768,6 @@ export class MdSunburstLC extends Diagram {
             handle.el.style.cursor = "grab";
             gestureActiveCell.value = false;
             frozenSortKey = null;
-            frozenLayout = null;
           },
         });
         handle.track(dispose);
