@@ -139,7 +139,7 @@ export class MdTreemapLC extends Diagram {
       }
     });
     observer.observe(this, { attributes: true, attributeFilter: ['class'] });
-    this._trackScene(() => observer.disconnect());
+    // Cleanup will happen when element is removed from DOM
 
     // Pre-build static maps (tree structure is immutable).
     const nodeById = new Map<string, BiNode>();
