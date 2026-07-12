@@ -25,3 +25,4 @@ export { numberDrag, type NumberDragOpts } from './lib/number-drag'
 export { circleHandle, lineHandle, type HandleKind, type HandleStyle } from './lib/handles'
 // Chart metadata:
 export { CHART_METADATA, getChartMaturity, type ChartMaturity, type ChartMetadata } from './metadata'
+export { LINK_MIN } from './lib/sankey'

@@ -30,6 +30,7 @@ import {
   MdSankeyFlow,
   MdTreeChart,
   MdGanttChartLC,
+  LINK_MIN,
 } from '@hotbook/bireactive'
 
 // Register custom elements once
@@ -127,6 +128,51 @@ function sortNodes(nodes: VizNode[], orderBinding: string, valueBinding: string,
   }
   if (orderDir === 'desc') sorted.reverse()
   return sorted
+}
+
+/**
+ * Build a sankey data bundle from either a flat edge-list (Dataset.edges) or,
+ * for tree datasets, from parent→child links with values driven by the
+ * selected measure binding. Values are clamped to the sankey link minimum so
+ * flow conservation is maintained while a small sliver remains grabbable.
+ */
+function buildSankeyData(ds: Dataset, rawNodes: VizNode[], valueBinding: string): { nodes: string[]; links: { source: string; target: string; value: number }[] } {
+  if (ds.edges && ds.edges.length > 0) {
+    const nodes = [...new Set(ds.edges.flatMap(e => [e.source, e.target]))]
+    const links = ds.edges.map(e => ({ source: e.source, target: e.target, value: e.value }))
+    return { nodes, links }
+  }
+
+  // Tree / hierarchical nodes: create an edge per parent→child relationship
+  // and value each edge by the sum of the child's descendant measure values.
+  const nodes = rawNodes.map(n => n.id)
+  const byId = new Map(rawNodes.map(n => [n.id, n]))
+  const children = new Map<string, VizNode[]>()
+  for (const n of rawNodes) {
+    if (n.parentId) {
+      const arr = children.get(n.parentId) ?? []
+      arr.push(n)
+      children.set(n.parentId, arr)
+    }
+  }
+  const memo = new Map<string, number>()
+  function getNodeValue(id: string): number {
+    if (memo.has(id)) return memo.get(id)!
+    const n = byId.get(id)
+    if (!n) { memo.set(id, 0); return 0 }
+    const own = n.measures[valueBinding] ?? 0
+    let childSum = 0
+    for (const child of children.get(id) ?? []) {
+      childSum += getNodeValue(child.id)
+    }
+    const v = Math.max(LINK_MIN, own + childSum)
+    memo.set(id, v)
+    return v
+  }
+  const links = rawNodes
+    .filter(n => n.parentId)
+    .map(n => ({ source: n.parentId!, target: n.id, value: getNodeValue(n.id) }))
+  return { nodes, links }
 }
 
 const SERIES_START = new Date(2026, 0, 1).getTime()
@@ -424,10 +470,7 @@ export function buildSimpleMount(ctx: TileRenderContext): ((el: HTMLElement) => 
   }
 
   if (kind === 'sankey') {
-    const edges = ds.edges ?? []
-    const nodeNames = [...new Set(edges.flatMap(e => [e.source, e.target]))]
-    const links = edges.map(e => ({ source: e.source, target: e.target, value: e.value }))
-    const data = { nodes: nodeNames, links }
+    const data = buildSankeyData(ds, rawNodes, valueBinding)
     const { orderBinding } = resolveTileBindings(tile, measureKey)
     const sortBy: 'index' | 'value' = (orderBinding === 'value' || orderBinding === '_value' || orderBinding === valueBinding) ? 'value' : 'index'
     return (el: any) => { el.externalData = data; el.sortBy = sortBy }
@@ -458,7 +501,9 @@ export function simpleDataKey(ctx: TileRenderContext): string {
     return `${kind}|${valueBinding}|${leaves.reduce((a, b) => a + (b.measures[valueBinding] ?? 0), 0)}`
   }
   if (kind === 'sankey') {
-    return `sankey|${JSON.stringify(ds.edges ?? [])}`
+    const data = buildSankeyData(ds, rawNodes, valueBinding)
+    const linkPairs = data.links.map(l => [l.source, l.target])
+    return `sankey|${JSON.stringify(data.nodes)}|${JSON.stringify(linkPairs)}`
   }
   if (kind === 'gantt') {
     return `gantt|${valueBinding}|${ds.nodes.length}`

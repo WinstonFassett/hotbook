@@ -1,8 +1,8 @@
-import { effect, type Mount, cell } from "bireactive";
+import { effect, type Mount, cell, tween, easeOut, untracked } from "bireactive";
 import { Diagram } from "../lib/diagram";
 import { interpolateCool, interpolateWarm, interpolateRainbow } from "d3-scale-chromatic";
 import { hierarchy } from "d3-hierarchy";
-import { sankeyScene, renderColorControls, type LinkDef } from "../lib/sankey";
+import { sankeyScene, renderColorControls, type LinkDef, SORT_SEC } from "../lib/sankey";
 
 // ---------------------------------------------------------------------------
 // Take 1: Simple editable graph
@@ -30,7 +30,9 @@ export class MdSankeySimple extends Diagram {
       outline: none;
     }
   `
-  externalData?: { nodes: string[]; links: { source: string; target: string; value: number }[] }
+  private _dataCell = cell<{ nodes: string[]; links: { source: string; target: string; value: number }[] } | undefined>(undefined)
+  get externalData(): { nodes: string[]; links: { source: string; target: string; value: number }[] } | undefined { return this._dataCell.value }
+  set externalData(v) { this._dataCell.value = v }
 
   private _sortByCell = cell<'index' | 'value'>('index')
   get sortBy(): 'index' | 'value' { return this._sortByCell.value }
@@ -48,6 +50,23 @@ export class MdSankeySimple extends Diagram {
       W, H, nodeIds, linkDefs, labelSize: 11, stringIds: true, nodePadding,
       sortByCell: this._sortByCell,
     });
+
+    // Animate link values when externalData changes (e.g. measure binding).
+    let prevData = this.externalData;
+    effect(() => {
+      const next = this.externalData;
+      if (!prevData || !next) { prevData = next; return; }
+      if (next.nodes.length !== nodeIds.length || next.links.length !== linkValues.length) { prevData = next; return; }
+      const targets = next.links.map(l => l.value);
+      for (let i = 0; i < linkValues.length; i++) {
+        const target = targets[i]!;
+        const current = untracked(() => linkValues[i]!.value.value);
+        if (Math.abs(current - target) < 0.001) continue;
+        this.anim.start(tween(linkValues[i]!.value, target, SORT_SEC, easeOut));
+      }
+      prevData = next;
+    });
+
     renderColorControls(this, nodeColorProp, linkColorMode);
     if (!this.hasAttribute('no-source')) {
       const root = this.shadowRoot!;

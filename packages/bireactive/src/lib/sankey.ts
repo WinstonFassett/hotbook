@@ -139,8 +139,8 @@ export interface SankeySceneOptions {
   stepFn?: (currentVal: number, shift: boolean) => number;
 }
 
-const LINK_MIN = 0.5; // floor so a flow never collapses to an ungrabbable sliver
-const SORT_SEC = 0.35; // Sort/reorder tween duration in seconds (matching Gantt)
+export const LINK_MIN = 0.5; // floor so a flow never collapses to an ungrabbable sliver
+export const SORT_SEC = 0.35; // Sort/reorder tween duration in seconds (matching Gantt)
 
 /**
  * Pick the constant px-per-unit ONCE from the initial values so the diagram opens
@@ -203,7 +203,7 @@ export function sankeyScene(
   const linkValues = linkDefs.map((l, i) => ({
     source: l.source,
     target: l.target,
-    value: cell(Math.max(LINK_MIN, l.init)),
+    value: num(Math.max(LINK_MIN, l.init)),
     src: src[i]!,
     tgt: tgt[i]!,
   }));

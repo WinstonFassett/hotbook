@@ -811,10 +811,16 @@ export class DockView extends HTMLElement {
           }
           this._panelCtrls.set(panelId, ctrl)
         } else {
-          body.appendChild(existing.simpleEl!)
           // Re-apply props so reactive sort/options changes reach the element
           // without a remount (e.g. sankey sortBy transitions).
-          setup(existing.simpleEl!)
+          // If the element is not in this body, re-attach before setup so the
+          // chart's connectedCallback runs against the new props.
+          if (!body.contains(existing.simpleEl!)) {
+            setup(existing.simpleEl!)
+            body.appendChild(existing.simpleEl!)
+          } else {
+            setup(existing.simpleEl!)
+          }
         }
       } else {
         // Unsupported retired kind — show placeholder
