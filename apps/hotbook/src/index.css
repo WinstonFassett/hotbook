@@ -62,6 +62,70 @@ html, body, #root, #app {
 }
 .sb-topbar-right { margin-left: auto; }
 
+/* ─── Dock toolbar (Super Split-style global header) ────────────────────────── */
+
+.sb-dock-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-bottom: 1px solid #222;
+  flex-shrink: 0;
+  background: #111;
+  min-height: 38px;
+}
+.sb-dock-toolbar-title {
+  color: #555;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  user-select: none;
+  margin-right: 6px;
+}
+.sb-dock-toolgroup {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: #161616;
+  border-radius: 6px;
+  border: 1px solid #222;
+}
+.sb-dock-tbtn {
+  width: 30px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  border-radius: 5px;
+  color: #999;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.sb-dock-tbtn svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.sb-dock-tbtn:hover {
+  background: #1e1e1e;
+  color: #ccc;
+}
+.sb-dock-tbtn:active {
+  transform: scale(0.92);
+}
+.sb-dock-tbtn[disabled] {
+  opacity: 0.25;
+  pointer-events: none;
+  color: #555;
+}
+
 .sb-grid-wrap {
   flex: 1;
   overflow: hidden;
@@ -287,6 +351,25 @@ sb-dock-view {
   border: 1px solid #1e1e1e;
   background: #111;
   overflow: hidden;
+  position: relative;
+}
+
+/* Focus indicator — drawn on top of the pane content so all four sides are visible */
+.dv-group--focused::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 2px solid #007acc;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* FLIP animations — applied dynamically by JS */
+.dv-group.dv-animating,
+.dv-cell.dv-animating,
+[data-flip-state="active"] {
+  will-change: transform;
+  z-index: 100;
 }
 
 .dv-tabstrip {
@@ -319,6 +402,7 @@ sb-dock-view {
   gap: 4px;
   padding: 0 8px 0 10px;
   border-right: 1px solid #1a1a1a;
+  border-top: 2px solid transparent;
   cursor: pointer;
   min-width: 80px;
   max-width: 160px;
@@ -327,9 +411,23 @@ sb-dock-view {
   font-size: 11px;
   user-select: none;
   white-space: nowrap;
+  position: relative;
 }
 .dv-tab:hover { color: #888; background: #141414; }
-.dv-tab--active { color: #ccc; background: #111; border-bottom: 1px solid #111; }
+.dv-tab--active {
+  color: #ddd;
+  background: #1f1f1f;
+  border-top: 2px solid #555;
+  border-bottom: 1px solid transparent;
+  font-weight: 500;
+}
+.dv-group--focused .dv-tab--active {
+  color: #fff;
+  background: #252525;
+  border-top: 2px solid #58a6ff;
+  font-weight: 600;
+  z-index: 2;
+}
 .dv-tab-label {
   flex: 1;
   overflow: hidden;
@@ -501,4 +599,136 @@ sb-dock-view {
     left: auto;
     right: 0;
   }
+}
+
+/* ─── Debug Panel (FLIP animation controls) ──────────────────────────────────── */
+
+.sb-debug-panel {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 12px;
+  min-width: 220px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.7);
+  z-index: 1000;
+  font-size: 12px;
+  color: #ccc;
+  user-select: none;
+}
+
+.sb-debug-panel--dragging {
+  cursor: move;
+  opacity: 0.9;
+}
+
+.sb-debug-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #2a2a2a;
+  cursor: move;
+}
+
+.sb-debug-panel-title {
+  font-weight: 500;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #888;
+}
+
+.sb-debug-panel-close {
+  background: none;
+  border: none;
+  color: #666;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0;
+}
+
+.sb-debug-panel-close:hover {
+  color: #ccc;
+}
+
+.sb-debug-panel-section {
+  margin-bottom: 12px;
+}
+
+.sb-debug-panel-section:last-child {
+  margin-bottom: 0;
+}
+
+.sb-debug-panel-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 11px;
+  color: #999;
+}
+
+.sb-debug-panel-radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sb-debug-panel-radio {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: background 0.12s ease;
+}
+
+.sb-debug-panel-radio:hover {
+  background: #1f1f1f;
+}
+
+.sb-debug-panel-radio input[type="radio"] {
+  margin: 0;
+  cursor: pointer;
+}
+
+.sb-debug-panel-radio-label {
+  font-size: 12px;
+  color: #ccc;
+  cursor: pointer;
+}
+
+.sb-debug-panel-radio-desc {
+  font-size: 10px;
+  color: #666;
+  margin-top: 2px;
+}
+
+.sb-debug-panel-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: background 0.12s ease;
+}
+
+.sb-debug-panel-checkbox:hover {
+  background: #1f1f1f;
+}
+
+.sb-debug-panel-checkbox input[type="checkbox"] {
+  margin: 0;
+  cursor: pointer;
+}
+
+.sb-debug-panel-checkbox-label {
+  font-size: 12px;
+  color: #ccc;
+  cursor: pointer;
 }

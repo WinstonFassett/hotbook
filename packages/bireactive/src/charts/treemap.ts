@@ -13,6 +13,7 @@ import {
   easeOut,
   effect as biEffect,
   untracked,
+  type AnyShape,
 } from "bireactive";
 import { Diagram } from "../lib/diagram";
 import type { ElementWithBridge } from "../lib/hud-bridge";
@@ -40,6 +41,9 @@ export class MdTreemapLC extends Diagram {
     text { pointer-events: none; }
     ${FILL_STYLE}
     ${GESTURE_SUPPRESSION_CSS}
+    :host { display: flex; flex-direction: column; }
+    .chrome-layer { flex: 0 0 auto; }
+    svg { height: auto; flex: 1 1 auto; }
     [data-focusable]:focus {
       outline: 2px solid #4a9eff;
       outline-offset: 2px;
@@ -51,6 +55,14 @@ export class MdTreemapLC extends Diagram {
   externalRoot?: BiNode
   drillKey?: string
   showBreadcrumb?: boolean
+
+  private breadcrumbDisposer?: () => void
+
+  disconnectedCallback(): void {
+    this.breadcrumbDisposer?.();
+    this.breadcrumbDisposer = undefined;
+    super.disconnectedCallback();
+  }
 
   // Reactive so the levels dropdown drives enter/exit fades instead of a remount.
   private _maxDepthCell = cell<number | undefined>(undefined)
@@ -70,7 +82,9 @@ export class MdTreemapLC extends Diagram {
   set measureKey(v: string) { this._measureKeyCell.value = v }
 
   protected scene(s: Mount): void {
-    const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
+    const { w: Wc, h: hostH } = useHostSize(this, { width: W, height: H });
+    const chromeH = cell(0);
+    const Hc = derive(() => Math.max(1, hostH.value - chromeH.value));
     const view = this.view(Wc, Hc);
     this.tabIndex = -1;
     this.style.outline = "none";
@@ -87,20 +101,6 @@ export class MdTreemapLC extends Diagram {
     attachChartGestures(this, { root, parentOf, state, scalingMode: "proportional-neighbor" });
     const hoverCell = cell<BiNode | null>(null);
     state.hoverCell = hoverCell;
-
-    const layout = derive(() => {
-      const h = buildHierarchy(root, this._sortByCell.value);
-      treemap<BiNode>()
-        .tile(treemapSquarify)
-        .size([Wc.value, Hc.value])
-        .paddingOuter(PAD_OUTER)
-        .paddingInner(PAD_INNER)
-        .paddingTop(PAD_TOP)
-        .round(false)(h);
-      const map = new Map<BiNode, HierarchyRectangularNode<BiNode>>();
-      h.each((d) => map.set(d.data, d as HierarchyRectangularNode<BiNode>));
-      return map;
-    });
 
     // Pre-build static maps (tree structure is immutable).
     const nodeById = new Map<string, BiNode>();
@@ -119,6 +119,26 @@ export class MdTreemapLC extends Diagram {
       return n ? (nodeDepth.get(n) ?? 0) : 0;
     });
 
+    // Re-layout from the drilled node so the focus subtree is computed at the
+    // full canvas size. This keeps group headers (paddingTop) at fixed pixel
+    // size instead of scaling them with the zoom factor.
+    const drillLayout = derive(() => {
+      const id = this._drillIdCell.value;
+      const focusNode = id ? nodeById.get(id) : root;
+      const effectiveRoot = focusNode ?? root;
+      const h = buildHierarchy(effectiveRoot, this._sortByCell.value);
+      treemap<BiNode>()
+        .tile(treemapSquarify)
+        .size([Wc.value, Hc.value])
+        .paddingOuter(PAD_OUTER)
+        .paddingInner(PAD_INNER)
+        .paddingTop(PAD_TOP)
+        .round(true)(h);
+      const map = new Map<BiNode, HierarchyRectangularNode<BiNode>>();
+      h.each((d) => map.set(d.data, d as HierarchyRectangularNode<BiNode>));
+      return map;
+    });
+
     // ── Per-tile geometry model ────────────────────────────────────────
     // Treemap can't use the affine "viewport box" zoom that icicle/sunburst use:
     // a fixed-pixel group header cannot be expressed inside a single affine
@@ -132,7 +152,8 @@ export class MdTreemapLC extends Diagram {
     // tweens are interrupt-safe by construction: re-drill cancels and re-targets
     // from each tile's CURRENT value, so Esc-out can never strand.
 
-    // Focus = the drilled node (or root). Its layout-space box maps onto the canvas.
+    // Focus = the drilled node (or root). Its layout-space box maps 1:1 onto the
+    // canvas so the focus node's header (and title) is visible in the treemap area.
     const focusBoxOf = (id: string | null, lmap: Map<BiNode, HierarchyRectangularNode<BiNode>>) => {
       const W0 = Wc.value, H0 = Hc.value;
       if (id) {
@@ -146,7 +167,7 @@ export class MdTreemapLC extends Diagram {
     // Target screen rect for `node` when focused on `id`. Pure affine off the
     // focus box — no PAD_TOP hack; group headers are fixed-pixel labels (below).
     const targetRect = (node: BiNode, id: string | null) => {
-      const lmap = untracked(() => layout.value);
+      const lmap = untracked(() => drillLayout.value);
       const { fx0, fy0, fx1, fy1 } = focusBoxOf(id, lmap);
       const sx = Wc.value / Math.max(1e-9, fx1 - fx0);
       const sy = Hc.value / Math.max(1e-9, fy1 - fy0);
@@ -164,6 +185,9 @@ export class MdTreemapLC extends Diagram {
     // can tween them. Populated in the forEach body, pruned on tile teardown.
     type TileGeo = { cx: ReturnType<typeof num>; cy: ReturnType<typeof num>; cw: ReturnType<typeof num>; ch: ReturnType<typeof num> };
     const tileGeo = new Map<BiNode, TileGeo>();
+    // Live registry of each rendered tile shape (and its label, if any) so the
+    // reorder effect can keep nodeLayer children in paint order.
+    const tileMap = new Map<BiNode, { tile: AnyShape; label?: AnyShape }>();
 
     const maxDepthCell = this._maxDepthCell;
 
@@ -253,7 +277,7 @@ export class MdTreemapLC extends Diagram {
     let seenSortBy = untracked(() => this._sortByCell.value);
     let seenMeasureKey = untracked(() => this._measureKeyCell.value);
     biEffect(() => {
-      void layout.value; // track layout (reacts to sort + value + size)
+      void drillLayout.value; // track layout (reacts to sort + value + size + drill)
       const sortBy = this._sortByCell.value; // track sort key so a toggle re-fires this effect
       const measureKey = untracked(() => this._measureKeyCell.value); // read untracked — effect fires on layout change (leaf writes), by which point measureKey is already set
       if (!layoutInited) { layoutInited = true; seenSortBy = sortBy; seenMeasureKey = measureKey; return; }
@@ -376,8 +400,8 @@ export class MdTreemapLC extends Diagram {
       });
       // Geometry (x/y/w/h) is driven by the per-tile drill tween on this.anim —
       // NO CSS transition on those attrs (it would double-animate / lag the tween).
-      // Prune the geometry registry when this tile is torn down (left the window).
-      tile.track(() => { if (tileGeo.get(node)?.cx === cx) tileGeo.delete(node); });
+      // Prune the geometry/shape registries when this tile is torn down (left the window).
+      tile.track(() => { if (tileGeo.get(node)?.cx === cx) { tileGeo.delete(node); tileMap.delete(node); } });
       tile.el.addEventListener("click", () => { state.focused.value = node; });
       tile.el.addEventListener("focus", () => { state.focused.value = node; });
       tile.el.addEventListener("blur", () => { if (state.focused.value === node) state.focused.value = null; });
@@ -409,33 +433,54 @@ export class MdTreemapLC extends Diagram {
 
       if (nd > 0) {
         const text = derive(() => {
-          if (isContextNode.value) return ""; // skip label on context node
           const w0 = w.value, h0 = h.value;
           if (w0 <= 28 || h0 <= 16) return "";
           return isLeaf
             ? `${node.value.label}\n${node.value.total.value.toFixed(0)}`
             : node.value.label;
         });
+        // Fade the label in with the tile and out when the tile leaves the window.
+        const labelOpacity = num(0);
+        const labelFill = derive(() => isContextNode.value ? "#fff" : labelInk(nodeFill));
         const lbl = label(
           Vec.derive(() => ({ x: x.value + w.value / 2, y: y.value + (isLeaf ? h.value / 2 : 10) })),
           text,
-          { size: isLeaf ? 11 : 10, align: Anchor.Center, fill: labelInk(nodeFill), bold: !isLeaf },
+          { size: isLeaf ? 11 : 10, align: Anchor.Center, fill: labelFill, bold: !isLeaf, opacity: labelOpacity },
         );
+        lbl.el.style.transition = `opacity ${ENTER_MS}ms cubic-bezier(0.4,0,0.2,1)`;
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          const disposeLabelOpacity = biEffect(() => {
+            labelOpacity.value = tilePresent.value ? 1 : 0;
+          });
+          lbl.track(disposeLabelOpacity);
+        }));
+        tileMap.set(node, { tile, label: lbl });
         return [tile, lbl];
       }
+      tileMap.set(node, { tile });
       return tile;
     }, { key: (n) => n.value.id ?? "" });
 
-    // Context header label overlay — rendered after nodeLayer so it sits on top of all child tiles.
-    const ctxLabelText = derive(() => {
-      const id = this._drillIdCell.value;
-      return id ? (nodeById.get(id)?.value.label ?? "") : "";
+    // Keep the SVG paint order in sync with the tree view: leavers (which are
+    // fading out) go behind, current-window nodes go in front, and within each
+    // group we follow the pre-order set by the layout.
+    biEffect(() => {
+      const rendered = renderedSet.value;
+      const members = windowMembership.value as unknown as Set<BiNode>;
+      const nextSet = new Set<BiNode>(members);
+      const leavers: BiNode[] = [];
+      const current: BiNode[] = [];
+      for (const n of rendered) {
+        if (nextSet.has(n)) current.push(n); else leavers.push(n);
+      }
+      const ordered = [...leavers, ...current];
+      for (const n of ordered) {
+        const entry = tileMap.get(n);
+        if (!entry) continue;
+        nodeLayer.el.appendChild(entry.tile.el);
+        if (entry.label) nodeLayer.el.appendChild(entry.label.el);
+      }
     });
-    s(label(
-      Vec.derive(() => ({ x: Wc.value / 2, y: ctxLabelText.value ? 10 : -100 })),
-      ctxLabelText,
-      { size: 10, align: Anchor.Center, fill: "#e0e0e0", bold: true },
-    ));
 
     if (!this.hasAttribute('no-source')) s(label(view.bottom.up(10), derive(() => {
       const f = state.focused.value;
@@ -444,7 +489,8 @@ export class MdTreemapLC extends Diagram {
 
     // Drill breadcrumb in the chrome layer — chart-owned, reactive.
     if (this.showBreadcrumb !== false && this.chromeLayer) {
-      mountDrillBreadcrumb({
+      this.breadcrumbDisposer?.();
+      this.breadcrumbDisposer = mountDrillBreadcrumb({
         drillIdCell: this._drillIdCell,
         root,
         chromeLayer: this.chromeLayer,
@@ -453,6 +499,7 @@ export class MdTreemapLC extends Diagram {
           const drillKey = (this as any).drillKey ?? "default";
           (this as ElementWithBridge).brSync?.emitDrill?.(drillKey, id);
         },
+        onResize: (h) => { chromeH.value = h; },
       });
     }
   }

@@ -8,7 +8,6 @@ import {
   registerChart,
   type ChartSchema,
   type FlatRow,
-  type ChartContext,
   type MountContext,
   type VizNode,
   type PEdge,
@@ -123,7 +122,7 @@ const pieSchema: ChartSchema = {
       { type: 'sort', label: 'Sort', path: 'orderBinding' },
     ],
   },
-  toChart: (rows) => rows.map(r => ({ id: r.id, label: r.label, value: r.value, valueOriginal: r.measures?.value ?? r.value, value2Original: r.measures?.value2 ?? r.value2 })),
+  toChart: (rows) => rows.map((r: FlatRow) => ({ id: r.id, label: r.label, value: r.value, valueOriginal: r.measures?.value ?? r.value, value2Original: r.measures?.value2 ?? r.value2 })),
   readValue: (d) => d.value.value,
   writeValue: (d, v) => { d.value.value = v },
   idOf: (d) => d.id,
@@ -139,7 +138,7 @@ const lineSchema: ChartSchema = {
       { type: 'measure', label: 'Measure', path: 'valueBinding' },
     ],
   },
-  toChart: (rows) => rows.map(r => ({ id: r.id, date: r.date ?? new Date(r.label), value: r.value, valueOriginal: r.measures?.value ?? r.value, value2Original: r.measures?.value2 ?? r.value2 })),
+  toChart: (rows) => rows.map((r: FlatRow) => ({ id: r.id, date: r.date ?? new Date(r.label), value: r.value, valueOriginal: r.measures?.value ?? r.value, value2Original: r.measures?.value2 ?? r.value2 })),
   readValue: (d) => d.value,
   writeValue: (d, v) => { d.value = v },
   idOf: (d) => d.id,
@@ -155,7 +154,7 @@ const areaSchema: ChartSchema = {
       { type: 'measure', label: 'Measure', path: 'valueBinding' },
     ],
   },
-  toChart: (rows) => rows.map(r => ({ id: r.id, date: r.date ?? new Date(r.label), value: r.value, valueOriginal: r.measures?.value ?? r.value, value2Original: r.measures?.value2 ?? r.value2 })),
+  toChart: (rows) => rows.map((r: FlatRow) => ({ id: r.id, date: r.date ?? new Date(r.label), value: r.value, valueOriginal: r.measures?.value ?? r.value, value2Original: r.measures?.value2 ?? r.value2 })),
   readValue: (d) => d.value,
   writeValue: (d, v) => { d.value = v },
   idOf: (d) => d.id,
@@ -173,7 +172,7 @@ const radarSchema: ChartSchema = {
     ],
   },
   flattenHierarchical: true,
-  toChart: (rows) => rows.map(r => ({ id: r.id, name: r.label, value: r.value, valueOriginal: r.measures?.value ?? r.value, value2Original: r.measures?.value2 ?? r.value2 })),
+  toChart: (rows) => rows.map((r: FlatRow) => ({ id: r.id, name: r.label, value: r.value, valueOriginal: r.measures?.value ?? r.value, value2Original: r.measures?.value2 ?? r.value2 })),
   readValue: (d) => d.value,
   writeValue: (d, v) => { d.value = v },
   idOf: (d) => d.id,
@@ -190,7 +189,7 @@ const concentricArcSchema: ChartSchema = {
       { type: 'sort', label: 'Sort', path: 'orderBinding' },
     ],
   },
-  toChart: (rows) => rows.map((r, i) => ({ id: r.id, label: r.label, color: r.color ?? palette[i % 6]!, value: Math.min(100, r.value), valueOriginal: r.measures?.value ?? r.value, value2Original: r.measures?.value2 ?? r.value2 })),
+  toChart: (rows) => rows.map((r: FlatRow, i: number) => ({ id: r.id, label: r.label, color: r.color ?? palette[i % 6]!, value: Math.min(100, r.value), valueOriginal: r.measures?.value ?? r.value, value2Original: r.measures?.value2 ?? r.value2 })),
   readValue: (d) => d.value,
   writeValue: (d, v) => { d.value = Math.min(100, v) },
   idOf: (d) => d.id,
@@ -228,7 +227,7 @@ const barSchema: ChartSchema = {
       { type: 'orientation', label: 'Orientation', path: 'orientation' },
     ],
   },
-  toChart: (rows) => rows.map(r => ({ id: r.id, label: r.label, value: r.value, valueOriginal: r.measures?.value ?? r.value, value2Original: r.measures?.value2 ?? r.value2 })),
+  toChart: (rows) => rows.map((r: FlatRow) => ({ id: r.id, label: r.label, value: r.value, valueOriginal: r.measures?.value ?? r.value, value2Original: r.measures?.value2 ?? r.value2 })),
   readValue: (d) => d.value,
   writeValue: (d, v) => { d.value = v },
   idOf: (d) => d.id,
@@ -247,7 +246,7 @@ const bandsSchema: ChartSchema = {
       { type: 'orientation', label: 'Orientation', path: 'orientation' },
     ],
   },
-  toChart: (rows) => rows.map(r => ({ id: r.id, label: r.label, value: r.value, valueOriginal: r.measures?.value ?? r.value, value2Original: r.measures?.value2 ?? r.value2 })),
+  toChart: (rows) => rows.map((r: FlatRow) => ({ id: r.id, label: r.label, value: r.value, valueOriginal: r.measures?.value ?? r.value, value2Original: r.measures?.value2 ?? r.value2 })),
   readValue: (d) => d.value,
   writeValue: (d, v) => { d.value = v },
   idOf: (d) => d.id,
@@ -267,7 +266,7 @@ const scatterSchema: ChartSchema = {
       { type: 'yKey', label: 'Y Axis', path: 'yBinding' },
     ],
   },
-  toChart: (rows, ctx) => rows.map((r, i) => {
+  toChart: (rows, ctx) => rows.map((r: FlatRow, i: number) => {
     const xKey = ctx.xKey ?? '_index'
     const yKey = ctx.yKey ?? 'y'
     const x = xKey === '_index' ? (r.index ?? i) : (r.measures?.[xKey] ?? 0)
@@ -459,7 +458,7 @@ const gaugeSchema: ChartSchema = {
   },
   mount: 'externalData',
   toChart: (rows, ctx) => {
-    const value = rows.reduce((a, b) => a + (b.value ?? 0), 0)
+    const value = rows.reduce((a: number, b: FlatRow) => a + (b.value ?? 0), 0)
     const label = ctx.tile?.title ?? ctx.valueBinding ?? 'value'
     return { value, min: 0, max: 100, label }
   },
@@ -477,7 +476,7 @@ const gaugeSegmentedSchema: ChartSchema = {
   },
   mount: 'externalData',
   toChart: (rows, ctx) => {
-    const value = rows.reduce((a, b) => a + (b.value ?? 0), 0)
+    const value = rows.reduce((a: number, b: FlatRow) => a + (b.value ?? 0), 0)
     const label = ctx.tile?.title ?? ctx.valueBinding ?? 'value'
     return { value, min: 0, max: 100, label, segments: 24 }
   },
@@ -496,7 +495,7 @@ const ganttSchema: ChartSchema = {
   mount: 'externalData',
   toChart: (rows, ctx) => {
     const valueBinding = ctx.valueBinding ?? 'value'
-    return rows.map((n, i) => {
+    return rows.map((n: FlatRow, i: number) => {
       const explicitStart = (n as any).start as Date | undefined
       const explicitEnd = (n as any).end as Date | undefined
       const duration = explicitStart && explicitEnd

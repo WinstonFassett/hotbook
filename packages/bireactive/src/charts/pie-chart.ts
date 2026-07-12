@@ -1,4 +1,4 @@
-import { Anchor, annularSector, cell, circle, derive, easeOut, effect as biEffect, label, type Mount, Num, num, tween, untracked, Vec, type Writable } from "bireactive";
+import { Anchor, annularSector, cell, derive, easeOut, effect as biEffect, label, type Mount, Num, num, tween, untracked, Vec, type Writable } from "bireactive";
 import { circleHandle } from "../lib/handles";
 import { Diagram } from "../lib/diagram";
 import { pie } from "d3-shape";
@@ -7,7 +7,7 @@ import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { dragCancelable } from "../lib/esc-contract";
 import { GESTURE_ACTIVE_CLASS } from "../lib/transitions";
-import { PALETTE, type ColorStrategy, getColorByStrategy } from "@hotbook/core";
+import { PALETTE } from "@hotbook/core";
 
 const W = 640;
 const H = 640;
@@ -53,7 +53,7 @@ export class MdPieChartLC extends Diagram {
   set valueBinding(v: string) { this.measureKey = v }
 
   set externalData(v: { id?: string; label: string; value: number; valueOriginal?: number; value2Original?: number }[] | undefined) {
-    if (v) this.dataCell.value = v.map((d) => ({ id: d.id, label: d.label, value: num(d.value), valueOriginal: d.valueOriginal ?? d.value, value2Original: d.value2Original ?? d.value2 }));
+    if (v) this.dataCell.value = v.map((d) => ({ id: d.id, label: d.label, value: num(d.value), valueOriginal: d.valueOriginal ?? d.value, value2Original: d.value2Original ?? d.value }));
   }
   get externalData(): { id?: string; label: string; value: number }[] | undefined {
     return this.dataCell.value.map((d) => ({ id: d.id, label: d.label, value: d.value.value }));

@@ -30,6 +30,7 @@ import {
   ensureArrowMarker, forEach, group,
   label, line, type Mount, pathD, rect, Vec,
   num, tween, easeOut, untracked,
+  type Cell,
 } from "bireactive";
 import { Diagram } from "../lib/diagram";
 import { scaleTime } from "d3-scale";
@@ -202,7 +203,7 @@ export class MdGanttChartLC extends Diagram {
 
     // Create per-task tweened y-position cells.
     // Map from task ID to {yCell, cancelFn}.
-    const taskYCells = new Map<string, { yCell: ReturnType<typeof num>, yCenter: ReturnType<typeof derive<number>>, cancel: (() => void) | null }>();
+    const taskYCells = new Map<string, { yCell: ReturnType<typeof num>, yCenter: Cell<number>, cancel: (() => void) | null }>();
     for (const task of rows0) {
       const yCell = num(plotY); // Will be initialized below
       const yCenter = derive<number>(() => yCell.value + ROW_H / 2);

@@ -87,6 +87,103 @@ export function leafTileIds(node: DockNode | null): string[] {
   return out
 }
 
+// ─── Directionality / geometry ───────────────────────────────────────────────
+
+export type DockRect = { x: number; y: number; w: number; h: number }
+
+/** Compute the relative {x,y,w,h} for every group in the tree using the
+ *  current split sizes. Coordinates are normalised so the root occupies
+ *  (0,0) to (1,1); only ratios matter for neighbour scoring. */
+export function computeGroupRects(node: DockNode | null): Map<string, DockRect> {
+  const map = new Map<string, DockRect>()
+  if (!node) return map
+  layoutNode(node, 0, 0, 1, 1, map)
+  return map
+}
+
+function layoutNode(node: DockNode, x: number, y: number, w: number, h: number, map: Map<string, DockRect>) {
+  if (node.kind === 'group') {
+    map.set(node.id, { x, y, w, h })
+    return
+  }
+  const n = node.children.length
+  const sum = node.sizes.reduce((a, b) => a + b, 0) || 1
+  const horiz = node.direction === 'row'
+  const avail = horiz ? w : h
+  let cursor = horiz ? x : y
+  for (let i = 0; i < n; i++) {
+    const seg = Math.max(0, avail * (node.sizes[i] / sum))
+    if (horiz) layoutNode(node.children[i], cursor, y, seg, h, map)
+    else       layoutNode(node.children[i], x, cursor, w, seg, map)
+    cursor += seg
+  }
+}
+
+/** Find the group geometrically adjacent to `groupId` in `dir` (left/right/up/down). */
+export function getNeighborGroup(node: DockNode | null, groupId: string, dir: DockEdge): DockGroup | null {
+  const rects = computeGroupRects(node)
+  const a = rects.get(groupId)
+  if (!a) return null
+  const aCx = a.x + a.w / 2
+  const aCy = a.y + a.h / 2
+  const groups = allGroups(node)
+  let best: DockGroup | null = null
+  let bestScore = Infinity
+  for (const g of groups) {
+    if (g.id === groupId) continue
+    const r = rects.get(g.id)
+    if (!r) continue
+    const bCx = r.x + r.w / 2
+    const bCy = r.y + r.h / 2
+    const dx = bCx - aCx, dy = bCy - aCy
+    let aligned: boolean, primary: number, secondary: number
+    if (dir === 'left')  { aligned = dx < -1e-9; primary = -dx; secondary = Math.abs(dy) }
+    else if (dir === 'right') { aligned = dx > 1e-9; primary =  dx; secondary = Math.abs(dy) }
+    else if (dir === 'up')    { aligned = dy < -1e-9; primary = -dy; secondary = Math.abs(dx) }
+    else /* down */           { aligned = dy > 1e-9; primary =  dy; secondary = Math.abs(dx) }
+    if (!aligned) continue
+    const score = primary + secondary * 2.2
+    if (score < bestScore) { bestScore = score; best = g }
+  }
+  return best
+}
+
+export function canMoveGroup(node: DockNode | null, groupId: string, dir: DockEdge): boolean {
+  return !!getNeighborGroup(node, groupId, dir)
+}
+
+/** Swap two groups by id in the tree. */
+export function swapGroups(node: DockNode | null, groupAId: string, groupBId: string): DockNode | null {
+  if (groupAId === groupBId) return node
+  const a = allGroups(node).find(g => g.id === groupAId)
+  const b = allGroups(node).find(g => g.id === groupBId)
+  if (!a || !b) return node
+  return mapGroups(node, g => {
+    if (g.id === groupAId) return b
+    if (g.id === groupBId) return a
+    return g
+  })
+}
+
+/** Move a group one step in a screen direction by swapping with its geometric neighbour. */
+export function moveGroup(node: DockNode | null, groupId: string, dir: DockEdge): DockNode | null {
+  const neighbor = getNeighborGroup(node, groupId, dir)
+  if (!neighbor) return node
+  return swapGroups(node, groupId, neighbor.id)
+}
+
+/** Split a group in any direction, creating a new empty group on the requested edge. */
+export function splitGroup(node: DockNode | null, groupId: string, edge: DockEdge): DockNode | null {
+  if (!node) return null
+  const target = allGroups(node).find(g => g.id === groupId)
+  if (!target) return node
+  const newGroup = makeGroup([])
+  const direction: DockDir = edge === 'left' || edge === 'right' ? 'row' : 'col'
+  const placeAfter = edge === 'right' || edge === 'down'
+  const split = makeSplit(direction, placeAfter ? [target, newGroup] : [newGroup, target])
+  return replaceNode(node, groupId, split)
+}
+
 /** Map every group with a transform. Returns a new tree where transformed
  *  groups are replaced; splits are descended into. If `map` returns null, the
  *  group is dropped — its parent split is then auto-collapsed (see collapse). */
@@ -400,21 +497,11 @@ export function mergeGroups(node: DockNode | null, sourceGroupId: string, target
 /** Split a group horizontally (right) — VS Code Ctrl+\ behavior. Creates a new
  *  empty group to the right of the target. */
 export function splitGroupRight(node: DockNode | null, groupId: string): DockNode | null {
-  if (!node) return null
-  const target = allGroups(node).find(g => g.id === groupId)
-  if (!target) return node
-  const newGroup = makeGroup([])
-  const split = makeSplit('row', [target, newGroup])
-  return replaceNode(node, groupId, split)
+  return splitGroup(node, groupId, 'right')
 }
 
 /** Split a group vertically (down) — VS Code Ctrl+K Ctrl+\ behavior. Creates a
  *  new empty group below the target. */
 export function splitGroupDown(node: DockNode | null, groupId: string): DockNode | null {
-  if (!node) return null
-  const target = allGroups(node).find(g => g.id === groupId)
-  if (!target) return node
-  const newGroup = makeGroup([])
-  const split = makeSplit('col', [target, newGroup])
-  return replaceNode(node, groupId, split)
+  return splitGroup(node, groupId, 'down')
 }

@@ -21,6 +21,8 @@ export interface DrillBreadcrumbOpts {
   chromeLayer: HTMLElement;
   /** Called when the user clicks a crumb. `null` = drill out to root. */
   onDrill: (id: string | null) => void;
+  /** Called with the chrome height in px whenever the breadcrumb bar resizes. */
+  onResize?: (h: number) => void;
 }
 
 /**
@@ -28,7 +30,7 @@ export interface DrillBreadcrumbOpts {
  * The breadcrumb is reactive — it rebuilds whenever drillIdCell changes.
  */
 export function mountDrillBreadcrumb(opts: DrillBreadcrumbOpts): () => void {
-  const { drillIdCell, root, chromeLayer, onDrill } = opts;
+  const { drillIdCell, root, chromeLayer, onDrill, onResize } = opts;
   let bar: HTMLElement | null = null;
   let parentIdx = buildParentIndex(root);
 
@@ -47,21 +49,38 @@ export function mountDrillBreadcrumb(opts: DrillBreadcrumbOpts): () => void {
     return path;
   });
 
-  const unsub = biEffect(() => {
+  let ro: ResizeObserver | null = null;
+  if (onResize) {
+    ro = new ResizeObserver(([e]) => {
+      if (e) onResize(e.contentRect.height);
+    });
+    ro.observe(chromeLayer);
+  }
+
+  const dispose = biEffect(() => {
     const path = pathDerive.value;
     // Remove old bar
     if (bar) {
       bar.remove();
       bar = null;
     }
-    if (path.length === 0) return;
+    if (path.length === 0) {
+      onResize?.(0);
+      return;
+    }
 
     bar = buildBar(path, onDrill);
     chromeLayer.appendChild(bar);
+    if (onResize) {
+      // Measure synchronously so the treemap can reserve the exact space
+      // before the next paint/RAF.
+      onResize(bar.getBoundingClientRect().height);
+    }
   });
 
   return () => {
-    unsub();
+    dispose();
+    ro?.disconnect();
     if (bar) bar.remove();
   };
 }
@@ -89,11 +108,10 @@ function buildBar(path: BiNode[], onDrill: (id: string | null) => void): HTMLEle
   rootBtn.addEventListener("click", () => onDrill(null));
   bar.appendChild(rootBtn);
 
-  // Path segments — skip the root node (index 0) since the Root button covers it.
-  const segments = path.slice(1);
-  segments.forEach((node, i) => {
-    const isCurrent = i === segments.length - 1;
-
+  // Path segments — skip root and the current node. The current node's title
+  // lives in the treemap node itself, not in the breadcrumb.
+  const segments = path.slice(1, -1);
+  segments.forEach((node) => {
     const sep = document.createElement("span");
     sep.className = "drill-sep";
     sep.textContent = "›";
@@ -101,10 +119,9 @@ function buildBar(path: BiNode[], onDrill: (id: string | null) => void): HTMLEle
 
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = `drill-crumb${isCurrent ? " drill-crumb--current" : ""}`;
+    btn.className = "drill-crumb";
     btn.textContent = node.value.label;
-    if (isCurrent) btn.setAttribute("aria-current", "location");
-    btn.addEventListener("click", () => onDrill(isCurrent ? null : node.value.id));
+    btn.addEventListener("click", () => onDrill(node.value.id));
     bar.appendChild(btn);
   });
 

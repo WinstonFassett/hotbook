@@ -38,6 +38,7 @@ export class MdPack extends Diagram {
   static styles = `:host { overflow: hidden; }text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}[data-focusable]:focus { outline: 2px solid #4a9eff; outline-offset: 2px; } [data-focusable]:focus:not(:focus-visible) { outline: none; }`
   externalRoot?: BiNode
   drillKey?: string
+  showBreadcrumb?: boolean
 
   // Reactive so the levels dropdown drives enter/exit fades instead of a remount.
   private _maxDepthCell = cell<number | undefined>(undefined)

@@ -20,6 +20,7 @@ import {
   treeNode,
   Vec,
   type Writable,
+  type Cell,
 } from "bireactive";
 import { Diagram } from "../lib/diagram";
 import { dragCancelable } from "../lib/esc-contract";
@@ -190,7 +191,7 @@ export class MdBudgetTree extends Diagram {
     labels: readonly string[],
     fills: readonly string[],
     isTotalRow: boolean,
-    selected: Writable<Writable<Num> | null>,
+    selected: Writable<Cell<Writable<Num> | null>>,
   ): void {
     const total = derive(() => cells.reduce((a, c) => a + c.value, 0));
     const widthOf = (i: number) =>

@@ -19,6 +19,7 @@ import { hudStore, resetHudForDataset } from './store'
 import type { TileRecord } from './DockView'
 import { DockView } from './DockView'
 import './DockView'
+import { createDockToolbar } from './DockViewToolbar'
 import { defaultDockTree, reconcile, addTileToDock, type DockNode } from './dock'
 import { readLayoutFromURL, parseLayout } from './url-layout'
 import { getAllChartSchemas } from '@hotbook/core'
@@ -636,9 +637,13 @@ function mount() {
   app.innerHTML = `
     <div class="sb-root">
       <div id="sb-topbar" class="sb-topbar"></div>
+      <div id="sb-dock-toolbar"></div>
       <div id="sb-body" class="sb-grid-wrap" style="flex:1;min-height:0;display:flex;flex-direction:column"></div>
     </div>
   `
+
+  const toolbar = document.getElementById('sb-dock-toolbar')!
+  toolbar.appendChild(createDockToolbar(dockView))
 
   const body = document.getElementById('sb-body')!
   dockView.style.cssText = 'flex:1;min-height:0;width:100%'
