@@ -31,8 +31,6 @@ const flatWithOrientationConfigSchema = v.object({
 })
 
 const scatterConfigSchema = v.object({
-  orderBinding: v.optional(sortSchema),
-  orderDir: v.optional(v.union([v.literal('asc'), v.literal('desc')])),
   xBinding: v.optional(xKeySchema),
   yBinding: v.optional(yKeySchema),
 })
@@ -164,7 +162,6 @@ const scatterSchema: ChartSchema = {
   config: scatterConfigSchema,
   ui: {
     fields: [
-      { type: 'sort', label: 'Sort', path: 'orderBinding' },
       { type: 'xKey', label: 'X Axis', path: 'xBinding' },
       { type: 'yKey', label: 'Y Axis', path: 'yBinding' },
     ],

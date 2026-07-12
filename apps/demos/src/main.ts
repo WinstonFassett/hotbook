@@ -56,7 +56,8 @@ const experiments: Array<{
   { id: "sunburst", title: "Sunburst (Partition polar)", tag: "v-sunburst", ctor: MdSunburstLC },
   { id: "sankey-simple", title: "Sankey (simple, editable)", tag: "v-sankey-simple", ctor: MdSankeySimple },
   { id: "sankey-complex", title: "Sankey (UK energy)", tag: "v-sankey-complex", ctor: MdSankeyComplex },
-  { id: "sankey-hierarchy", title: "Sankey (hierarchy → flow)", tag: "v-sankey-hierarchy", ctor: MdSankeyHierarchy },
+  // Hidden: more tree than flow (WIN-265).
+  // { id: "sankey-hierarchy", title: "Sankey (hierarchy → flow)", tag: "v-sankey-hierarchy", ctor: MdSankeyHierarchy },
   { id: "tree-chart", title: "Tree (node-link dendrogram)", tag: "v-tree-chart", ctor: MdTreeChart },
   { id: "budget-tree", title: "Budget Tree (drag boundary handles)", tag: "v-budget-tree", ctor: MdBudgetTree },
   // Hidden for now: demoing the treetable next to a treetable is redundant (WIN-255).
@@ -204,6 +205,23 @@ if (app) {
     const dataModel = dataModelFor(e.id);
     if (dataModel) {
       dataModel.setChartData(el);
+      // Listen for gesturecommit to re-trigger reorder after gesture ends (WIN-269).
+      // Flat charts (bar/pie/radar) freeze their display order during gestures via
+      // the gestureActive flag. When a value changes during the gesture and the
+      // gesture ends, the chart's internal state has the new value but the frozen
+      // display order hasn't reconciled to match the (possibly sorted) store order.
+      // Re-applying the current sort triggers the reorder animation, matching the
+      // tile-binder behavior that hotbook uses.
+      el.addEventListener('gesturecommit', (e: Event) => {
+        const detail = (e as CustomEvent).detail;
+        // Only re-apply on commit (not cancel), matching tile-binder's contract.
+        if (!detail || typeof detail.canceled !== 'boolean' || detail.canceled) return;
+        queueMicrotask(() => {
+          if (!(el as any).gestureActive && dataModel.setSort) {
+            dataModel.setSort(el, config.sort);
+          }
+        });
+      });
     }
 
     const srcDetails = document.createElement("details");

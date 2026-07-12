@@ -12,6 +12,10 @@ import {
   type Mount,
   type Num,
   type Writable,
+  num,
+  tween,
+  easeOut,
+  untracked,
 } from "bireactive";
 import type { Diagram } from "./diagram";
 import { scaleSequential } from "d3-scale";
@@ -130,6 +134,7 @@ export interface SankeySceneOptions {
   // Reactive color mode cells (optional — pass pre-created cells to share across UI)
   nodeColorProp?: ReturnType<typeof cell<NodeColorProp>>;
   linkColorMode?: ReturnType<typeof cell<LinkColorMode>>;
+  sortByCell?: ReturnType<typeof cell<'index' | 'value'>>;
   // Custom step size fn — defaults to 1 (shift=5). Use e.g. v => v * 0.1 for proportional.
   stepFn?: (currentVal: number, shift: boolean) => number;
 }
@@ -179,6 +184,7 @@ export function sankeyScene(
 
   const nodeColorProp = opts.nodeColorProp ?? cell<NodeColorProp>("layer");
   const linkColorMode = opts.linkColorMode ?? cell<LinkColorMode>("source");
+  const sortByCell = opts.sortByCell ?? cell<'index' | 'value'>('index');
 
   host.tabIndex = -1; // Container not directly focusable, ribbons are
   host.style.outline = "none";
@@ -206,24 +212,56 @@ export function sankeyScene(
   // flow never rescales the rest of the diagram (the d3-sankey rubberiness we
   // dropped d3 to avoid). The diagram grows/shrinks in its own space; the viewer
   // frames the announced bounds (below).
-  const topology: SankeyTopology = buildTopology(nodeIds.length, src, tgt);
+  const baseTopology: SankeyTopology = buildTopology(nodeIds.length, src, tgt);
+
+  // Sorted topology: reorder nodes within each column based on sortBy.
+  // When sortBy = 'value', sort by node throughput descending.
+  const sortedTopology = derive(() => {
+    const sortBy = sortByCell.value;
+    if (sortBy === 'index') return baseTopology;
+
+    // Compute throughputs to sort by value
+    const values = linkValues.map(l => l.value.value);
+    const inSum = new Array<number>(baseTopology.nodeCount).fill(0);
+    const outSum = new Array<number>(baseTopology.nodeCount).fill(0);
+    for (let i = 0; i < baseTopology.src.length; i++) {
+      const v = Math.max(0, values[i]!);
+      outSum[baseTopology.src[i]!]! += v;
+      inSum[baseTopology.tgt[i]!]! += v;
+    }
+    const throughput = new Array<number>(baseTopology.nodeCount);
+    for (let i = 0; i < baseTopology.nodeCount; i++) {
+      throughput[i] = Math.max(inSum[i]!, outSum[i]!);
+    }
+
+    // Clone topology and sort columns
+    const sorted: SankeyTopology = {
+      ...baseTopology,
+      columns: baseTopology.columns.map(col => {
+        const sorted = [...col];
+        sorted.sort((a, b) => throughput[b]! - throughput[a]!); // Descending
+        return sorted;
+      }),
+    };
+    return sorted;
+  });
 
   // Choose the ruler ONCE from the initial values so the diagram opens sized to
   // fit ~H, then hold it constant. Every later pixel↔value conversion (drag,
   // wheel, grip placement) uses THIS same pxPerUnit, so all manipulation is at
   // the scale the geometry was drawn at.
-  const pxPerUnit = initialPxPerUnit(topology, linkValues.map((l) => l.value.value), H, nodePadding);
+  const pxPerUnit = initialPxPerUnit(baseTopology, linkValues.map((l) => l.value.value), H, nodePadding);
   const dims = { W, pxPerUnit, nodeWidth, nodePadding };
 
   const layout = derive<SankeyLayout>(() =>
-    computeLayout(topology, linkValues.map((l) => l.value.value), dims)
+    computeLayout(sortedTopology.value, linkValues.map((l) => l.value.value), dims)
   );
   // NOTE: fitHostToBounds was removed — it reactively overrode the fixed viewBox
   // set by view(), causing captions (color controls, help text) to move and scale
   // with the diagram during edits. The fixed viewBox from view() is correct.
 
   const nodeColors = derive(() =>
-    nodeColorScale(topology.layer, nodeColorProp.value, interp)
+    nodeColorScale(baseTopology.layer, nodeColorProp.value, interp)
   );
 
   const hovered = cell<number | null>(null);
@@ -518,6 +556,7 @@ export function sankeyScene(
       stroke: derive(() => nodeActive.value ? "#fff" : "none"),
       strokeWidth: 1.5,
     }));
+    tile.el.style.cursor = "ns-resize";
     tile.el.addEventListener("pointerenter", (e) => { nodeActive.value = true; showBarTooltip(e as PointerEvent); });
     tile.el.addEventListener("pointermove", (e) => { tooltipAt.value = toSVG(e as PointerEvent); });
     tile.el.addEventListener("pointerleave", () => { nodeActive.value = false; tooltipVis.value = false; tooltipNodeIdx.value = null; });
@@ -567,9 +606,9 @@ export function sankeyScene(
         },
       );
       const gripVis = Vec.derive(gripPos);
-      const gripX = derive(() => gripVis.value.x - 7);
-      const gripY = derive(() => gripVis.value.y - 2);
-      const grip = s(rect(gripX, gripY, 14, 4, {
+      const gripX = derive(() => gripVis.value.x - 8);
+      const gripY = derive(() => gripVis.value.y - 3);
+      const grip = s(rect(gripX, gripY, 16, 6, {
         fill: "#0b0d12",
         stroke: derive(() => nodeActive.value ? "#fff" : fill.value),
         strokeWidth: 1.5,
@@ -671,7 +710,7 @@ export function sankeyScene(
         );
       }
 
-      const grip = s(circle(gripVis, derive(() => active.value ? 6 : 4), {
+      const grip = s(circle(gripVis, derive(() => active.value ? 9 : 7), {
         fill: "#0b0d12",
         stroke: derive(() => active.value ? "#fff" : "rgba(0,0,0,0.55)"),
         strokeWidth: 2,
@@ -754,7 +793,7 @@ export function sankeyScene(
         );
       }
 
-      const grip = s(circle(gripVis, derive(() => active.value ? 6 : 4), {
+      const grip = s(circle(gripVis, derive(() => active.value ? 9 : 7), {
         fill: "#0b0d12",
         stroke: derive(() => active.value ? "#fff" : "rgba(0,0,0,0.55)"),
         strokeWidth: 2,

@@ -1,4 +1,4 @@
-import { effect, type Mount } from "bireactive";
+import { effect, type Mount, cell } from "bireactive";
 import { Diagram } from "../lib/diagram";
 import { interpolateCool, interpolateWarm, interpolateRainbow } from "d3-scale-chromatic";
 import { hierarchy } from "d3-hierarchy";
@@ -32,6 +32,10 @@ export class MdSankeySimple extends Diagram {
   `
   externalData?: { nodes: string[]; links: { source: string; target: string; value: number }[] }
 
+  private _sortByCell = cell<'index' | 'value'>('index')
+  get sortBy(): 'index' | 'value' { return this._sortByCell.value }
+  set sortBy(v: 'index' | 'value') { this._sortByCell.value = v }
+
   protected scene(s: Mount): void {
     const ext = this.externalData
     const hasExt = ext && ext.nodes.length > 0 && ext.links.length > 0
@@ -42,6 +46,7 @@ export class MdSankeySimple extends Diagram {
     const view = this.view(W + 120, H + 48);
     const { focused, hovered, wheelLocked, linkValues, nodeColorProp, linkColorMode } = sankeyScene(this, s, {
       W, H, nodeIds, linkDefs, labelSize: 11, stringIds: true, nodePadding,
+      sortByCell: this._sortByCell,
     });
     renderColorControls(this, nodeColorProp, linkColorMode);
     if (!this.hasAttribute('no-source')) {
@@ -116,12 +121,17 @@ export class MdSankeyComplex extends Diagram {
     }
   `
 
+  private _sortByCell = cell<'index' | 'value'>('index')
+  get sortBy(): 'index' | 'value' { return this._sortByCell.value }
+  set sortBy(v: 'index' | 'value') { this._sortByCell.value = v }
+
   protected scene(s: Mount): void {
     const W = 800, H = 560;
     const view = this.view(W + 180, H + 48);
     const { focused, hovered, wheelLocked, linkValues, nodeColorProp, linkColorMode } = sankeyScene(this, s, {
       W, H, nodeIds: COMPLEX_NODES, linkDefs: COMPLEX_LINKS,
       nodePadding: 4, interp: interpolateWarm, labelSize: 9, stringIds: false,
+      sortByCell: this._sortByCell,
     });
     renderColorControls(this, nodeColorProp, linkColorMode);
     {

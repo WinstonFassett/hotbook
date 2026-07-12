@@ -151,10 +151,9 @@ export class MdLineChartLC extends Diagram {
     });
     const hoverOpacity = derive(() => (hover.value ? 1 : 0));
 
-    s(
-      line(hoverX, hoverBottom, { thin: true, dashed: true, opacity: hoverOpacity, stroke: "#888" }),
-      circle(hoverPoint, 4, { fill: "#7aaae8", stroke: "#fff", strokeWidth: 2, opacity: hoverOpacity }),
-    );
+    const hoverCircle = s(circle(hoverPoint, 4, { fill: "#7aaae8", stroke: "#fff", strokeWidth: 2, opacity: hoverOpacity }));
+    hoverCircle.el.style.pointerEvents = "none";
+    s(line(hoverX, hoverBottom, { thin: true, dashed: true, opacity: hoverOpacity, stroke: "#888" }));
 
     // Selection marker — reads through ctx.xGet/ctx.yGet.
     const selPoint = Vec.derive(() => {
@@ -164,10 +163,10 @@ export class MdLineChartLC extends Diagram {
     });
     const selOpacity = derive(() => (selected.value ? 1 : 0));
 
-    s(
-      circle(selPoint, 6, { fill: "transparent", stroke: "#fff", strokeWidth: 2, opacity: selOpacity }),
-      circle(selPoint, 3, { fill: "#fff", stroke: "transparent", opacity: selOpacity }),
-    );
+    const selCircleOuter = s(circle(selPoint, 6, { fill: "transparent", stroke: "#fff", strokeWidth: 2, opacity: selOpacity }));
+    const selCircleInner = s(circle(selPoint, 3, { fill: "#fff", stroke: "transparent", opacity: selOpacity }));
+    selCircleOuter.el.style.pointerEvents = "none";
+    selCircleInner.el.style.pointerEvents = "none";
 
     s(label(
       Vec.derive(() => ({ x: Wc.value / 2, y: 12 })),
