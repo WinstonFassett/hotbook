@@ -44,10 +44,12 @@ import {
 import {
   GESTURE_ACTIVE_CLASS,
   GESTURE_SUPPRESSION_CSS,
+  REORDER_ELEVATION_CSS,
   hoverTransition,
 } from "../lib/transitions";
 import { lightenHex } from "../lib/color-utils";
 import { PALETTE } from "@hotbook/core";
+import { attachReorderGesture } from "../lib/reorder-gesture";
 
 const W = 720;
 const H = 360;
@@ -98,7 +100,7 @@ function makeSample(): GanttTask[] {
 type DragKind = 'move' | 'start' | 'end';
 
 export class MdGanttChartLC extends Diagram {
-  static styles = `text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}`;
+  static styles = `text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}${REORDER_ELEVATION_CSS}`;
 
   readonly dataCell = cell<readonly GanttTask[]>(makeSample());
 
@@ -113,6 +115,16 @@ export class MdGanttChartLC extends Diagram {
   private _sortByCell = cell<'index' | 'value'>('index')
   get sortBy(): 'index' | 'value' { return this._sortByCell.value }
   set sortBy(v: 'index' | 'value') { this._sortByCell.value = v }
+
+  /** Drag-to-reorder (WIN-287). When true and sortBy='index', dragging a row
+   *  up/down reorders tasks. Caller handles data persistence via onReorder. */
+  private _canReorderCell = cell<boolean>(false)
+  get canReorder(): boolean { return this._canReorderCell.value }
+  set canReorder(v: boolean) { this._canReorderCell.value = v }
+
+  /** Fired when a drag-to-reorder commits. Receives the new task id sequence.
+   *  Chart previews the reorder but doesn't persist; caller mutates data. */
+  onReorder?: (orderedIds: string[]) => void
 
   set externalData(v: GanttTask[] | undefined) {
     if (v) this.dataCell.value = v;
@@ -877,6 +889,83 @@ export class MdGanttChartLC extends Diagram {
       tile.el.style.touchAction = "none";
       // Value geometry (x/width = task start/duration) is write-through — no settle.
 
+      // ─── Drag-to-reorder (WIN-287) ────────────────────────────────────────
+      // When canReorder is true and sortBy='index', dragging a row up/down
+      // reorders the task list. The filter yields to time-axis resize handles.
+      biEffect(() => {
+        const enabled = this._canReorderCell.value && this._sortByCell.value === 'index';
+        const task = rows0[idx];
+        if (!enabled || !task || !task.id) {
+          tile.el.style.cursor = "grab";
+          return;
+        }
+
+        tile.el.style.cursor = "grab";
+        let initialSnapshot: GanttTask[] = [];
+        const detach = attachReorderGesture({
+          hitEl: tile.el,
+          dragEl: tile.el,
+          itemId: task.id,
+          host: this,
+          // Yield to resize handles on the time-axis (left/right edges of bar).
+          // This ensures horizontal drags on handles trigger resize, not reorder.
+          filter: (e) => {
+            const d = di();
+            if (!d) return true;
+            const { x } = localPoint(e);
+            const sx = (xScale.value as any)(d.start) as number;
+            const ex = (xScale.value as any)(d.end) as number;
+            const edgeTol = e.pointerType === "mouse" ? 6 : 24;
+            // Only allow reorder if pointer is away from both edges
+            return x >= sx + edgeTol && x <= ex - edgeTol;
+          },
+          getInitialOrder: () => (data.value as GanttTask[]).map(t => t.id),
+          computeTargetIndex: (e) => {
+            const { y } = localPoint(e);
+            // Map pointer y to row index
+            const raw = (y - plotY) / ROW_STEP;
+            return Math.floor(raw);
+          },
+          onActivate: () => {
+            // Snapshot the initial task array for potential revert
+            initialSnapshot = [...(data.value as GanttTask[])];
+          },
+          onPreview: (order) => {
+            // Imperatively reorder the data array. When sortBy='index', sortedData
+            // will reflect this new order and the existing y-cell tween system
+            // (lines 199-239) will animate rows to their new positions.
+            const tasks = data.value as GanttTask[];
+            const byId = new Map(tasks.map(t => [t.id, t]));
+            const reordered = order.map(id => byId.get(id)).filter(Boolean) as GanttTask[];
+            if (reordered.length === tasks.length) {
+              data.value = reordered;
+            }
+          },
+          onEnd: (finalOrder, canceled) => {
+            if (canceled) {
+              // Revert to the initial snapshot from onActivate
+              data.value = initialSnapshot;
+              this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled: true } }));
+              return;
+            }
+
+            // Commit: check if order actually changed from initial
+            const initialIds = initialSnapshot.map(t => t.id);
+            const changed = finalOrder.some((id, i) => id !== initialIds[i]);
+            if (changed) {
+              // Data is already reordered from onPreview; just notify the caller
+              this.onReorder?.(finalOrder.slice());
+              this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled: false, reorder: true } }));
+            } else {
+              this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled: false } }));
+            }
+          },
+        });
+
+        // Cleanup when effect re-runs or component unmounts
+        return detach;
+      });
+
       // Inside label (task name) — shown when bar wide enough.
       const inOpacity = derive(() => barW.value >= 60 ? 1 : 0);
       const labelFill = derive(() => { const d = di(); return selected.value === d ? base : "#fff"; });
@@ -1011,9 +1100,14 @@ export class MdGanttChartLC extends Diagram {
     }
 
     // ─── Caption / readout ────────────────────────────────────────────────
+    const statusText = derive(() => {
+      const base = "Gantt — click select · Tab navigate · ←/→ shift · ↑/↓ resize · drag body/handles · ctrl+wheel resize · Esc revert";
+      const canReorder = this._canReorderCell.value && this._sortByCell.value === 'index';
+      return canReorder ? base + " · drag row to reorder" : base;
+    });
     s(label(
       Vec.derive(() => ({ x: Wc.value / 2, y: 12 })),
-      "Gantt — click select · Tab navigate · ←/→ shift · ↑/↓ resize · drag body/handles · ctrl+wheel resize · Esc revert",
+      statusText,
       { size: 11, align: Anchor.Center, opacity: 0.7 },
     ));
 
