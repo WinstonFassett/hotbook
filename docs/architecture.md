@@ -98,7 +98,7 @@ flowchart TB
   chart -->|expose| brSync
   brSync <-->|bindHudSync| hud
   gesture -->|onEnd| tilerec
-  tilerec -->|onUpdate(id, measures)| persist
+  tilerec -->|"onUpdate(id, measures)"| persist
 ```
 
 ### Steps in prose
