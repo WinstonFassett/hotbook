@@ -43,9 +43,11 @@ import {
 import {
   GESTURE_ACTIVE_CLASS,
   GESTURE_SUPPRESSION_CSS,
+  REORDER_ELEVATION_CSS,
   hoverTransition,
 } from "../lib/transitions";
 import { lightenHex } from "../lib/color-utils";
+import { attachReorderGesture } from "../lib/reorder-gesture";
 
 const W = 720;
 const H = 360;
@@ -96,7 +98,7 @@ function makeSample(): GanttTask[] {
 type DragKind = 'move' | 'start' | 'end';
 
 export class MdGanttChartLC extends Diagram {
-  static styles = `text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}`;
+  static styles = `text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}${REORDER_ELEVATION_CSS}`;
 
   readonly dataCell = cell<readonly GanttTask[]>(makeSample());
 
@@ -107,6 +109,14 @@ export class MdGanttChartLC extends Diagram {
    *  start meets the latest predecessor's end (zero slack). Propagation is
    *  forward-only in topological order; cycles are skipped silently. */
   enforceDeps = false;
+
+  // Drag-to-reorder (WIN-262). Caller opts in via canReorder (typically when
+  // rows are in natural order). Commit fires onReorder(orderedIds); chart is
+  // agnostic to where order is persisted.
+  private _canReorderCell = cell<boolean>(false)
+  get canReorder(): boolean { return this._canReorderCell.value }
+  set canReorder(v: boolean) { this._canReorderCell.value = v }
+  onReorder?: (orderedIds: string[]) => void
 
   set externalData(v: GanttTask[] | undefined) {
     if (v) this.dataCell.value = v;
@@ -745,6 +755,11 @@ export class MdGanttChartLC extends Diagram {
     }
 
     // ─── Task bars ─────────────────────────────────────────────────────────
+    const REORDER_SEC = 0.25;
+    const reorderCells = new Map<string, ReturnType<typeof cell<number>>>();
+    let reorderStartRowIdx: number;
+    let reorderStartY: number;
+    
     for (let idx = 0; idx < MAX_ROWS; idx++) {
       const di = (): GanttTask | null => (data.value as GanttTask[])[idx] ?? null;
       const base = (() => {
@@ -766,6 +781,65 @@ export class MdGanttChartLC extends Diagram {
       tile.el.style.cursor = "grab";
       tile.el.style.touchAction = "none";
       // Value geometry (x/width = task start/duration) is write-through — no settle.
+      
+      // Drag-to-reorder (WIN-262). When canReorder is true, dragging up/down reorders.
+      if (this._canReorderCell.peek()) {
+        const taskId = rows0[idx]?.id;
+        if (taskId) {
+          const detach = attachReorderGesture({
+            hitEl: tile.el,
+            dragEl: tile.el,
+            itemId: taskId,
+            host: this,
+            // Yield to resize handles on time-axis edges
+            filter: (e) => {
+              const d = di();
+              if (!d) return true;
+              const { x } = localPoint(e);
+              const sx = (xScale.value as any)(d.start);
+              const ex = (xScale.value as any)(d.end);
+              const edgeTol = e.pointerType === "mouse" ? 6 : 24;
+              return x >= sx + edgeTol && x <= ex - edgeTol;
+            },
+            getInitialOrder: () => (data.peek() as GanttTask[]).map(x => x.id),
+            computeTargetIndex: (e, order) => {
+              const { y } = localPoint(e);
+              return Math.max(0, Math.min(order.length - 1, Math.floor((y - plotY) / ROW_STEP)));
+            },
+            onActivate: () => {
+              const cur = data.peek() as GanttTask[];
+              reorderStartRowIdx = cur.findIndex(t => t.id === taskId);
+              reorderStartY = plotY + reorderStartRowIdx * ROW_STEP + ROW_H / 2;
+            },
+            onPreview: (order, e) => {
+              const { y } = localPoint(e);
+              const ghostCenter = reorderStartY + (y - reorderStartY);
+              let bestIdx = reorderStartRowIdx;
+              let bestDist = Infinity;
+              for (let i = 0; i < order.length; i++) {
+                const slotCenter = plotY + i * ROW_STEP + ROW_H / 2;
+                const dist = Math.abs(slotCenter - ghostCenter);
+                if (dist < bestDist) { bestDist = dist; bestIdx = i; }
+              }
+            },
+            onEnd: (finalOrder, canceled) => {
+              if (!canceled) {
+                const initial = (data.peek() as GanttTask[]).map(x => x.id);
+                const changed = finalOrder.some((id, i) => id !== initial[i]);
+                if (changed) {
+                  const tasks = data.value as GanttTask[];
+                  const reordered = finalOrder.map(id => tasks.find(t => t.id === id)!);
+                  data.value = reordered;
+                  this.onReorder?.(finalOrder.slice());
+                  this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled: false, reorder: true } }));
+                  return;
+                }
+              }
+              this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } }));
+            },
+          });
+        }
+      }
 
       // Inside label (task name) — shown when bar wide enough.
       const inOpacity = derive(() => barW.value >= 60 ? 1 : 0);
@@ -903,7 +977,7 @@ export class MdGanttChartLC extends Diagram {
     // ─── Caption / readout ────────────────────────────────────────────────
     s(label(
       Vec.derive(() => ({ x: Wc.value / 2, y: 12 })),
-      "Gantt — click select · Tab navigate · ←/→ shift · ↑/↓ resize · drag body/handles · ctrl+wheel resize · Esc revert",
+      "Gantt — click select · Tab navigate · ←/→ shift · ↑/↓ resize · drag body/handles · ctrl+wheel resize · Esc revert" + (this._canReorderCell.peek() ? " · drag row up/down to reorder" : ""),
       { size: 11, align: Anchor.Center, opacity: 0.7 },
     ));
 
