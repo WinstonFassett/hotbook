@@ -518,6 +518,7 @@ export function sankeyScene(
       stroke: derive(() => nodeActive.value ? "#fff" : "none"),
       strokeWidth: 1.5,
     }));
+    tile.el.style.cursor = "ns-resize";
     tile.el.addEventListener("pointerenter", (e) => { nodeActive.value = true; showBarTooltip(e as PointerEvent); });
     tile.el.addEventListener("pointermove", (e) => { tooltipAt.value = toSVG(e as PointerEvent); });
     tile.el.addEventListener("pointerleave", () => { nodeActive.value = false; tooltipVis.value = false; tooltipNodeIdx.value = null; });
@@ -567,9 +568,9 @@ export function sankeyScene(
         },
       );
       const gripVis = Vec.derive(gripPos);
-      const gripX = derive(() => gripVis.value.x - 7);
-      const gripY = derive(() => gripVis.value.y - 2);
-      const grip = s(rect(gripX, gripY, 14, 4, {
+      const gripX = derive(() => gripVis.value.x - 8);
+      const gripY = derive(() => gripVis.value.y - 3);
+      const grip = s(rect(gripX, gripY, 16, 6, {
         fill: "#0b0d12",
         stroke: derive(() => nodeActive.value ? "#fff" : fill.value),
         strokeWidth: 1.5,
@@ -671,7 +672,7 @@ export function sankeyScene(
         );
       }
 
-      const grip = s(circle(gripVis, derive(() => active.value ? 6 : 4), {
+      const grip = s(circle(gripVis, derive(() => active.value ? 9 : 7), {
         fill: "#0b0d12",
         stroke: derive(() => active.value ? "#fff" : "rgba(0,0,0,0.55)"),
         strokeWidth: 2,
@@ -754,7 +755,7 @@ export function sankeyScene(
         );
       }
 
-      const grip = s(circle(gripVis, derive(() => active.value ? 6 : 4), {
+      const grip = s(circle(gripVis, derive(() => active.value ? 9 : 7), {
         fill: "#0b0d12",
         stroke: derive(() => active.value ? "#fff" : "rgba(0,0,0,0.55)"),
         strokeWidth: 2,
