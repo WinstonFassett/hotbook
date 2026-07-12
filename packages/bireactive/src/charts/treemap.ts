@@ -137,7 +137,9 @@ export class MdTreemapLC extends Diagram {
       if (id) {
         const biNode = nodeById.get(id);
         const lnode = biNode ? lmap.get(biNode) : null;
-        if (lnode) return { fx0: lnode.x0, fy0: lnode.y0, fx1: lnode.x1, fy1: lnode.y1 };
+        // Exclude PAD_TOP from focus box so it doesn't get scaled by affine transform.
+        // Headers are fixed-pixel, but D3 includes padding in layout coordinates.
+        if (lnode) return { fx0: lnode.x0, fy0: lnode.y0 + PAD_TOP, fx1: lnode.x1, fy1: lnode.y1 };
       }
       return { fx0: 0, fy0: 0, fx1: W0, fy1: H0 };
     };
