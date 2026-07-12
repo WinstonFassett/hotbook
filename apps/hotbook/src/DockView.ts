@@ -12,7 +12,7 @@
  *   el.addEventListener('tilechange', e => ...)  — fires on tile config change
  */
 
-import { cell, effect as biEffect } from 'bireactive'
+import { cell, effect as biEffect, settle as biSettle } from 'bireactive'
 import type { Cell, Writable } from 'bireactive'
 import type {
   DockNode, DockGroup, DockSplit,
@@ -32,7 +32,7 @@ import type { TileController, TileSource } from './viz/br/bindTile'
 import { hudStore } from './store'
 import { buildTileSource, buildSimpleMount, simpleTag, simpleDataKey } from './tile-sources'
 import type { TileRenderContext } from './tile-sources'
-import Flipping from 'flipping'
+import FlippingWeb from 'flipping/lib/adapters/web.js'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -102,7 +102,7 @@ export class DockView extends HTMLElement {
   /** FLIP animation mode: 'manual', 'library', 'css', or 'none' */
   private _flipMode: 'manual' | 'library' | 'css' | 'none' = 'manual'
   /** Flipping library instance for Option B */
-  private _flipping: Flipping | null = null
+  private _flipping: FlippingWeb | null = null
   /** Debug panel element */
   private _debugPanel: HTMLElement | null = null
   /** Whether animations are enabled (respects prefers-reduced-motion) */
@@ -165,7 +165,7 @@ export class DockView extends HTMLElement {
     this.addEventListener('keydown', this._onKeyDown)
 
     // Initialize Flipping library for Option B
-    this._flipping = new Flipping({
+    this._flipping = new FlippingWeb({
       duration: 400,
       easing: 'cubic-bezier(0.25, 0.46, 0.45, 0.94)'
     })
@@ -334,7 +334,9 @@ export class DockView extends HTMLElement {
     if (!existingId || existingId !== target.id) {
       // Structural change — full rebuild
       root.innerHTML = ''
-      root.appendChild(this._buildNode(target, tiles))
+      const nodeEl = this._buildNode(target, tiles)
+      if (target.kind === 'group') (nodeEl as HTMLElement).dataset.flipKey = target.id
+      root.appendChild(nodeEl)
       return
     }
 
@@ -370,6 +372,8 @@ export class DockView extends HTMLElement {
       if (!childEl || childId !== child.id) {
         cell.innerHTML = ''
         cell.appendChild(this._buildNode(child, tiles))
+        if (child.kind === 'group') cell.dataset.flipKey = child.id
+        else delete cell.dataset.flipKey
       } else {
         this._patchNode(childEl, child, tiles, tilesChanged)
       }
@@ -493,6 +497,7 @@ export class DockView extends HTMLElement {
       cell.className = 'dv-cell'
       cell.style.cssText = `flex:${(split.sizes[i] ?? 1) / total};min-width:0;min-height:0;overflow:hidden;position:relative`
       cell.appendChild(this._buildNode(child, tiles))
+      if (child.kind === 'group') cell.dataset.flipKey = child.id
       el.appendChild(cell)
 
       if (i < split.children.length - 1) {
@@ -951,67 +956,95 @@ export class DockView extends HTMLElement {
   // ─── FLIP Animations ──────────────────────────────────────────────────────
 
   /**
-   * Option A: Manual FLIP animation (no dependencies).
-   * Measures before/after positions and animates via transform.
+   * Shared helper for Option A (Manual) and Option C (CSS Spring).
+   * Uses stable data-flip-key attributes to match elements before and after
+   * a bireactive layout update, then applies FLIP transform transitions.
    */
-  private _applyFLIPManual(callback: () => void) {
+  private _applyFLIPWithTransition(callback: () => void, transition: string, duration: number) {
     if (!this._animationsEnabled || this._flipMode === 'none') {
       callback()
       return
     }
 
-    const groups = Array.from(this.querySelectorAll('.dv-group, .dv-cell'))
-    const rects = new Map<Element, DOMRect>()
+    const firstRects = new Map<string, DOMRect>()
+    const firstElements = this.querySelectorAll('[data-flip-key]')
+    firstElements.forEach(el => {
+      const key = (el as HTMLElement).dataset.flipKey
+      if (key) firstRects.set(key, el.getBoundingClientRect())
+    })
 
-    // First: measure current positions
-    groups.forEach(el => rects.set(el, el.getBoundingClientRect()))
-
-    // Last: apply layout change (triggers async bireactive render)
     callback()
+    // Bireactive effects are async; flush them synchronously so we can read the
+    // new DOM positions and apply the FLIP transform before the first paint.
+    biSettle()
 
-    // Wait for DOM to update (double rAF ensures layout has been recalculated)
-    requestAnimationFrame(() => {
+    const lastElements = new Map<string, HTMLElement>()
+    this.querySelectorAll('[data-flip-key]').forEach(el => {
+      const key = (el as HTMLElement).dataset.flipKey
+      if (key) lastElements.set(key, el as HTMLElement)
+    })
+
+    lastElements.forEach((el, key) => {
+      const first = firstRects.get(key)
+      if (!first) return
+      const last = el.getBoundingClientRect()
+      const dx = first.left - last.left
+      const dy = first.top - last.top
+      const dw = first.width / last.width
+      const dh = first.height / last.height
+
+      if (dx === 0 && dy === 0 && dw === 1 && dh === 1) return
+
+      el.style.transformOrigin = '0 0'
+      el.style.transform = `translate(${dx}px, ${dy}px) scale(${dw}, ${dh})`
+      el.style.transition = 'none'
+      el.classList.add('dv-animating')
+
       requestAnimationFrame(() => {
-        // Measure new positions after render
-        groups.forEach(el => {
-          const first = rects.get(el)
-          if (!first) return
+        el.style.transition = transition
+        el.style.transform = 'translate(0, 0) scale(1, 1)'
 
-          const last = el.getBoundingClientRect()
-          const dx = first.left - last.left
-          const dy = first.top - last.top
-          const dw = first.width / last.width
-          const dh = first.height / last.height
-
-          // Skip if element didn't move
-          if (dx === 0 && dy === 0 && dw === 1 && dh === 1) return
-
-          const htmlEl = el as HTMLElement
-          // Invert - apply inverse transform to appear at old position
-          htmlEl.style.transform = `translate(${dx}px, ${dy}px) scale(${dw}, ${dh})`
-          htmlEl.style.transition = 'none'
-          htmlEl.classList.add('dv-animating')
-
-          // Play - transition to identity transform (next frame)
-          requestAnimationFrame(() => {
-            htmlEl.style.transition = 'transform 400ms cubic-bezier(0.25, 0.46, 0.45, 0.94)'
-            htmlEl.style.transform = 'translate(0, 0) scale(1, 1)'
-
-            // Clean up after animation
-            setTimeout(() => {
-              htmlEl.style.transform = ''
-              htmlEl.style.transition = ''
-              htmlEl.classList.remove('dv-animating')
-            }, 400)
-          })
-        })
+        setTimeout(() => {
+          el.style.transform = ''
+          el.style.transformOrigin = ''
+          el.style.transition = ''
+          el.classList.remove('dv-animating')
+        }, duration)
       })
     })
   }
 
   /**
-   * Option B: Flipping library animation.
-   * Uses the flipping library for FLIP animations.
+   * Option A: Manual FLIP animation (no dependencies).
+   * Uses a cubic-bezier ease for transform transitions.
+   */
+  private _applyFLIPManual(callback: () => void) {
+    this._applyFLIPWithTransition(
+      callback,
+      'transform 400ms cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+      400
+    )
+  }
+
+  /**
+   * Option C: CSS-only animation with linear() spring curve.
+   */
+  private _applyFLIPCSS(callback: () => void) {
+    this._applyFLIPWithTransition(
+      callback,
+      `transform 600ms linear(
+        0, 0.009, 0.035 2.1%, 0.141 4.4%, 0.723 12.9%,
+        0.938 16.7%, 1.017, 1.077, 1.121, 1.149 24.3%,
+        1.159, 1.163, 1.161, 1.154 29.9%, 1.129 32.8%,
+        1.051 39.6%, 1.017 43.1%, 0.991, 0.977 51%,
+        0.974 53.8%, 0.975 57.1%, 0.997 69.8%, 1.003 76.9%, 1
+      )`,
+      600
+    )
+  }
+
+  /**
+   * Option B: Flipping library animation (WAAPI adapter).
    */
   private _applyFLIPLibrary(callback: () => void) {
     if (!this._animationsEnabled || this._flipMode === 'none' || !this._flipping) {
@@ -1019,97 +1052,10 @@ export class DockView extends HTMLElement {
       return
     }
 
-    // Mark elements with flip keys
-    this.querySelectorAll('.dv-group').forEach((el: Element) => {
-      const htmlEl = el as HTMLElement
-      htmlEl.dataset.flipKey = htmlEl.dataset.groupId || Math.random().toString(36)
-    })
-    this.querySelectorAll('.dv-cell').forEach((el: Element, i) => {
-      const htmlEl = el as HTMLElement
-      htmlEl.dataset.flipKey = `cell-${i}`
-    })
-
-    // Read positions before change
-    this._flipping!.read()
-
-    // Apply change (triggers async bireactive render)
+    this._flipping.read()
     callback()
-
-    // Wait for DOM to update before flipping
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        this._flipping!.flip()
-      })
-    })
-  }
-
-  /**
-   * Option C: CSS-only animation with linear() spring curve.
-   * Applies CSS transition with GPU-accelerated spring easing.
-   */
-  private _applyFLIPCSS(callback: () => void) {
-    if (!this._animationsEnabled || this._flipMode === 'none') {
-      callback()
-      return
-    }
-
-    const groups = Array.from(this.querySelectorAll('.dv-group, .dv-cell'))
-    const rects = new Map<Element, DOMRect>()
-
-    // First: measure current positions
-    groups.forEach(el => rects.set(el, el.getBoundingClientRect()))
-
-    // Apply CSS transitions with spring curve
-    groups.forEach(el => {
-      const htmlEl = el as HTMLElement
-      htmlEl.style.transition = `transform 600ms linear(
-        0, 0.009, 0.035 2.1%, 0.141 4.4%, 0.723 12.9%,
-        0.938 16.7%, 1.017, 1.077, 1.121, 1.149 24.3%,
-        1.159, 1.163, 1.161, 1.154 29.9%, 1.129 32.8%,
-        1.051 39.6%, 1.017 43.1%, 0.991, 0.977 51%,
-        0.974 53.8%, 0.975 57.1%, 0.997 69.8%, 1.003 76.9%, 1
-      )`
-      htmlEl.classList.add('dv-animating')
-    })
-
-    // Last: apply layout change (triggers async bireactive render)
-    callback()
-
-    // Wait for DOM to update (double rAF ensures layout has been recalculated)
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        // Measure new positions after render and apply FLIP
-        groups.forEach(el => {
-          const first = rects.get(el)
-          if (!first) return
-
-          const last = el.getBoundingClientRect()
-          const dx = first.left - last.left
-          const dy = first.top - last.top
-          const dw = first.width / last.width
-          const dh = first.height / last.height
-
-          // Skip if element didn't move
-          if (dx === 0 && dy === 0 && dw === 1 && dh === 1) return
-
-          const htmlEl = el as HTMLElement
-          // Invert - snap to old position
-          htmlEl.style.transform = `translate(${dx}px, ${dy}px) scale(${dw}, ${dh})`
-
-          // Play: transition to identity transform (next frame)
-          requestAnimationFrame(() => {
-            htmlEl.style.transform = 'translate(0, 0) scale(1, 1)'
-
-            // Clean up after animation
-            setTimeout(() => {
-              htmlEl.style.transform = ''
-              htmlEl.style.transition = ''
-              htmlEl.classList.remove('dv-animating')
-            }, 600)
-          })
-        })
-      })
-    })
+    biSettle()
+    this._flipping.flip()
   }
 
   /**
@@ -1451,14 +1397,14 @@ export class DockView extends HTMLElement {
       this._awaitingKChord = false
       const dock = this._dockCell?.value ?? null
       const activeGroup = this._getKeyboardGroup(dock)
-      if (activeGroup) this._mutateDock(splitGroupDown(dock, activeGroup.id))
+      if (activeGroup) this._mutateDockWithFLIP(splitGroupDown(dock, activeGroup.id))
       return
     }
     if (!this._awaitingKChord && e.ctrlKey && e.key === '\\' && !e.shiftKey && !e.altKey && !e.metaKey) {
       e.preventDefault()
       const dock = this._dockCell?.value ?? null
       const activeGroup = this._getKeyboardGroup(dock)
-      if (activeGroup) this._mutateDock(splitGroupRight(dock, activeGroup.id))
+      if (activeGroup) this._mutateDockWithFLIP(splitGroupRight(dock, activeGroup.id))
       return
     }
     if (e.ctrlKey && e.key === 'w' && !e.shiftKey && !e.altKey && !e.metaKey) {

@@ -354,16 +354,22 @@ sb-dock-view {
   position: relative;
 }
 
-/* Focus indicator (VS Code style) */
-.dv-group--focused {
-  outline: 2px solid #007acc;
-  outline-offset: -2px;
+/* Focus indicator — drawn on top of the pane content so all four sides are visible */
+.dv-group--focused::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 2px solid #007acc;
+  pointer-events: none;
+  z-index: 1;
 }
 
 /* FLIP animations — applied dynamically by JS */
 .dv-group.dv-animating,
-.dv-cell.dv-animating {
-  /* Transition applied inline by FLIP system */
+.dv-cell.dv-animating,
+[data-flip-state="active"] {
+  will-change: transform;
+  z-index: 100;
 }
 
 .dv-tabstrip {
