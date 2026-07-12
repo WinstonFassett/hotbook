@@ -9,7 +9,7 @@ export { PALETTE, PALETTE_8, PALETTE_20, pickColor, colorFor, getColorByStrategy
 export type { ColorStrategy } from './colors'
 export { buildTree, applyView, drillPath, leavesOf } from './data-ops'
 export type { TreeNode } from './data-ops'
-export type { ChartSchema, DataShape, UIField } from './schemas'
+export type { ChartSchema, DataShape, UIField, FlatRow, ChartContext, MountContext } from './schemas'
 export { registerChart, getChartSchema, getAllChartSchemas } from './schemas'
 export {
   measureSchema,

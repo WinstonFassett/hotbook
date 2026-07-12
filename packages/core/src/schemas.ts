@@ -22,6 +22,45 @@ export interface UIField {
   path: string  // dot-path into config object (e.g., 'measureKey', 'orderBinding')
 }
 
+// ─── Runtime Data Row ─────────────────────────────────────────────────────────
+
+/** Row passed to a chart's `toChart` transform. Keep it plain so hotbook and
+ *  the demos can both build it from their own data substrates. */
+export interface FlatRow {
+  id: string
+  label: string
+  value: number
+  value2?: number
+  color?: string
+  index?: number
+  date?: Date
+  // Measures available for x/y/secondary bindings (scatter, multi-measure).
+  measures?: Record<string, number>
+}
+
+export interface ChartContext {
+  xKey?: string
+  yKey?: string
+  valueBinding?: string
+  orderBinding?: string
+  orderDir?: 'asc' | 'desc'
+  tile?: any
+  rawNodes?: any
+  edges?: any
+}
+
+export interface MountContext {
+  tile: any
+  leaves: any[]
+  nodeById: Map<string, any>
+  ids: string[]
+  valueBinding: string
+  xKey?: string
+  yKey?: string
+  orderBinding?: string
+  orderDir?: 'asc' | 'desc'
+}
+
 // ─── Chart Schema ─────────────────────────────────────────────────────────────
 
 export interface ChartSchema<TConfig = any> {
@@ -37,6 +76,19 @@ export interface ChartSchema<TConfig = any> {
     showBreadcrumb?: boolean
     scrollBody?: boolean
   }
+  // How DockView should mount this chart.
+  mount?: 'bindTile' | 'externalData'
+  // If true, a tree dataset can be rendered by aggregating each root's leaves.
+  flattenHierarchical?: boolean
+  // Runtime data hook: transform the data into what the chart expects.
+  // For flat charts `data` is FlatRow[]; for hierarchical/external it can be any
+  // value the mount strategy needs (e.g. a tree root or graph data).
+  toChart?: (data: any, ctx: ChartContext) => any
+  readValue?: (d: any) => number
+  writeValue?: (d: any, v: number) => void
+  idOf?: (d: any) => string
+  reindex?: (d: any, displayIndex: number, ctx: ChartContext) => void
+  mountProps?: (ctx: MountContext) => (el: any) => void
 }
 
 // ─── Schema Registry ──────────────────────────────────────────────────────────

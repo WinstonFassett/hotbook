@@ -1,12 +1,17 @@
 /**
- * Chart schema registry — each chart declares its config shape and UI pickers.
- * Import this file to populate the schema registry.
+ * Chart schema registry — each chart declares its config shape, UI pickers,
+ * data mapping, and mount strategy.
  */
 
 import * as v from 'valibot'
 import {
   registerChart,
   type ChartSchema,
+  type FlatRow,
+  type ChartContext,
+  type MountContext,
+  type VizNode,
+  type PEdge,
   measureSchema,
   sortSchema,
   orientationSchema,
@@ -14,6 +19,7 @@ import {
   xKeySchema,
   yKeySchema,
 } from '@hotbook/core'
+import { LINK_MIN } from './lib/sankey'
 
 // ─── Config Schemas ───────────────────────────────────────────────────────────
 
@@ -60,6 +66,50 @@ const simpleConfigSchema = v.object({
   valueBinding: v.optional(measureSchema),
 })
 
+// ─── Common data helpers ──────────────────────────────────────────────────────
+
+const palette = ['#e05c5c', '#f0a742', '#4cba6e', '#5b8def', '#b76de0', '#44c4c4']
+
+const SERIES_START = new Date(2026, 0, 1).getTime()
+const DAY_MS = 86400 * 1000
+
+function buildSankeyData(edges: PEdge[], rawNodes: VizNode[], valueBinding: string): { nodes: string[]; links: { source: string; target: string; value: number }[] } {
+  if (edges && edges.length > 0) {
+    const nodes = [...new Set(edges.flatMap(e => [e.source, e.target]))]
+    const links = edges.map(e => ({ source: e.source, target: e.target, value: e.value }))
+    return { nodes, links }
+  }
+
+  const nodes = rawNodes.map(n => n.id)
+  const byId = new Map(rawNodes.map(n => [n.id, n]))
+  const children = new Map<string, VizNode[]>()
+  for (const n of rawNodes) {
+    if (n.parentId) {
+      const arr = children.get(n.parentId) ?? []
+      arr.push(n)
+      children.set(n.parentId, arr)
+    }
+  }
+  const memo = new Map<string, number>()
+  function getNodeValue(id: string): number {
+    if (memo.has(id)) return memo.get(id)!
+    const n = byId.get(id)
+    if (!n) { memo.set(id, 0); return 0 }
+    const own = n.measures[valueBinding] ?? 0
+    let childSum = 0
+    for (const child of children.get(id) ?? []) {
+      childSum += getNodeValue(child.id)
+    }
+    const v = Math.max(LINK_MIN, own + childSum)
+    memo.set(id, v)
+    return v
+  }
+  const links = rawNodes
+    .filter(n => n.parentId)
+    .map(n => ({ source: n.parentId!, target: n.id, value: getNodeValue(n.id) }))
+  return { nodes, links }
+}
+
 // ─── Flat Charts (measure + sort) ─────────────────────────────────────────────
 
 const pieSchema: ChartSchema = {
@@ -73,6 +123,10 @@ const pieSchema: ChartSchema = {
       { type: 'sort', label: 'Sort', path: 'orderBinding' },
     ],
   },
+  toChart: (rows) => rows.map(r => ({ id: r.id, label: r.label, value: r.value })),
+  readValue: (d) => d.value.value,
+  writeValue: (d, v) => { d.value.value = v },
+  idOf: (d) => d.id,
 }
 
 const lineSchema: ChartSchema = {
@@ -83,9 +137,12 @@ const lineSchema: ChartSchema = {
   ui: {
     fields: [
       { type: 'measure', label: 'Measure', path: 'valueBinding' },
-      // No sort - line charts have fixed x-axis (dates)
     ],
   },
+  toChart: (rows) => rows.map(r => ({ id: r.id, date: r.date ?? new Date(r.label), value: r.value })),
+  readValue: (d) => d.value,
+  writeValue: (d, v) => { d.value = v },
+  idOf: (d) => d.id,
 }
 
 const areaSchema: ChartSchema = {
@@ -96,9 +153,12 @@ const areaSchema: ChartSchema = {
   ui: {
     fields: [
       { type: 'measure', label: 'Measure', path: 'valueBinding' },
-      // No sort - area charts have fixed x-axis (dates)
     ],
   },
+  toChart: (rows) => rows.map(r => ({ id: r.id, date: r.date ?? new Date(r.label), value: r.value })),
+  readValue: (d) => d.value,
+  writeValue: (d, v) => { d.value = v },
+  idOf: (d) => d.id,
 }
 
 const radarSchema: ChartSchema = {
@@ -112,6 +172,11 @@ const radarSchema: ChartSchema = {
       { type: 'sort', label: 'Sort', path: 'orderBinding' },
     ],
   },
+  flattenHierarchical: true,
+  toChart: (rows) => rows.map(r => ({ id: r.id, name: r.label, value: r.value })),
+  readValue: (d) => d.value,
+  writeValue: (d, v) => { d.value = v },
+  idOf: (d) => d.id,
 }
 
 const concentricArcSchema: ChartSchema = {
@@ -125,9 +190,31 @@ const concentricArcSchema: ChartSchema = {
       { type: 'sort', label: 'Sort', path: 'orderBinding' },
     ],
   },
+  toChart: (rows) => rows.map((r, i) => ({ id: r.id, label: r.label, color: r.color ?? palette[i % 6]!, value: Math.min(100, r.value) })),
+  readValue: (d) => d.value,
+  writeValue: (d, v) => { d.value = Math.min(100, v) },
+  idOf: (d) => d.id,
+  mountProps: (ctx) => (el) => {
+    if (ctx.tile.maxItems != null) el.maxRings = ctx.tile.maxItems
+  },
 }
 
 // ─── Flat Charts with Orientation ─────────────────────────────────────────────
+
+function barMountProps(defaults: { orientation: 'horizontal' | 'vertical'; colorMode: string; labelMode: string; valueMode: string }) {
+  return (ctx: MountContext) => (el: any) => {
+    const orientation = ctx.tile.orientation ?? defaults.orientation
+    el.orientation = orientation
+    el.colorMode = ctx.tile.colorMode ?? defaults.colorMode
+    el.labelMode = ctx.tile.labelMode ?? defaults.labelMode
+    el.valueMode = ctx.tile.valueMode ?? defaults.valueMode
+    el.minBandSize = ctx.tile.minBandSize ?? 0
+    if (ctx.tile.maxItems != null) {
+      const prop = orientation === 'horizontal' ? 'maxBands' : 'maxBars'
+      el[prop] = ctx.tile.maxItems
+    }
+  }
+}
 
 const barSchema: ChartSchema = {
   kind: 'bar',
@@ -141,6 +228,11 @@ const barSchema: ChartSchema = {
       { type: 'orientation', label: 'Orientation', path: 'orientation' },
     ],
   },
+  toChart: (rows) => rows.map(r => ({ id: r.id, label: r.label, value: r.value })),
+  readValue: (d) => d.value,
+  writeValue: (d, v) => { d.value = v },
+  idOf: (d) => d.id,
+  mountProps: barMountProps({ orientation: 'vertical', colorMode: 'palette', labelMode: 'axis', valueMode: 'none' }),
 }
 
 const bandsSchema: ChartSchema = {
@@ -155,6 +247,11 @@ const bandsSchema: ChartSchema = {
       { type: 'orientation', label: 'Orientation', path: 'orientation' },
     ],
   },
+  toChart: (rows) => rows.map(r => ({ id: r.id, label: r.label, value: r.value })),
+  readValue: (d) => d.value,
+  writeValue: (d, v) => { d.value = v },
+  idOf: (d) => d.id,
+  mountProps: barMountProps({ orientation: 'horizontal', colorMode: 'palette', labelMode: 'inside', valueMode: 'inside' }),
 }
 
 // ─── Scatter (xKey + yKey) ────────────────────────────────────────────────────
@@ -169,6 +266,33 @@ const scatterSchema: ChartSchema = {
       { type: 'xKey', label: 'X Axis', path: 'xBinding' },
       { type: 'yKey', label: 'Y Axis', path: 'yBinding' },
     ],
+  },
+  toChart: (rows, ctx) => rows.map((r, i) => {
+    const xKey = ctx.xKey ?? '_index'
+    const yKey = ctx.yKey ?? 'y'
+    const x = xKey === '_index' ? (r.index ?? i) : (r.measures?.[xKey] ?? 0)
+    const y = yKey === '_index' ? (r.index ?? i) : (r.measures?.[yKey] ?? 0)
+    return { id: r.id, x, y }
+  }),
+  readValue: (d) => d.y,
+  writeValue: (d, v) => { d.y = v },
+  idOf: (d) => d.id,
+  reindex: (d, i, ctx) => {
+    if (ctx.xKey === '_index') d.x = i
+  },
+  mountProps: (ctx) => (el) => {
+    const xKey = ctx.xKey ?? '_index'
+    el.xKey = xKey
+    const arr = el.dataCell?.peek() as { id: string; x: number; y: number }[] | undefined
+    if (arr) {
+      for (let i = 0; i < arr.length; i++) {
+        const d = arr[i]
+        const node = ctx.nodeById.get(d.id)
+        if (node) {
+          d.x = xKey === '_index' ? i : (node.measures[ctx.yKey ?? 'y'] ?? 0)
+        }
+      }
+    }
   },
 }
 
@@ -190,6 +314,7 @@ const packSchema: ChartSchema = {
     drillKey: 'default',
     showBreadcrumb: true,
   },
+  toChart: (root) => root,
 }
 
 const treemapSchema: ChartSchema = {
@@ -208,6 +333,7 @@ const treemapSchema: ChartSchema = {
     drillKey: 'default',
     showBreadcrumb: true,
   },
+  toChart: (root) => root,
 }
 
 const treetableSchema: ChartSchema = {
@@ -226,6 +352,7 @@ const treetableSchema: ChartSchema = {
     drillKey: 'default',
     showBreadcrumb: true,
   },
+  toChart: (root) => root,
 }
 
 const sunburstSchema: ChartSchema = {
@@ -244,6 +371,7 @@ const sunburstSchema: ChartSchema = {
     drillKey: 'default',
     showBreadcrumb: true,
   },
+  toChart: (root) => root,
 }
 
 // ─── Hierarchical with Orientation ────────────────────────────────────────────
@@ -265,6 +393,7 @@ const icicleSchema: ChartSchema = {
     drillKey: 'default',
     showBreadcrumb: true,
   },
+  toChart: (root) => root,
 }
 
 const treeSchema: ChartSchema = {
@@ -284,6 +413,7 @@ const treeSchema: ChartSchema = {
     drillKey: 'default',
     showBreadcrumb: true,
   },
+  toChart: (root) => root,
 }
 
 // ─── Graph Charts ─────────────────────────────────────────────────────────────
@@ -302,6 +432,17 @@ const sankeySchema: ChartSchema = {
   capabilities: {
     scrollBody: true,
   },
+  mount: 'externalData',
+  toChart: (_rows, ctx) => {
+    const valueBinding = ctx.valueBinding ?? 'value'
+    return buildSankeyData(ctx.edges ?? [], ctx.rawNodes ?? [], valueBinding)
+  },
+  mountProps: (ctx) => (el) => {
+    const valueBinding = ctx.valueBinding ?? 'value'
+    const orderBinding = ctx.orderBinding ?? 'index'
+    const sortBy: 'index' | 'value' = (orderBinding === 'value' || orderBinding === '_value' || orderBinding === valueBinding) ? 'value' : 'index'
+    el.sortBy = sortBy
+  },
 }
 
 // ─── Simple Charts (gauges, gantt) ────────────────────────────────────────────
@@ -316,6 +457,12 @@ const gaugeSchema: ChartSchema = {
       { type: 'measure', label: 'Measure', path: 'valueBinding' },
     ],
   },
+  mount: 'externalData',
+  toChart: (rows, ctx) => {
+    const value = rows.reduce((a, b) => a + (b.value ?? 0), 0)
+    const label = ctx.tile?.title ?? ctx.valueBinding ?? 'value'
+    return { value, min: 0, max: 100, label }
+  },
 }
 
 const gaugeSegmentedSchema: ChartSchema = {
@@ -328,6 +475,12 @@ const gaugeSegmentedSchema: ChartSchema = {
       { type: 'measure', label: 'Measure', path: 'valueBinding' },
     ],
   },
+  mount: 'externalData',
+  toChart: (rows, ctx) => {
+    const value = rows.reduce((a, b) => a + (b.value ?? 0), 0)
+    const label = ctx.tile?.title ?? ctx.valueBinding ?? 'value'
+    return { value, min: 0, max: 100, label, segments: 24 }
+  },
 }
 
 const ganttSchema: ChartSchema = {
@@ -339,6 +492,27 @@ const ganttSchema: ChartSchema = {
     fields: [
       { type: 'measure', label: 'Measure', path: 'valueBinding' },
     ],
+  },
+  mount: 'externalData',
+  toChart: (rows, ctx) => {
+    const valueBinding = ctx.valueBinding ?? 'value'
+    return rows.map((n, i) => {
+      const explicitStart = (n as any).start as Date | undefined
+      const explicitEnd = (n as any).end as Date | undefined
+      const duration = explicitStart && explicitEnd
+        ? Math.max(1, Math.round((explicitEnd.getTime() - explicitStart.getTime()) / DAY_MS))
+        : Math.max(1, Math.round((n.measures?.[valueBinding] ?? n.value ?? 0) / 10))
+      const start = explicitStart ?? new Date(SERIES_START + i * 7 * DAY_MS)
+      const end = explicitEnd ?? new Date(SERIES_START + (i * 7 + duration) * DAY_MS)
+      return {
+        id: n.id,
+        label: n.label,
+        start,
+        end,
+        color: n.color,
+        deps: (n as any).deps as string[] | undefined,
+      }
+    })
   },
 }
 
