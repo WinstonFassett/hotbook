@@ -1,6 +1,7 @@
 // Zoomable Scatterplot Demo - demonstrates CartesianViewer with axis-aware pan/zoom
 import { Diagram } from '../../../packages/bireactive/src/lib/diagram';
 import { CartesianViewer, type CartesianDomain } from '@hotbook/bireactive';
+import { effect } from 'bireactive';
 import type { Mount } from 'bireactive';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -21,6 +22,7 @@ function generateScatterData(n: number): Array<{ x: number; y: number; r: number
 export class MdCartesianViewerDemo extends Diagram {
   private viewer?: CartesianViewer;
   private data = generateScatterData(200);
+  private disposeEffect?: () => void;
 
   protected scene(s: Mount): void {
     const W = 800;
@@ -47,8 +49,8 @@ export class MdCartesianViewerDemo extends Diagram {
       axisColor: '#cdd5e0',
     });
 
-    // Render scatter points
-    this.renderScatter();
+    // Re-render scatter points whenever the viewer scales change
+    this.disposeEffect = effect(() => this.renderScatter());
 
     // Add controls
     this.addControls();
@@ -81,9 +83,6 @@ export class MdCartesianViewerDemo extends Diagram {
 
       dataGroup.appendChild(circle);
     }
-
-    // Re-render on scale changes
-    // TODO: Make this reactive via effect() on scales
   }
 
   private addControls(): void {
@@ -91,13 +90,13 @@ export class MdCartesianViewerDemo extends Diagram {
     controls.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;';
 
     const buttons = [
-      { label: 'Reset', action: () => { this.viewer?.reset(); this.renderScatter(); } },
-      { label: 'Zoom In', action: () => { this.viewer?.zoomBy(1.3); this.renderScatter(); } },
-      { label: 'Zoom Out', action: () => { this.viewer?.zoomBy(1 / 1.3); this.renderScatter(); } },
-      { label: 'Pan Left', action: () => { this.viewer?.pan(-5, 0); this.renderScatter(); } },
-      { label: 'Pan Right', action: () => { this.viewer?.pan(5, 0); this.renderScatter(); } },
-      { label: 'Pan Up', action: () => { this.viewer?.pan(0, -5); this.renderScatter(); } },
-      { label: 'Pan Down', action: () => { this.viewer?.pan(0, 5); this.renderScatter(); } },
+      { label: 'Reset', action: () => { this.viewer?.reset(); } },
+      { label: 'Zoom In', action: () => { this.viewer?.zoomBy(1.3); } },
+      { label: 'Zoom Out', action: () => { this.viewer?.zoomBy(1 / 1.3); } },
+      { label: 'Pan Left', action: () => { this.viewer?.pan(-5, 0); } },
+      { label: 'Pan Right', action: () => { this.viewer?.pan(5, 0); } },
+      { label: 'Pan Up', action: () => { this.viewer?.pan(0, -5); } },
+      { label: 'Pan Down', action: () => { this.viewer?.pan(0, 5); } },
     ];
 
     for (const btn of buttons) {
@@ -124,6 +123,7 @@ export class MdCartesianViewerDemo extends Diagram {
   }
 
   disconnectedCallback(): void {
+    this.disposeEffect?.();
     this.viewer?.dispose();
     super.disconnectedCallback();
   }
