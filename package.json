@@ -21,5 +21,9 @@
     "knip": "^6.26.0",
     "patch-package": "^8.0.1",
     "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@valibot/to-json-schema": "^1.7.1",
+    "valibot": "^1.4.2"
   }
 }
