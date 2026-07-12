@@ -19,6 +19,7 @@ import { lineHandle } from "../lib/handles";
 import { Diagram } from "../lib/diagram";
 import { hierarchy, partition, type HierarchyRectangularNode } from "d3-hierarchy";
 import { depthFill, labelInk } from "../lib/depth-color";
+import { buildHierarchy } from "../lib/interaction";
 import { buildParentIndex, type BiNode, portfolio, walkWithDepth } from "../lib/tree";
 import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
@@ -122,14 +123,11 @@ export class MdSunburstLC extends Diagram {
       // array mutations on their own).
       void this._reorderTickCell.value;
       const active = gestureActiveCell.value;
-      const sortBy = this._sortByCell.value;
-      const h = hierarchy<BiNode>(root, (n) => n.children as BiNode[])
-        .sum((n) => (n.children.length > 0 ? 0 : n.value.total.value));
+      const h = buildHierarchy(root, this._sortByCell.value);
+      // WIN-257: During active gesture, override sort with frozen positions
       if (active && frozenSortKey) {
         const snap = frozenSortKey;
         h.sort((a, b) => (snap.get(a.data) ?? 0) - (snap.get(b.data) ?? 0));
-      } else if (sortBy === 'value') {
-        h.sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
       }
       partition<BiNode>().size([2 * Math.PI, rfull])(h);
       const map = new Map<BiNode, HierarchyRectangularNode<BiNode>>();

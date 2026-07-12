@@ -193,14 +193,11 @@ export class MdIcicleLC extends Diagram {
       const rawMaxD = this._maxDepthCell.value;
       const maxD = rawMaxD !== undefined && rawMaxD > 0 ? rawMaxD : undefined;
       const active = gestureActiveCell.value;
-      const sortBy = this._sortByCell.value;
-      const h = hierarchy<BiNode>(rootCell.value, (n) => n.children as BiNode[])
-        .sum((n) => (n.children.length > 0 ? 0 : n.value.total.value));
+      const h = buildHierarchy(rootCell.value, this._sortByCell.value);
+      // WIN-257: During active gesture, override sort with frozen positions
       if (active && frozenSortKey) {
         const snap = frozenSortKey;
         h.sort((a, b) => (snap.get(a.data) ?? 0) - (snap.get(b.data) ?? 0));
-      } else if (sortBy === 'value') {
-        h.sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
       }
       const td = h.height; // levels below root
       const visibleDepth = maxD !== undefined ? Math.min(maxD, td) : td;

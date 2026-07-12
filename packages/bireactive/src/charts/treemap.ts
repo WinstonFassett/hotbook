@@ -98,14 +98,11 @@ export class MdTreemapLC extends Diagram {
 
     const layout = derive(() => {
       const active = gestureActiveCell.value;
-      const sortBy = this._sortByCell.value;
-      const h = hierarchy<BiNode>(root, (n) => n.children as BiNode[])
-        .sum((n) => (n.children.length > 0 ? 0 : n.value.total.value));
+      const h = buildHierarchy(root, this._sortByCell.value);
+      // WIN-257: During active gesture, override sort with frozen positions
       if (active && frozenSortKey) {
         const snap = frozenSortKey;
         h.sort((a, b) => (snap.get(a.data) ?? 0) - (snap.get(b.data) ?? 0));
-      } else if (sortBy === 'value') {
-        h.sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
       }
       treemap<BiNode>()
         .tile(treemapSquarify)
