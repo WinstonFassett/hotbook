@@ -1,6 +1,6 @@
-import type { VizNode, PNode, PEdge, ScalingMode } from '@hotbook/core'
+import type { VizNode, PNode, PEdge, ScalingMode, TileGroupings } from '@hotbook/core'
 
-export type { VizNode, PNode, PEdge }
+export type { VizNode, PNode, PEdge, TileGroupings }
 
 // Minimal shape of the legacy grid layout items — kept for persistence compatibility
 // with stored dashboards. The dock model replaces the grid in the new shell.
@@ -90,6 +90,7 @@ export interface Tile {
   /** @deprecated use `yBinding` */
   yKey?: string
   groupBy?: string
+  groupings?: TileGroupings
   depth?: number
   orientation?: 'vertical' | 'horizontal'
   colorMode?: 'single' | 'palette'

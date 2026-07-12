@@ -34,8 +34,9 @@ function load(): Workspace | null {
   try {
     const raw = localStorage.getItem(LS_KEY)
     if (raw) {
-      const ws = JSON.parse(raw) as Workspace
+      let ws = JSON.parse(raw) as Workspace
       migrateDatasetFieldNames(ws)
+      ws = migrate(ws)
       // Guard: filter out tiles with unknown kinds
       ws.dashboards.forEach(dash => {
         const before = dash.tiles.length

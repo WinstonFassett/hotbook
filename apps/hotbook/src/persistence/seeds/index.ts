@@ -1,4 +1,5 @@
 import type { TileKind, Workspace } from '../schema/v11'
+import type { TileGroupings } from '@hotbook/core'
 import { buildLifeDataset } from './life-goals'
 import { buildFruitDataset } from './fruit'
 import { buildTeamDataset } from './teams'
@@ -35,11 +36,14 @@ export function buildSeedWorkspace(): Workspace {
   ])
 
   function makeAllVizDash(prefix: string, flatGroupBy?: string) {
+    const groupings: TileGroupings | undefined = flatGroupBy
+      ? { rules: [{ level: 0, groupings: [{ field: flatGroupBy, dir: 'asc' }] }] }
+      : undefined
     const tiles = ALL_KINDS.map((kind, i) => ({
       id: `${prefix}-${i}`,
       kind,
       title: kind,
-      ...(flatGroupBy && GROUPBY_KINDS.has(kind) ? { groupBy: flatGroupBy } : {}),
+      ...(groupings && GROUPBY_KINDS.has(kind) ? { groupings } : {}),
     }))
     const layout = ALL_KINDS.map((_, i) => ({
       i: `${prefix}-${i}`,

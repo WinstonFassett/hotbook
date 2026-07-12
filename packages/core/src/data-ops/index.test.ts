@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { VizNode } from '../types'
-import { buildTree, applyView, drillPath, leavesOf, type TreeNode } from './index'
+import { buildTree, applyView, applyGroupings, drillPath, leavesOf, type TreeNode } from './index'
 
 describe('buildTree', () => {
   it('builds a single-level tree', () => {
@@ -267,5 +267,103 @@ describe('production bug surfaces (WIN-155)', () => {
     expect(path).toHaveLength(2)
     expect(path[0]!.id).toMatch(/^__grp__/)
     expect(path[1]!.id).toBe('a1')
+  })
+})
+
+describe('applyGroupings', () => {
+  const flat: VizNode[] = [
+    { id: 'a1', parentId: null, index: 0, name: 'Apple', measures: { value: 10 }, dims: { group: 'Fruit', season: 'Fall' }, color: '#e06666' },
+    { id: 'b1', parentId: null, index: 1, name: 'Banana', measures: { value: 15 }, dims: { group: 'Fruit', season: 'Summer' }, color: '#e06666' },
+    { id: 'c1', parentId: null, index: 2, name: 'Carrot', measures: { value: 8 }, dims: { group: 'Veggie', season: 'Fall' }, color: '#93c47d' },
+    { id: 'd1', parentId: null, index: 3, name: 'Date', measures: { value: 5 }, dims: { group: 'Fruit', season: 'Fall' }, color: '#e06666' },
+  ]
+
+  it('groups by a single field and keeps every leaf visible', () => {
+    const rules = [{ level: 0, groupings: [{ field: 'group', dir: 'asc' }] }]
+    const grouped = applyGroupings(flat, rules)
+    const fruitGroup = grouped.find(n => n.id === '__grp__group__Fruit')
+    const veggieGroup = grouped.find(n => n.id === '__grp__group__Veggie')
+    expect(fruitGroup).toBeDefined()
+    expect(veggieGroup).toBeDefined()
+    expect(grouped.filter(n => n.parentId === fruitGroup!.id).map(n => n.id)).toEqual(['a1', 'b1', 'd1'])
+    expect(grouped.find(n => n.id === 'c1')!.parentId).toBe(veggieGroup!.id)
+  })
+
+  it('supports nested top-level groupings', () => {
+    const rules = [{ level: 0, groupings: [
+      { field: 'group', dir: 'asc' },
+      { field: 'season', dir: 'asc' },
+    ] }]
+    const grouped = applyGroupings(flat, rules)
+    const fruitGroup = grouped.find(n => n.id === '__grp__group__Fruit')
+    expect(fruitGroup).toBeDefined()
+    const fruitFall = grouped.find(n => n.id === `__grp__${fruitGroup!.id}__season__Fall`)
+    const fruitSummer = grouped.find(n => n.id === `__grp__${fruitGroup!.id}__season__Summer`)
+    expect(fruitFall).toBeDefined()
+    expect(fruitSummer).toBeDefined()
+    expect(grouped.filter(n => n.parentId === fruitFall!.id).map(n => n.id)).toEqual(['a1', 'd1'])
+    expect(grouped.find(n => n.id === 'b1')!.parentId).toBe(fruitSummer!.id)
+  })
+
+  it('sorts group containers by field with custom order', () => {
+    const rules = [{ level: 0, groupings: [
+      { field: 'season', dir: 'asc', customOrder: ['Summer', 'Fall'] },
+    ] }]
+    const grouped = applyGroupings(flat, rules)
+    const roots = grouped.filter(n => n.parentId === null)
+    expect(roots[0]!.name).toBe('Summer')
+    expect(roots[1]!.name).toBe('Fall')
+  })
+
+  it('sorts group containers by aggregate measure', () => {
+    const rules = [{ level: 0, groupings: [
+      { field: 'group', dir: 'desc', orderBy: 'value', aggregation: 'sum' },
+    ] }]
+    const grouped = applyGroupings(flat, rules)
+    const roots = grouped.filter(n => n.parentId === null)
+    expect(roots[0]!.name).toBe('Fruit')
+    expect(roots[1]!.name).toBe('Veggie')
+    expect(roots[0]!.measures.value).toBe(30)
+    expect(roots[1]!.measures.value).toBe(8)
+  })
+
+  it('places missing values into a (none) group', () => {
+    const withMissing: VizNode[] = [
+      { id: 'm1', parentId: null, index: 0, name: 'M1', measures: { value: 1 }, dims: { group: 'A' } },
+      { id: 'm2', parentId: null, index: 1, name: 'M2', measures: { value: 2 }, dims: {} },
+    ]
+    const rules = [{ level: 0, groupings: [{ field: 'group', dir: 'asc' }] }]
+    const grouped = applyGroupings(withMissing, rules)
+    const roots = grouped.filter(n => n.parentId === null)
+    expect(roots.map(r => r.name)).toEqual(['A', '(none)'])
+    expect(grouped.find(n => n.id === 'm2')!.parentId).toBe(roots[1]!.id)
+  })
+
+  it('produces stable group IDs across reordering', () => {
+    const rules = [{ level: 0, groupings: [{ field: 'group', dir: 'asc' }] }]
+    const grouped = applyGroupings(flat, rules)
+    const descRules = [{ level: 0, groupings: [{ field: 'group', dir: 'desc' }] }]
+    const groupedDesc = applyGroupings(flat, descRules)
+    const ids = grouped.filter(n => n.parentId === null).map(n => n.id).sort()
+    const idsDesc = groupedDesc.filter(n => n.parentId === null).map(n => n.id).sort()
+    expect(ids).toEqual(idsDesc)
+  })
+
+  it('re-roots existing child subtrees without duplicating them', () => {
+    const tree: VizNode[] = [
+      { id: 'r1', parentId: null, index: 0, name: 'Root 1', measures: {}, dims: { status: 'done' }, color: '#ff0000' },
+      { id: 'c1', parentId: 'r1', index: 1, name: 'Child 1', measures: { value: 10 }, dims: { status: 'done' } },
+      { id: 'r2', parentId: null, index: 2, name: 'Root 2', measures: {}, dims: { status: 'done' }, color: '#ff0000' },
+      { id: 'c2', parentId: 'r2', index: 3, name: 'Child 2', measures: { value: 20 }, dims: { status: 'done' } },
+    ]
+    const rules = [{ level: 0, groupings: [{ field: 'status', dir: 'asc' }] }]
+    const grouped = applyGroupings(tree, rules)
+    const group = grouped.find(n => n.id === '__grp__status__done')
+    expect(group).toBeDefined()
+    expect(grouped.find(n => n.id === 'r1')!.parentId).toBe(group!.id)
+    expect(grouped.find(n => n.id === 'c1')!.parentId).toBe('r1')
+    expect(grouped.find(n => n.id === 'r2')!.parentId).toBe(group!.id)
+    expect(grouped.find(n => n.id === 'c2')!.parentId).toBe('r2')
+    expect(grouped.find(n => n.id === 'c2')!.measures.value).toBe(20)
   })
 })

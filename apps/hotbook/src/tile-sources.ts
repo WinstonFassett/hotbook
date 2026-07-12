@@ -4,11 +4,11 @@
  */
 
 import type { Num, Writable } from 'bireactive'
-import type { VizNode, PEdge, Tile, Dataset } from './persistence'
+import type { VizNode, PEdge, Tile, Dataset, MeasureDef } from './persistence'
 import { makeFlatSource, makeHierSource, makeHierRootFlatSource, hierShapeKey, hierValueKey } from './viz/br/bindTile'
 import type { TileSource } from './viz/br/bindTile'
 import { hudStore } from './store'
-import { applyGroupBy } from './persistence'
+import { applyGroupings, type GroupingRule, type TileGroupings } from '@hotbook/core'
 import { colorFor, leavesOf } from '@hotbook/core'
 
 import {
@@ -113,6 +113,38 @@ export function resolveTileBindings(tile: Tile, defaultValueBinding: string) {
   return { valueBinding, xBinding, yBinding, orderBinding, orderDir }
 }
 
+/**
+ * Resolve tile grouping configuration.
+ * Falls back from groupings to legacy groupBy, and fills default orderBy/aggregation.
+ * orderBy defaults to the chart's current sort measure so group order and chart sort align.
+ */
+export function resolveGroupings(tile: Tile, valueBinding: string, orderBinding: string, measureDefs: MeasureDef[]): GroupingRule[] | undefined {
+  const measureKeys = measureDefs.map(m => m.key)
+  const normalizedOrderBinding = orderBinding === 'value' || orderBinding === '_value' ? valueBinding : orderBinding
+  const orderBindingIsMeasure = measureKeys.includes(normalizedOrderBinding)
+
+  const rules: GroupingRule[] | undefined = tile.groupings
+    ? tile.groupings.rules
+    : tile.groupBy
+      ? [{ level: 0, groupings: [{ field: tile.groupBy, dir: 'asc' }] }]
+      : undefined
+  if (!rules) return undefined
+
+  return rules.map(rule => ({
+    level: rule.level,
+    groupings: rule.groupings.map(g => {
+      let orderBy = g.orderBy
+      if (orderBy === undefined && orderBindingIsMeasure) {
+        orderBy = normalizedOrderBinding
+      }
+      const orderByMeasure = orderBy !== undefined && orderBy !== g.field && measureKeys.includes(orderBy)
+      const aggregation = orderByMeasure ? (g.aggregation ?? 'sum') : undefined
+      const dir = g.dir ?? (orderByMeasure ? 'desc' : 'asc')
+      return { ...g, orderBy, ...(aggregation ? { aggregation } : {}), dir }
+    }),
+  }))
+}
+
 /** Sort nodes by orderBinding + orderDir. orderBinding can be:
  *  - 'index' or '_index': preserve/reverse input order
  *  - 'value' or '_value': sort by valueBinding
@@ -198,7 +230,8 @@ export interface TileRenderContext {
 export function buildTileSource(ctx: TileRenderContext): TileSource | null {
   const { tile, ds, measureKey, drillNodeId, onUpdate, onUpdateMany } = ctx
   const { valueBinding, xBinding, yBinding, orderBinding, orderDir } = resolveTileBindings(tile, measureKey)
-  const rawNodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.nodes, tile.groupBy) : ds.nodes)
+  const groupRules = resolveGroupings(tile, valueBinding, orderBinding, ds.measureDefs)
+  const rawNodes = colorByGroup(applyGroupings(ds.nodes, groupRules))
   const sorted = sortNodes(rawNodes, orderBinding, valueBinding, orderDir)
   const sortedWithIndex = sorted.map((n, i) => ({ ...n, index: i }))
   const depth = tile.depth || undefined
@@ -435,8 +468,9 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
  *  flow. DockView calls this when buildTileSource returns null. */
 export function buildSimpleMount(ctx: TileRenderContext): ((el: HTMLElement) => void) | null {
   const { tile, ds, measureKey } = ctx
-  const { valueBinding } = resolveTileBindings(tile, measureKey)
-  const rawNodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.nodes, tile.groupBy) : ds.nodes)
+  const { valueBinding, orderBinding } = resolveTileBindings(tile, measureKey)
+  const groupRules = resolveGroupings(tile, valueBinding, orderBinding, ds.measureDefs)
+  const rawNodes = colorByGroup(applyGroupings(ds.nodes, groupRules))
   const leaves = rawNodes.filter(n => !rawNodes.some(m => m.parentId === n.id))
   const { kind } = tile
 
@@ -493,8 +527,9 @@ export function simpleTag(kind: string): string | null {
 /** A simple data key for simple-mount tiles — used to detect when to remount */
 export function simpleDataKey(ctx: TileRenderContext): string {
   const { tile, ds, measureKey } = ctx
-  const { valueBinding } = resolveTileBindings(tile, measureKey)
-  const rawNodes = colorByGroup(tile.groupBy ? applyGroupBy(ds.nodes, tile.groupBy) : ds.nodes)
+  const { valueBinding, orderBinding } = resolveTileBindings(tile, measureKey)
+  const groupRules = resolveGroupings(tile, valueBinding, orderBinding, ds.measureDefs)
+  const rawNodes = colorByGroup(applyGroupings(ds.nodes, groupRules))
   const leaves = rawNodes.filter(n => !rawNodes.some(m => m.parentId === n.id))
   const { kind } = tile
   if (kind === 'gauge' || kind === 'gauge-segmented') {

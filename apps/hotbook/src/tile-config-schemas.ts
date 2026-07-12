@@ -20,14 +20,14 @@ const SORT_ORIENT: VizConfigSchema = {
 }
 
 const HIER_FULL: VizConfigSchema = {
-  pickers: { measure: true, sort: true, depth: true },
+  pickers: { measure: true, sort: true, depth: true, groupBy: true },
   drillKey: 'default',
   showBreadcrumb: true,
 }
 
 // Icicle supports an orientation toggle (horizontal partition vs vertical icicle).
 const HIER_FULL_ORIENT: VizConfigSchema = {
-  pickers: { measure: true, sort: true, depth: true, orientation: true },
+  pickers: { measure: true, sort: true, depth: true, orientation: true, groupBy: true },
   drillKey: 'default',
   showBreadcrumb: true,
 }

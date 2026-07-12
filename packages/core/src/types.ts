@@ -33,6 +33,25 @@ export interface ColumnSchema {
 
 export type Rollup = 'sum' | 'max' | 'mean' | 'none'
 
+export type Aggregation = 'sum' | 'max' | 'mean' | 'min'
+
+export interface SingleGrouping {
+  field: string
+  orderBy?: string
+  aggregation?: Aggregation
+  dir: 'asc' | 'desc'
+  customOrder?: string[]
+}
+
+export interface GroupingRule {
+  level: number
+  groupings: SingleGrouping[]
+}
+
+export interface TileGroupings {
+  rules: GroupingRule[]
+}
+
 export interface Measurement {
   key: string
   label: string
@@ -110,7 +129,7 @@ export interface VizConfigSchema {
     measure?: boolean
     depth?: boolean       // 1–5 level selector
     sort?: boolean        // Order | Value
-    groupBy?: boolean
+    groupBy?: boolean    // grouping panel for hierarchical tiles
     xKey?: boolean        // scatter only
     yKey?: boolean        // scatter only
     orientation?: boolean

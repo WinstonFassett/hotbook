@@ -1,7 +1,7 @@
 import type { Workspace, Dataset, Dashboard, Tile, TileKind } from './schema/v11'
 import type { VizNode } from '@hotbook/core'
 import { removeTileFromDock } from '../dock'
-import { applyView, drillPath } from '@hotbook/core'
+import { drillPath } from '@hotbook/core'
 
 function genId(): string {
   return Math.random().toString(36).slice(2, 10)
@@ -132,13 +132,6 @@ export function activeDashboard(ws: Workspace): Dashboard | undefined {
 
 export function dashboardsForDataset(ws: Workspace, dsId: string): Dashboard[] {
   return ws.dashboards.filter(d => d.datasetId === dsId)
-}
-
-// ─── GroupBy helper (re-exported from @hotbook/core) ──────────
-
-// For backwards compatibility, re-export applyView as applyGroupBy
-export function applyGroupBy(nodes: VizNode[], dimKey: string): VizNode[] {
-  return applyView(nodes, dimKey)
 }
 
 // ─── Drill helpers (re-exported from @hotbook/core) ────────────

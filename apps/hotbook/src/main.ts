@@ -189,8 +189,8 @@ function buildTileRecords(dash: Dashboard, ds: Dataset): TileRecord[] {
     onOrientationChange: (orientation: 'vertical' | 'horizontal') => {
       commit(updateTile(tile.id, { orientation }))
     },
-    onGroupByChange: (groupBy: string | undefined) => {
-      commit(updateTile(tile.id, { groupBy }))
+    onGroupingsChange: (groupings) => {
+      commit(updateTile(tile.id, { groupings, groupBy: undefined }))
     },
   }))
 }

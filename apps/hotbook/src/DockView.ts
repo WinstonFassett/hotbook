@@ -24,12 +24,14 @@ import {
   reconcile, defaultDockTree, removePanel,
 } from './dock'
 import type { Tile, Dataset } from './persistence'
+import type { TileGroupings } from '@hotbook/core'
 import { schemaFor } from './tile-config-schemas'
 import { bindTile } from './viz/br/bindTile'
 import type { TileController, TileSource } from './viz/br/bindTile'
 import { hudStore } from './store'
 import { buildTileSource, buildSimpleMount, simpleTag, simpleDataKey } from './tile-sources'
 import type { TileRenderContext } from './tile-sources'
+import { buildGroupingsButton } from './tile-groupings'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -48,7 +50,7 @@ export interface TileRecord {
   onDepthChange: (depth: number) => void
   onSortChange: (orderBinding: string, orderDir?: 'asc' | 'desc') => void
   onOrientationChange: (orientation: 'vertical' | 'horizontal') => void
-  onGroupByChange: (key: string | undefined) => void
+  onGroupingsChange: (groupings: TileGroupings | undefined) => void
 }
 
 type DropTarget =
@@ -699,18 +701,7 @@ export class DockView extends HTMLElement {
     }
 
     if (pickers.groupBy && ds.dimDefs.length > 0) {
-      const sel = document.createElement('select')
-      sel.className = 'tile-measure-select'
-      sel.title = 'Group by'
-      const noGroup = document.createElement('option')
-      noGroup.value = ''; noGroup.textContent = 'No group'
-      sel.appendChild(noGroup)
-      ds.dimDefs.forEach(d => {
-        const o = document.createElement('option'); o.value = d.key; o.textContent = d.label; sel.appendChild(o)
-      })
-      sel.value = tile.groupBy ?? ''
-      sel.addEventListener('change', () => tileRec.onGroupByChange(sel.value || undefined))
-      actions.appendChild(sel)
+      actions.appendChild(buildGroupingsButton(tile, ds, tileRec.onGroupingsChange))
     }
 
     const closeBtn = document.createElement('button')

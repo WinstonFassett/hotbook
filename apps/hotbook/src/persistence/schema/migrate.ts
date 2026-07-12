@@ -1,4 +1,4 @@
-import type { Workspace } from './v11'
+import type { Workspace, Tile } from './v11'
 
 /**
  * Migrate from v10 to v11 format.
@@ -23,11 +23,37 @@ export function migrateV10toV11(ws: Workspace): Workspace {
 }
 
 /**
+ * Migrate legacy Tile.groupBy to Tile.groupings.
+ * v1 uses top-level groupings only (level: 0).
+ */
+function migrateTileGroupBy(tile: Tile): Tile {
+  if (!tile.groupBy) return tile
+  if (tile.groupings) return { ...tile, groupBy: undefined }
+  return {
+    ...tile,
+    groupings: {
+      rules: [{ level: 0, groupings: [{ field: tile.groupBy, dir: 'asc' }] }],
+    },
+    groupBy: undefined,
+  }
+}
+
+function normalizeGroupings(ws: Workspace): Workspace {
+  return {
+    ...ws,
+    dashboards: ws.dashboards.map(dash => ({
+      ...dash,
+      tiles: dash.tiles.map(migrateTileGroupBy),
+    })),
+  }
+}
+
+/**
  * Apply all available migrations in sequence.
- * Currently only v10→v11, but structure supports future versions.
+ * Currently only v10→v11 + groupBy→groupings, but structure supports future versions.
  */
 export function migrate(ws: Workspace): Workspace {
-  // Assume input is v10 or earlier; migrate to v11
   let current = migrateV10toV11(ws)
+  current = normalizeGroupings(current)
   return current
 }

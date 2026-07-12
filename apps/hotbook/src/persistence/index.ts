@@ -33,6 +33,5 @@ export {
   activeDataset,
   activeDashboard,
   dashboardsForDataset,
-  applyGroupBy,
   drillPath,
 } from './mutations'
