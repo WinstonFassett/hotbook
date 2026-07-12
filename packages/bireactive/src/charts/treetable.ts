@@ -1,9 +1,8 @@
-import { leavesOf, effect } from "bireactive";
+import { effect } from "bireactive";
 import { type BiNode, portfolio } from "../lib/tree";
 import { prefersReducedMotion, settleTransition } from "../lib/transitions";
 import { numberDrag } from "../lib/number-drag";
 
-const ROW_HEIGHT = 24;
 const INDENT_WIDTH = 14;
 
 interface VisibleRow {
@@ -299,7 +298,6 @@ export class MdTreetableLC extends HTMLElement {
       allNodeIds.push(nodeId);
 
       let row = existing.get(nodeId);
-      const isNewRow = !row;
       existing.delete(nodeId);
 
       if (!row) {

@@ -1,7 +1,6 @@
 import { effect, type Mount, cell, tween, easeOut, untracked } from "bireactive";
 import { Diagram } from "../lib/diagram";
-import { interpolateCool, interpolateWarm, interpolateRainbow } from "d3-scale-chromatic";
-import { hierarchy } from "d3-hierarchy";
+import { interpolateWarm, interpolateRainbow } from "d3-scale-chromatic";
 import { sankeyScene, renderColorControls, type LinkDef, SORT_SEC } from "../lib/sankey";
 
 // ---------------------------------------------------------------------------
@@ -45,7 +44,7 @@ export class MdSankeySimple extends Diagram {
     const linkDefs: LinkDef[] = hasExt ? ext.links.map(l => ({ source: l.source, target: l.target, init: l.value })) : SIMPLE_LINKS
     const nodePadding = ext ? Math.max(1, Math.min(6, Math.floor(300 / nodeIds.length))) : 6
     const W = 560, H = ext ? Math.max(340, nodeIds.length * (8 + nodePadding)) : 340;
-    const view = this.view(W + 120, H + 48);
+    this.view(W + 120, H + 48);
     const { focused, hovered, wheelLocked, linkValues, nodeColorProp, linkColorMode } = sankeyScene(this, s, {
       W, H, nodeIds, linkDefs, labelSize: 11, stringIds: true, nodePadding,
       sortByCell: this._sortByCell,
@@ -146,7 +145,7 @@ export class MdSankeyComplex extends Diagram {
 
   protected scene(s: Mount): void {
     const W = 800, H = 560;
-    const view = this.view(W + 180, H + 48);
+    this.view(W + 180, H + 48);
     const { focused, hovered, wheelLocked, linkValues, nodeColorProp, linkColorMode } = sankeyScene(this, s, {
       W, H, nodeIds: COMPLEX_NODES, linkDefs: COMPLEX_LINKS,
       nodePadding: 4, interp: interpolateWarm, labelSize: 9, stringIds: false,
@@ -304,7 +303,7 @@ export class MdSankeyHierarchy extends Diagram {
 
   protected scene(s: Mount): void {
     const W = 680, H = 500;
-    const view = this.view(W + 160, H + 48);
+    this.view(W + 160, H + 48);
     const { nodeIds, linkDefs } = hierarchyToSankey(FLARE_TREE);
     const { focused, hovered, wheelLocked, linkValues, nodeColorProp, linkColorMode } = sankeyScene(this, s, {
       W, H, nodeIds, linkDefs,

@@ -345,7 +345,7 @@ export function sankeyScene(
   // link being edited mid-gesture (the gesture object itself is plain).
   const wheelLocked = cell<number | null>(null);
   const ribbonEls = new Map<Element, number>();
-  const ribbonElements: SVGPathElement[] = []; // Track elements by index for focus management
+  const ribbonElements: SVGGElement[] = []; // Track elements by index for focus management
   const groupNodeEls = new Map<Element, number>(); // Track group node elements (bar and grip) to node indices
 
   // Wheel edits a link by index. Snapshot/restore ALL link values because
@@ -380,8 +380,8 @@ export function sankeyScene(
 
   // Wheel config for group nodes — stateful like lane grips
   const groupWheelConfig = {
-    snapshot: (nodeIdx: number) => linkValues.map((lv) => lv.value.value),
-    restore: (nodeIdx: number, snap: number[]) => {
+    snapshot: (_nodeIdx: number) => linkValues.map((lv) => lv.value.value),
+    restore: (_nodeIdx: number, snap: number[]) => {
       batch(() => { linkValues.forEach((lv, i) => { lv.value.value = snap[i]!; }); });
     },
     onEnd: () => { wheelLocked.value = null; tooltipVis.value = false; tooltipNodeIdx.value = null; },
@@ -446,7 +446,7 @@ export function sankeyScene(
       const parts = [`${name}: ${Math.max(inSum, outSum).toFixed(1)}`];
       if (ins.length > 0) parts.push(`in: ${inSum.toFixed(1)}`);
       if (outs.length > 0) parts.push(`out: ${outSum.toFixed(1)}`);
-      tooltipText.value = parts.join(" · ");
+      tooltipLinkIdx.value = null;
       tooltipNodeIdx.value = idx;
       tooltipVis.value = true;
       return;
@@ -473,10 +473,8 @@ export function sankeyScene(
     batch(() => {
       linkValues.forEach((lv, i) => { lv.value.value = allVals[i]!; });
     });
-    const b = layout.value.links[idx]!;
-    const sn = nodeIds[b.src] ?? String(b.src);
-    const tn = nodeIds[b.tgt] ?? String(b.tgt);
-    tooltipText.value = `${sn} → ${tn}: ${v.value.toFixed(1)}`;
+    tooltipLinkIdx.value = idx;
+    tooltipNodeIdx.value = null;
   }) as EventListener, { passive: false });
 
   host.addEventListener("keydown", ((e: KeyboardEvent) => {
@@ -597,10 +595,8 @@ export function sankeyScene(
     ribbon.el.addEventListener("pointerenter", (e) => {
       if (wheelController.active) return;
       hovered.value = idx;
-      const b = layout.value.links[idx]!;
-      const sn = nodeIds[b.src] ?? String(b.src);
-      const tn = nodeIds[b.tgt] ?? String(b.tgt);
-      tooltipText.value = `${sn} → ${tn}: ${b.value.toFixed(1)}`;
+      tooltipLinkIdx.value = idx;
+      tooltipNodeIdx.value = null;
       tooltipAt.value = toSVG(e as PointerEvent); tooltipVis.value = true;
     });
     ribbon.el.addEventListener("pointermove", (e) => { if (!wheelController.active) tooltipAt.value = toSVG(e as PointerEvent); });

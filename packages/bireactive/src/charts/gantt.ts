@@ -30,6 +30,7 @@ import {
   ensureArrowMarker,
   label, line, type Mount, pathD, rect, Vec,
   num, tween, easeOut, untracked,
+  type Cell,
 } from "bireactive";
 import { Diagram } from "../lib/diagram";
 import { scaleTime } from "d3-scale";
@@ -196,7 +197,7 @@ export class MdGanttChartLC extends Diagram {
 
     // Create per-task tweened y-position cells.
     // Map from task ID to {yCell, cancelFn}.
-    const taskYCells = new Map<string, { yCell: ReturnType<typeof num>, yCenter: ReturnType<typeof derive>, cancel: (() => void) | null }>();
+    const taskYCells = new Map<string, { yCell: ReturnType<typeof num>, yCenter: Cell<number>, cancel: (() => void) | null }>();
     for (const task of rows0) {
       const yCell = num(plotY); // Will be initialized below
       const yCenter = derive(() => yCell.value + ROW_H / 2);
@@ -215,7 +216,6 @@ export class MdGanttChartLC extends Diagram {
     let lastSortBy = untracked(() => this._sortByCell.value);
     let lastReorderTick = untracked(() => this._reorderTickCell.value);
     biEffect(() => {
-      const sorted = sortedData.value; // track sorted order
       const sortBy = this._sortByCell.value; // track sort key
       const reorderTick = this._reorderTickCell.value; // track reorder commits
 
@@ -838,7 +838,7 @@ export class MdGanttChartLC extends Diagram {
         return entry ? entry.yCenter.value : rowCenterY(idx);
       };
 
-      const rowLabel = s(label(
+      s(label(
         Vec.derive(() => ({ x: plotX - 8, y: getYCenter() })),
         derive(() => di()?.label ?? ""),
         { size: 11, align: Anchor.Right, fill: "#bbb", opacity: 0.85 },
