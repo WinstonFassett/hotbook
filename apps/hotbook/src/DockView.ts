@@ -170,8 +170,8 @@ export class DockView extends HTMLElement {
       easing: 'cubic-bezier(0.25, 0.46, 0.45, 0.94)'
     })
 
-    // Create debug panel for FLIP mode switching
-    this._createDebugPanel()
+    // Create debug panel for FLIP mode switching — opt-in only.
+    if (this.hasAttribute('debug')) this._createDebugPanel()
 
     this._disposeAll = () => {
       stopEffect()
@@ -1119,12 +1119,12 @@ export class DockView extends HTMLElement {
     // Remove panel from dock tree only — the tile stays in the workspace and
     // can be dragged back or re-added. tileRec.onRemove() (workspace delete)
     // is only appropriate when the user explicitly removes a tile from the topbar.
-    this._mutateDock(removePanel(dock, panelId))
+    this._mutateDockWithFLIP(removePanel(dock, panelId))
   }
 
   private _toggleMaximize(groupId: string) {
     const dock = this._dockCell?.value ?? null
-    this._mutateDock(toggleMaximize(dock, groupId))
+    this._mutateDockWithFLIP(toggleMaximize(dock, groupId))
   }
 
   // ─── Gutter drag ─────────────────────────────────────────────────────────
@@ -1371,17 +1371,17 @@ export class DockView extends HTMLElement {
 
     if (state.kind === 'panel' && state.panelId) {
       if (target.kind === 'edge') {
-        this._mutateDock(dropOnEdge(dock, state.panelId, target.groupId, target.edge))
+        this._mutateDockWithFLIP(dropOnEdge(dock, state.panelId, target.groupId, target.edge))
       } else {
         // tab drop — center or tab strip
         const idx = target.index >= 0 ? target.index : Infinity
-        this._mutateDock(movePanel(dock, state.panelId, target.groupId, idx === Infinity ? 9999 : idx))
+        this._mutateDockWithFLIP(movePanel(dock, state.panelId, target.groupId, idx === Infinity ? 9999 : idx))
       }
     } else if (state.kind === 'group' && state.sourceGroupId) {
       if (target.kind === 'edge') {
-        this._mutateDock(dropGroupOnEdge(dock, state.sourceGroupId, target.groupId, target.edge))
+        this._mutateDockWithFLIP(dropGroupOnEdge(dock, state.sourceGroupId, target.groupId, target.edge))
       } else {
-        this._mutateDock(mergeGroups(dock, state.sourceGroupId, target.groupId))
+        this._mutateDockWithFLIP(mergeGroups(dock, state.sourceGroupId, target.groupId))
       }
     }
   }
