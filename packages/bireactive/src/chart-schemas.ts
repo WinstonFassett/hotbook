@@ -79,7 +79,7 @@ const lineSchema: ChartSchema = {
   ui: {
     fields: [
       { type: 'measure', label: 'Measure', path: 'valueBinding' },
-      { type: 'sort', label: 'Sort', path: 'orderBinding' },
+      // No sort - line charts have fixed x-axis (dates)
     ],
   },
 }
@@ -92,7 +92,7 @@ const areaSchema: ChartSchema = {
   ui: {
     fields: [
       { type: 'measure', label: 'Measure', path: 'valueBinding' },
-      { type: 'sort', label: 'Sort', path: 'orderBinding' },
+      // No sort - area charts have fixed x-axis (dates)
     ],
   },
 }
