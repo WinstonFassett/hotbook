@@ -902,7 +902,11 @@ export class MdGanttChartLC extends Diagram {
       // reorders the task list. The filter yields to time-axis resize handles.
       biEffect(() => {
         const enabled = this._canReorderCell.value && this._sortByCell.value === 'index';
-        const task = di();  // Get CURRENT task at this position, not initial snapshot
+        // Track reorder commits (not data changes during drag preview)
+        void this._reorderTickCell.value;
+
+        // Read current task without tracking to avoid re-runs during drag
+        const task = untracked(() => di());
         if (!enabled || !task || !task.id) {
           tile.el.style.cursor = "grab";
           return;
