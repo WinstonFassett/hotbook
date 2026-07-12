@@ -1,14 +1,13 @@
 import {
   Anchor,
-  circle,
   derive,
   effect as biEffect,
   label,
   type Mount,
   num,
   pathD,
+  rect,
   group,
-  treeNode,
   tween,
   easeOut,
   untracked,
@@ -28,49 +27,55 @@ import { GESTURE_ACTIVE_CLASS } from "../lib/transitions";
 
 const W = 560;
 const H = 400;
-const SORT_SEC = 0.35; // s — sort/reorder tween duration
+const SORT_SEC = 0.35;
 
-// Node visual constants — small circles, idiomatic dendrogram
-const LEAF_R = 4.5;
-const INNER_R = 5.5;
-const ROOT_R = 7;
+// Rounded-rect node style: rectangle encloses the label (big hit target).
+const NODE_H = 24;
+const NODE_H_ROOT = 28;
+const NODE_CORNER = 6;
 const NODE_STROKE = "#1a1d24";
+const NODE_PAD_X = 10;
+const NODE_MIN_W = 40;
+const NODE_MIN_W_ROOT = 64;
+const CHAR_WIDTH_EST = 0.58;
 
-const DEFAULT_MAX_DEPTH = 2; // root + children + grandchildren = 3 levels
-const CHAR_WIDTH_EST = 0.58; // conservative sans-serif char-width / font-size ratio
-
-// Font sizes per role
 const LEAF_FONT = 11;
 const INNER_FONT = 11;
 const ROOT_FONT = 12;
 
-// Gap between node and its label
-const LABEL_GAP = 8;
-
-function pruneNode(n: BiNode, depth: number): BiNode {
-  if (depth <= 0) return treeNode(n.value, []);
-  return treeNode(n.value, n.children.map((c) => pruneNode(c as BiNode, depth - 1)));
-}
-
 /** Build a d3 hierarchy that excludes children of collapsed nodes.
- *  This makes the layout treat collapsed parents as leaves so visible
- *  nodes spread into the freed-up space. */
+ *  Collapsed parents lay out as leaves so visible nodes spread into the
+ *  freed-up space. The FULL underlying BiNode tree is preserved — the
+ *  collapse machinery is what hides deeper levels, so the user can always
+ *  expand into them. */
 function buildCollapsedHierarchy(
   root: BiNode,
-  collapsed: Set<BiNode>,
+  isCollapsedForLayout: (n: BiNode) => boolean,
   sortBy?: "index" | "value",
 ) {
   const h = buildHierarchy(root, sortBy);
   h.each((d) => {
-    if (collapsed.has(d.data) && d.children) {
+    if (isCollapsedForLayout(d.data) && d.children) {
       d.children = undefined;
     }
   });
   return h;
 }
 
-function estWidth(text: string, fontSize: number): number {
+function estTextWidth(text: string, fontSize: number): number {
   return text.length * fontSize * CHAR_WIDTH_EST;
+}
+
+function relLuminance(hex: string): number {
+  if (!hex.startsWith("#") || hex.length < 7) return 0;
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const toL = (c: number) => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+  return 0.2126 * toL(r) + 0.7152 * toL(g) + 0.0722 * toL(b);
+}
+function labelInk(color: string): string {
+  return relLuminance(color) > 0.5 ? "#111" : "#f0f2f6";
 }
 
 export class MdTreeChart extends Diagram {
@@ -87,10 +92,11 @@ export class MdTreeChart extends Diagram {
     .tree-node {
       pointer-events: all;
       vector-effect: non-scaling-stroke;
+      cursor: pointer;
     }
   `
+
   externalRoot?: BiNode;
-  maxDepth?: number;
 
   private _sortByCell = cell<'index' | 'value'>('index')
   get sortBy(): 'index' | 'value' { return this._sortByCell.value }
@@ -104,9 +110,24 @@ export class MdTreeChart extends Diagram {
   get measureKey(): string { return this._measureKeyCell.value }
   set measureKey(v: string) { this._measureKeyCell.value = v }
 
-  // Reactive cell wrapping the collapsed-node Set. We replace the Set object
-  // (new reference) on each toggle so derive() detects the change.
+  // Reactive maxDepth — the tile-binder writes `el.maxDepth = ...` and
+  // expects the chart to re-render. Sunburst/treemap/pack/icicle all use
+  // this pattern; this cell brings the tree in line.
+  //   undefined → show every level (matches sunburst/treemap; hotbook's
+  //               depth picker maps "All" → 0 → undefined at the tile-source layer)
+  //   0         → show every level
+  //   N > 0     → show levels 0..N; deeper levels start collapsed but user
+  //               can expand them by clicking the depth-N node.
+  private _maxDepthCell = cell<number | undefined>(undefined)
+  get maxDepth(): number | undefined { return this._maxDepthCell.value }
+  set maxDepth(v: number | undefined) { this._maxDepthCell.value = v }
+
+  // Explicit user collapse/expand sets:
+  //   collapsed → user explicitly hid children (overrides any auto-expand)
+  //   expanded  → user explicitly revealed children past maxDepth
+  // Effective collapse = collapsed.has(n) || (depth(n) >= effectiveDepth && !expanded.has(n))
   private _collapsedCell = cell<Set<BiNode>>(new Set<BiNode>())
+  private _expandedCell = cell<Set<BiNode>>(new Set<BiNode>())
 
   private _zoomSelection?: any;
 
@@ -117,15 +138,9 @@ export class MdTreeChart extends Diagram {
   }
 
   protected scene(s: Mount): void {
-    const fullRoot = this.externalRoot ?? portfolio();
+    const root = this.externalRoot ?? portfolio();
 
-    // 0 = unlimited (All); undefined = start with the default shallow view.
-    const depthLimit = this.maxDepth === 0 ? undefined : (this.maxDepth ?? DEFAULT_MAX_DEPTH);
-    // Limit the layout to the visible subtree so nodes aren't sized for hidden leaves.
-    const root = depthLimit === undefined ? fullRoot : pruneNode(fullRoot, depthLimit);
-
-    // Use the real tile size so the tree fills its container instead of
-    // rendering on a tiny fixed canvas and getting scaled down to dots.
+    // Use real tile size so the tree fills its container.
     const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
     const view = this.view(Wc, Hc);
 
@@ -145,50 +160,75 @@ export class MdTreeChart extends Diagram {
     const hoverCell = cell<BiNode | null>(null);
     state.hoverCell = hoverCell;
 
+    // Full traversal — no pruning. Every node exists in the render list;
+    // visibility is driven by the collapse machinery so any level is reachable.
     const allNodes = [...walkWithDepth(root)];
 
-    // Padding: labels extend beyond node positions, so pad enough for the
-    // longest label at each end. This is what solves the "Port…" truncation
-    // and the horizontal edge clipping — labels get real space to breathe.
-    const leafMaxLabelLen = allNodes
-      .filter((n) => n.isLeaf)
-      .reduce((m, n) => Math.max(m, n.node.value.label.length), 0);
-    const leafLabelW = estWidth("W".repeat(leafMaxLabelLen), LEAF_FONT);
-    const rootLabelW = estWidth(root.value.label, ROOT_FONT);
-    // Horizontal: root sits at left with label to its left; leaves at right
-    // with labels to the right. Pad accordingly.
-    const PAD_H_LEFT = Math.max(28, rootLabelW + LABEL_GAP + ROOT_R + 6);
-    const PAD_H_RIGHT = Math.max(28, leafLabelW + LABEL_GAP + LEAF_R + 6);
-    // Vertical: root at top with label above; leaves at bottom with labels
-    // below. Extra bottom padding so leaf labels don't clip the tile edge.
-    const PAD_V_TOP = Math.max(24, ROOT_FONT + LABEL_GAP + ROOT_R + 4);
-    const PAD_V_BOTTOM = Math.max(28, LEAF_FONT + LABEL_GAP + LEAF_R + 8);
-    // Side pad for vertical mode: half a leaf label so end leaves don't clip.
-    const PAD_V_SIDE = Math.max(20, estWidth("W".repeat(Math.min(6, leafMaxLabelLen)), LEAF_FONT) / 2 + 8);
-    // Top/bottom pad for horizontal mode: font baseline + inner label overhang.
-    const PAD_H_TOP = Math.max(20, INNER_FONT + LABEL_GAP + 4);
-    const PAD_H_BOTTOM = Math.max(16, LEAF_FONT / 2 + 4);
+    // Fixed node sizes derived from actual label lengths — enclosing rects
+    // (Winston's preferred style, bigger hit targets).
+    const nodeSizeOf = (n: BiNode, depth: number, isLeaf: boolean) => {
+      const fontSize = depth === 0 ? ROOT_FONT : isLeaf ? LEAF_FONT : INNER_FONT;
+      // Reserve room for the collapse marker on inner nodes so it doesn't
+      // suddenly widen the rect when the user toggles collapse.
+      const suffix = isLeaf ? "" : "  ▸";
+      const textW = estTextWidth(n.value.label + suffix, fontSize);
+      const minW = depth === 0 ? NODE_MIN_W_ROOT : NODE_MIN_W;
+      const w = Math.max(minW, textW + NODE_PAD_X * 2);
+      const h = depth === 0 ? NODE_H_ROOT : NODE_H;
+      return { w, h, fontSize };
+    };
+    const nodeSize = new Map<BiNode, { w: number; h: number; fontSize: number }>();
+    for (const { node, depth, isLeaf } of allNodes) {
+      nodeSize.set(node, nodeSizeOf(node, depth, isLeaf));
+    }
 
-    // Helper: true if a node is inside a collapsed subtree (i.e., one of its
-    // ancestors is in the collapsed set). The node itself may be collapsed but
-    // is still considered visible.
+    // Layout separation: idiomatic dendrograms give siblings less space than
+    // cousins. Also scale by node-size to keep rects from overlapping.
+    const maxNodeW = Math.max(...Array.from(nodeSize.values()).map((v) => v.w));
+    const maxNodeH = Math.max(...Array.from(nodeSize.values()).map((v) => v.h));
+
+    // Padding: half a node-dim + a breathing gap so rects don't clip the edges.
+    const PAD_V_TOP = maxNodeH / 2 + 6;
+    const PAD_V_BOTTOM = maxNodeH / 2 + 10;
+    const PAD_V_SIDE = maxNodeW / 2 + 6;
+    const PAD_H_LEFT = maxNodeW / 2 + 6;
+    const PAD_H_RIGHT = maxNodeW / 2 + 6;
+    const PAD_H_TOP = maxNodeH / 2 + 6;
+    const PAD_H_BOTTOM = maxNodeH / 2 + 10;
+
+    // Effective depth limit — 0 or undefined means "All" (show every level).
+    const effectiveMaxDepth = () => {
+      const v = this._maxDepthCell.value;
+      if (v === undefined || v === 0) return Infinity;
+      return v;
+    };
+    const depthOf = new Map<BiNode, number>();
+    for (const { node, depth } of allNodes) depthOf.set(node, depth);
+
+    // For layout: a node's children are hidden if it is effectively-collapsed.
+    const isCollapsedForLayout = (n: BiNode): boolean => {
+      if (this._collapsedCell.value.has(n)) return true;
+      const d = depthOf.get(n) ?? 0;
+      return d >= effectiveMaxDepth() && !this._expandedCell.value.has(n);
+    };
+
+    // For rendering visibility: a node is hidden if any ancestor is collapsed.
     const isInsideCollapsed = (n: BiNode): boolean => {
-      const collapsed = this._collapsedCell.value;
       let cur: BiNode | undefined = parentOf(n);
       while (cur) {
-        if (collapsed.has(cur)) return true;
+        if (isCollapsedForLayout(cur)) return true;
         cur = parentOf(cur);
       }
       return false;
     };
 
-    // tree() layout: assigns .x and .y per VISIBLE node (collapsed subtrees are
-    // pruned from the d3 hierarchy so they don't contribute to positioning).
-    // For hidden nodes we use their nearest visible ancestor's position so they
-    // slide into the parent on collapse and back out on expand.
+    // d3.tree() layout on the reduced hierarchy.
     const layout = derive(() => {
-      const collapsed = this._collapsedCell.value;
-      const h = buildCollapsedHierarchy(root, collapsed, this._sortByCell.value);
+      // Read the reactive triggers so this derive re-runs on any change.
+      void this._maxDepthCell.value;
+      void this._collapsedCell.value;
+      void this._expandedCell.value;
+      const h = buildCollapsedHierarchy(root, isCollapsedForLayout, this._sortByCell.value);
       const isHorizontal = this._orientationCell.value === 'horizontal';
       const availW = isHorizontal
         ? Math.max(1, Wc.value - PAD_H_LEFT - PAD_H_RIGHT)
@@ -196,14 +236,18 @@ export class MdTreeChart extends Diagram {
       const availH = isHorizontal
         ? Math.max(1, Hc.value - PAD_H_TOP - PAD_H_BOTTOM)
         : Math.max(1, Hc.value - PAD_V_TOP - PAD_V_BOTTOM);
-      tree<BiNode>().size(
-        isHorizontal
-          ? [availH, availW]
-          : [availW, availH]
-      )(h);
+
+      const t = tree<BiNode>()
+        .size(isHorizontal ? [availH, availW] : [availW, availH])
+        // separation: 1.0 siblings, 1.4 cousins — a little breathing room
+        // so rects don't overlap in narrow subtrees.
+        .separation((a, b) => (a.parent === b.parent ? 1 : 1.4));
+      t(h);
+
       const map = new Map<BiNode, HierarchyPointNode<BiNode>>();
       h.each((d) => map.set(d.data, d as HierarchyPointNode<BiNode>));
-      // Hidden nodes: resolve to their collapsed ancestor's position
+      // Hidden nodes fall back to their nearest visible ancestor's position
+      // so they slide in/out on collapse/expand.
       for (const { node } of allNodes) {
         if (!map.has(node)) {
           let anc: BiNode | undefined = parentOf(node);
@@ -224,7 +268,6 @@ export class MdTreeChart extends Diagram {
         const l = layout.value;
         const nd = l.map.get(node);
         const x = nd?.x ?? 0, y = nd?.y ?? 0;
-        // d3 tree() puts breadth in .x and depth in .y; horizontal renders depth on screen-X.
         return l.isHorizontal ? { x: y, y: x } : { x, y };
       });
       let lcancel: (() => void) | null = null;
@@ -233,15 +276,32 @@ export class MdTreeChart extends Diagram {
       let seenOrient = untracked(() => this._orientationCell.value);
       let seenMeasureKey = untracked(() => this._measureKeyCell.value);
       let seenCollapsed = untracked(() => this._collapsedCell.value);
+      let seenExpanded = untracked(() => this._expandedCell.value);
+      let seenMaxDepth = untracked(() => this._maxDepthCell.value);
       biEffect(() => {
         const t = ltarget.value;
         const sort = this._sortByCell.value;
         const orient = this._orientationCell.value;
         const collapsed = this._collapsedCell.value;
+        const expanded = this._expandedCell.value;
+        const maxDepthV = this._maxDepthCell.value;
         const measureKey = untracked(() => this._measureKeyCell.value);
-        if (!lInited) { lInited = true; seenSort = sort; seenOrient = orient; seenMeasureKey = measureKey; seenCollapsed = collapsed; lx.value = t.x; ly.value = t.y; return; }
-        const structural = sort !== seenSort || orient !== seenOrient || measureKey !== seenMeasureKey || collapsed !== seenCollapsed;
-        seenSort = sort; seenOrient = orient; seenMeasureKey = measureKey; seenCollapsed = collapsed;
+        if (!lInited) {
+          lInited = true;
+          seenSort = sort; seenOrient = orient; seenMeasureKey = measureKey;
+          seenCollapsed = collapsed; seenExpanded = expanded; seenMaxDepth = maxDepthV;
+          lx.value = t.x; ly.value = t.y;
+          return;
+        }
+        const structural =
+          sort !== seenSort ||
+          orient !== seenOrient ||
+          measureKey !== seenMeasureKey ||
+          collapsed !== seenCollapsed ||
+          expanded !== seenExpanded ||
+          maxDepthV !== seenMaxDepth;
+        seenSort = sort; seenOrient = orient; seenMeasureKey = measureKey;
+        seenCollapsed = collapsed; seenExpanded = expanded; seenMaxDepth = maxDepthV;
         if (structural && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
           lcancel?.();
           lcancel = this.anim.start(
@@ -255,52 +315,66 @@ export class MdTreeChart extends Diagram {
       });
     }
 
-    // Screen position (post-padding) for a node.
     const posOf = (n: BiNode) => {
       const c = posCells.get(n);
       const isHorizontal = layout.value.isHorizontal;
       const padX = isHorizontal ? PAD_H_LEFT : PAD_V_SIDE;
       const padY = isHorizontal ? PAD_H_TOP : PAD_V_TOP;
-      const x = padX + (c?.lx.value ?? 0);
-      const y = padY + (c?.ly.value ?? 0);
-      return { x, y };
+      return { x: padX + (c?.lx.value ?? 0), y: padY + (c?.ly.value ?? 0) };
     };
 
-    // Per-node tweened opacity — fades in/out when nodes collapse/expand.
+    // Reactive visibility opacity, tweened on collapse/expand.
     const opacityCells = new Map<BiNode, ReturnType<typeof num>>();
     for (const { node } of allNodes) {
       const initHidden = untracked(() => isInsideCollapsed(node));
       const op = num(initHidden ? 0 : 1);
       opacityCells.set(node, op);
-      const opTarget = derive(() => isInsideCollapsed(node) ? 0 : 1);
+      const opTarget = derive(() => {
+        void this._collapsedCell.value;
+        void this._expandedCell.value;
+        void this._maxDepthCell.value;
+        return isInsideCollapsed(node) ? 0 : 1;
+      });
       let opCancel: (() => void) | null = null;
       let opInited = false;
       biEffect(() => {
         const target = opTarget.value;
         if (!opInited) { opInited = true; op.value = target; return; }
         opCancel?.();
-        opCancel = this.anim.start(tween(op, target, SORT_SEC, easeOut));
+        opCancel = this.anim.start(tween(op, target, SORT_SEC, easeOut) as any);
       });
     }
 
-    // Toggle collapsed state for an inner node
+    // Toggle: user click on an inner node
+    //   - If the node has children in the underlying tree:
+    //       - if currently effectively-expanded → collapse it
+    //       - if currently effectively-collapsed → expand it
+    //     Uses `collapsed` and `expanded` sets to override the depth default.
+    const hasChildren = (n: BiNode) => n.children.length > 0;
     const toggleCollapsed = (node: BiNode) => {
-      const prev = this._collapsedCell.value;
-      const next = new Set(prev);
-      if (next.has(node)) next.delete(node);
-      else next.add(node);
-      this._collapsedCell.value = next;
+      if (!hasChildren(node)) return;
+      const currentlyCollapsed = isCollapsedForLayout(node);
+      const c = new Set(this._collapsedCell.value);
+      const e = new Set(this._expandedCell.value);
+      if (currentlyCollapsed) {
+        // reveal children
+        c.delete(node);
+        e.add(node);
+      } else {
+        // hide children
+        e.delete(node);
+        c.add(node);
+      }
+      this._collapsedCell.value = c;
+      this._expandedCell.value = e;
     };
 
-    // All nodes + edges live in this group so pan/zoom can move them together.
+    // All nodes + edges live in this group so pan/zoom moves them together.
     const content = s(group());
 
-    // Draw edges first (under nodes) as smooth cubic beziers — the idiomatic
-    // dendrogram link. The bezier control points sit at the midpoint along the
-    // depth axis so links curve gracefully and read as parent→child branches.
+    // Curved bezier edges under nodes. Each edge fades with its child's opacity.
     for (const { node, depth } of allNodes) {
       if (depth === 0) continue;
-      if (this.maxDepth !== undefined && depth > this.maxDepth) continue;
       const parent = parentOf(node);
       if (!parent) continue;
 
@@ -326,121 +400,91 @@ export class MdTreeChart extends Diagram {
       );
     }
 
-    // Draw nodes as small circles, with labels placed adjacent to each node
-    // based on its role and the current orientation.
+    // Rounded-rect nodes with labels inside — Winston's preferred style,
+    // big hit targets.
     for (const { node, depth, isLeaf } of allNodes) {
-      if (this.maxDepth !== undefined && depth > this.maxDepth) continue;
-
       const isRoot = depth === 0;
-      const hasChildren = !isLeaf;
+      const inner = !isLeaf;
+      const size = nodeSize.get(node)!;
       const nodePos = Vec.derive(() => posOf(node));
-      const radius = isRoot ? ROOT_R : hasChildren ? INNER_R : LEAF_R;
 
-      const isCollapsedNode = derive(() => this._collapsedCell.value.has(node));
-      const isFocused = derive(() => state.focused.value === node);
-      const isHovered = derive(() => hoverCell.value === node);
+      const isCollapsedNode = derive(() => {
+        void this._collapsedCell.value;
+        void this._expandedCell.value;
+        void this._maxDepthCell.value;
+        return inner && isCollapsedForLayout(node);
+      });
 
       const nodeFill = derive(() =>
-        hasChildren && isCollapsedNode.value ? "#2a3040" : node.value.color,
+        inner && isCollapsedNode.value ? "#2f3646" : node.value.color,
       );
       const stroke = derive(() =>
-        isFocused.value ? "#fff"
-        : isHovered.value ? "#c8cdd6"
+        state.focused.value === node ? "#fff"
+        : hoverCell.value === node ? "#c8cdd6"
         : NODE_STROKE,
       );
       const strokeWidth = derive(() =>
-        isFocused.value || isHovered.value ? 2 : 1.25,
+        state.focused.value === node || hoverCell.value === node ? 2 : 1.25,
       );
+      const ink = derive(() => labelInk(nodeFill.value));
       const visOp = opacityCells.get(node)!;
       const nodeOpacity = derive(() => visOp.value);
 
       const nodeShape = content.add(
-        circle(nodePos, radius, {
+        rect(nodePos, size.w, size.h, {
           fill: nodeFill,
           opacity: nodeOpacity,
           stroke,
           strokeWidth,
+          corner: NODE_CORNER,
         }),
       );
       nodeShape.el.classList.add('tree-node');
-      nodeShape.el.style.cursor = "pointer";
       nodeShape.el.setAttribute('tabindex', '0');
       nodeShape.el.setAttribute('data-focusable', 'node');
       biEffect(() => {
-        const collapsedSuffix = isCollapsedNode.value && hasChildren ? ' (collapsed)' : '';
-        nodeShape.el.setAttribute('aria-label', `${node.value.label}: ${node.value.total.value.toFixed(0)}${collapsedSuffix}`);
+        const collapsedSuffix = isCollapsedNode.value && inner ? ' (collapsed)' : '';
+        nodeShape.el.setAttribute(
+          'aria-label',
+          `${node.value.label}: ${node.value.total.value.toFixed(0)}${collapsedSuffix}`,
+        );
       });
       biEffect(() => {
-        const isHidden = isInsideCollapsed(node);
-        nodeShape.el.style.pointerEvents = isHidden ? 'none' : '';
+        nodeShape.el.style.pointerEvents = isInsideCollapsed(node) ? 'none' : '';
       });
       nodeShape.el.addEventListener("click", () => {
-        if (hasChildren) toggleCollapsed(node);
+        if (inner) toggleCollapsed(node);
         state.focused.value = node;
       });
-      nodeShape.el.addEventListener("dblclick", (e) => {
-        e.stopPropagation();
-      });
+      nodeShape.el.addEventListener("dblclick", (e) => { e.stopPropagation(); });
       nodeShape.el.addEventListener("focus", () => { state.focused.value = node; });
-      nodeShape.el.addEventListener("blur", () => { if (state.focused.value === node) state.focused.value = null; });
-      nodeShape.el.addEventListener("pointerenter", () => { state.hovered.current = node; hoverCell.value = node; state.emitHover?.(node); });
-      nodeShape.el.addEventListener("pointerleave", () => { if (state.hovered.current === node) { state.hovered.current = null; hoverCell.value = null; state.emitHover?.(null); } });
-
-      // Label placement — the meat of the aesthetic fix.
-      //   Vertical layout: root above its node, leaves below, inner above.
-      //   Horizontal layout: root to the left, leaves to the right, inner above.
-      // Labels sit `LABEL_GAP` px away from the node edge.
-      //
-      // `align` is a static prop on the label shape, so instead of switching
-      // it reactively we render two labels per node (one per orientation) and
-      // fade the inactive one out. Both share text + visibility opacity.
-      const fontSize = isRoot ? ROOT_FONT : hasChildren ? INNER_FONT : LEAF_FONT;
-      const ink = isRoot ? "#f2f4f8" : hasChildren ? "#e2e5ec" : "#c8cdd6";
+      nodeShape.el.addEventListener("blur", () => {
+        if (state.focused.value === node) state.focused.value = null;
+      });
+      nodeShape.el.addEventListener("pointerenter", () => {
+        state.hovered.current = node; hoverCell.value = node; state.emitHover?.(node);
+      });
+      nodeShape.el.addEventListener("pointerleave", () => {
+        if (state.hovered.current === node) {
+          state.hovered.current = null; hoverCell.value = null; state.emitHover?.(null);
+        }
+      });
 
       const labelText = derive(() => {
-        if (hasChildren && isCollapsedNode.value) return `${node.value.label} ▸`;
+        if (inner && isCollapsedNode.value) return `${node.value.label}  ▸`;
         return node.value.label;
       });
 
-      // Vertical-mode label
-      const vAlign = isRoot ? Anchor.Bottom : isLeaf ? Anchor.Top : Anchor.Bottom;
-      const vPos = Vec.derive(() => {
-        const p = posOf(node);
-        const dy = (isRoot ? -1 : isLeaf ? 1 : -1) * (radius + LABEL_GAP);
-        return { x: p.x, y: p.y + dy };
-      });
-      const vOp = derive(() => (layout.value.isHorizontal ? 0 : nodeOpacity.value));
-
-      // Horizontal-mode label
-      const hAlign = isRoot ? Anchor.Right : isLeaf ? Anchor.Left : Anchor.Bottom;
-      const hPos = Vec.derive(() => {
-        const p = posOf(node);
-        if (isRoot) return { x: p.x - radius - LABEL_GAP, y: p.y };
-        if (isLeaf) return { x: p.x + radius + LABEL_GAP, y: p.y };
-        return { x: p.x, y: p.y - radius - LABEL_GAP };
-      });
-      const hOp = derive(() => (layout.value.isHorizontal ? nodeOpacity.value : 0));
-
       content.add(
-        label(vPos, labelText, {
-          size: fontSize,
-          align: vAlign,
+        label(nodePos, labelText, {
+          size: size.fontSize,
+          align: Anchor.Center,
           fill: ink,
-          bold: isRoot || hasChildren,
-          opacity: vOp,
-        }),
-      );
-      content.add(
-        label(hPos, labelText, {
-          size: fontSize,
-          align: hAlign,
-          fill: ink,
-          bold: isRoot || hasChildren,
-          opacity: hOp,
+          bold: isRoot || inner,
+          opacity: nodeOpacity,
         }),
       );
     }
-
     // Touch/mouse pan and pinch-to-zoom for mobile usability.
     const zoomBehavior = zoom<HTMLElement, unknown>()
       .scaleExtent([0.5, 5])
