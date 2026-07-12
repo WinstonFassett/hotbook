@@ -190,7 +190,7 @@ export class MdBudgetTree extends Diagram {
     labels: readonly string[],
     fills: readonly string[],
     isTotalRow: boolean,
-    selected: Writable<typeof cell<Writable<Num> | null>>,
+    selected: Writable<Writable<Num> | null>,
   ): void {
     const total = derive(() => cells.reduce((a, c) => a + c.value, 0));
     const widthOf = (i: number) =>

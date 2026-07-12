@@ -2,6 +2,7 @@ import { num, Num, treeNode as node, type Writable, type Num as NumType } from "
 import { group, leaf, type BiNode, type ColumnDef } from "@hotbook/bireactive";
 import type { GanttTask } from "@hotbook/bireactive";
 import { sharedRows, items } from "./layout/demo-data";
+import { PALETTE } from "@hotbook/core";
 
 export interface DemoDataModel {
   root?: BiNode;
@@ -9,20 +10,14 @@ export interface DemoDataModel {
   /** Re-feed the chart's data in the given order (charts without a live
    *  sortBy property tween on data-order changes instead). Rebuilds root. */
   setSort?(this: DemoDataModel, el: any, sort: 'index' | 'value'): void;
+  /** Commit a user-driven reorder (drag-to-reorder, WIN-262). Persists as the
+   *  new natural index order and re-feeds. Only wired for flat charts whose
+   *  order lives in the data model (pie/bar); hierarchical / task-based
+   *  models own their order elsewhere. */
+  setOrder?(this: DemoDataModel, el: any, ids: string[]): void;
   sync: (el: any) => () => void;
   columns?: ColumnDef[];
 }
-
-const PALETTE = [
-  "#e08888",
-  "#d4a86c",
-  "#ccc060",
-  "#7ec87e",
-  "#60c4c0",
-  "#7aaae8",
-  "#b090e0",
-  "#8899b4",
-];
 
 function bi(value: number): Writable<NumType> {
   return num(value);
@@ -135,6 +130,18 @@ function valueData(
         ? byIndex.slice().sort((a, b) => b.value - a.value)
         : byIndex.slice();
       apply(this, el, next);
+    },
+    setOrder(el: any, ids: string[]) {
+      // Fold edits back before permuting.
+      const cur = el.dataCell?.value as any[] | undefined;
+      if (cur) applied.forEach((item, i) => { if (cur[i] != null) item.value = readItemValue(cur[i]); });
+      // Permute byIndex to match the new natural order.
+      const byId = new Map(byIndex.map(x => [x.id, x]));
+      const next = ids.map(id => byId.get(id)!).filter(Boolean);
+      if (next.length !== byIndex.length) return;
+      byIndex.length = 0;
+      byIndex.push(...next);
+      apply(this, el, byIndex.slice());
     },
     sync: () => () => {},
     columns: [{ key: "value", label: "Value", width: 80 }],

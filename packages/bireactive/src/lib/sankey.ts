@@ -12,6 +12,10 @@ import {
   type Mount,
   type Num,
   type Writable,
+  num,
+  tween,
+  easeOut,
+  untracked,
 } from "bireactive";
 import type { Diagram } from "./diagram";
 import { scaleSequential } from "d3-scale";
@@ -130,11 +134,13 @@ export interface SankeySceneOptions {
   // Reactive color mode cells (optional — pass pre-created cells to share across UI)
   nodeColorProp?: ReturnType<typeof cell<NodeColorProp>>;
   linkColorMode?: ReturnType<typeof cell<LinkColorMode>>;
+  sortByCell?: ReturnType<typeof cell<'index' | 'value'>>;
   // Custom step size fn — defaults to 1 (shift=5). Use e.g. v => v * 0.1 for proportional.
   stepFn?: (currentVal: number, shift: boolean) => number;
 }
 
-const LINK_MIN = 0.5; // floor so a flow never collapses to an ungrabbable sliver
+export const LINK_MIN = 0.5; // floor so a flow never collapses to an ungrabbable sliver
+export const SORT_SEC = 0.35; // Sort/reorder tween duration in seconds (matching Gantt)
 
 /**
  * Pick the constant px-per-unit ONCE from the initial values so the diagram opens
@@ -179,6 +185,7 @@ export function sankeyScene(
 
   const nodeColorProp = opts.nodeColorProp ?? cell<NodeColorProp>("layer");
   const linkColorMode = opts.linkColorMode ?? cell<LinkColorMode>("source");
+  const sortByCell = opts.sortByCell ?? cell<'index' | 'value'>('index');
 
   host.tabIndex = -1; // Container not directly focusable, ribbons are
   host.style.outline = "none";
@@ -196,7 +203,7 @@ export function sankeyScene(
   const linkValues = linkDefs.map((l, i) => ({
     source: l.source,
     target: l.target,
-    value: cell(Math.max(LINK_MIN, l.init)),
+    value: num(Math.max(LINK_MIN, l.init)),
     src: src[i]!,
     tgt: tgt[i]!,
   }));
@@ -206,24 +213,130 @@ export function sankeyScene(
   // flow never rescales the rest of the diagram (the d3-sankey rubberiness we
   // dropped d3 to avoid). The diagram grows/shrinks in its own space; the viewer
   // frames the announced bounds (below).
-  const topology: SankeyTopology = buildTopology(nodeIds.length, src, tgt);
+  const baseTopology: SankeyTopology = buildTopology(nodeIds.length, src, tgt);
+  // Existing code uses the original (unsorted) `topology` variable for link
+  // incidence and node flow; the layout is computed from `sortedTopology.value`.
+  const topology = baseTopology;
+
+  // Sorted topology: reorder nodes within each column based on sortBy.
+  // When sortBy = 'value', sort by node throughput descending.
+  const sortedTopology = derive(() => {
+    const sortBy = sortByCell.value;
+    if (sortBy === 'index') return baseTopology;
+
+    // Compute throughputs to sort by value
+    const values = linkValues.map(l => l.value.value);
+    const inSum = new Array<number>(baseTopology.nodeCount).fill(0);
+    const outSum = new Array<number>(baseTopology.nodeCount).fill(0);
+    for (let i = 0; i < baseTopology.src.length; i++) {
+      const v = Math.max(0, values[i]!);
+      outSum[baseTopology.src[i]!]! += v;
+      inSum[baseTopology.tgt[i]!]! += v;
+    }
+    const throughput = new Array<number>(baseTopology.nodeCount);
+    for (let i = 0; i < baseTopology.nodeCount; i++) {
+      throughput[i] = Math.max(inSum[i]!, outSum[i]!);
+    }
+
+    // Clone topology and sort columns
+    const sorted: SankeyTopology = {
+      ...baseTopology,
+      columns: baseTopology.columns.map(col => {
+        const sorted = [...col];
+        sorted.sort((a, b) => throughput[b]! - throughput[a]!); // Descending
+        return sorted;
+      }),
+    };
+    return sorted;
+  });
 
   // Choose the ruler ONCE from the initial values so the diagram opens sized to
   // fit ~H, then hold it constant. Every later pixel↔value conversion (drag,
   // wheel, grip placement) uses THIS same pxPerUnit, so all manipulation is at
   // the scale the geometry was drawn at.
-  const pxPerUnit = initialPxPerUnit(topology, linkValues.map((l) => l.value.value), H, nodePadding);
+  const pxPerUnit = initialPxPerUnit(baseTopology, linkValues.map((l) => l.value.value), H, nodePadding);
   const dims = { W, pxPerUnit, nodeWidth, nodePadding };
 
   const layout = derive<SankeyLayout>(() =>
-    computeLayout(topology, linkValues.map((l) => l.value.value), dims)
+    computeLayout(sortedTopology.value, linkValues.map((l) => l.value.value), dims)
   );
   // NOTE: fitHostToBounds was removed — it reactively overrode the fixed viewBox
   // set by view(), causing captions (color controls, help text) to move and scale
   // with the diagram during edits. The fixed viewBox from view() is correct.
 
+  // Create per-node y-offset cells for smooth sort transitions.
+  // These store the OFFSET from the layout position, not the absolute position.
+  const nodeYOffsets = new Map<number, { offsetCell: ReturnType<typeof num>, cancel: (() => void) | null }>();
+  for (let i = 0; i < nodeIds.length; i++) {
+    const offsetCell = num(0); // Offset starts at 0 (no offset)
+    nodeYOffsets.set(i, { offsetCell, cancel: null });
+  }
+
+  // Track previous layout positions to detect when nodes move
+  const prevNodeY = new Map<number, number>();
+  for (let i = 0; i < nodeIds.length; i++) {
+    prevNodeY.set(i, 0);
+  }
+
+  // Initialize and react to sort changes: tween each node's y offset back to 0.
+  // When sort changes, nodes jump to new positions in the layout, but we want
+  // them to tween. So we detect the jump, set the offset to compensate, then
+  // tween the offset back to 0.
+  let sortInited = false;
+  let lastSortBy = untracked(() => sortByCell.value);
+  const GESTURE_ACTIVE_CLASS = "gesture-active";
+  biEffect(() => {
+    const _layout = layout.value; // track layout changes
+    const sortBy = sortByCell.value; // track sort key
+
+    if (!sortInited) {
+      // Initial placement: no offset needed
+      for (let i = 0; i < nodeIds.length; i++) {
+        const node = _layout.nodes[i];
+        if (node) prevNodeY.set(i, node.y0);
+      }
+      sortInited = true;
+      lastSortBy = sortBy;
+      return;
+    }
+
+    // Sort changed: compute offsets and tween them back to 0.
+    const sortChanged = sortBy !== lastSortBy;
+    lastSortBy = sortBy;
+
+    if (sortChanged && !host.classList.contains(GESTURE_ACTIVE_CLASS)) {
+      // Sort changed: nodes moved to new positions. Set offset to old position
+      // minus new position, then tween offset back to 0.
+      for (let i = 0; i < nodeIds.length; i++) {
+        const node = _layout.nodes[i];
+        if (!node) continue;
+        const entry = nodeYOffsets.get(i)!;
+        const oldY = prevNodeY.get(i) ?? node.y0;
+        const newY = node.y0;
+        const initialOffset = oldY - newY; // How far we are from target
+
+        entry.cancel?.();
+        entry.offsetCell.value = initialOffset; // Start at old position
+        // Tween offset back to 0 (so actual position becomes newY)
+        entry.cancel = host.anim.start(tween(entry.offsetCell, 0, SORT_SEC, easeOut));
+        prevNodeY.set(i, newY);
+      }
+    } else if (!sortChanged) {
+      // Layout changed but sort didn't: snap offsets to 0 and update prev positions
+      for (let i = 0; i < nodeIds.length; i++) {
+        const node = _layout.nodes[i];
+        if (!node) continue;
+        const entry = nodeYOffsets.get(i)!;
+        entry.cancel?.();
+        entry.cancel = null;
+        entry.offsetCell.value = 0;
+        prevNodeY.set(i, node.y0);
+      }
+    }
+  });
+
   const nodeColors = derive(() =>
-    nodeColorScale(topology.layer, nodeColorProp.value, interp)
+    nodeColorScale(baseTopology.layer, nodeColorProp.value, interp)
   );
 
   const hovered = cell<number | null>(null);
@@ -442,7 +555,19 @@ export function sankeyScene(
   // ── Ribbons ──────────────────────────────────────────────────────────────
   for (let i = 0; i < linkDefs.length; i++) {
     const idx = i;
-    const d = derive(() => ribbonPath(layout.value.links[idx]!));
+    // Apply node y offsets to ribbon endpoints for smooth sort transitions
+    const d = derive(() => {
+      const link = layout.value.links[idx]!;
+      const srcOffset = nodeYOffsets.get(link.src)!.offsetCell.value;
+      const tgtOffset = nodeYOffsets.get(link.tgt)!.offsetCell.value;
+      // Create adjusted link with offsets applied
+      const adjusted = {
+        ...link,
+        sy: link.sy + srcOffset,
+        ty: link.ty + tgtOffset,
+      };
+      return ribbonPath(adjusted);
+    });
     const stroke = derive(() => {
       if (focused.value === idx) return "#fff";
       const mode = linkColorMode.value;
@@ -500,7 +625,9 @@ export function sankeyScene(
     const name = nodeIds[n]!;
     const nb = derive(() => layout.value.nodes[n]!);
     const x0 = derive(() => nb.value.x0);
-    const y0 = derive(() => nb.value.y0);
+    // Apply tweened y offset to layout position
+    const yOffsetEntry = nodeYOffsets.get(n)!;
+    const y0 = derive(() => nb.value.y0 + yOffsetEntry.offsetCell.value);
     const nw = derive(() => nb.value.x1 - nb.value.x0);
     const nh = derive(() => nb.value.y1 - nb.value.y0);
     const fill = derive(() => nodeColors.value[n] ?? "#6ab0f5");
@@ -518,6 +645,7 @@ export function sankeyScene(
       stroke: derive(() => nodeActive.value ? "#fff" : "none"),
       strokeWidth: 1.5,
     }));
+    tile.el.style.cursor = "ns-resize";
     tile.el.addEventListener("pointerenter", (e) => { nodeActive.value = true; showBarTooltip(e as PointerEvent); });
     tile.el.addEventListener("pointermove", (e) => { tooltipAt.value = toSVG(e as PointerEvent); });
     tile.el.addEventListener("pointerleave", () => { nodeActive.value = false; tooltipVis.value = false; tooltipNodeIdx.value = null; });
@@ -536,7 +664,8 @@ export function sankeyScene(
       // change during drag, the layout recomputes and the grip moves with the bar.
       const gripPos = () => {
         const b = layout.value.nodes[n]!;
-        return { x: (b.x0 + b.x1) / 2, y: b.y1 };
+        const offset = yOffsetEntry.offsetCell.value;
+        return { x: (b.x0 + b.x1) / 2, y: b.y1 + offset };
       };
       let startY = 0, startTot = 0, startVals: number[] = [];
       const lens = Vec.lens(
@@ -567,9 +696,9 @@ export function sankeyScene(
         },
       );
       const gripVis = Vec.derive(gripPos);
-      const gripX = derive(() => gripVis.value.x - 7);
-      const gripY = derive(() => gripVis.value.y - 2);
-      const grip = s(rect(gripX, gripY, 14, 4, {
+      const gripX = derive(() => gripVis.value.x - 8);
+      const gripY = derive(() => gripVis.value.y - 3);
+      const grip = s(rect(gripX, gripY, 16, 6, {
         fill: "#0b0d12",
         stroke: derive(() => nodeActive.value ? "#fff" : fill.value),
         strokeWidth: 1.5,
@@ -599,7 +728,7 @@ export function sankeyScene(
     }
 
     const lx = derive(() => isSink ? x0.value - 4 : x0.value + nw.value + 4);
-    const ly = derive(() => y0.value + nh.value / 2);
+    const ly = derive(() => y0.value + nh.value / 2); // y0 already uses tweened position
     s(label(Vec.derive(() => ({ x: lx.value, y: ly.value })), name, {
       size: labelSize,
       align: isSink ? Anchor.Right : Anchor.Left,
@@ -626,7 +755,8 @@ export function sankeyScene(
       // Offset OFF the rectangle by 12px so the grip has room as a touch target.
       const boundaryPos = () => {
         const b = layout.value.links[li]!;
-        return { x: b.sx + 12, y: b.sy + b.width / 2 };
+        const srcOffset = nodeYOffsets.get(b.src)!.offsetCell.value;
+        return { x: b.sx + 12, y: b.sy + srcOffset + b.width / 2 };
       };
       const gripVis = Vec.derive(boundaryPos);
 
@@ -642,7 +772,8 @@ export function sankeyScene(
           () => boundaryPos(),
           (target, _vals: readonly number[]) => {
             const ba = layout.peek().links[li]!;
-            const top = ba.sy - ba.width / 2;
+            const srcOffset = nodeYOffsets.get(ba.src)!.offsetCell.value;
+            const top = ba.sy + srcOffset - ba.width / 2;
             const sum = startAllVals[li]! + startAllVals[sibling]!;
             const newA = Math.max(LINK_MIN, Math.min(sum - LINK_MIN, (target.y - top) / pxPerUnit));
             const newVals = startAllVals.slice();
@@ -661,7 +792,8 @@ export function sankeyScene(
           () => boundaryPos(),
           (target, _vals: readonly number[]) => {
             const ba = layout.peek().links[li]!;
-            const top = ba.sy - ba.width / 2;
+            const srcOffset = nodeYOffsets.get(ba.src)!.offsetCell.value;
+            const top = ba.sy + srcOffset - ba.width / 2;
             const newVals = startAllVals.slice();
             newVals[li] = Math.max(LINK_MIN, (target.y - top) / pxPerUnit);
             propagateConservation(topology, newVals, topology.src[li]!, "backward");
@@ -671,7 +803,7 @@ export function sankeyScene(
         );
       }
 
-      const grip = s(circle(gripVis, derive(() => active.value ? 6 : 4), {
+      const grip = s(circle(gripVis, derive(() => active.value ? 9 : 7), {
         fill: "#0b0d12",
         stroke: derive(() => active.value ? "#fff" : "rgba(0,0,0,0.55)"),
         strokeWidth: 2,
@@ -709,7 +841,8 @@ export function sankeyScene(
       // Offset OFF the rectangle by 12px to the LEFT so the grip has room as a touch target.
       const boundaryPos = () => {
         const b = layout.value.links[li]!;
-        return { x: b.tx - 12, y: b.ty + b.width / 2 };
+        const tgtOffset = nodeYOffsets.get(b.tgt)!.offsetCell.value;
+        return { x: b.tx - 12, y: b.ty + tgtOffset + b.width / 2 };
       };
       const gripVis = Vec.derive(boundaryPos);
 
@@ -725,7 +858,8 @@ export function sankeyScene(
           () => boundaryPos(),
           (target, _vals: readonly number[]) => {
             const ba = layout.peek().links[li]!;
-            const top = ba.ty - ba.width / 2;
+            const tgtOffset = nodeYOffsets.get(ba.tgt)!.offsetCell.value;
+            const top = ba.ty + tgtOffset - ba.width / 2;
             const sum = startAllVals[li]! + startAllVals[sibling]!;
             const newA = Math.max(LINK_MIN, Math.min(sum - LINK_MIN, (target.y - top) / pxPerUnit));
             const newVals = startAllVals.slice();
@@ -744,7 +878,8 @@ export function sankeyScene(
           () => boundaryPos(),
           (target, _vals: readonly number[]) => {
             const ba = layout.peek().links[li]!;
-            const top = ba.ty - ba.width / 2;
+            const tgtOffset = nodeYOffsets.get(ba.tgt)!.offsetCell.value;
+            const top = ba.ty + tgtOffset - ba.width / 2;
             const newVals = startAllVals.slice();
             newVals[li] = Math.max(LINK_MIN, (target.y - top) / pxPerUnit);
             propagateConservation(topology, newVals, topology.tgt[li]!, "forward");
@@ -754,7 +889,7 @@ export function sankeyScene(
         );
       }
 
-      const grip = s(circle(gripVis, derive(() => active.value ? 6 : 4), {
+      const grip = s(circle(gripVis, derive(() => active.value ? 9 : 7), {
         fill: "#0b0d12",
         stroke: derive(() => active.value ? "#fff" : "rgba(0,0,0,0.55)"),
         strokeWidth: 2,

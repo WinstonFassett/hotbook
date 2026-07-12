@@ -24,7 +24,8 @@ import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { mountDrillBreadcrumb } from "../lib/drill-breadcrumb";
 import { dragCancelable } from "../lib/esc-contract";
-import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, settleTransition } from "../lib/transitions";
+import { attachReorderGesture } from "../lib/reorder-gesture";
+import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, settleTransition, REORDER_ELEVATION_CSS } from "../lib/transitions";
 import { withExitDelay, membershipCell } from "../lib/mark-lifecycle";
 import type { ElementWithBridge } from "../lib/hud-bridge";
 
@@ -39,6 +40,7 @@ export class MdIcicleLC extends Diagram {
     text { pointer-events: none; }
     ${FILL_STYLE}
     ${GESTURE_SUPPRESSION_CSS}
+    ${REORDER_ELEVATION_CSS}
     [data-focusable]:focus {
       outline: 2px solid #4a9eff;
       outline-offset: 2px;
@@ -85,6 +87,16 @@ export class MdIcicleLC extends Diagram {
   get orientation(): 'horizontal' | 'vertical' { return this._orientationCell.value }
   set orientation(v: 'horizontal' | 'vertical') { this._orientationCell.value = v }
 
+  private _canReorderCell = cell<boolean>(false)
+  /** Whether drag-to-reorder is enabled (only meaningful when sorted by index). */
+  get canReorder(): boolean { return this._canReorderCell.value }
+  set canReorder(v: boolean) { this._canReorderCell.value = v }
+
+  /** Fired on a committed reorder. Chart only previews; owner mutates data. */
+  onReorder?: (parentId: string | null, orderedIds: string[]) => void
+
+  private _reorderTickCell = cell(0)
+
   // Effects created in scene() must die with the scene: Diagram re-runs
   // scene() per connect, and without this the old scene's effects would pile
   // up across dock moves / tab reparents.
@@ -104,6 +116,25 @@ export class MdIcicleLC extends Diagram {
     const view = this.view(Wc, Hc);
     this.tabIndex = -1;
     this.style.outline = "none";
+
+    const svgEl = (this as any).svg as SVGSVGElement;
+    const localPoint = (e: PointerEvent) => {
+      const r = svgEl.getBoundingClientRect();
+      const vb = svgEl.viewBox?.baseVal;
+      const sx = vb && vb.width ? vb.width / r.width : 1;
+      const sy = vb && vb.height ? vb.height / r.height : 1;
+      return { x: (e.clientX - r.left) * sx, y: (e.clientY - r.top) * sy };
+    };
+    const pointerToSibRaw = (e: PointerEvent): number => {
+      const p = localPoint(e);
+      const h = isHoriz.peek();
+      const canvas = h ? p.y : p.x;
+      const size = h ? Hc.peek() : Wc.peek();
+      const v0 = vy0.peek();
+      const v1 = vy1.peek();
+      if (size === 0 || v1 === v0) return v0;
+      return v0 + (canvas / size) * (v1 - v0);
+    };
 
     const isHoriz = derive(() => this._orientationCell.value === 'horizontal');
 
@@ -157,6 +188,8 @@ export class MdIcicleLC extends Diagram {
     // tiles start at 0. For horizontal, partition's x (sibling) → canvas y and
     // partition's y (depth) → canvas x; for vertical, no swap needed.
     const layout = derive(() => {
+      // Re-run when a user-driven reorder mutates the children arrays.
+      void this._reorderTickCell.value;
       const rawMaxD = this._maxDepthCell.value;
       const maxD = rawMaxD !== undefined && rawMaxD > 0 ? rawMaxD : undefined;
       const active = gestureActiveCell.value;
@@ -206,6 +239,17 @@ export class MdIcicleLC extends Diagram {
       for (const [node, ln] of lmap) snap.set(node, h ? ln.y0 : ln.x0);
       return snap;
     };
+
+    // Hoisted per-tile cells so the reorder gesture can rewrite siblings'
+    // sibling-axis positions imperatively during preview.
+    interface TileCells {
+      lx0: ReturnType<typeof num>;
+      ly0: ReturnType<typeof num>;
+      lx1: ReturnType<typeof num>;
+      ly1: ReturnType<typeof num>;
+      tileEl: SVGRectElement;
+    }
+    const tileCellsByNode = new Map<BiNode, TileCells>();
 
     // Viewport cells: map layout-space → canvas. vx = depth axis, vy = sibling
     // axis. For horizontal, depth axis = canvas x, sibling axis = canvas y;
@@ -381,28 +425,33 @@ export class MdIcicleLC extends Diagram {
       let seenMeasureKey = untracked(() => this._measureKeyCell.value);
       let seenOrientation = untracked(() => this._orientationCell.value);
       let seenMaxDepth = untracked(() => this._maxDepthCell.value);
+      let seenReorderTick = untracked(() => this._reorderTickCell.value);
       biEffect(() => {
-        const t = ltarget.value; // track layout (reacts to sort + value + size + orientation + depth)
+        const t = ltarget.value; // track layout (reacts to sort + value + size + orientation + depth + reorder)
         const sortBy = this._sortByCell.value; // track sort key so a toggle re-fires this effect
         const measureKey = untracked(() => this._measureKeyCell.value); // read untracked — effect fires on layout change (leaf writes), by which point measureKey is already set
         const orientation = untracked(() => this._orientationCell.value); // read untracked — same reason
         const maxDepth = this._maxDepthCell.value; // WIN-155: track so a levels dropdown change tweens the surviving tiles into the reclaimed space instead of snapping.
-        if (!lInited) { lInited = true; seenSortBy = sortBy; seenMeasureKey = measureKey; seenOrientation = orientation; seenMaxDepth = maxDepth; lx0.value = t.x0; ly0.value = t.y0; lx1.value = t.x1; ly1.value = t.y1; return; }
+        const reorderTick = this._reorderTickCell.value; // WIN-262: a user-driven reorder commits new children order.
+        if (!lInited) { lInited = true; seenSortBy = sortBy; seenMeasureKey = measureKey; seenOrientation = orientation; seenMaxDepth = maxDepth; seenReorderTick = reorderTick; lx0.value = t.x0; ly0.value = t.y0; lx1.value = t.x1; ly1.value = t.y1; return; }
         // Two-lane split. TWEEN for a real reorder (sort key toggled), measure
-        // swap, orientation toggle, or depth change — partitions slide to new
-        // slots/axes/extents. SNAP for everything else: active gesture (real-
-        // time drag), and — crucially — value edits / commits / resize,
-        // including REMOTE cross-tile edits that carry no gesture class (R2:
-        // value changes are write-through, no 250-350ms settle-lag).
+        // swap, orientation toggle, depth change, or committed drag reorder —
+        // partitions slide to new slots/axes/extents. SNAP for everything else:
+        // active gesture (real-time drag), and — crucially — value edits /
+        // commits / resize, including REMOTE cross-tile edits that carry no
+        // gesture class (R2: value changes are write-through, no 250-350ms
+        // settle-lag).
         const reordered = sortBy !== seenSortBy;
         const measureSwapped = measureKey !== seenMeasureKey;
         const orientationChanged = orientation !== seenOrientation;
         const depthChanged = maxDepth !== seenMaxDepth;
+        const reorderCommitted = reorderTick !== seenReorderTick;
         seenSortBy = sortBy;
         seenMeasureKey = measureKey;
         seenOrientation = orientation;
         seenMaxDepth = maxDepth;
-        if ((reordered || measureSwapped || orientationChanged || depthChanged) && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
+        seenReorderTick = reorderTick;
+        if ((reordered || measureSwapped || orientationChanged || depthChanged || reorderCommitted) && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
           lcancel?.();
           lcancel = this.anim.start(
             tween(lx0, t.x0, SORT_SEC, easeOut),
@@ -453,6 +502,12 @@ export class MdIcicleLC extends Diagram {
       tile.el.style.cursor = "pointer";
       tile.el.setAttribute('tabindex', '0');
       tile.el.setAttribute('data-focusable', 'tile');
+
+      // Wrap tile + label in a per-row group so drag elevation raises both.
+      const rowGroup = group();
+      rowGroup.add(tile);
+      tileCellsByNode.set(node, { lx0, ly0, lx1, ly1, tileEl: tile.el as SVGRectElement });
+
       // WIN-155: compose lifecycle (enter/exit) with context dim in a single
       // opacity effect so the two don't fight. Start at 0, RAF to lifecycle
       // opacity for the enter fade.
@@ -500,7 +555,174 @@ export class MdIcicleLC extends Diagram {
         text,
         { size: isLeaf ? 11 : 10, align: Anchor.Center, fill: labelInk(nodeFill), bold: !isLeaf },
       );
-      return [tile, lbl];
+      rowGroup.add(lbl);
+
+      // ─── Drag-to-reorder (WIN-262) ────────────────────────────────────
+      // Reorder scoped to the dragged tile's parent. Root children reorder at
+      // depth 1; leaves reorder within their parent's children.
+      let reorderDetach: (() => void) | null = null;
+      biEffect(() => {
+        const enabled = this._canReorderCell.value;
+        reorderDetach?.();
+        reorderDetach = null;
+        if (!enabled) { tile.el.style.cursor = 'pointer'; return; }
+        const parent = parentOf(node);
+        if (!parent) { tile.el.style.cursor = 'pointer'; return; }
+        const siblings = (parent.children as readonly BiNode[]);
+        if (siblings.length < 2) { tile.el.style.cursor = 'pointer'; return; }
+        tile.el.style.cursor = 'grab';
+
+        const REORDER_SEC = 0.1;
+        let startPointerSib = Number.NaN;
+        let startSibMid = 0;
+        let dragSpan = 0;
+        const initialMids = new Map<string, number>();
+        const siblingTweenCancels = new Map<string, () => void>();
+        const lastAppliedIdx = new Map<string, number>();
+        let parentSibStart = 0;
+        let parentSibEnd = 0;
+        const siblingById = new Map<string, BiNode>();
+
+        const computeSlots = (order: readonly string[]): Map<string, { sib0: number; sib1: number }> => {
+          const lmap = layout.peek();
+          const totalVal = order.reduce((s, id) => {
+            const c = siblingById.get(id);
+            const ln = c ? lmap.get(c) : undefined;
+            return s + (ln?.value ?? 0);
+          }, 0) || 1;
+          const map = new Map<string, { sib0: number; sib1: number }>();
+          let cursor = parentSibStart;
+          for (const id of order) {
+            const c = siblingById.get(id);
+            const ln = c ? lmap.get(c) : undefined;
+            const v = ln?.value ?? 0;
+            const span = (v / totalVal) * (parentSibEnd - parentSibStart);
+            map.set(id, { sib0: cursor, sib1: cursor + span });
+            cursor += span;
+          }
+          return map;
+        };
+
+        const getSibCells = (cells: TileCells) => {
+          const h = isHoriz.peek();
+          return {
+            sib0: h ? cells.ly0 : cells.lx0,
+            sib1: h ? cells.ly1 : cells.lx1,
+          };
+        };
+
+        const detach = attachReorderGesture({
+          hitEl: tile.el,
+          // Raise the whole row group (tile + label) so the label is not occluded.
+          dragEl: tile.el.parentElement as unknown as SVGGElement,
+          itemId: node.value.id ?? '',
+          host: this,
+          getInitialOrder: () => siblings.map(c => c.value.id ?? ''),
+          computeTargetIndex: (e, order) => {
+            if (Number.isNaN(startPointerSib)) return order.indexOf(node.value.id ?? '');
+            const raw = pointerToSibRaw(e);
+            const delta = raw - startPointerSib;
+            const ghostMid = startSibMid + delta;
+            const scored = order.map(id => ({
+              id,
+              mid: id === node.value.id ? ghostMid : (initialMids.get(id) ?? 0),
+            }));
+            scored.sort((a, b) => a.mid - b.mid);
+            return scored.findIndex(s => s.id === node.value.id);
+          },
+          onActivate: () => {
+            const lmap = layout.peek();
+            const h = isHoriz.peek();
+            const pln = lmap.get(parent);
+            parentSibStart = h ? (pln?.y0 ?? 0) : (pln?.x0 ?? 0);
+            parentSibEnd = h ? (pln?.y1 ?? 0) : (pln?.x1 ?? 0);
+            initialMids.clear();
+            siblingById.clear();
+            for (const c of siblings) {
+              if (c.value.id) siblingById.set(c.value.id, c);
+              const ln = lmap.get(c);
+              if (!ln || !c.value.id) continue;
+              const mid = h ? (ln.y0 + ln.y1) / 2 : (ln.x0 + ln.x1) / 2;
+              initialMids.set(c.value.id, mid);
+            }
+            const me = lmap.get(node);
+            if (me) {
+              startSibMid = h ? (me.y0 + me.y1) / 2 : (me.x0 + me.x1) / 2;
+              dragSpan = h ? (me.y1 - me.y0) : (me.x1 - me.x0);
+            }
+            startPointerSib = Number.NaN;
+            siblingTweenCancels.forEach(fn => fn());
+            siblingTweenCancels.clear();
+            lastAppliedIdx.clear();
+            siblings.forEach((c, i) => { if (c.value.id) lastAppliedIdx.set(c.value.id, i); });
+          },
+          onPreview: (order, e) => {
+            if (Number.isNaN(startPointerSib)) startPointerSib = pointerToSibRaw(e);
+            const slots = computeSlots(order);
+            for (let i = 0; i < order.length; i++) {
+              const id = order[i]!;
+              if (id === node.value.id) continue;
+              if (lastAppliedIdx.get(id) === i) continue;
+              lastAppliedIdx.set(id, i);
+              const c = siblingById.get(id);
+              if (!c) continue;
+              const cells = tileCellsByNode.get(c);
+              const slot = slots.get(id);
+              if (!cells || !slot) continue;
+              siblingTweenCancels.get(id)?.();
+              const { sib0, sib1 } = getSibCells(cells);
+              const cancelA = this.anim.start(tween(sib0, slot.sib0, REORDER_SEC, easeOut) as any);
+              const cancelB = this.anim.start(tween(sib1, slot.sib1, REORDER_SEC, easeOut) as any);
+              const cancel = () => { cancelA?.(); cancelB?.(); };
+              siblingTweenCancels.set(id, cancel);
+            }
+            const raw = pointerToSibRaw(e);
+            const delta = raw - startPointerSib;
+            const ghostMid = startSibMid + delta;
+            const meCells = tileCellsByNode.get(node);
+            if (meCells) {
+              const { sib0, sib1 } = getSibCells(meCells);
+              sib0.value = ghostMid - dragSpan / 2;
+              sib1.value = ghostMid + dragSpan / 2;
+            }
+          },
+          onEnd: (finalOrder, canceled) => {
+            siblingTweenCancels.forEach(fn => fn());
+            siblingTweenCancels.clear();
+
+            const initial = siblings.map(c => c.value.id ?? '');
+            const changed = !canceled && finalOrder.some((id, i) => id !== initial[i]);
+            if (changed) {
+              const byId = new Map(siblings.map(c => [c.value.id ?? '', c]));
+              const next = finalOrder.map(id => byId.get(id)).filter(Boolean) as BiNode[];
+              if (next.length === siblings.length) {
+                (parent.children as BiNode[]).splice(0, siblings.length, ...next);
+                this._reorderTickCell.value = this._reorderTickCell.value + 1;
+                this.onReorder?.(parent.value.id ?? null, finalOrder.slice());
+              }
+              this.dispatchEvent(new CustomEvent('gesturecommit', { detail: { canceled: false, reorder: true } }));
+              return;
+            }
+            // Cancel / no-op: tween each sibling back to its layout slot.
+            const lmap = layout.peek();
+            const h = isHoriz.peek();
+            for (const c of siblings) {
+              const cells = tileCellsByNode.get(c);
+              const ln = lmap.get(c);
+              if (!cells || !ln) continue;
+              const { sib0, sib1 } = getSibCells(cells);
+              const sib0Target = h ? ln.y0 : ln.x0;
+              const sib1Target = h ? ln.y1 : ln.x1;
+              this.anim.start(tween(sib0, sib0Target, SORT_SEC, easeOut) as any);
+              this.anim.start(tween(sib1, sib1Target, SORT_SEC, easeOut) as any);
+            }
+            this.dispatchEvent(new CustomEvent('gesturecommit', { detail: { canceled } }));
+          },
+        });
+        reorderDetach = detach;
+      });
+
+      return rowGroup;
     }, { key: (n) => n.value.id ?? "" });
 
     // Boundary-knob resize handles: for each parent with >=2 children, drop a

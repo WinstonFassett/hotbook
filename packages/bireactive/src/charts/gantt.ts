@@ -29,6 +29,7 @@ import {
   Anchor, cell, circle, derive, effect as biEffect,
   ensureArrowMarker,
   label, line, type Mount, pathD, rect, Vec,
+  num, tween, easeOut, untracked,
 } from "bireactive";
 import { Diagram } from "../lib/diagram";
 import { scaleTime } from "d3-scale";
@@ -46,16 +47,17 @@ import {
   hoverTransition,
 } from "../lib/transitions";
 import { lightenHex } from "../lib/color-utils";
+import { PALETTE } from "@hotbook/core";
 
 const W = 720;
 const H = 360;
 const DAY_MS = 86400 * 1000;
-const PALETTE = ['#e08888', '#d4a86c', '#ccc060', '#7ec87e', '#60c4c0', '#7aaae8', '#b090e0', '#8899b4'];
 
 // Fixed row sizing for idiomatic Gantt layout
 const ROW_H = 32;      // Row height
 const ROW_GAP = 8;     // Gap between rows
 const ROW_STEP = ROW_H + ROW_GAP; // Total step per row
+const SORT_SEC = 0.35; // Sort/reorder tween duration in seconds
 
 export interface GanttDependency {
   from: string;  // predecessor task ID
@@ -108,6 +110,10 @@ export class MdGanttChartLC extends Diagram {
    *  forward-only in topological order; cycles are skipped silently. */
   enforceDeps = false;
 
+  private _sortByCell = cell<'index' | 'value'>('index')
+  get sortBy(): 'index' | 'value' { return this._sortByCell.value }
+  set sortBy(v: 'index' | 'value') { this._sortByCell.value = v }
+
   set externalData(v: GanttTask[] | undefined) {
     if (v) this.dataCell.value = v;
   }
@@ -138,6 +144,23 @@ export class MdGanttChartLC extends Diagram {
 
     this.view(Wc, Hc);
 
+    // Sorted order: derive task array in display order based on sortBy.
+    // When sortBy = 'value', sort by duration (end - start).
+    // When sortBy = 'index', use natural data order.
+    const sortedData = derive(() => {
+      const tasks = [...(data.value as GanttTask[])];
+      const sortBy = this._sortByCell.value;
+      if (sortBy === 'value') {
+        // Sort by task duration descending
+        tasks.sort((a, b) => {
+          const durA = a.end.getTime() - a.start.getTime();
+          const durB = b.end.getTime() - b.start.getTime();
+          return durB - durA; // Descending: longest first
+        });
+      }
+      return tasks;
+    });
+
     const plotW = derive(() => Math.max(0, Wc.value - PAD.left - PAD.right));
     const plotH = derive(() => Math.max(0, Hc.value - PAD.top - PAD.bottom));
 
@@ -156,7 +179,66 @@ export class MdGanttChartLC extends Diagram {
         .range([plotX, plotX + plotW.value]);
     });
 
-    // Fixed row positioning: y = plotY + (index * ROW_STEP)
+    // Create per-task tweened y-position cells.
+    // Map from task ID to {yCell, cancelFn}.
+    const taskYCells = new Map<string, { yCell: ReturnType<typeof num>, yCenter: ReturnType<typeof derive>, cancel: (() => void) | null }>();
+    for (const task of rows0) {
+      const yCell = num(plotY); // Will be initialized below
+      const yCenter = derive(() => yCell.value + ROW_H / 2);
+      taskYCells.set(task.id, { yCell, yCenter, cancel: null });
+    }
+
+    // Helper to get target y position for a task ID in the current sorted order.
+    const getTargetY = (taskId: string): number => {
+      const sorted = sortedData.value;
+      const idx = sorted.findIndex(t => t.id === taskId);
+      return idx === -1 ? plotY : plotY + (idx * ROW_STEP);
+    };
+
+    // Initialize and react to sort changes: tween each task's y position to its new row.
+    let sortInited = false;
+    let lastSortBy = untracked(() => this._sortByCell.value);
+    biEffect(() => {
+      const sorted = sortedData.value; // track sorted order
+      const sortBy = this._sortByCell.value; // track sort key
+
+      if (!sortInited) {
+        // Initial placement: snap to positions
+        for (const task of rows0) {
+          const entry = taskYCells.get(task.id);
+          if (entry) entry.yCell.value = getTargetY(task.id);
+        }
+        sortInited = true;
+        lastSortBy = sortBy;
+        return;
+      }
+
+      // Sort changed: tween all tasks to their new row positions, but only if not dragging.
+      const sortChanged = sortBy !== lastSortBy;
+      lastSortBy = sortBy;
+
+      if (sortChanged && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
+        for (const task of rows0) {
+          const entry = taskYCells.get(task.id);
+          if (!entry) continue;
+          const targetY = getTargetY(task.id);
+          entry.cancel?.();
+          entry.cancel = this.anim.start(tween(entry.yCell, targetY, SORT_SEC, easeOut));
+        }
+      } else if (!sortChanged) {
+        // Data or size changed but sort didn't: snap to new positions
+        for (const task of rows0) {
+          const entry = taskYCells.get(task.id);
+          if (entry) {
+            entry.cancel?.();
+            entry.cancel = null;
+            entry.yCell.value = getTargetY(task.id);
+          }
+        }
+      }
+    });
+
+    // Row positioning now uses sortedData for index lookups
     const rowY = (index: number) => plotY + (index * ROW_STEP);
     const rowCenterY = (index: number) => rowY(index) + ROW_H / 2;
 
@@ -173,9 +255,11 @@ export class MdGanttChartLC extends Diagram {
       return { x: (e.clientX - r.left) * sx, y: (e.clientY - r.top) * sy };
     };
     const findAtPixelY = (py: number): GanttTask | null => {
-      const rows = data.value as GanttTask[];
+      const rows = sortedData.value; // Use sorted order for hit testing
       for (let i = 0; i < rows.length; i++) {
-        const by = rowY(i);
+        const entry = taskYCells.get(rows[i]!.id);
+        if (!entry) continue;
+        const by = entry.yCell.value;
         if (py >= by && py < by + ROW_STEP) return rows[i]!;
       }
       return null;
@@ -719,12 +803,23 @@ export class MdGanttChartLC extends Diagram {
     // ─── Row labels (live read so reorder reflows) ─────────────────────────
     const MAX_ROWS = rows0.length;
     for (let idx = 0; idx < MAX_ROWS; idx++) {
-      const di = (): GanttTask | null => (data.value as GanttTask[])[idx] ?? null;
-      const barY = rowY(idx);
-      const barCY = rowCenterY(idx);
+      const di = (): GanttTask | null => sortedData.value[idx] ?? null;
+      // Get the tweened y position for this task
+      const getY = (): number => {
+        const d = di();
+        if (!d) return rowY(idx);
+        const entry = taskYCells.get(d.id);
+        return entry ? entry.yCell.value : rowY(idx);
+      };
+      const getYCenter = (): number => {
+        const d = di();
+        if (!d) return rowCenterY(idx);
+        const entry = taskYCells.get(d.id);
+        return entry ? entry.yCenter.value : rowCenterY(idx);
+      };
 
       s(label(
-        Vec.derive(() => ({ x: plotX - 8, y: barCY })),
+        Vec.derive(() => ({ x: plotX - 8, y: getYCenter() })),
         derive(() => di()?.label ?? ""),
         { size: 11, align: Anchor.Right, fill: "#bbb", opacity: 0.85 },
       ));
@@ -735,7 +830,8 @@ export class MdGanttChartLC extends Diagram {
         return (hover.value === d || selected.value === d) ? 0.05 : 0;
       });
       const rh = s(rect(
-        plotX, barY,
+        derive(() => plotX),
+        derive(() => getY()),
         derive(() => plotW.value),
         ROW_H,
         { fill: "#ffffff", opacity: rowFill },
@@ -746,14 +842,28 @@ export class MdGanttChartLC extends Diagram {
 
     // ─── Task bars ─────────────────────────────────────────────────────────
     for (let idx = 0; idx < MAX_ROWS; idx++) {
-      const di = (): GanttTask | null => (data.value as GanttTask[])[idx] ?? null;
+      const di = (): GanttTask | null => sortedData.value[idx] ?? null;
       const base = (() => {
         const t = rows0[idx]; return t ? this.#color(idx, t) : '#888';
       })();
       const hoverColor = lightenHex(base, 0.35);
 
-      const barY = rowY(idx);
-      const barCY = rowCenterY(idx);
+      // Get tweened y position for this task
+      const getY = (): number => {
+        const d = di();
+        if (!d) return rowY(idx);
+        const entry = taskYCells.get(d.id);
+        return entry ? entry.yCell.value : rowY(idx);
+      };
+      const getYCenter = (): number => {
+        const d = di();
+        if (!d) return rowCenterY(idx);
+        const entry = taskYCells.get(d.id);
+        return entry ? entry.yCenter.value : rowCenterY(idx);
+      };
+
+      const barY = derive(() => getY());
+      const barCY = derive(() => getYCenter());
       const xS = derive(() => { const d = di(); return d ? (xScale.value as any)(d.start) as number : 0; });
       const xE = derive(() => { const d = di(); return d ? (xScale.value as any)(d.end)   as number : 0; });
       const barW = derive(() => Math.max(0, xE.value - xS.value));
@@ -771,7 +881,7 @@ export class MdGanttChartLC extends Diagram {
       const inOpacity = derive(() => barW.value >= 60 ? 1 : 0);
       const labelFill = derive(() => { const d = di(); return selected.value === d ? base : "#fff"; });
       s(label(
-        Vec.derive(() => ({ x: xS.value + 8, y: barCY })),
+        Vec.derive(() => ({ x: xS.value + 8, y: barCY.value })),
         derive(() => di()?.label ?? ""),
         { size: 11, align: Anchor.Left, fill: labelFill, opacity: inOpacity },
       ));
@@ -782,7 +892,7 @@ export class MdGanttChartLC extends Diagram {
         return (hover.value === d || selected.value === d) ? 1 : 0;
       });
       s(label(
-        Vec.derive(() => ({ x: xE.value + 6, y: barCY })),
+        Vec.derive(() => ({ x: xE.value + 6, y: barCY.value })),
         derive(() => {
           const d = di(); if (!d) return "";
           const days = Math.round((d.end.getTime() - d.start.getTime()) / DAY_MS);
@@ -800,7 +910,7 @@ export class MdGanttChartLC extends Diagram {
       const handleFill = derive(() => { const d = di(); return selected.value === d ? "#fff" : hoverColor; });
 
       const startHandle = s(circle(
-        Vec.derive(() => ({ x: xS.value, y: barCY })),
+        Vec.derive(() => ({ x: xS.value, y: barCY.value })),
         handleR,
         { fill: handleFill, stroke: "#0b0d12", strokeWidth: 1.5, opacity: handleOpacity },
       ));
@@ -809,7 +919,7 @@ export class MdGanttChartLC extends Diagram {
       startHandle.el.style.touchAction = "none";
 
       const endHandle = s(circle(
-        Vec.derive(() => ({ x: xE.value, y: barCY })),
+        Vec.derive(() => ({ x: xE.value, y: barCY.value })),
         handleR,
         { fill: handleFill, stroke: "#0b0d12", strokeWidth: 1.5, opacity: handleOpacity },
       ));
@@ -826,10 +936,10 @@ export class MdGanttChartLC extends Diagram {
     const STUB = 8;       // horizontal stub before the bar edge
     const ARROW_GAP = 6;  // space before successor bar so arrowhead doesn't overlap
 
-    // Build a (id → live index) lookup that re-derives when data changes.
+    // Build a (id → live index) lookup that re-derives when sort order changes.
     const indexById = derive(() => {
       const m = new Map<string, number>();
-      const rows = data.value as GanttTask[];
+      const rows = sortedData.value;
       for (let i = 0; i < rows.length; i++) m.set(rows[i]!.id, i);
       return m;
     });
@@ -841,28 +951,28 @@ export class MdGanttChartLC extends Diagram {
     for (const t of rows0) for (const dep of t.deps ?? []) initialEdges.push({ from: getDepId(dep), to: t.id });
 
     for (const edge of initialEdges) {
-      // Live lookup so a re-sorted data array (same ids, new order) still
-      // resolves to the current task object.
+      // Live lookup from sortedData (re-derives when sort order changes).
       const fromTask = (): GanttTask | null => {
         const idx = indexById.value.get(edge.from);
-        return idx == null ? null : ((data.value as GanttTask[])[idx] ?? null);
+        return idx == null ? null : (sortedData.value[idx] ?? null);
       };
       const toTask = (): GanttTask | null => {
         const idx = indexById.value.get(edge.to);
-        return idx == null ? null : ((data.value as GanttTask[])[idx] ?? null);
+        return idx == null ? null : (sortedData.value[idx] ?? null);
       };
 
       const dStr = derive(() => {
         const f = fromTask();
         const t = toTask();
         if (!f || !t) return "";
-        const fIdx = indexById.value.get(f.id)!;
-        const tIdx = indexById.value.get(t.id)!;
         const xS = xScale.value as any;
         const x0 = xS(f.end) as number;
         const x1 = xS(t.start) as number;
-        const y0 = rowCenterY(fIdx);
-        const y1 = rowCenterY(tIdx);
+        // Get tweened y center positions for each task
+        const fEntry = taskYCells.get(f.id);
+        const tEntry = taskYCells.get(t.id);
+        const y0 = fEntry ? fEntry.yCenter.value : plotY + ROW_H / 2;
+        const y1 = tEntry ? tEntry.yCenter.value : plotY + ROW_H / 2;
         // Step path: out from f end, vertical to t row, in to t start.
         // If t.start is to the left of f.end, route around: go right STUB,
         // down/up half a row, back left, vertical, then in to t.start.

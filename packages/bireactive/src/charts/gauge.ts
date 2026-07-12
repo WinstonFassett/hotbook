@@ -17,6 +17,7 @@ import { dragCancelable } from "../lib/esc-contract";
 import { numberDrag } from "../lib/number-drag";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
+import { PALETTE } from "@hotbook/core";
 
 const W = 320;
 const H = 240;
@@ -26,8 +27,6 @@ const H = 240;
 const SWEEP_START = -Math.PI * 3 / 4;
 const SWEEP_END = Math.PI * 3 / 4;
 const SWEEP_SPAN = SWEEP_END - SWEEP_START;
-
-const PALETTE = ['#e08888', '#d4a86c', '#ccc060', '#7ec87e', '#60c4c0', '#7aaae8', '#b090e0', '#8899b4'];
 
 // Rounded annular arc d-string centered at 0,0 (group applies translate).
 function arcD(rOuter: number, rInner: number, startAngle: number, endAngle: number, cornerRadius: number): string {

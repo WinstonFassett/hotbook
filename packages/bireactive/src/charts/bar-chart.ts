@@ -5,7 +5,7 @@
 // valueMode:   inside (inside bar) | outside (beyond bar end) | none
 // minBandSize: minimum px for a band before touch target is clamped (0 = scale freely)
 
-import { Anchor, cell, circle, derive, easeInOut, effect as biEffect, label, line, type Mount, num, rect, tween, untracked, Vec } from "bireactive";
+import { Anchor, cell, circle, derive, easeInOut, easeOut, effect as biEffect, label, line, type Mount, Num, num, rect, tween, untracked, Vec, type Writable } from "bireactive";
 import { Diagram } from "../lib/diagram";
 import { scaleLinear, scaleBand } from "d3-scale";
 import { wheelController, dragController, dynamicWheelStep, realModifierDown } from "../lib/interaction";
@@ -14,14 +14,16 @@ import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import {
   GESTURE_ACTIVE_CLASS,
   GESTURE_SUPPRESSION_CSS,
+  REORDER_ELEVATION_CSS,
   hoverTransition,
 } from "../lib/transitions";
 import { lightenHex } from "../lib/color-utils";
+import { attachReorderGesture } from "../lib/reorder-gesture";
+import { PALETTE, type ColorStrategy, getColorByStrategy } from "@hotbook/core";
 
 const W = 720;
 const H = 360;
 const SINGLE_COLOR = "#7aaae8";
-const PALETTE = ['#e08888', '#d4a86c', '#ccc060', '#7ec87e', '#60c4c0', '#7aaae8', '#b090e0', '#8899b4'];
 const SORT_SEC = 0.35; // s — orientation/measure swap tween duration
 
 interface Bar { id?: string; label: string; value: number; }
@@ -45,6 +47,7 @@ export class MdBarChartLC extends Diagram {
     text { pointer-events: none; }
     ${FILL_STYLE}
     ${GESTURE_SUPPRESSION_CSS}
+    ${REORDER_ELEVATION_CSS}
     [data-focusable]:focus {
       outline: 2px solid #4a9eff;
       outline-offset: 2px;
@@ -68,9 +71,18 @@ export class MdBarChartLC extends Diagram {
   get valueBinding(): string { return this.measureKey }
   set valueBinding(v: string) { this.measureKey = v }
 
-  colorMode: 'single' | 'palette' = 'single';
+  colorMode: 'single' | 'palette' = 'palette';
+  colorStrategy: ColorStrategy = 'index'; // 'index' | 'value' | 'identity' | 'single'
   labelMode: 'axis' | 'inside' | 'both' = 'axis';
   valueMode: 'inside' | 'outside' | 'none' = 'outside';
+
+  // Drag-to-reorder (WIN-262). Caller opts in via canReorder (typically when
+  // sort is by natural order). Commit fires onReorder(orderedIds); chart is
+  // agnostic to where order is persisted.
+  private _canReorderCell = cell<boolean>(false)
+  get canReorder(): boolean { return this._canReorderCell.value }
+  set canReorder(v: boolean) { this._canReorderCell.value = v }
+  onReorder?: (orderedIds: string[]) => void
   minBandSize: number = 0;
   /** Max bands before overflow-scroll kicks in. */
   maxBands: number = 10;
@@ -84,11 +96,21 @@ export class MdBarChartLC extends Diagram {
     return this.dataCell.value as Bar[];
   }
 
-  #barColor(idx: number): string {
-    return this.colorMode === 'palette' ? PALETTE[idx % PALETTE.length]! : SINGLE_COLOR;
+  #barColor(idx: number, datum?: Bar): string {
+    if (this.colorMode === 'single') return SINGLE_COLOR;
+
+    const max = Math.max(1, ...(this.dataCell.value as Bar[]).map(d => d.value));
+    return getColorByStrategy(this.colorStrategy, {
+      index: idx,
+      value: datum?.value,
+      identity: datum?.id ?? datum?.label,
+      singleColor: SINGLE_COLOR,
+      palette: PALETTE,
+      valueScale: (v) => v / max
+    });
   }
-  #hoverColor(idx: number): string {
-    return lightenHex(this.#barColor(idx), 0.35);
+  #hoverColor(idx: number, datum?: Bar): string {
+    return lightenHex(this.#barColor(idx, datum), 0.35);
   }
 
   protected scene(s: Mount): void {
@@ -411,6 +433,19 @@ export class MdBarChartLC extends Diagram {
     // hands data in a new display order. Tween on sort/orientation/measure;
     // snap on value edits (same datum, different value).
     const orderHash = derive(() => (data.value as Bar[]).map(d => d.id ?? d.label).join(','));
+
+    // Per-bar cell handles hoisted for the reorder gesture (Layer 4 imperative
+    // preview needs to reach into any bar to rewrite its band-axis coord).
+    interface BarCells {
+      barX: Writable<Num>;
+      barY: Writable<Num>;
+      barW: Writable<Num>;
+      barH: Writable<Num>;
+      tileEl: SVGRectElement;
+      di: () => Bar | null;
+    }
+    const barCells = new Map<string, BarCells>();
+
     for (let oi = 0; oi < rows0.length; oi++) {
       const datumId = rows0[oi]!.id ?? rows0[oi]!.label;
       const cur = derive(() => {
@@ -418,8 +453,16 @@ export class MdBarChartLC extends Diagram {
         return arr.findIndex(d => (d.id ?? d.label) === datumId);
       });
       const di = (): Bar | null => (data.value as Bar[])[cur.value] ?? null;
-      const base = this.#barColor(oi);
-      const hoverColor = this.#hoverColor(oi);
+
+      // Color derivation — must be plain strings, not nested cells
+      const baseColor = (): string => {
+        const d = di();
+        return d ? this.#barColor(cur.value, d) : SINGLE_COLOR;
+      };
+      const hoverBaseColor = (): string => {
+        const d = di();
+        return d ? this.#hoverColor(cur.value, d) : lightenHex(SINGLE_COLOR, 0.35);
+      };
 
       // Bar geometry targets — all four swap roles with orientation.
       const barXTarget = derive(() => {
@@ -503,13 +546,19 @@ export class MdBarChartLC extends Diagram {
         animCancel = tweens.length ? this.anim.start(...(tweens as any)) : null;
       });
 
-      const fill = derive(() => { const d = di(); return selected.value === d ? "#fff" : hover.value === d ? hoverColor : base; });
-      const labelFill = derive(() => { const d = di(); return selected.value === d ? base : "#fff"; });
+      const fill = derive(() => { const d = di(); return selected.value === d ? "#fff" : hover.value === d ? hoverBaseColor() : baseColor(); });
+      const labelFill = derive(() => { const d = di(); return selected.value === d ? baseColor() : "#fff"; });
 
       const tile = s(rect(barX, barY, barW, barH, { fill, corner: 2 }));
       tile.el.style.touchAction = "none";
       tileElements.set(datumId, tile.el);
-      biEffect(() => { tile.el.style.cursor = isVert.value ? "ns-resize" : "ew-resize"; });
+      barCells.set(datumId, { barX, barY, barW, barH, tileEl: tile.el as SVGRectElement, di });
+      biEffect(() => {
+        // Reorder gets cursor priority (Rule 8 affordance) when enabled.
+        tile.el.style.cursor = this._canReorderCell.value
+          ? 'grab'
+          : (isVert.value ? "ns-resize" : "ew-resize");
+      });
       tile.el.setAttribute('tabindex', '0');
       tile.el.setAttribute('data-focusable', 'bar');
       biEffect(() => {
@@ -609,7 +658,7 @@ export class MdBarChartLC extends Diagram {
       });
       const handleOpacity = derive(() => { const d = di(); return (hover.value === d || selected.value === d) ? 1 : 0; });
       const handle = s(circle(handlePos, derive(() => { const d = di(); return selected.value === d ? 6 : 5; }), {
-        fill: derive(() => { const d = di(); return selected.value === d ? "#fff" : hoverColor; }),
+        fill: derive(() => { const d = di(); return selected.value === d ? "#fff" : hoverBaseColor(); }),
         stroke: "#0b0d12", strokeWidth: 1.5, opacity: handleOpacity,
       }));
       handle.el.style.transition = hoverTransition("opacity");
@@ -618,6 +667,154 @@ export class MdBarChartLC extends Diagram {
       handle.el.addEventListener("pointerenter", () => { const d = di(); if (!wheelController.active && d) hover.value = d; });
       handle.el.addEventListener("pointerleave", () => { const d = di(); if (!wheelController.active && d && hover.value === d) hover.value = null; });
     }
+
+    // ─── Drag-to-reorder (WIN-262) ────────────────────────────────────────
+    // Bar-body drag moves along the band axis; siblings tween to their new
+    // slots; commit fires onReorder. Value-drag on the bar end still wins in
+    // its narrow hit tolerance (filter yields to the resize gesture there).
+    const REORDER_SEC = 0.25;
+    const reorderDetachers: Array<() => void> = [];
+    const detachAllReorder = () => { while (reorderDetachers.length) reorderDetachers.pop()!(); };
+    biEffect(() => {
+      const enabled = this._canReorderCell.value;
+      detachAllReorder();
+      if (!enabled) return;
+
+      for (const [datumId, cells] of barCells.entries()) {
+        let startBandCoord = 0;
+        let startPointerBand = Number.NaN;
+        let startValueCoord = 0; // frozen value-axis position; ghost doesn't move on this axis
+        const siblingTweenCancels = new Map<string, () => void>();
+        const lastAppliedIdx = new Map<string, number>();
+
+        const eventLocal = (e: PointerEvent) => localPoint(e);
+        const eventBand = (e: PointerEvent): number => {
+          const { x, y } = eventLocal(e);
+          return isVert.peek() ? x : y;
+        };
+
+        const detach = attachReorderGesture({
+          hitEl: cells.tileEl,
+          dragEl: cells.tileEl,
+          itemId: datumId,
+          host: this,
+          // Yield to the value-drag when pointer is within the resize hit zone
+          // at the value-end of the bar (keeps drag-end resize working).
+          filter: (e) => {
+            const d = cells.di();
+            if (!d) return true;
+            const { x, y } = eventLocal(e);
+            const valPos = (valueScale.peek() as any)(d.value);
+            const dist = isVert.peek() ? Math.abs(y - valPos) : Math.abs(x - valPos);
+            const tol = e.pointerType === 'mouse' ? 12 : 24;
+            return dist > tol;
+          },
+          getInitialOrder: () => (data.peek() as Bar[]).map(x => x.id ?? x.label),
+          computeTargetIndex: (e, order) => {
+            const bs = bandScale.peek();
+            const p = eventBand(e);
+            // Ghost's band-axis center = its initial center + pointer delta.
+            const ghostCenter = startBandCoord + bs.bandwidth() / 2 + (p - startPointerBand);
+            // Find the slot whose center is nearest to the ghost center.
+            const N = order.length;
+            let bestIdx = 0;
+            let bestDist = Infinity;
+            for (let i = 0; i < N; i++) {
+              const slotCenter = (bs(String(i)) ?? 0) + bs.bandwidth() / 2;
+              const dist = Math.abs(slotCenter - ghostCenter);
+              if (dist < bestDist) { bestDist = dist; bestIdx = i; }
+            }
+            return bestIdx;
+          },
+          onActivate: () => {
+            const bs = bandScale.peek();
+            const isV = isVert.peek();
+            const initialIdx = (data.peek() as Bar[]).findIndex(d => (d.id ?? d.label) === datumId);
+            startBandCoord = bs(String(initialIdx)) ?? 0;
+            // Freeze value-axis position at gesture start (Rule 2 — value dim
+            // shouldn't shift under the user just because the band axis is
+            // being manipulated).
+            startValueCoord = isV ? cells.barY.peek() : cells.barX.peek();
+            startPointerBand = Number.NaN;
+            siblingTweenCancels.forEach(fn => fn());
+            siblingTweenCancels.clear();
+            lastAppliedIdx.clear();
+            (data.peek() as Bar[]).forEach((d, i) => lastAppliedIdx.set(d.id ?? d.label, i));
+          },
+          onPreview: (order, e) => {
+            const bs = bandScale.peek();
+            const isV = isVert.peek();
+            if (Number.isNaN(startPointerBand)) startPointerBand = eventBand(e);
+
+            // Siblings: tween to new band positions when their provisional
+            // index changes. Each sibling's tween is per-cell so we can
+            // interrupt cleanly if their target flips again mid-flight.
+            for (let i = 0; i < order.length; i++) {
+              const id = order[i]!;
+              if (id === datumId) continue;
+              const sc = barCells.get(id);
+              if (!sc) continue;
+              if (lastAppliedIdx.get(id) === i) continue;
+              lastAppliedIdx.set(id, i);
+              siblingTweenCancels.get(id)?.();
+              const target = bs(String(i)) ?? 0;
+              const bandCell = isV ? sc.barX : sc.barY;
+              const cancel = this.anim.start(tween(bandCell, target, REORDER_SEC, easeOut) as any);
+              if (cancel) siblingTweenCancels.set(id, cancel);
+            }
+
+            // Dragged bar: follow pointer directly. Value-axis coord frozen.
+            const p = eventBand(e);
+            const newCoord = startBandCoord + (p - startPointerBand);
+            if (isV) {
+              cells.barX.value = newCoord;
+              cells.barY.value = startValueCoord;
+            } else {
+              cells.barY.value = newCoord;
+              cells.barX.value = startValueCoord;
+            }
+          },
+          onEnd: (finalOrder, canceled) => {
+            siblingTweenCancels.forEach(fn => fn());
+            siblingTweenCancels.clear();
+
+            const initial = (data.peek() as Bar[]).map(x => x.id ?? x.label);
+            const changed = !canceled && finalOrder.some((id, i) => id !== initial[i]);
+            if (changed) {
+              // Commit. Reactive tween effect (line ~470) will fire the
+              // structural branch — sort tweens from current visual position
+              // (Rule 4 settle from where they are).
+              this.onReorder?.(finalOrder.slice());
+              this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled: false, reorder: true } }));
+              return;
+            }
+            // Cancel / no-op: tween each bar back to its initial slot.
+            const bs = bandScale.peek();
+            const isV = isVert.peek();
+            (data.peek() as Bar[]).forEach((d, i) => {
+              const id = d.id ?? d.label;
+              const sc = barCells.get(id);
+              if (!sc) return;
+              const target = bs(String(i)) ?? 0;
+              const bandCell = isV ? sc.barX : sc.barY;
+              this.anim.start(tween(bandCell, target, REORDER_SEC, easeOut) as any);
+              // Return dragged bar's value-axis to its live target too.
+              if (id === datumId) {
+                const valTarget = isV ? (valueScale.peek() as any)(d.value) : (valueScale.peek() as any)(d.value);
+                const valCell = isV ? sc.barY : sc.barX;
+                // For value-axis: for vertical bars barY is the TOP; for
+                // horizontal barX is the LEFT. Both re-tween via the reactive
+                // effect once we release — but since data didn't change, that
+                // effect won't fire. So we snap value-axis explicitly.
+                valCell.value = isV ? valTarget : plotX.peek();
+              }
+            });
+            this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } }));
+          },
+        });
+        reorderDetachers.push(detach);
+      }
+    });
 
     // ─── Status label ─────────────────────────────────────────────────────
     s(label(Vec.derive(() => ({ x: Wc.value / 2, y: 8 })), "Bar — hover · click · navigate · edit · ctrl+wheel · drag end", { size: 11, align: Anchor.Center, opacity: 0.7 }));

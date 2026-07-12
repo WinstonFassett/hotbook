@@ -25,6 +25,7 @@ import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { mountDrillBreadcrumb } from "../lib/drill-breadcrumb";
 import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, ENTER_MS } from "../lib/transitions";
 import { withExitDelay, membershipCell } from "../lib/mark-lifecycle";
+import { numberDrag } from "../lib/number-drag";
 
 const W = 720;
 const H = 360;
@@ -405,7 +406,8 @@ export class MdTreemapLC extends Diagram {
           tile.el.style.opacity = present ? String(dim) : '0';
         });
       }));
-      tile.el.style.cursor = "pointer";
+      // WIN-260: drag-to-resize affordance — ew-resize cursor signals horizontal drag
+      tile.el.style.cursor = "ew-resize";
       tile.el.setAttribute('tabindex', '0');
       tile.el.setAttribute('data-focusable', 'tile');
       biEffect(() => {
@@ -434,6 +436,15 @@ export class MdTreemapLC extends Diagram {
       });
       tile.el.addEventListener("pointerenter", () => { state.hovered.current = node; hoverCell.value = node; state.emitHover?.(node); });
       tile.el.addEventListener("pointerleave", () => { if (state.hovered.current === node) { state.hovered.current = null; hoverCell.value = null; state.emitHover?.(null); } });
+
+      // WIN-260: numberDrag for horizontal drag-to-resize (table column resize parity).
+      // Routes through dragController for one-gesture-at-a-time + Esc-revert.
+      // GESTURE_ACTIVE_CLASS suppresses layout scale updates (Rule 15).
+      numberDrag(tile.el, {
+        get: () => node.value.total.value,
+        set: (v: number) => { node.value.total.value = v; },
+        pxPerUnit: 4,
+      });
 
       if (nd > 0) {
         const text = derive(() => {
