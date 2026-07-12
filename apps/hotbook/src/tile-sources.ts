@@ -134,7 +134,7 @@ export function resolveGroupings(tile: Tile, valueBinding: string, orderBinding:
     level: rule.level,
     groupings: rule.groupings.map(g => {
       let orderBy = g.orderBy
-      if (orderBy === undefined && orderBindingIsMeasure) {
+      if (orderBy === undefined && orderBindingIsMeasure && !g.customOrder?.length) {
         orderBy = normalizedOrderBinding
       }
       const orderByMeasure = orderBy !== undefined && orderBy !== g.field && measureKeys.includes(orderBy)
