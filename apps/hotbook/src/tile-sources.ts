@@ -164,7 +164,7 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
   // ── Flat charts ──────────────────────────────────────────────────────────
   if (kind === 'bar' || kind === 'bands') {
     const orientation = tile.orientation ?? (kind === 'bar' ? 'vertical' : 'horizontal')
-    const colorMode = kind === 'bands' ? 'palette' : (tile.colorMode ?? 'single')
+    const colorMode = kind === 'bands' ? 'palette' : (tile.colorMode ?? 'palette')
     const labelMode = kind === 'bands' ? 'inside' : (tile.labelMode ?? 'axis')
     const valueMode = kind === 'bands' ? 'inside' : (tile.valueMode ?? 'none')
     const minBandSize = tile.minBandSize ?? 0
