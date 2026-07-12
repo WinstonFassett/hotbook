@@ -205,6 +205,23 @@ if (app) {
     const dataModel = dataModelFor(e.id);
     if (dataModel) {
       dataModel.setChartData(el);
+      // Listen for gesturecommit to re-trigger reorder after gesture ends (WIN-269).
+      // Flat charts (bar/pie/radar) freeze their display order during gestures via
+      // the gestureActive flag. When a value changes during the gesture and the
+      // gesture ends, the chart's internal state has the new value but the frozen
+      // display order hasn't reconciled to match the (possibly sorted) store order.
+      // Re-applying the current sort triggers the reorder animation, matching the
+      // tile-binder behavior that hotbook uses.
+      el.addEventListener('gesturecommit', (e: Event) => {
+        const detail = (e as CustomEvent).detail;
+        // Only re-apply on commit (not cancel), matching tile-binder's contract.
+        if (!detail || typeof detail.canceled !== 'boolean' || detail.canceled) return;
+        queueMicrotask(() => {
+          if (!(el as any).gestureActive && dataModel.setSort) {
+            dataModel.setSort(el, config.sort);
+          }
+        });
+      });
     }
 
     const srcDetails = document.createElement("details");
