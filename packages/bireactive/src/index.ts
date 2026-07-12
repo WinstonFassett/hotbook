@@ -24,6 +24,7 @@ export { group, leaf, leaves } from './lib/tree'
 export { numberDrag, type NumberDragOpts } from './lib/number-drag'
 export { circleHandle, lineHandle, type HandleKind, type HandleStyle } from './lib/handles'
 export { Viewer, type ViewerOptions, type ShowOptions } from './lib/viewer'
+export { CartesianViewer, type CartesianViewerOptions, type CartesianDomain } from './lib/cartesian-viewer'
 export type { Bounds } from './lib/sankey-layout'
 // Chart metadata:
 export { CHART_METADATA, getChartMaturity, type ChartMaturity, type ChartMetadata } from './metadata'

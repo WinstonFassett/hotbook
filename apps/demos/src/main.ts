@@ -25,6 +25,7 @@ import { dataModelFor, type DemoDataModel } from "./data-models";
 import { sharedRows, sharedEdges } from "./layout/demo-data";
 import { mountControls } from "./layout/controls";
 import { MdViewerDemo } from "./viewer-demo-element";
+import { MdCartesianViewerDemo } from "./cartesian-viewer-demo";
 
 class MdBandsChartLC extends MdBarChartLC {
   constructor() { super(); this.orientation = 'horizontal'; this.colorMode = 'palette'; this.labelMode = 'inside'; this.valueMode = 'inside'; }
@@ -42,6 +43,7 @@ const experiments: Array<{
   custom?: (section: HTMLElement, demo: HTMLElement, el: HTMLElement) => void;
 }> = [
   { id: "viewer-demo", title: "Viewer (pan/zoom/show demo)", tag: "md-viewer-demo", ctor: MdViewerDemo as unknown as CustomElementConstructor },
+  { id: "cartesian-viewer", title: "CartesianViewer (zoomable scatterplot with axes)", tag: "md-cartesian-viewer", ctor: MdCartesianViewerDemo as unknown as CustomElementConstructor },
   { id: "line-chart", title: "LineChart", tag: "v-line-chart", ctor: MdLineChartLC },
   { id: "area-chart", title: "AreaChart", tag: "v-area-chart", ctor: MdAreaChartLC },
   { id: "bar-chart", title: "BarChart (vertical)", tag: "v-bar-chart", ctor: MdBarChartLC },
