@@ -7,6 +7,7 @@ import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { dragCancelable } from "../lib/esc-contract";
 import { GESTURE_ACTIVE_CLASS } from "../lib/transitions";
+import { attachReorderGesture } from "../lib/reorder-gesture";
 
 const W = 640;
 const H = 640;
@@ -52,6 +53,15 @@ export class MdPieChartLC extends Diagram {
   // Axis-binding model (WIN-144): valueBinding replaces measureKey.
   get valueBinding(): string { return this.measureKey }
   set valueBinding(v: string) { this.measureKey = v }
+
+  // Drag-to-reorder (WIN-262). Caller opts in when sort is by natural order;
+  // chart doesn't sniff sort. Commit fires onReorder(orderedIds) — order
+  // persistence is the caller's problem (re-feed data, mutate BiNode, splice
+  // array — chart doesn't care).
+  private _canReorderCell = cell<boolean>(false)
+  get canReorder(): boolean { return this._canReorderCell.value }
+  set canReorder(v: boolean) { this._canReorderCell.value = v }
+  onReorder?: (orderedIds: string[]) => void
 
   set externalData(v: { id?: string; label: string; value: number }[] | undefined) {
     if (v) this.dataCell.value = v.map((d) => ({ id: d.id, label: d.label, value: num(d.value) }));
@@ -138,6 +148,12 @@ export class MdPieChartLC extends Diagram {
 
     // Draw slices.
     const sliceElements = new Map<Slice, SVGElement>(); // Track elements by datum identity
+    // Per-slice angle cells, keyed by stable id. Hoisted so the reorder gesture
+    // (Layer 4 of the reorder pattern — imperative preview) can rewrite any
+    // slice's angles during another slice's drag.
+    const sliceAnglesById = new Map<string, { a0: Writable<Num>, a1: Writable<Num> }>();
+    const slicesById = new Map<string, Slice>();
+    const sliceElById = new Map<string, SVGElement>();
     const focusDatum = (d: Slice | null) => {
       if (d) sliceElements.get(d)?.focus();
     };
@@ -146,6 +162,7 @@ export class MdPieChartLC extends Diagram {
     const orderHash = derive(() => (data.value as Slice[]).map(d => d.id ?? d.label).join(','));
     for (let i = 0; i < slices0.length; i++) {
       const d = slices0[i]!;
+      const sid = d.id ?? d.label;
       const color = PALETTE[i % PALETTE.length]!;
 
       const arcDatum = derive(() => arcs.value[i]);
@@ -192,6 +209,9 @@ export class MdPieChartLC extends Diagram {
         opacity,
       }));
       sliceElements.set(d, sector.el); // Store for focus management
+      sliceAnglesById.set(sid, { a0, a1 });
+      slicesById.set(sid, d);
+      sliceElById.set(sid, sector.el);
       // Make each slice individually focusable
       sector.el.setAttribute('tabindex', '0');
       sector.el.setAttribute('data-focusable', 'slice');
@@ -215,6 +235,144 @@ export class MdPieChartLC extends Diagram {
       });
       s(label(labelPos, sliceLabel, { size: 11, align: Anchor.Center, fill: "#fff" }));
     }
+
+    // ─── Drag-to-reorder (WIN-262) ────────────────────────────────────────
+    // Attach a per-slice reorder gesture when the caller opts in via
+    // canReorder. During drag, ghost angles are written imperatively to the
+    // hoisted a0/a1 cells; data is never mutated until commit. Reactive
+    // layout freezes via GESTURE_ACTIVE_CLASS (respected by the tween effect
+    // at line ~181). On commit, onReorder(orderedIds) fires; the caller
+    // persists the order however it likes (chart is agnostic — Rule 8).
+    const shortestDelta = (from: number, to: number): number => {
+      let d = to - from;
+      while (d > Math.PI) d -= 2 * Math.PI;
+      while (d < -Math.PI) d += 2 * Math.PI;
+      return d;
+    };
+    const norm2pi = (a: number): number => {
+      let x = a;
+      while (x < 0) x += 2 * Math.PI;
+      while (x >= 2 * Math.PI) x -= 2 * Math.PI;
+      return x;
+    };
+    const pointerAngle = (e: PointerEvent, target: SVGElement): number => {
+      // Convert pointer client coords → SVG world coords via the target's
+      // ownerSVGElement CTM. Works under any host scaling / viewBox.
+      const svg = target.ownerSVGElement;
+      let px = e.clientX, py = e.clientY;
+      if (svg) {
+        const pt = svg.createSVGPoint();
+        pt.x = e.clientX; pt.y = e.clientY;
+        const ctm = svg.getScreenCTM();
+        if (ctm) { const p = pt.matrixTransform(ctm.inverse()); px = p.x; py = p.y; }
+      }
+      return Math.atan2(py - cy.peek(), px - cx.peek());
+    };
+    const reorderDetachers: Array<() => void> = [];
+    const detachAllReorder = () => { while (reorderDetachers.length) reorderDetachers.pop()!(); };
+    biEffect(() => {
+      const enabled = this._canReorderCell.value;
+      detachAllReorder();
+      // Reset cursor when disabled.
+      for (const el of sliceElById.values()) el.style.cursor = enabled ? 'grab' : '';
+      if (!enabled) return;
+
+      for (const [sid, el] of sliceElById.entries()) {
+        let startMouseAngle = Number.NaN; // captured on first onPreview
+        let startMidAngle = 0;
+        let dragSpan = 0;
+        const initialMidById = new Map<string, number>();
+
+        const detach = attachReorderGesture({
+          hitEl: el,
+          itemId: sid,
+          host: this,
+          getInitialOrder: () => (data.peek() as Slice[]).map(x => x.id ?? x.label),
+          computeTargetIndex: (e, initialOrder) => {
+            if (Number.isNaN(startMouseAngle)) return initialOrder.indexOf(sid);
+            const cur = pointerAngle(e, el);
+            const delta = shortestDelta(startMouseAngle, cur);
+            const ghostMid = norm2pi(startMidAngle + delta);
+            const scored = initialOrder.map(id => ({
+              id,
+              mid: id === sid ? ghostMid : norm2pi(initialMidById.get(id) ?? 0),
+            }));
+            scored.sort((a, b) => a.mid - b.mid);
+            return scored.findIndex(s => s.id === sid);
+          },
+          onActivate: () => {
+            // Snapshot initial angles from the current layout.
+            const cur = arcs.peek();
+            initialMidById.clear();
+            (data.peek() as Slice[]).forEach((x, i) => {
+              const a = cur[i];
+              if (a) initialMidById.set(x.id ?? x.label, (a.startAngle + a.endAngle) / 2);
+            });
+            const meIdx = (data.peek() as Slice[]).findIndex(x => (x.id ?? x.label) === sid);
+            const meArc = cur[meIdx];
+            startMidAngle = meArc ? (meArc.startAngle + meArc.endAngle) / 2 : 0;
+            dragSpan = meArc ? (meArc.endAngle - meArc.startAngle) : 0;
+            startMouseAngle = Number.NaN; // captured on first pointermove
+            el.style.cursor = 'grabbing';
+            // Raise dragged slice above siblings (SVG paint order = last child).
+            el.parentElement?.appendChild(el);
+          },
+          onPreview: (order, e) => {
+            if (Number.isNaN(startMouseAngle)) startMouseAngle = pointerAngle(e, el);
+            const currentData = data.peek() as Slice[];
+            const bySlice = new Map(currentData.map(x => [x.id ?? x.label, x]));
+            const orderedSlices = order.map(id => bySlice.get(id)!).filter(Boolean);
+            const layout = pie<Slice>().value(sl => sl.value.value).sort(null)(orderedSlices);
+            // Siblings snap to their new slots (Rule 3 real-time feedback).
+            for (const seg of layout) {
+              const segId = seg.data.id ?? seg.data.label;
+              if (segId === sid) continue;
+              const cells = sliceAnglesById.get(segId);
+              if (!cells) continue;
+              cells.a0.value = seg.startAngle;
+              cells.a1.value = seg.endAngle;
+            }
+            // Dragged slice: ghost centered on pointer-derived mid, keep span.
+            const meCells = sliceAnglesById.get(sid);
+            if (meCells) {
+              const cur = pointerAngle(e, el);
+              const delta = shortestDelta(startMouseAngle, cur);
+              const ghostMid = startMidAngle + delta;
+              meCells.a0.value = ghostMid - dragSpan / 2;
+              meCells.a1.value = ghostMid + dragSpan / 2;
+            }
+          },
+          onEnd: (finalOrder, canceled) => {
+            el.style.cursor = 'grab';
+            const initial = (data.peek() as Slice[]).map(x => x.id ?? x.label);
+            const changed = !canceled && finalOrder.some((id, i) => id !== initial[i]);
+            if (changed) {
+              // Commit. Reactive layout will recompute from the new data order;
+              // the tween effect (line ~181) runs its structural branch and
+              // tweens from the current (imperative) positions — settle from
+              // where slices visually are (Rule 4).
+              this.onReorder?.(finalOrder.slice());
+              this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled: false, reorder: true } }));
+              return;
+            }
+            // Cancel or no-op: tween each slice's a0/a1 back to its target.
+            // Data was never mutated, so arcs.peek() is still the initial layout.
+            const arcSnap = arcs.peek();
+            (data.peek() as Slice[]).forEach((x, i) => {
+              const cells = sliceAnglesById.get(x.id ?? x.label);
+              const arc = arcSnap[i];
+              if (!cells || !arc) return;
+              this.anim.start(
+                tween(cells.a0, arc.startAngle, SORT_SEC, easeOut) as any,
+                tween(cells.a1, arc.endAngle, SORT_SEC, easeOut) as any,
+              );
+            });
+            this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } }));
+          },
+        });
+        reorderDetachers.push(detach);
+      }
+    });
 
     if (!this.hasAttribute("no-handles")) {
       const rows = data.peek() as Slice[];

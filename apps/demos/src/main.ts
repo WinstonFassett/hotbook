@@ -119,6 +119,20 @@ function applySort(el: HTMLElement, treetable: HTMLElement | null, model: DemoDa
     }
   }
   if (treetable && 'sortBy' in treetable) (treetable as any).sortBy = config.sort;
+  // Drag-to-reorder gate (WIN-262): only active when sort is by natural order.
+  if ('canReorder' in el) (el as any).canReorder = (config.sort === 'index');
+}
+
+function wireReorder(el: HTMLElement, treetable: HTMLElement | null, model: DemoDataModel | undefined) {
+  if (!('onReorder' in el) && !('canReorder' in el)) return;
+  if (!model?.setOrder) return;
+  (el as any).onReorder = (ids: string[]) => {
+    model.setOrder!(el, ids);
+    if (treetable) {
+      (treetable as any).externalRoot = model.root;
+      (treetable as any).refresh?.();
+    }
+  };
 }
 
 function mountLayoutSection(section: HTMLElement, demo: HTMLElement, el: HTMLElement): void {
@@ -249,6 +263,7 @@ if (app) {
       demo.appendChild(stage);
       demo.appendChild(tableWrap);
 
+      wireReorder(el, treetable, dataModel);
       applySort(el, treetable, dataModel);
       mounted.push({ el, treetable, model: dataModel });
     }
