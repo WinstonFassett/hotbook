@@ -411,6 +411,7 @@ sb-dock-view {
   font-size: 11px;
   user-select: none;
   white-space: nowrap;
+  position: relative;
 }
 .dv-tab:hover { color: #888; background: #141414; }
 .dv-tab--active {
@@ -425,6 +426,7 @@ sb-dock-view {
   background: #252525;
   border-top: 2px solid #58a6ff;
   font-weight: 600;
+  z-index: 2;
 }
 .dv-tab-label {
   flex: 1;
