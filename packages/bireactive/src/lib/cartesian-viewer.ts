@@ -166,13 +166,11 @@ export class CartesianViewer {
     this.dataGroup.setAttribute('class', 'data');
     mainGroup.appendChild(this.dataGroup);
 
-    // X axis
+    // X axis (positioned at bottom of inner chart area)
+    const innerHeight = this.height - this.margin.top - this.margin.bottom;
     this.xAxisGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     this.xAxisGroup.setAttribute('class', 'x-axis');
-    this.xAxisGroup.setAttribute(
-      'transform',
-      `translate(0,${this.height - this.margin.top - this.margin.bottom})`
-    );
+    this.xAxisGroup.setAttribute('transform', `translate(0,${innerHeight})`);
     mainGroup.appendChild(this.xAxisGroup);
 
     // Y axis
@@ -180,13 +178,16 @@ export class CartesianViewer {
     this.yAxisGroup.setAttribute('class', 'y-axis');
     mainGroup.appendChild(this.yAxisGroup);
 
-    // Axis labels
+    // Axis labels (positioned relative to inner chart area)
+    const innerWidth = this.width - this.margin.left - this.margin.right;
+    const innerHeight = this.height - this.margin.top - this.margin.bottom;
+
     if (this.opts.xLabel) {
       const xLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
       xLabel.setAttribute('class', 'x-label');
       xLabel.setAttribute('text-anchor', 'middle');
-      xLabel.setAttribute('x', String((this.width - this.margin.left - this.margin.right) / 2));
-      xLabel.setAttribute('y', String(this.height - 5));
+      xLabel.setAttribute('x', String(innerWidth / 2));
+      xLabel.setAttribute('y', String(innerHeight + this.margin.bottom - 5));
       xLabel.setAttribute('fill', this.opts.axisColor);
       xLabel.setAttribute('font-size', '12');
       xLabel.textContent = this.opts.xLabel;
@@ -198,7 +199,7 @@ export class CartesianViewer {
       yLabel.setAttribute('class', 'y-label');
       yLabel.setAttribute('text-anchor', 'middle');
       yLabel.setAttribute('transform', 'rotate(-90)');
-      yLabel.setAttribute('x', String(-(this.height - this.margin.top - this.margin.bottom) / 2));
+      yLabel.setAttribute('x', String(-innerHeight / 2));
       yLabel.setAttribute('y', String(-this.margin.left + 15));
       yLabel.setAttribute('fill', this.opts.axisColor);
       yLabel.setAttribute('font-size', '12');
