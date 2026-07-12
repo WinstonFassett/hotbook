@@ -838,7 +838,7 @@ export class MdGanttChartLC extends Diagram {
         return entry ? entry.yCenter.value : rowCenterY(idx);
       };
 
-      s(label(
+      const rowLabel = s(label(
         Vec.derive(() => ({ x: plotX - 8, y: getYCenter() })),
         derive(() => di()?.label ?? ""),
         { size: 11, align: Anchor.Right, fill: "#bbb", opacity: 0.85 },
@@ -858,48 +858,22 @@ export class MdGanttChartLC extends Diagram {
       ));
       rh.el.style.pointerEvents = "none";
       rh.el.style.transition = "opacity 0.1s ease";
-    }
 
-    // ─── Task bars ─────────────────────────────────────────────────────────
-    for (let idx = 0; idx < MAX_ROWS; idx++) {
-      const di = (): GanttTask | null => sortedData.value[idx] ?? null;
-      const base = (() => {
-        const t = rows0[idx]; return t ? this.#color(idx, t) : '#888';
-      })();
-      const hoverColor = lightenHex(base, 0.35);
+      // ─── Drag-to-reorder hit target (WIN-287) ──────────────────────────────
+      // Invisible rect in the label lane (left of plot) that captures reorder drags.
+      // This keeps the bar free for time-axis drag (horizontal move/resize).
+      const labelLaneW = PAD.left - 16; // Label lane width (leave margin)
+      const reorderHitTarget = s(rect(
+        derive(() => 0),
+        derive(() => getY()),
+        labelLaneW,
+        ROW_H,
+        { fill: "#ffffff", opacity: 0 },
+      ));
+      reorderHitTarget.el.style.cursor = "grab";
+      reorderHitTarget.el.style.touchAction = "none";
 
-      // Get tweened y position for this task
-      const getY = (): number => {
-        const d = di();
-        if (!d) return rowY(idx);
-        const entry = taskYCells.get(d.id);
-        return entry ? entry.yCell.value : rowY(idx);
-      };
-      const getYCenter = (): number => {
-        const d = di();
-        if (!d) return rowCenterY(idx);
-        const entry = taskYCells.get(d.id);
-        return entry ? entry.yCenter.value : rowCenterY(idx);
-      };
-
-      const barY = derive(() => getY());
-      const barCY = derive(() => getYCenter());
-      const xS = derive(() => { const d = di(); return d ? (xScale.value as any)(d.start) as number : 0; });
-      const xE = derive(() => { const d = di(); return d ? (xScale.value as any)(d.end)   as number : 0; });
-      const barW = derive(() => Math.max(0, xE.value - xS.value));
-      const fill = derive(() => {
-        const d = di();
-        return selected.value === d ? "#fff" : hover.value === d ? hoverColor : base;
-      });
-
-      const tile = s(rect(xS, barY, barW, ROW_H, { fill, corner: 3 }));
-      tile.el.style.cursor = "grab";
-      tile.el.style.touchAction = "none";
-      // Value geometry (x/width = task start/duration) is write-through — no settle.
-
-      // ─── Drag-to-reorder (WIN-287) ────────────────────────────────────────
-      // When canReorder is true and sortBy='index', dragging a row up/down
-      // reorders the task list. The filter yields to time-axis resize handles.
+      // Attach reorder gesture to the label lane hit target, not the bar
       biEffect(() => {
         const enabled = this._canReorderCell.value && this._sortByCell.value === 'index';
         // Track reorder commits (not data changes during drag preview)
@@ -908,29 +882,18 @@ export class MdGanttChartLC extends Diagram {
         // Read current task without tracking to avoid re-runs during drag
         const task = untracked(() => di());
         if (!enabled || !task || !task.id) {
-          tile.el.style.cursor = "grab";
+          reorderHitTarget.el.style.cursor = "default";
           return;
         }
 
-        tile.el.style.cursor = "grab";
+        reorderHitTarget.el.style.cursor = "grab";
         let initialSnapshot: GanttTask[] = [];
         const detach = attachReorderGesture({
-          hitEl: tile.el,
-          dragEl: tile.el,
+          hitEl: reorderHitTarget.el,
+          dragEl: reorderHitTarget.el,
           itemId: task.id,
           host: this,
-          // Yield to resize handles on the time-axis (left/right edges of bar).
-          // This ensures horizontal drags on handles trigger resize, not reorder.
-          filter: (e) => {
-            const d = di();
-            if (!d) return true;
-            const { x } = localPoint(e);
-            const sx = (xScale.value as any)(d.start) as number;
-            const ex = (xScale.value as any)(d.end) as number;
-            const edgeTol = e.pointerType === "mouse" ? 6 : 24;
-            // Only allow reorder if pointer is away from both edges
-            return x >= sx + edgeTol && x <= ex - edgeTol;
-          },
+          // No filter needed - label lane doesn't conflict with bar gestures
           getInitialOrder: () => (data.value as GanttTask[]).map(t => t.id),
           computeTargetIndex: (e) => {
             const { y } = localPoint(e);
@@ -978,6 +941,44 @@ export class MdGanttChartLC extends Diagram {
         // Cleanup when effect re-runs or component unmounts
         return detach;
       });
+    }
+
+    // ─── Task bars ─────────────────────────────────────────────────────────
+    for (let idx = 0; idx < MAX_ROWS; idx++) {
+      const di = (): GanttTask | null => sortedData.value[idx] ?? null;
+      const base = (() => {
+        const t = rows0[idx]; return t ? this.#color(idx, t) : '#888';
+      })();
+      const hoverColor = lightenHex(base, 0.35);
+
+      // Get tweened y position for this task
+      const getY = (): number => {
+        const d = di();
+        if (!d) return rowY(idx);
+        const entry = taskYCells.get(d.id);
+        return entry ? entry.yCell.value : rowY(idx);
+      };
+      const getYCenter = (): number => {
+        const d = di();
+        if (!d) return rowCenterY(idx);
+        const entry = taskYCells.get(d.id);
+        return entry ? entry.yCenter.value : rowCenterY(idx);
+      };
+
+      const barY = derive(() => getY());
+      const barCY = derive(() => getYCenter());
+      const xS = derive(() => { const d = di(); return d ? (xScale.value as any)(d.start) as number : 0; });
+      const xE = derive(() => { const d = di(); return d ? (xScale.value as any)(d.end)   as number : 0; });
+      const barW = derive(() => Math.max(0, xE.value - xS.value));
+      const fill = derive(() => {
+        const d = di();
+        return selected.value === d ? "#fff" : hover.value === d ? hoverColor : base;
+      });
+
+      const tile = s(rect(xS, barY, barW, ROW_H, { fill, corner: 3 }));
+      tile.el.style.cursor = "grab";
+      tile.el.style.touchAction = "none";
+      // Value geometry (x/width = task start/duration) is write-through — no settle.
 
       // Inside label (task name) — shown when bar wide enough.
       const inOpacity = derive(() => barW.value >= 60 ? 1 : 0);
