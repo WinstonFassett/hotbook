@@ -8,7 +8,7 @@
 // The diagram produces geometry at a constant ruler; the viewer frames it via
 // viewBox transform. No geometry recomputation on pan/zoom/fit — only transforms.
 
-import { cell, derive, effect, type Writable } from "bireactive";
+import { cell, effect, type Writable, type Cell } from "bireactive";
 import type { Bounds } from "./sankey-layout";
 
 export interface ViewerOptions {
@@ -50,11 +50,11 @@ export interface ShowOptions {
  */
 export class Viewer {
   // Reactive state
-  private viewBoxX: Writable<number>;
-  private viewBoxY: Writable<number>;
-  private viewBoxW: Writable<number>;
-  private viewBoxH: Writable<number>;
-  private zoom: Writable<number> = cell(1);
+  private viewBoxX: Writable<Cell<number>>;
+  private viewBoxY: Writable<Cell<number>>;
+  private viewBoxW: Writable<Cell<number>>;
+  private viewBoxH: Writable<Cell<number>>;
+  private zoom: Writable<Cell<number>> = cell(1);
 
   // Config
   private opts: Required<ViewerOptions>;

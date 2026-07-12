@@ -1,7 +1,6 @@
 import {
   applyDelta,
   dynamicWheelStep,
-  flatOrder,
   wheelController,
   realModifierDown,
   type ScalingMode,

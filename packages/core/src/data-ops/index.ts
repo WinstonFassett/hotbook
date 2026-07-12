@@ -18,10 +18,10 @@ export interface TreeNode {
  * TreeNode structure. Roots become direct children of a synthetic __root__ node.
  *
  * @param rows - Flat array of VizNode objects with parentId references
- * @param measureKey - Primary measure key (used for D3 value)
+ * @param _measureKey - Primary measure key (used for D3 value)
  * @returns Tree structure with __root__ at the top
  */
-export function buildTree(rows: VizNode[], measureKey: string): TreeNode {
+export function buildTree(rows: VizNode[], _measureKey: string): TreeNode {
   const byParent = new Map<string | null, VizNode[]>()
   for (const n of rows) {
     const arr = byParent.get(n.parentId) ?? []

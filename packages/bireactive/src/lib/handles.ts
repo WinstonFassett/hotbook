@@ -1,5 +1,5 @@
 import type { AnyShape, Val } from "bireactive";
-import { circle, rect, derive } from "bireactive";
+import { circle, rect, derive, Vec } from "bireactive";
 
 /**
  * Semantic mode for a handle — determines its color rule.
@@ -57,7 +57,7 @@ export function circleHandle(
       : "#0b0d12";
   }
 
-  return circle(pos, radius, {
+  return circle(Vec.coerce(pos), radius, {
     fill,
     stroke,
     strokeWidth: 1.5,

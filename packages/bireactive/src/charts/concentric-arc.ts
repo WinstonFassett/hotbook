@@ -103,10 +103,6 @@ export class MdConcentricArcLC extends Diagram {
 
     const data = this.dataCell;
     const maxRingsCell = this._maxRingsCell;
-    // n for the static render loop (mount-time snapshot, safe because externalData caps at maxRings).
-    // Use peek() so this mount-time read doesn't register dataCell as a dep of whatever
-    // bireactive effect triggered the mount (e.g. DockView's biEffect).
-    const n = Math.min((data.peek() as Ring[]).length, maxRingsCell.peek());
     // Reactive count drives thickness so it re-derives if data or maxRings changes after mount.
     const nCell = derive(() => Math.min((data.value as Ring[]).length, maxRingsCell.value));
 
@@ -171,7 +167,7 @@ export class MdConcentricArcLC extends Diagram {
     // Drag a ring's end-cap handle angularly to set its value; Esc reverts.
     // Config handed to the SHARED drag controller (one pointer, one live drag).
     let dragPointerId = -1;
-    let activeHandle: HTMLElement | null = null;
+    let activeHandle: SVGElement | null = null;
     const onDragMove = (pe: PointerEvent) => {
       const t = dragController.target as Ring | null;
       if (!t) return;

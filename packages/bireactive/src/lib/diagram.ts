@@ -46,7 +46,7 @@ export class Diagram extends HTMLElement {
   }
 
   protected shadow: ShadowRoot;
-  protected anim = new Anim();
+  public anim = new Anim();
   #detachRaf: (() => void) | null = null;
   #io: IntersectionObserver | null = null;
   protected svg!: SVGSVGElement;
