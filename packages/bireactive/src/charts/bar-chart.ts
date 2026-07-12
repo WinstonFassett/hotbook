@@ -68,7 +68,7 @@ export class MdBarChartLC extends Diagram {
   get valueBinding(): string { return this.measureKey }
   set valueBinding(v: string) { this.measureKey = v }
 
-  colorMode: 'single' | 'palette' = 'single';
+  colorMode: 'single' | 'palette' = 'palette';
   colorStrategy: ColorStrategy = 'index'; // 'index' | 'value' | 'identity' | 'single'
   labelMode: 'axis' | 'inside' | 'both' = 'axis';
   valueMode: 'inside' | 'outside' | 'none' = 'outside';
