@@ -15,14 +15,16 @@
 import { cell, effect as biEffect } from 'bireactive'
 import type { Cell, Writable } from 'bireactive'
 import type {
-  DockNode, DockGroup, DockSplit, DockEdge,
+  DockNode, DockGroup, DockSplit,
 } from './dock'
 import {
   allGroups, findPanel, findMaximizedGroup,
   setSizes, setActive, movePanel, dropOnEdge, dropGroupOnEdge, mergeGroups,
-  toggleMaximize, splitGroupRight, splitGroupDown,
+  toggleMaximize, splitGroupRight, splitGroupDown, splitGroup, moveGroup,
+  getNeighborGroup, canMoveGroup,
   reconcile, defaultDockTree, removePanel,
 } from './dock'
+import type { DockEdge } from './dock'
 import type { Tile, Dataset } from './persistence'
 import { schemaFor } from './tile-config-schemas'
 import { bindTile } from './viz/br/bindTile'
@@ -184,6 +186,80 @@ export class DockView extends HTMLElement {
     } else {
       this.externalTiles = tiles
     }
+  }
+
+  // ─── Public commands for global toolbar / keyboard ───────────────────────────
+
+  /** Return the current dock tree. */
+  getDock(): DockNode | null {
+    return this._dockCell?.value ?? null
+  }
+
+  /** Return the group that currently has keyboard focus. */
+  getFocusedGroup(): DockGroup | null {
+    const dock = this._dockCell?.value ?? null
+    const groups = allGroups(dock)
+    if (this._focusedGroupId) {
+      const focused = groups.find(g => g.id === this._focusedGroupId)
+      if (focused) return focused
+    }
+    return groups.find(g => g.panels.length > 0) ?? groups[0] ?? null
+  }
+
+  /** Focus a group by id and notify the toolbar. */
+  focusGroup(groupId: string | null) {
+    this._focusedGroupId = groupId
+    this.dispatchEvent(new CustomEvent('focuschange', { detail: { groupId } }))
+    // Steer focus to the dock surface unless the user is already in a control
+    // so that arrow-key focus/move works immediately after clicking a pane.
+    const ae = document.activeElement as HTMLElement | null
+    if (!ae || ae === document.body || ae === this) {
+      this.focus()
+    }
+  }
+
+  /** Focus the group geometrically adjacent to the currently focused group. */
+  focusNeighborGroup(dir: DockEdge) {
+    const dock = this._dockCell?.value ?? null
+    const group = this.getFocusedGroup()
+    if (!group || !dock) return
+    const next = getNeighborGroup(dock, group.id, dir)
+    if (next) this.focusGroup(next.id)
+  }
+
+  /** Move the focused group one step in a screen direction. */
+  moveFocusedGroup(dir: DockEdge) {
+    const dock = this._dockCell?.value ?? null
+    const group = this.getFocusedGroup()
+    if (!group || !dock) return
+    this._mutateDock(moveGroup(dock, group.id, dir))
+  }
+
+  /** Split the focused group in a direction. */
+  splitFocusedGroup(dir: DockEdge) {
+    const dock = this._dockCell?.value ?? null
+    const group = this.getFocusedGroup()
+    if (!group || !dock) return
+    this._mutateDock(splitGroup(dock, group.id, dir))
+  }
+
+  /** Can the focused group move in the given direction? */
+  canMove(dir: DockEdge): boolean {
+    const dock = this._dockCell?.value ?? null
+    const group = this.getFocusedGroup()
+    return !!group && !!dock && canMoveGroup(dock, group.id, dir)
+  }
+
+  /** Can the focused group be split? Always true if there is a focused group. */
+  canSplit(dir: DockEdge): boolean {
+    const group = this.getFocusedGroup()
+    return !!group
+  }
+
+  /** Close the active panel of the focused group. */
+  closeFocusedPanel() {
+    const group = this.getFocusedGroup()
+    if (group && group.activeId) this._closePanel(group.id, group.activeId)
   }
 
   // ─── Internal render ──────────────────────────────────────────────────────
@@ -415,7 +491,7 @@ export class DockView extends HTMLElement {
       const liveGroup = allGroups(dock).find(g => g.id === group.id)
       if (!liveGroup) return
       // Mark this group as the keyboard-focus target.
-      this._focusedGroupId = liveGroup.id
+      this.focusGroup(liveGroup.id)
     }, { capture: true })
 
     const strip = this._renderTabStrip(group, tiles)
@@ -1121,6 +1197,23 @@ export class DockView extends HTMLElement {
   // ─── Keyboard shortcuts ────────────────────────────────────────────────────
 
   private _onKeyDown = (e: KeyboardEvent) => {
+    // Ignore shortcuts when the user is interacting with a control.
+    const target = e.target as HTMLElement | null
+    if (target && (target.closest('button, input, textarea, select') || target instanceof HTMLButtonElement)) {
+      return
+    }
+
+    // Super Split-style focus/move: arrow keys focus a neighbour, Shift+arrow
+    // moves the active group. Kept inside the dock surface so they don't fight
+    // with text controls.
+    const dir = e.key === 'ArrowLeft' ? 'left' : e.key === 'ArrowRight' ? 'right' : e.key === 'ArrowUp' ? 'up' : e.key === 'ArrowDown' ? 'down' : null
+    if (dir && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      e.preventDefault()
+      if (e.shiftKey) this.moveFocusedGroup(dir)
+      else this.focusNeighborGroup(dir)
+      return
+    }
+
     if (e.ctrlKey && e.key === 'k' && !e.shiftKey && !e.altKey && !e.metaKey) {
       e.preventDefault()
       this._awaitingKChord = true
@@ -1143,10 +1236,7 @@ export class DockView extends HTMLElement {
     }
     if (e.ctrlKey && e.key === 'w' && !e.shiftKey && !e.altKey && !e.metaKey) {
       e.preventDefault()
-      const dock = this._dockCell?.value ?? null
-      const activeGroup = this._getKeyboardGroup(dock)
-      // Closing the last panel is allowed — the emptied area collapses.
-      if (activeGroup && activeGroup.activeId) this._closePanel(activeGroup.id, activeGroup.activeId)
+      this.closeFocusedPanel()
       return
     }
     if (this._awaitingKChord) this._awaitingKChord = false
