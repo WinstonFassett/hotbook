@@ -89,20 +89,6 @@ export class MdTreemapLC extends Diagram {
     const hoverCell = cell<BiNode | null>(null);
     state.hoverCell = hoverCell;
 
-    const layout = derive(() => {
-      const h = buildHierarchy(root, this._sortByCell.value);
-      treemap<BiNode>()
-        .tile(treemapSquarify)
-        .size([Wc.value, Hc.value])
-        .paddingOuter(PAD_OUTER)
-        .paddingInner(PAD_INNER)
-        .paddingTop(PAD_TOP)
-        .round(true)(h);
-      const map = new Map<BiNode, HierarchyRectangularNode<BiNode>>();
-      h.each((d) => map.set(d.data, d as HierarchyRectangularNode<BiNode>));
-      return map;
-    });
-
     // Pre-build static maps (tree structure is immutable).
     const nodeById = new Map<string, BiNode>();
     const nodeDepth = new Map<BiNode, number>();
@@ -118,6 +104,26 @@ export class MdTreemapLC extends Diagram {
       if (!id) return 0;
       const n = nodeById.get(id);
       return n ? (nodeDepth.get(n) ?? 0) : 0;
+    });
+
+    // Re-layout from the drilled node so the focus subtree is computed at the
+    // full canvas size. This keeps group headers (paddingTop) at fixed pixel
+    // size instead of scaling them with the zoom factor.
+    const drillLayout = derive(() => {
+      const id = this._drillIdCell.value;
+      const focusNode = id ? nodeById.get(id) : root;
+      const effectiveRoot = focusNode ?? root;
+      const h = buildHierarchy(effectiveRoot, this._sortByCell.value);
+      treemap<BiNode>()
+        .tile(treemapSquarify)
+        .size([Wc.value, Hc.value])
+        .paddingOuter(PAD_OUTER)
+        .paddingInner(PAD_INNER)
+        .paddingTop(PAD_TOP)
+        .round(true)(h);
+      const map = new Map<BiNode, HierarchyRectangularNode<BiNode>>();
+      h.each((d) => map.set(d.data, d as HierarchyRectangularNode<BiNode>));
+      return map;
     });
 
     // ── Per-tile geometry model ────────────────────────────────────────
@@ -149,7 +155,7 @@ export class MdTreemapLC extends Diagram {
     // Target screen rect for `node` when focused on `id`. Pure affine off the
     // focus box — no PAD_TOP hack; group headers are fixed-pixel labels (below).
     const targetRect = (node: BiNode, id: string | null) => {
-      const lmap = untracked(() => layout.value);
+      const lmap = untracked(() => drillLayout.value);
       const { fx0, fy0, fx1, fy1 } = focusBoxOf(id, lmap);
       const sx = Wc.value / Math.max(1e-9, fx1 - fx0);
       const sy = Hc.value / Math.max(1e-9, fy1 - fy0);
@@ -259,7 +265,7 @@ export class MdTreemapLC extends Diagram {
     let seenSortBy = untracked(() => this._sortByCell.value);
     let seenMeasureKey = untracked(() => this._measureKeyCell.value);
     biEffect(() => {
-      void layout.value; // track layout (reacts to sort + value + size)
+      void drillLayout.value; // track layout (reacts to sort + value + size + drill)
       const sortBy = this._sortByCell.value; // track sort key so a toggle re-fires this effect
       const measureKey = untracked(() => this._measureKeyCell.value); // read untracked — effect fires on layout change (leaf writes), by which point measureKey is already set
       if (!layoutInited) { layoutInited = true; seenSortBy = sortBy; seenMeasureKey = measureKey; return; }
