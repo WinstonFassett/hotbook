@@ -357,7 +357,10 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
   }
   if (kind in hierTags) {
     const tag = hierTags[kind]!
-    const orientationProp = kind === 'icicle' ? (tile.orientation ?? 'horizontal') : undefined
+    const orientationProp =
+      kind === 'icicle' || kind === 'tree'
+        ? (tile.orientation ?? 'horizontal')
+        : undefined
     const sortKey = orderBinding === 'value' || orderBinding === '_value' ? valueBinding : orderBinding
     // Hierarchical elements can sort by value (desc) internally; otherwise rely on pre-sorted nodes + 'index'.
     const hierSortBy: 'index' | 'value' = sortKey === valueBinding && orderDir === 'desc' ? 'value' : 'index'
