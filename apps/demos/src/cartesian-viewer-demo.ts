@@ -66,6 +66,9 @@ export class MdCartesianViewerDemo extends Diagram {
     // Re-render scatter points whenever the viewer scales change
     this.disposeEffect = effect(() => this.renderScatter());
 
+    // Ensure initial render of scatter points after scales are fully set up
+    setTimeout(() => this.renderScatter(), 0);
+
     // Add controls
     this.addControls();
 

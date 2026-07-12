@@ -168,9 +168,17 @@ export class CartesianViewer {
 
     // Reactively render axes and grid when scales change
     this.renderEffectDispose = effect(() => {
+      // Access scales to depend on them (reading .value might not work)
+      // The real dependency comes from within renderGrid/renderAxes
       this.renderGrid();
       this.renderAxes();
     });
+
+    // Ensure initial render by manually updating scales (which triggers effects)
+    const xDomain = this.xDomain.value;
+    const yDomain = this.yDomain.value;
+    this.xScale.value = scaleLinear().domain([xDomain.lo, xDomain.hi]).range([0, this.innerWidth]);
+    this.yScale.value = scaleLinear().domain([yDomain.lo, yDomain.hi]).range([this.innerHeight, 0]);
 
     // Attach gesture handlers
     this.attachGestures();
@@ -258,6 +266,12 @@ export class CartesianViewer {
       yLabel.textContent = this.opts.yLabel;
       mainGroup.appendChild(yLabel);
     }
+
+    // Trigger initial render via microtask
+    Promise.resolve().then(() => {
+      this.renderGrid();
+      this.renderAxes();
+    });
   }
 
   /**
