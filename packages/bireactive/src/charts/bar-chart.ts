@@ -37,6 +37,10 @@ const V_PAD = { top: 16, right: 24, bottom: 36, left: 48 };
 const H_PAD = { top: 16, right: 64, bottom: 36, left: 16 };
 const V_BAR_STEP = 56; // px per bar in vertical overflow
 const H_BAND_STEP = 44; // px per band in horizontal overflow
+const LABEL_PAD = 8; // padding from left edge for labels inside horizontal bars
+const VALUE_PAD = 8; // padding from right edge for values inside horizontal bars
+const VALUE_GAP = 4; // gap between label and value when rendered inline
+const OUT_GAP = 8;   // gap when label/value is popped outside the bar
 
 // text-anchor / dominant-baseline strings for each Anchor value.
 const xAnchor = (x: number) => (x <= 0.25 ? "start" : x >= 0.75 ? "end" : "middle");
@@ -126,7 +130,11 @@ export class MdBarChartLC extends Diagram {
     const isVert = derive(() => this._orientationCell.value === 'vertical');
 
     // ─── Padding + plot area (derived from orientation) ───────────────────
-    const PAD = derive(() => isVert.value ? V_PAD : H_PAD);
+    // Left room grows for horizontal charts with labels so popped-out labels
+    // stay visible outside the left edge of the bar.
+    const leftRoom = cell(H_PAD.left);
+    const labelWidths: any[] = [];
+    const PAD = derive(() => isVert.value ? V_PAD : { ...H_PAD, left: leftRoom.value });
     const plotX = derive(() => PAD.value.left);
     const plotY = derive(() => PAD.value.top);
     const plotW = derive(() => Wc.value - PAD.value.left - PAD.value.right);
@@ -576,79 +584,108 @@ export class MdBarChartLC extends Diagram {
       const barCY = derive(() => barY.value + barH.value / 2);
       const minBand = this.minBandSize || 60;
 
+      // Text-width cells updated by measuring the actual rendered text.
+      const labelWidth = cell(0);
+      const valueWidth = cell(0);
+      labelWidths.push(labelWidth);
+      let labelPopped: any = null;
+      let valuePopped: any = null;
+      let inLbl: any = null;
+      let vLbl: any = null;
+      let catLbl: any = null;
+
       // ─── Category label (axis / both mode) — tweened position ───────────
       if (this.labelMode === 'axis' || this.labelMode === 'both') {
         const catPos = Vec.derive(() => {
           if (isVert.value) return { x: barCX.value, y: plotBottom.value + 16 };
           return { x: plotX.value - 6, y: barCY.value };
         });
-        const catLbl = s(label(catPos, derive(() => di()?.label ?? ""),
+        catLbl = s(label(catPos, derive(() => di()?.label ?? ""),
           { size: 10, fill: "#888", opacity: 0.8 }));
         biEffect(() => {
           const a = isVert.value ? Anchor.Center : Anchor.Right;
-          catLbl.el.setAttribute('text-anchor', xAnchor(a.x));
-          catLbl.el.setAttribute('dominant-baseline', yAnchor(a.y));
+          catLbl.intrinsic!.setAttribute('text-anchor', xAnchor(a.x));
+          catLbl.intrinsic!.setAttribute('dominant-baseline', yAnchor(a.y));
         });
       }
 
       // ─── Inside label (inside / both mode) ──────────────────────────────
       if (this.labelMode === 'inside' || this.labelMode === 'both') {
-        const insideOpacity = derive(() => (isVert.value ? barH.value : barW.value) >= minBand ? 1 : 0);
-        const insidePos = Vec.derive(() => {
+        labelPopped = derive(() => {
+          if (isVert.value) return barH.value < minBand;
+          if (this.valueMode !== 'inside') return labelWidth.value + LABEL_PAD > barW.value;
+          const unitWidth = labelWidth.value + VALUE_GAP + valueWidth.value;
+          return unitWidth + VALUE_PAD + LABEL_PAD > barW.value;
+        });
+        const inFill = derive(() => labelPopped.value ? "#888" : labelFill.value);
+        const inOpacity = derive(() => isVert.value ? (labelPopped.value ? 0 : 1) : 1);
+        const inPos = Vec.derive(() => {
           if (isVert.value) return { x: barCX.value, y: barY.value + 14 };
-          return { x: plotX.value + 8, y: barCY.value };
+          if (labelPopped.value) return { x: barX.value + barW.value + OUT_GAP, y: barCY.value };
+          // Place the item label at the left end of the bar with LABEL_PAD.
+          return { x: barX.value + LABEL_PAD, y: barCY.value };
         });
-        const inLbl = s(label(insidePos, derive(() => di()?.label ?? ""),
-          { size: 10, fill: labelFill, opacity: insideOpacity }));
-        biEffect(() => {
-          const a = isVert.value ? Anchor.Center : Anchor.Left;
-          inLbl.el.setAttribute('text-anchor', xAnchor(a.x));
-          inLbl.el.setAttribute('dominant-baseline', yAnchor(a.y));
-        });
+        inLbl = s(label(inPos, derive(() => di()?.label ?? ""),
+          { size: 10, fill: inFill, opacity: inOpacity }));
       }
 
       // ─── Value label ────────────────────────────────────────────────────
       if (this.valueMode !== 'none') {
-        if (this.valueMode === 'inside') {
-          const insideOpacity = derive(() => (isVert.value ? barH.value : barW.value) >= minBand ? 1 : 0);
-          const valPos = Vec.derive(() => {
-            if (isVert.value) return { x: barCX.value, y: barY.value + 14 };
-            return { x: plotX.value + barW.value - 8, y: barCY.value };
+        valuePopped = this.valueMode === 'outside'
+          ? derive(() => true)
+          : derive(() => {
+            if (isVert.value) return barH.value < minBand;
+            if (labelPopped) return labelPopped.value;
+            return valueWidth.value + VALUE_PAD > barW.value;
           });
-          const vLbl = s(label(valPos, derive(() => { const d = di(); return d ? `${Math.round(d.value)}` : ""; }),
-            { size: 11, fill: labelFill, opacity: insideOpacity }));
-          biEffect(() => {
-            const a = isVert.value ? Anchor.Center : Anchor.Right;
-            vLbl.el.setAttribute('text-anchor', xAnchor(a.x));
-            vLbl.el.setAttribute('dominant-baseline', yAnchor(a.y));
-          });
-          // Fallback outside when bar too short.
-          const outsideOpacity = derive(() => (isVert.value ? barH.value : barW.value) < minBand ? 1 : 0);
-          const outPos = Vec.derive(() => {
-            if (isVert.value) return { x: barCX.value, y: barY.value - 6 };
-            return { x: plotX.value + barW.value + 6, y: barCY.value };
-          });
-          const oLbl = s(label(outPos, derive(() => { const d = di(); return d ? `${Math.round(d.value)}` : ""; }),
-            { size: 11, fill: "#aaa", opacity: outsideOpacity }));
-          biEffect(() => {
+        const vFill = derive(() => valuePopped.value
+          ? (this.valueMode === 'outside' ? "#888" : "#aaa")
+          : labelFill.value);
+        const vPos = Vec.derive(() => {
+          if (isVert.value) {
+            const labelVisible = labelPopped && !labelPopped.value;
+            return {
+              x: barCX.value,
+              y: valuePopped.value ? barY.value - OUT_GAP : (barY.value + (labelVisible ? 28 : 14)),
+            };
+          }
+          if (valuePopped.value) {
+            if (labelPopped && labelPopped.value) {
+              return {
+                x: barX.value + barW.value + OUT_GAP + labelWidth.value + VALUE_GAP,
+                y: barCY.value,
+              };
+            }
+            return { x: barX.value + barW.value + OUT_GAP, y: barCY.value };
+          }
+          return { x: barX.value + barW.value - VALUE_PAD, y: barCY.value };
+        });
+        vLbl = s(label(vPos, derive(() => { const d = di(); return d ? `${Math.round(d.value)}` : ""; }),
+          { size: 11, fill: vFill, opacity: 1 }));
+      }
+
+      // ─── Measure real text widths and update text-anchor / alignment ─────
+      if (inLbl || vLbl || catLbl) {
+        biEffect(() => {
+          di(); // track label/value changes
+          if (inLbl) labelWidth.value = (inLbl.intrinsic as SVGTextElement).getComputedTextLength();
+          else if (catLbl) labelWidth.value = (catLbl.intrinsic as SVGTextElement).getComputedTextLength();
+          if (vLbl) valueWidth.value = (vLbl.intrinsic as SVGTextElement).getComputedTextLength();
+        });
+        biEffect(() => {
+          if (inLbl && labelPopped) {
+            // Horizontal inside/popped labels always start at the left edge
+            // of the bar or just to the right of the bar end, so left-align.
             const a = isVert.value ? Anchor.Center : Anchor.Left;
-            oLbl.el.setAttribute('text-anchor', xAnchor(a.x));
-            oLbl.el.setAttribute('dominant-baseline', yAnchor(a.y));
-          });
-        } else {
-          // Outside mode — label beyond bar end.
-          const outPos = Vec.derive(() => {
-            if (isVert.value) return { x: barCX.value, y: barY.value - 6 };
-            return { x: plotX.value + barW.value + 6, y: barCY.value };
-          });
-          const oLbl = s(label(outPos, derive(() => { const d = di(); return d ? `${Math.round(d.value)}` : ""; }),
-            { size: 11, fill: "#888", opacity: derive(() => (isVert.value ? barH.value : barW.value) > 0 ? 1 : 0) }));
-          biEffect(() => {
-            const a = isVert.value ? Anchor.Center : Anchor.Left;
-            oLbl.el.setAttribute('text-anchor', xAnchor(a.x));
-            oLbl.el.setAttribute('dominant-baseline', yAnchor(a.y));
-          });
-        }
+            inLbl.intrinsic.setAttribute('text-anchor', xAnchor(a.x));
+            inLbl.intrinsic.setAttribute('dominant-baseline', yAnchor(a.y));
+          }
+          if (vLbl && valuePopped) {
+            const a = isVert.value ? Anchor.Center : (valuePopped.value ? Anchor.Left : Anchor.Right);
+            vLbl.intrinsic.setAttribute('text-anchor', xAnchor(a.x));
+            vLbl.intrinsic.setAttribute('dominant-baseline', yAnchor(a.y));
+          }
+        });
       }
 
       // ─── Drag handle at bar's value-end ─────────────────────────────────
@@ -666,6 +703,20 @@ export class MdBarChartLC extends Diagram {
       biEffect(() => { handle.el.style.cursor = isVert.value ? "ns-resize" : "ew-resize"; });
       handle.el.addEventListener("pointerenter", () => { const d = di(); if (!wheelController.active && d) hover.value = d; });
       handle.el.addEventListener("pointerleave", () => { const d = di(); if (!wheelController.active && d && hover.value === d) hover.value = null; });
+    }
+
+    // ─── Left-room padding for popped labels ───────────────────────────────
+    // Increase the horizontal left padding so labels that pop out remain
+    // visible instead of being clipped by the left edge of the chart.
+    // For inline inside labels the whole label/value unit pops to the right,
+    // so no extra left padding is needed.
+    // When the label is rendered inside, the label/value unit pops out to the
+    // right, so no extra left padding is needed.
+    if (labelWidths.length && this.labelMode !== 'inside') {
+      biEffect(() => {
+        const maxLabelWidth = Math.max(...labelWidths.map(w => w.value));
+        leftRoom.value = Math.max(H_PAD.left, maxLabelWidth + OUT_GAP);
+      });
     }
 
     // ─── Drag-to-reorder (WIN-262) ────────────────────────────────────────
