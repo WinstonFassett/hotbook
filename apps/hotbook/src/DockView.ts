@@ -986,7 +986,26 @@ export class DockView extends HTMLElement {
 
     lastElements.forEach((el, key) => {
       const first = firstRects.get(key)
-      if (!first) return
+
+      // Handle new elements (no first position) - fade them in
+      if (!first) {
+        el.style.opacity = '0'
+        el.style.transition = 'none'
+        el.classList.add('dv-animating')
+
+        requestAnimationFrame(() => {
+          el.style.transition = `opacity ${duration}ms cubic-bezier(0.25, 0.46, 0.45, 0.94)`
+          el.style.opacity = '1'
+
+          setTimeout(() => {
+            el.style.opacity = ''
+            el.style.transition = ''
+            el.classList.remove('dv-animating')
+          }, duration)
+        })
+        return
+      }
+
       const last = el.getBoundingClientRect()
       const dx = first.left - last.left
       const dy = first.top - last.top
