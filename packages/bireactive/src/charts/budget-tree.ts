@@ -20,6 +20,9 @@ import {
   treeNode,
   Vec,
   type Writable,
+  tween,
+  easeOut,
+  untracked,
 } from "bireactive";
 import { Diagram } from "../lib/diagram";
 import { dragCancelable } from "../lib/esc-contract";
@@ -94,6 +97,7 @@ const BAR_W = W - 2 * PAD_X;
 
 const CAT_FILLS = ["#5b8def", "#7ed321", "#e25c5c"];
 const LEAF_FILLS = ["#a8c5f7", "#d0eea1", "#f3a4a4", "#bdd5f9", "#bce096", "#f2b8b8"];
+const SORT_SEC = 0.35; // Sort transition duration in seconds
 
 export class MdBudgetTree extends Diagram {
   static styles = `
@@ -109,6 +113,10 @@ export class MdBudgetTree extends Diagram {
    *  chart renders those cells directly, so edits round-trip with any other
    *  view bound to the same tree. Falls back to the built-in budget data. */
   externalRoot?: BiNode;
+
+  private _sortByCell = cell<'index' | 'value' | 'label'>('index')
+  get sortBy(): 'index' | 'value' | 'label' { return this._sortByCell.value }
+  set sortBy(v: 'index' | 'value' | 'label') { this._sortByCell.value = v }
 
   protected scene(s: Mount): void {
     const view = this.view(W, H);
@@ -126,19 +134,37 @@ export class MdBudgetTree extends Diagram {
     const leafFills: string[] = [];
 
     const ext = this.externalRoot;
+
+    // Build arrays with indices for sorting
+    type CatItem = { cell: Writable<Num>; label: string; fill: string; origIdx: number };
+    type LeafItem = { cell: Writable<Num>; label: string; fill: string; origIdx: number };
+
+    const catItems: CatItem[] = [];
+    const leafItems: LeafItem[] = [];
+
     if (ext) {
       const cats = ext.children as BiNode[];
       rootTotal = ext.value.total;
       rootLabel = (ext.value.label ?? "TOTAL").toUpperCase();
-      catCells = cats.map((c) => c.value.total);
-      catLabels = cats.map((c) => c.value.label ?? "");
-      catFills = cats.map((c, i) => c.value.color ?? CAT_FILLS[i % CAT_FILLS.length]!);
+
+      cats.forEach((c, i) => {
+        catItems.push({
+          cell: c.value.total,
+          label: c.value.label ?? "",
+          fill: c.value.color ?? CAT_FILLS[i % CAT_FILLS.length]!,
+          origIdx: i,
+        });
+      });
+
       let f = 0;
       for (const c of cats) {
         for (const l of c.children as BiNode[]) {
-          leafCells.push(l.value.total);
-          leafLabels.push(l.value.label ?? "");
-          leafFills.push(l.value.color ?? LEAF_FILLS[f % LEAF_FILLS.length]!);
+          leafItems.push({
+            cell: l.value.total,
+            label: l.value.label ?? "",
+            fill: l.value.color ?? LEAF_FILLS[f % LEAF_FILLS.length]!,
+            origIdx: f,
+          });
           f++;
         }
       }
@@ -147,19 +173,50 @@ export class MdBudgetTree extends Diagram {
       void asTree(budget);
       rootTotal = budget.rootTotal;
       rootLabel = "TOTAL";
-      catCells = budget.categories.map((c) => c.total);
-      catLabels = budget.categories.map((c) => c.label);
-      catFills = CAT_FILLS.slice();
+
+      budget.categories.forEach((c, i) => {
+        catItems.push({
+          cell: c.total,
+          label: c.label,
+          fill: CAT_FILLS[i % CAT_FILLS.length]!,
+          origIdx: i,
+        });
+      });
+
       let f = 0;
       for (const c of budget.categories) {
         for (const l of c.leaves) {
-          leafCells.push(l.cell);
-          leafLabels.push(l.label);
-          leafFills.push(LEAF_FILLS[f % LEAF_FILLS.length]!);
+          leafItems.push({
+            cell: l.cell,
+            label: l.label,
+            fill: LEAF_FILLS[f % LEAF_FILLS.length]!,
+            origIdx: f,
+          });
           f++;
         }
       }
     }
+
+    // Sort based on sortBy mode (at initialization time)
+    const mode = this._sortByCell.value;
+    if (mode === 'value') {
+      catItems.sort((a, b) => b.cell.value - a.cell.value); // Descending by value
+      leafItems.sort((a, b) => b.cell.value - a.cell.value);
+    } else if (mode === 'label') {
+      catItems.sort((a, b) => a.label.localeCompare(b.label)); // Alphabetical
+      leafItems.sort((a, b) => a.label.localeCompare(b.label));
+    }
+    // 'index' = original order (no sort needed)
+
+    catCells = catItems.map(c => c.cell);
+    catLabels = catItems.map(c => c.label);
+    catFills = catItems.map(c => c.fill);
+
+    leafItems.forEach(l => {
+      leafCells.push(l.cell);
+      leafLabels.push(l.label);
+      leafFills.push(l.fill);
+    });
 
     s(
       label(
