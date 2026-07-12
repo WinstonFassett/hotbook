@@ -113,6 +113,7 @@ export class MdSunburstLC extends Diagram {
     // the divider handle would get destroyed by the forEach diff (WIN-257).
     const gestureActiveCell = cell(false);
     let frozenSortKey: Map<BiNode, number> | null = null;
+    let frozenLayout: Map<BiNode, HierarchyRectangularNode<BiNode>> | null = null;
 
     // Natural partition layout — no pre-scaling. Viewport does all fitting.
     const layout = derive(() => {
@@ -123,6 +124,14 @@ export class MdSunburstLC extends Diagram {
       // array mutations on their own).
       void this._reorderTickCell.value;
       const active = gestureActiveCell.value;
+
+      // WIN-257: During active gesture, freeze both sort AND geometry.
+      // Return the frozen layout to prevent slices from resizing/repositioning
+      // as values change during the drag.
+      if (active && frozenLayout) {
+        return frozenLayout;
+      }
+
       const h = buildHierarchy(root, this._sortByCell.value);
       // WIN-257: During active gesture, override sort with frozen positions
       if (active && frozenSortKey) {
@@ -753,9 +762,10 @@ export class MdSunburstLC extends Diagram {
           onStart: () => {
             active.value = true;
             handle.el.style.cursor = "grabbing";
-            // Freeze sibling order for the gesture (WIN-257 / Rule 7). Snapshot
-            // AFTER cell writes so `layout` reflects any pending value setup.
+            // WIN-257 / Rule 7: Freeze both sort order AND layout geometry.
+            // Snapshot AFTER cell writes so `layout` reflects any pending value setup.
             frozenSortKey = snapshotSortKey();
+            frozenLayout = new Map(layout.value);
             gestureActiveCell.value = true;
           },
           onEnd: () => {
@@ -763,6 +773,7 @@ export class MdSunburstLC extends Diagram {
             handle.el.style.cursor = "grab";
             gestureActiveCell.value = false;
             frozenSortKey = null;
+            frozenLayout = null;
           },
         });
         handle.track(dispose);

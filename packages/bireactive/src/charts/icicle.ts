@@ -182,6 +182,7 @@ export class MdIcicleLC extends Diagram {
     // the divider handle would get destroyed by the forEach diff (WIN-257).
     const gestureActiveCell = cell(false);
     let frozenSortKey: Map<BiNode, number> | null = null;
+    let frozenLayout: Map<BiNode, HierarchyRectangularNode<BiNode>> | null = null;
 
     // Partition layout — orientation-aware. The depth axis is scaled so one
     // extra row sits above the viewport, then coords are shifted so depth-1
@@ -193,6 +194,14 @@ export class MdIcicleLC extends Diagram {
       const rawMaxD = this._maxDepthCell.value;
       const maxD = rawMaxD !== undefined && rawMaxD > 0 ? rawMaxD : undefined;
       const active = gestureActiveCell.value;
+
+      // WIN-257: During active gesture, freeze both sort AND geometry.
+      // Return the frozen layout to prevent tiles from resizing/repositioning
+      // as values change during the drag.
+      if (active && frozenLayout) {
+        return frozenLayout;
+      }
+
       const h = buildHierarchy(rootCell.value, this._sortByCell.value);
       // WIN-257: During active gesture, override sort with frozen positions
       if (active && frozenSortKey) {
@@ -845,9 +854,10 @@ export class MdIcicleLC extends Diagram {
           onStart: () => {
             active.value = true;
             handle.el.style.cursor = "grabbing";
-            // Freeze sibling order for the gesture (WIN-257 / Rule 7). Snapshot
-            // AFTER cell writes so `layout` reflects any pending value setup.
+            // WIN-257 / Rule 7: Freeze both sort order AND layout geometry.
+            // Snapshot AFTER cell writes so `layout` reflects any pending value setup.
             frozenSortKey = snapshotSortKey();
+            frozenLayout = new Map(layout.value);
             gestureActiveCell.value = true;
           },
           onEnd: () => {
@@ -855,6 +865,7 @@ export class MdIcicleLC extends Diagram {
             handle.el.style.cursor = "grab";
             gestureActiveCell.value = false;
             frozenSortKey = null;
+            frozenLayout = null;
           },
         });
         handle.track(dispose);

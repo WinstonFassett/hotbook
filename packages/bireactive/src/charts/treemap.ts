@@ -95,9 +95,18 @@ export class MdTreemapLC extends Diagram {
     // gesture-active class rather than managing a cell directly.
     const gestureActiveCell = cell(false);
     let frozenSortKey: Map<BiNode, number> | null = null;
+    let frozenLayout: Map<BiNode, HierarchyRectangularNode<BiNode>> | null = null;
 
     const layout = derive(() => {
       const active = gestureActiveCell.value;
+
+      // WIN-257: During active gesture, freeze both sort AND geometry.
+      // Return the frozen layout to prevent tiles from resizing/repositioning
+      // as values change during the drag.
+      if (active && frozenLayout) {
+        return frozenLayout;
+      }
+
       const h = buildHierarchy(root, this._sortByCell.value);
       // WIN-257: During active gesture, override sort with frozen positions
       if (active && frozenSortKey) {
@@ -128,11 +137,14 @@ export class MdTreemapLC extends Diagram {
     const observer = new MutationObserver(() => {
       const isActive = this.classList.contains(GESTURE_ACTIVE_CLASS);
       if (isActive && !gestureActiveCell.value) {
+        // WIN-257 / Rule 7: Freeze both sort order AND layout geometry
         frozenSortKey = snapshotSortKey();
+        frozenLayout = new Map(untracked(() => layout.value));
         gestureActiveCell.value = true;
       } else if (!isActive && gestureActiveCell.value) {
         gestureActiveCell.value = false;
         frozenSortKey = null;
+        frozenLayout = null;
       }
     });
     observer.observe(this, { attributes: true, attributeFilter: ['class'] });
