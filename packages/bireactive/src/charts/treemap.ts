@@ -16,7 +16,7 @@ import {
 } from "bireactive";
 import { Diagram } from "../lib/diagram";
 import type { ElementWithBridge } from "../lib/hud-bridge";
-import { treemap, treemapSquarify, type HierarchyRectangularNode } from "d3-hierarchy";
+import { hierarchy, treemap, treemapSquarify, type HierarchyRectangularNode } from "d3-hierarchy";
 import { depthFill, labelInk } from "../lib/depth-color";
 import { buildHierarchy } from "../lib/interaction";
 import { buildParentIndex, type BiNode, portfolio, walkWithDepth } from "../lib/tree";
@@ -87,8 +87,25 @@ export class MdTreemapLC extends Diagram {
     const hoverCell = cell<BiNode | null>(null);
     state.hoverCell = hoverCell;
 
+    // Rule 7 (interaction-principles): while a wheel/keyboard gesture is active,
+    // sibling order is frozen. sortBy='value' would otherwise re-rank siblings
+    // mid-gesture as values shift (WIN-257). For treemap, gestures are managed by
+    // attachChartGestures (wheel with snapshot/restore), so we watch the host's
+    // gesture-active class rather than managing a cell directly.
+    const gestureActiveCell = cell(false);
+    let frozenSortKey: Map<BiNode, number> | null = null;
+
     const layout = derive(() => {
-      const h = buildHierarchy(root, this._sortByCell.value);
+      const active = gestureActiveCell.value;
+      const sortBy = this._sortByCell.value;
+      const h = hierarchy<BiNode>(root, (n) => n.children as BiNode[])
+        .sum((n) => (n.children.length > 0 ? 0 : n.value.total.value));
+      if (active && frozenSortKey) {
+        const snap = frozenSortKey;
+        h.sort((a, b) => (snap.get(a.data) ?? 0) - (snap.get(b.data) ?? 0));
+      } else if (sortBy === 'value') {
+        h.sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
+      }
       treemap<BiNode>()
         .tile(treemapSquarify)
         .size([Wc.value, Hc.value])
@@ -100,6 +117,28 @@ export class MdTreemapLC extends Diagram {
       h.each((d) => map.set(d.data, d as HierarchyRectangularNode<BiNode>));
       return map;
     });
+
+    const snapshotSortKey = (): Map<BiNode, number> => {
+      const snap = new Map<BiNode, number>();
+      const lmap = untracked(() => layout.value);
+      // For treemap, use x0 as the primary sort coordinate
+      for (const [node, ln] of lmap) snap.set(node, ln.x0);
+      return snap;
+    };
+
+    // Watch for gesture-active class changes to freeze sort during wheel gestures
+    const observer = new MutationObserver(() => {
+      const isActive = this.classList.contains(GESTURE_ACTIVE_CLASS);
+      if (isActive && !gestureActiveCell.value) {
+        frozenSortKey = snapshotSortKey();
+        gestureActiveCell.value = true;
+      } else if (!isActive && gestureActiveCell.value) {
+        gestureActiveCell.value = false;
+        frozenSortKey = null;
+      }
+    });
+    observer.observe(this, { attributes: true, attributeFilter: ['class'] });
+    this._trackScene(() => observer.disconnect());
 
     // Pre-build static maps (tree structure is immutable).
     const nodeById = new Map<string, BiNode>();

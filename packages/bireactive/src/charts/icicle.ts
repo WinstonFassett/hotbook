@@ -16,7 +16,7 @@ import {
 } from "bireactive";
 import { lineHandle } from "../lib/handles";
 import { Diagram } from "../lib/diagram";
-import { partition, type HierarchyRectangularNode } from "d3-hierarchy";
+import { hierarchy, partition, type HierarchyRectangularNode } from "d3-hierarchy";
 import { depthFill, labelInk } from "../lib/depth-color";
 import { buildHierarchy } from "../lib/interaction";
 import { buildParentIndex, type BiNode, portfolio, walkWithDepth } from "../lib/tree";
@@ -145,6 +145,13 @@ export class MdIcicleLC extends Diagram {
     const hoverCell = cell<BiNode | null>(null);
     state.hoverCell = hoverCell;
 
+    // Rule 7 (interaction-principles): while a resize gesture is active, sibling
+    // order is frozen. sortBy='value' would otherwise re-rank siblings mid-drag
+    // as values shift, moving the sibling under the pointer to a new position —
+    // the divider handle would get destroyed by the forEach diff (WIN-257).
+    const gestureActiveCell = cell(false);
+    let frozenSortKey: Map<BiNode, number> | null = null;
+
     // Partition layout — orientation-aware. The depth axis is scaled so one
     // extra row sits above the viewport, then coords are shifted so depth-1
     // tiles start at 0. For horizontal, partition's x (sibling) → canvas y and
@@ -152,7 +159,16 @@ export class MdIcicleLC extends Diagram {
     const layout = derive(() => {
       const rawMaxD = this._maxDepthCell.value;
       const maxD = rawMaxD !== undefined && rawMaxD > 0 ? rawMaxD : undefined;
-      const h = buildHierarchy(rootCell.value, this._sortByCell.value);
+      const active = gestureActiveCell.value;
+      const sortBy = this._sortByCell.value;
+      const h = hierarchy<BiNode>(rootCell.value, (n) => n.children as BiNode[])
+        .sum((n) => (n.children.length > 0 ? 0 : n.value.total.value));
+      if (active && frozenSortKey) {
+        const snap = frozenSortKey;
+        h.sort((a, b) => (snap.get(a.data) ?? 0) - (snap.get(b.data) ?? 0));
+      } else if (sortBy === 'value') {
+        h.sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
+      }
       const td = h.height; // levels below root
       const visibleDepth = maxD !== undefined ? Math.min(maxD, td) : td;
       const sibAxis = isHoriz.value ? Hc.value : Wc.value;
@@ -181,6 +197,15 @@ export class MdIcicleLC extends Diagram {
       });
       return map;
     });
+
+    const snapshotSortKey = (): Map<BiNode, number> => {
+      const snap = new Map<BiNode, number>();
+      const lmap = untracked(() => layout.value);
+      const h = untracked(() => isHoriz.value);
+      // Sibling axis: x for vertical, y for horizontal
+      for (const [node, ln] of lmap) snap.set(node, h ? ln.y0 : ln.x0);
+      return snap;
+    };
 
     // Viewport cells: map layout-space → canvas. vx = depth axis, vy = sibling
     // axis. For horizontal, depth axis = canvas x, sibling axis = canvas y;
@@ -598,8 +623,20 @@ export class MdIcicleLC extends Diagram {
         });
         const dispose = dragCancelable(handle, knob, [a, b], {
           host: this,
-          onStart: () => { active.value = true; handle.el.style.cursor = "grabbing"; },
-          onEnd: () => { active.value = false; handle.el.style.cursor = "grab"; },
+          onStart: () => {
+            active.value = true;
+            handle.el.style.cursor = "grabbing";
+            // Freeze sibling order for the gesture (WIN-257 / Rule 7). Snapshot
+            // AFTER cell writes so `layout` reflects any pending value setup.
+            frozenSortKey = snapshotSortKey();
+            gestureActiveCell.value = true;
+          },
+          onEnd: () => {
+            active.value = false;
+            handle.el.style.cursor = "grab";
+            gestureActiveCell.value = false;
+            frozenSortKey = null;
+          },
         });
         handle.track(dispose);
         biEffect(() => { handle.el.style.cursor = isHoriz.value ? "ns-resize" : "ew-resize"; });
