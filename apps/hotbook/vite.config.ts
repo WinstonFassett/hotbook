@@ -41,5 +41,11 @@ export default defineConfig({
     terserOptions: {
       keep_classnames: true,
     },
+    rollupOptions: {
+      input: {
+        index: path.resolve(__dirname, 'index.html'),
+        shell: path.resolve(__dirname, 'shell.html'),
+      },
+    },
   },
 })

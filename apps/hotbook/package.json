@@ -13,6 +13,7 @@
     "@hotbook/core": "*",
     "@hotbook/d3": "*",
     "bireactive": "^0.3.4",
+    "dockview-core": "^7.0.2",
     "react": "^18.0.0",
     "react-dom": "^18.0.0"
   },

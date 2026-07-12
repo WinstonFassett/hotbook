@@ -1,0 +1,49 @@
+html, body, #app {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: #0d0d0d;
+  color: #ddd;
+  font: 13px/1.4 -apple-system, system-ui, sans-serif;
+}
+
+.shell-root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.shell-topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: #171717;
+  border-bottom: 1px solid #262626;
+}
+
+.shell-title {
+  font-weight: 600;
+  color: #ccc;
+  margin-right: auto;
+}
+
+.shell-btn {
+  background: #222;
+  color: #ddd;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.shell-btn:hover {
+  background: #2a2a2a;
+}
+
+.shell-host {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
