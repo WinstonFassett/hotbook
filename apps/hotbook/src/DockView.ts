@@ -32,6 +32,7 @@ import type { TileController, TileSource } from './viz/br/bindTile'
 import { hudStore } from './store'
 import { buildTileSource, buildSimpleMount, simpleTag, simpleDataKey } from './tile-sources'
 import type { TileRenderContext } from './tile-sources'
+import Flipping from 'flipping'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -98,6 +99,14 @@ export class DockView extends HTMLElement {
    *  Separate from each group's activeId (tab selection) so clicking a group body
    *  doesn't alter the visible tab of any other group. */
   private _focusedGroupId: string | null = null
+  /** FLIP animation mode: 'manual', 'library', 'css', or 'none' */
+  private _flipMode: 'manual' | 'library' | 'css' | 'none' = 'manual'
+  /** Flipping library instance for Option B */
+  private _flipping: Flipping | null = null
+  /** Debug panel element */
+  private _debugPanel: HTMLElement | null = null
+  /** Whether animations are enabled (respects prefers-reduced-motion) */
+  private _animationsEnabled = !window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
   // Set these before appending to DOM
   externalDock: DockNode | null = null
@@ -155,6 +164,15 @@ export class DockView extends HTMLElement {
     this.setAttribute('tabindex', '-1')
     this.addEventListener('keydown', this._onKeyDown)
 
+    // Initialize Flipping library for Option B
+    this._flipping = new Flipping({
+      duration: 400,
+      easing: 'cubic-bezier(0.25, 0.46, 0.45, 0.94)'
+    })
+
+    // Create debug panel for FLIP mode switching
+    this._createDebugPanel()
+
     this._disposeAll = () => {
       stopEffect()
       for (const ctrl of this._panelCtrls.values()) ctrl.dispose()
@@ -168,6 +186,7 @@ export class DockView extends HTMLElement {
     this._ro?.disconnect()
     this._dragCleanup?.()
     this.removeEventListener('keydown', this._onKeyDown)
+    this._debugPanel?.remove()
   }
 
   /** Push a new dock tree value from outside (called by main.ts on persistence load). */
@@ -210,6 +229,11 @@ export class DockView extends HTMLElement {
   focusGroup(groupId: string | null) {
     this._focusedGroupId = groupId
     this.dispatchEvent(new CustomEvent('focuschange', { detail: { groupId } }))
+    // Update focus indicator classes on all groups
+    this.querySelectorAll('.dv-group').forEach((el: Element) => {
+      const htmlEl = el as HTMLElement
+      htmlEl.classList.toggle('dv-group--focused', htmlEl.dataset.groupId === groupId)
+    })
     // Steer focus to the dock surface unless the user is already in a control
     // so that arrow-key focus/move works immediately after clicking a pane.
     const ae = document.activeElement as HTMLElement | null
@@ -232,7 +256,7 @@ export class DockView extends HTMLElement {
     const dock = this._dockCell?.value ?? null
     const group = this.getFocusedGroup()
     if (!group || !dock) return
-    this._mutateDock(moveGroup(dock, group.id, dir))
+    this._mutateDockWithFLIP(moveGroup(dock, group.id, dir))
   }
 
   /** Split the focused group in a direction. */
@@ -240,7 +264,16 @@ export class DockView extends HTMLElement {
     const dock = this._dockCell?.value ?? null
     const group = this.getFocusedGroup()
     if (!group || !dock) return
-    this._mutateDock(splitGroup(dock, group.id, dir))
+    const next = splitGroup(dock, group.id, dir)
+    this._mutateDockWithFLIP(next)
+
+    // Auto-focus the new empty group that was created
+    const groups = allGroups(next)
+    const newGroup = groups.find(g => g.panels.length === 0)
+    if (newGroup) {
+      // Use setTimeout to ensure the new group is rendered before focusing
+      setTimeout(() => this.focusGroup(newGroup.id), 0)
+    }
   }
 
   /** Can the focused group move in the given direction? */
@@ -344,6 +377,9 @@ export class DockView extends HTMLElement {
   }
 
   private _patchGroup(el: HTMLElement, group: DockGroup, tiles: TileRecord[], tilesChanged: boolean) {
+    // Update focus indicator
+    el.classList.toggle('dv-group--focused', group.id === this._focusedGroupId)
+
     // Reconcile tab strip: rebuild if the panel list (count, ids, or order) changed.
     const strip = el.querySelector<HTMLElement>('.dv-tabstrip')
     if (strip) {
@@ -478,6 +514,10 @@ export class DockView extends HTMLElement {
     el.className = 'dv-group'
     el.dataset.groupId = group.id
     el.style.cssText = 'display:flex;flex-direction:column;width:100%;height:100%;overflow:hidden'
+    // Set focus indicator class if this group is focused
+    if (group.id === this._focusedGroupId) {
+      el.classList.add('dv-group--focused')
+    }
 
     // Clicking anywhere inside a group (body, tab strip, chart) makes it the
     // keyboard-focused group so shortcuts (Ctrl+\, Ctrl+W, etc.) target it.
@@ -908,6 +948,182 @@ export class DockView extends HTMLElement {
     }
   }
 
+  // ─── FLIP Animations ──────────────────────────────────────────────────────
+
+  /**
+   * Option A: Manual FLIP animation (no dependencies).
+   * Measures before/after positions and animates via transform.
+   */
+  private _applyFLIPManual(callback: () => void) {
+    if (!this._animationsEnabled || this._flipMode === 'none') {
+      callback()
+      return
+    }
+
+    const groups = Array.from(this.querySelectorAll('.dv-group, .dv-cell'))
+    const rects = new Map<Element, DOMRect>()
+
+    // First: measure current positions
+    groups.forEach(el => rects.set(el, el.getBoundingClientRect()))
+
+    // Last: apply layout change (flexbox recalculates)
+    callback()
+
+    // Invert & Play: animate from old to new positions
+    requestAnimationFrame(() => {
+      groups.forEach(el => {
+        const first = rects.get(el)
+        if (!first) return
+
+        const last = el.getBoundingClientRect()
+        const dx = first.left - last.left
+        const dy = first.top - last.top
+        const dw = first.width / last.width
+        const dh = first.height / last.height
+
+        // Skip if element didn't move
+        if (dx === 0 && dy === 0 && dw === 1 && dh === 1) return
+
+        const htmlEl = el as HTMLElement
+        // Invert
+        htmlEl.style.transform = `translate(${dx}px, ${dy}px) scale(${dw}, ${dh})`
+        htmlEl.style.transition = 'none'
+        htmlEl.classList.add('dv-animating')
+
+        // Play (next frame)
+        requestAnimationFrame(() => {
+          htmlEl.style.transition = 'transform 400ms cubic-bezier(0.25, 0.46, 0.45, 0.94)'
+          htmlEl.style.transform = 'translate(0, 0) scale(1, 1)'
+
+          // Clean up after animation
+          setTimeout(() => {
+            htmlEl.style.transform = ''
+            htmlEl.style.transition = ''
+            htmlEl.classList.remove('dv-animating')
+          }, 400)
+        })
+      })
+    })
+  }
+
+  /**
+   * Option B: Flipping library animation.
+   * Uses the flipping library for FLIP animations.
+   */
+  private _applyFLIPLibrary(callback: () => void) {
+    if (!this._animationsEnabled || this._flipMode === 'none' || !this._flipping) {
+      callback()
+      return
+    }
+
+    // Mark elements with flip keys
+    this.querySelectorAll('.dv-group').forEach((el: Element) => {
+      const htmlEl = el as HTMLElement
+      htmlEl.dataset.flipKey = htmlEl.dataset.groupId || Math.random().toString(36)
+    })
+    this.querySelectorAll('.dv-cell').forEach((el: Element, i) => {
+      const htmlEl = el as HTMLElement
+      htmlEl.dataset.flipKey = `cell-${i}`
+    })
+
+    // Read positions before change
+    this._flipping!.read()
+
+    // Apply change
+    callback()
+
+    // Animate
+    this._flipping!.flip()
+  }
+
+  /**
+   * Option C: CSS-only animation with linear() spring curve.
+   * Applies CSS transition with GPU-accelerated spring easing.
+   */
+  private _applyFLIPCSS(callback: () => void) {
+    if (!this._animationsEnabled || this._flipMode === 'none') {
+      callback()
+      return
+    }
+
+    const groups = Array.from(this.querySelectorAll('.dv-group, .dv-cell'))
+    const rects = new Map<Element, DOMRect>()
+
+    // First: measure current positions
+    groups.forEach(el => rects.set(el, el.getBoundingClientRect()))
+
+    // Apply CSS transitions with spring curve
+    groups.forEach(el => {
+      const htmlEl = el as HTMLElement
+      htmlEl.style.transition = `transform 600ms linear(
+        0, 0.009, 0.035 2.1%, 0.141 4.4%, 0.723 12.9%,
+        0.938 16.7%, 1.017, 1.077, 1.121, 1.149 24.3%,
+        1.159, 1.163, 1.161, 1.154 29.9%, 1.129 32.8%,
+        1.051 39.6%, 1.017 43.1%, 0.991, 0.977 51%,
+        0.974 53.8%, 0.975 57.1%, 0.997 69.8%, 1.003 76.9%, 1
+      )`
+      htmlEl.classList.add('dv-animating')
+    })
+
+    // Last: apply layout change (flexbox recalculates)
+    callback()
+
+    // Invert: apply inverse transform so elements appear in their old positions
+    requestAnimationFrame(() => {
+      groups.forEach(el => {
+        const first = rects.get(el)
+        if (!first) return
+
+        const last = el.getBoundingClientRect()
+        const dx = first.left - last.left
+        const dy = first.top - last.top
+        const dw = first.width / last.width
+        const dh = first.height / last.height
+
+        // Skip if element didn't move
+        if (dx === 0 && dy === 0 && dw === 1 && dh === 1) return
+
+        const htmlEl = el as HTMLElement
+        htmlEl.style.transform = `translate(${dx}px, ${dy}px) scale(${dw}, ${dh})`
+
+        // Play: transition to identity transform (next frame)
+        requestAnimationFrame(() => {
+          htmlEl.style.transform = 'translate(0, 0) scale(1, 1)'
+
+          // Clean up after animation
+          setTimeout(() => {
+            htmlEl.style.transform = ''
+            htmlEl.style.transition = ''
+            htmlEl.classList.remove('dv-animating')
+          }, 600)
+        })
+      })
+    })
+  }
+
+  /**
+   * Wrapper for _mutateDock that applies FLIP animations based on current mode.
+   */
+  private _mutateDockWithFLIP(next: DockNode | null) {
+    const callback = () => this._mutateDock(next)
+
+    switch (this._flipMode) {
+      case 'manual':
+        this._applyFLIPManual(callback)
+        break
+      case 'library':
+        this._applyFLIPLibrary(callback)
+        break
+      case 'css':
+        this._applyFLIPCSS(callback)
+        break
+      case 'none':
+      default:
+        callback()
+        break
+    }
+  }
+
   // ─── Dock mutations ───────────────────────────────────────────────────────
 
   private _mutateDock(next: DockNode | null) {
@@ -1260,6 +1476,142 @@ export class DockView extends HTMLElement {
 
   private _renderDropOverlay(root: HTMLElement, target: DropTarget) {
     // Indicators are rendered inline in the group bodies; no separate root overlay needed.
+  }
+
+  // ─── Debug Panel (FLIP animation mode switcher) ───────────────────────────
+
+  private _createDebugPanel() {
+    const panel = document.createElement('div')
+    panel.className = 'sb-debug-panel'
+
+    // Header with drag handle and close button
+    const header = document.createElement('div')
+    header.className = 'sb-debug-panel-header'
+
+    const title = document.createElement('div')
+    title.className = 'sb-debug-panel-title'
+    title.textContent = 'FLIP Animations'
+    header.appendChild(title)
+
+    const closeBtn = document.createElement('button')
+    closeBtn.className = 'sb-debug-panel-close'
+    closeBtn.textContent = '×'
+    closeBtn.title = 'Hide panel'
+    closeBtn.addEventListener('click', () => {
+      panel.style.display = 'none'
+    })
+    header.appendChild(closeBtn)
+
+    // Make header draggable
+    let dragOffset = { x: 0, y: 0 }
+    let isDragging = false
+
+    header.addEventListener('pointerdown', (e) => {
+      if (e.target === closeBtn) return
+      isDragging = true
+      panel.classList.add('sb-debug-panel--dragging')
+      const rect = panel.getBoundingClientRect()
+      dragOffset = {
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top
+      }
+      e.preventDefault()
+    })
+
+    window.addEventListener('pointermove', (e) => {
+      if (!isDragging) return
+      const x = e.clientX - dragOffset.x
+      const y = e.clientY - dragOffset.y
+      panel.style.left = `${x}px`
+      panel.style.top = `${y}px`
+      panel.style.right = 'auto'
+      panel.style.bottom = 'auto'
+    })
+
+    window.addEventListener('pointerup', () => {
+      isDragging = false
+      panel.classList.remove('sb-debug-panel--dragging')
+    })
+
+    panel.appendChild(header)
+
+    // Animation mode selector
+    const modeSection = document.createElement('div')
+    modeSection.className = 'sb-debug-panel-section'
+
+    const modeLabel = document.createElement('label')
+    modeLabel.className = 'sb-debug-panel-label'
+    modeLabel.textContent = 'Animation Mode:'
+    modeSection.appendChild(modeLabel)
+
+    const radioGroup = document.createElement('div')
+    radioGroup.className = 'sb-debug-panel-radio-group'
+
+    const modes: Array<{ value: 'manual' | 'library' | 'css' | 'none'; label: string; desc: string }> = [
+      { value: 'manual', label: 'Manual FLIP', desc: 'No dependencies, full control' },
+      { value: 'library', label: 'Flipping Library', desc: 'Battle-tested, 2KB' },
+      { value: 'css', label: 'CSS Spring', desc: 'Pure CSS, GPU-accelerated' },
+      { value: 'none', label: 'None', desc: 'No animations' }
+    ]
+
+    modes.forEach(mode => {
+      const radioWrap = document.createElement('label')
+      radioWrap.className = 'sb-debug-panel-radio'
+
+      const radio = document.createElement('input')
+      radio.type = 'radio'
+      radio.name = 'flip-mode'
+      radio.value = mode.value
+      radio.checked = this._flipMode === mode.value
+      radio.addEventListener('change', () => {
+        this._flipMode = mode.value
+      })
+      radioWrap.appendChild(radio)
+
+      const labelContainer = document.createElement('div')
+      const labelText = document.createElement('div')
+      labelText.className = 'sb-debug-panel-radio-label'
+      labelText.textContent = mode.label
+      labelContainer.appendChild(labelText)
+
+      const descText = document.createElement('div')
+      descText.className = 'sb-debug-panel-radio-desc'
+      descText.textContent = mode.desc
+      labelContainer.appendChild(descText)
+
+      radioWrap.appendChild(labelContainer)
+      radioGroup.appendChild(radioWrap)
+    })
+
+    modeSection.appendChild(radioGroup)
+    panel.appendChild(modeSection)
+
+    // Animations enabled checkbox
+    const enableSection = document.createElement('div')
+    enableSection.className = 'sb-debug-panel-section'
+
+    const checkboxWrap = document.createElement('label')
+    checkboxWrap.className = 'sb-debug-panel-checkbox'
+
+    const checkbox = document.createElement('input')
+    checkbox.type = 'checkbox'
+    checkbox.checked = this._animationsEnabled
+    checkbox.addEventListener('change', () => {
+      this._animationsEnabled = checkbox.checked
+    })
+    checkboxWrap.appendChild(checkbox)
+
+    const checkboxLabel = document.createElement('span')
+    checkboxLabel.className = 'sb-debug-panel-checkbox-label'
+    checkboxLabel.textContent = 'Animations enabled'
+    checkboxWrap.appendChild(checkboxLabel)
+
+    enableSection.appendChild(checkboxWrap)
+    panel.appendChild(enableSection)
+
+    // Add to DOM
+    document.body.appendChild(panel)
+    this._debugPanel = panel
   }
 }
 
