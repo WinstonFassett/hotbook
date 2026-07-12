@@ -44,6 +44,12 @@ graph LR
 | [`@hotbook/layout`](packages/layout) | Bireactive 2D graph layout primitives (state machines, flow diagrams, etc.). |
 | [`@hotbook/apitable`](packages/apitable) | APITable widget adapter. Currently stale and not actively maintained. |
 
+### Dependency contract
+
+`bireactive` is a required peer dependency of `@hotbook/bireactive` (`^0.3.4`).
+Consuming apps must install `bireactive` themselves; `@hotbook/bireactive` does not bundle it.
+This prevents duplicate custom element registrations and broken reactive cell identity.
+
 ## Monorepo layout
 
 ```
