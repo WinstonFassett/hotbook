@@ -47,11 +47,11 @@ import {
   hoverTransition,
 } from "../lib/transitions";
 import { lightenHex } from "../lib/color-utils";
+import { PALETTE } from "@hotbook/core";
 
 const W = 720;
 const H = 360;
 const DAY_MS = 86400 * 1000;
-const PALETTE = ['#e08888', '#d4a86c', '#ccc060', '#7ec87e', '#60c4c0', '#7aaae8', '#b090e0', '#8899b4'];
 
 // Fixed row sizing for idiomatic Gantt layout
 const ROW_H = 32;      // Row height
