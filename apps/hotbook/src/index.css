@@ -319,6 +319,7 @@ sb-dock-view {
   gap: 4px;
   padding: 0 8px 0 10px;
   border-right: 1px solid #1a1a1a;
+  border-top: 2px solid transparent;
   cursor: pointer;
   min-width: 80px;
   max-width: 160px;
@@ -329,7 +330,8 @@ sb-dock-view {
   white-space: nowrap;
 }
 .dv-tab:hover { color: #888; background: #141414; }
-.dv-tab--active { color: #ccc; background: #111; border-bottom: 1px solid #111; }
+.dv-tab--active { color: #ccc; background: #1a1a1a; border-top: 2px solid #444; border-bottom: 1px solid transparent; }
+.dv-group--focused .dv-tab--active { color: #fff; border-top: 2px solid #58a6ff; }
 .dv-tab-label {
   flex: 1;
   overflow: hidden;

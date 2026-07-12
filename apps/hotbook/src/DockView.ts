@@ -268,6 +268,9 @@ export class DockView extends HTMLElement {
   }
 
   private _patchGroup(el: HTMLElement, group: DockGroup, tiles: TileRecord[], tilesChanged: boolean) {
+    // Update focused state
+    el.classList.toggle('dv-group--focused', group.id === this._focusedGroupId)
+
     // Reconcile tab strip: rebuild if the panel list (count, ids, or order) changed.
     const strip = el.querySelector<HTMLElement>('.dv-tabstrip')
     if (strip) {
@@ -402,6 +405,7 @@ export class DockView extends HTMLElement {
     el.className = 'dv-group'
     el.dataset.groupId = group.id
     el.style.cssText = 'display:flex;flex-direction:column;width:100%;height:100%;overflow:hidden'
+    if (group.id === this._focusedGroupId) el.classList.add('dv-group--focused')
 
     // Clicking anywhere inside a group (body, tab strip, chart) makes it the
     // keyboard-focused group so shortcuts (Ctrl+\, Ctrl+W, etc.) target it.
