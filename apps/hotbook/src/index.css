@@ -356,7 +356,8 @@ sb-dock-view {
 
 /* Focus indicator (VS Code style) */
 .dv-group--focused {
-  box-shadow: inset 0 0 0 2px #007acc;
+  outline: 2px solid #007acc;
+  outline-offset: -2px;
 }
 
 /* FLIP animations — applied dynamically by JS */

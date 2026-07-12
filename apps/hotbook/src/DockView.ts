@@ -966,41 +966,44 @@ export class DockView extends HTMLElement {
     // First: measure current positions
     groups.forEach(el => rects.set(el, el.getBoundingClientRect()))
 
-    // Last: apply layout change (flexbox recalculates)
+    // Last: apply layout change (triggers async bireactive render)
     callback()
 
-    // Invert & Play: animate from old to new positions
+    // Wait for DOM to update (double rAF ensures layout has been recalculated)
     requestAnimationFrame(() => {
-      groups.forEach(el => {
-        const first = rects.get(el)
-        if (!first) return
+      requestAnimationFrame(() => {
+        // Measure new positions after render
+        groups.forEach(el => {
+          const first = rects.get(el)
+          if (!first) return
 
-        const last = el.getBoundingClientRect()
-        const dx = first.left - last.left
-        const dy = first.top - last.top
-        const dw = first.width / last.width
-        const dh = first.height / last.height
+          const last = el.getBoundingClientRect()
+          const dx = first.left - last.left
+          const dy = first.top - last.top
+          const dw = first.width / last.width
+          const dh = first.height / last.height
 
-        // Skip if element didn't move
-        if (dx === 0 && dy === 0 && dw === 1 && dh === 1) return
+          // Skip if element didn't move
+          if (dx === 0 && dy === 0 && dw === 1 && dh === 1) return
 
-        const htmlEl = el as HTMLElement
-        // Invert
-        htmlEl.style.transform = `translate(${dx}px, ${dy}px) scale(${dw}, ${dh})`
-        htmlEl.style.transition = 'none'
-        htmlEl.classList.add('dv-animating')
+          const htmlEl = el as HTMLElement
+          // Invert - apply inverse transform to appear at old position
+          htmlEl.style.transform = `translate(${dx}px, ${dy}px) scale(${dw}, ${dh})`
+          htmlEl.style.transition = 'none'
+          htmlEl.classList.add('dv-animating')
 
-        // Play (next frame)
-        requestAnimationFrame(() => {
-          htmlEl.style.transition = 'transform 400ms cubic-bezier(0.25, 0.46, 0.45, 0.94)'
-          htmlEl.style.transform = 'translate(0, 0) scale(1, 1)'
+          // Play - transition to identity transform (next frame)
+          requestAnimationFrame(() => {
+            htmlEl.style.transition = 'transform 400ms cubic-bezier(0.25, 0.46, 0.45, 0.94)'
+            htmlEl.style.transform = 'translate(0, 0) scale(1, 1)'
 
-          // Clean up after animation
-          setTimeout(() => {
-            htmlEl.style.transform = ''
-            htmlEl.style.transition = ''
-            htmlEl.classList.remove('dv-animating')
-          }, 400)
+            // Clean up after animation
+            setTimeout(() => {
+              htmlEl.style.transform = ''
+              htmlEl.style.transition = ''
+              htmlEl.classList.remove('dv-animating')
+            }, 400)
+          })
         })
       })
     })
@@ -1029,11 +1032,15 @@ export class DockView extends HTMLElement {
     // Read positions before change
     this._flipping!.read()
 
-    // Apply change
+    // Apply change (triggers async bireactive render)
     callback()
 
-    // Animate
-    this._flipping!.flip()
+    // Wait for DOM to update before flipping
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        this._flipping!.flip()
+      })
+    })
   }
 
   /**
@@ -1065,37 +1072,41 @@ export class DockView extends HTMLElement {
       htmlEl.classList.add('dv-animating')
     })
 
-    // Last: apply layout change (flexbox recalculates)
+    // Last: apply layout change (triggers async bireactive render)
     callback()
 
-    // Invert: apply inverse transform so elements appear in their old positions
+    // Wait for DOM to update (double rAF ensures layout has been recalculated)
     requestAnimationFrame(() => {
-      groups.forEach(el => {
-        const first = rects.get(el)
-        if (!first) return
+      requestAnimationFrame(() => {
+        // Measure new positions after render and apply FLIP
+        groups.forEach(el => {
+          const first = rects.get(el)
+          if (!first) return
 
-        const last = el.getBoundingClientRect()
-        const dx = first.left - last.left
-        const dy = first.top - last.top
-        const dw = first.width / last.width
-        const dh = first.height / last.height
+          const last = el.getBoundingClientRect()
+          const dx = first.left - last.left
+          const dy = first.top - last.top
+          const dw = first.width / last.width
+          const dh = first.height / last.height
 
-        // Skip if element didn't move
-        if (dx === 0 && dy === 0 && dw === 1 && dh === 1) return
+          // Skip if element didn't move
+          if (dx === 0 && dy === 0 && dw === 1 && dh === 1) return
 
-        const htmlEl = el as HTMLElement
-        htmlEl.style.transform = `translate(${dx}px, ${dy}px) scale(${dw}, ${dh})`
+          const htmlEl = el as HTMLElement
+          // Invert - snap to old position
+          htmlEl.style.transform = `translate(${dx}px, ${dy}px) scale(${dw}, ${dh})`
 
-        // Play: transition to identity transform (next frame)
-        requestAnimationFrame(() => {
-          htmlEl.style.transform = 'translate(0, 0) scale(1, 1)'
+          // Play: transition to identity transform (next frame)
+          requestAnimationFrame(() => {
+            htmlEl.style.transform = 'translate(0, 0) scale(1, 1)'
 
-          // Clean up after animation
-          setTimeout(() => {
-            htmlEl.style.transform = ''
-            htmlEl.style.transition = ''
-            htmlEl.classList.remove('dv-animating')
-          }, 600)
+            // Clean up after animation
+            setTimeout(() => {
+              htmlEl.style.transform = ''
+              htmlEl.style.transition = ''
+              htmlEl.classList.remove('dv-animating')
+            }, 600)
+          })
         })
       })
     })
