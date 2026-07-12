@@ -28,3 +28,4 @@ export { CartesianViewer, type CartesianViewerOptions, type CartesianDomain } fr
 export type { Bounds } from './lib/sankey-layout'
 // Chart metadata:
 export { CHART_METADATA, getChartMaturity, type ChartMaturity, type ChartMetadata } from './metadata'
+export { LINK_MIN } from './lib/sankey'
