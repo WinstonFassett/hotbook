@@ -59,3 +59,15 @@ export const GESTURE_ACTIVE_CLASS = "vf-gesture-active";
 /** CSS that disables `transition` on every descendant while a gesture is live.
  *  Inject once per chart `static styles`. */
 export const GESTURE_SUPPRESSION_CSS = `:host(.${GESTURE_ACTIVE_CLASS}) * { transition: none !important; }`;
+
+/** Centralized visual affordance for the dragged mark during a reorder gesture
+ *  (WIN-262). The `attachReorderGesture` helper toggles `[data-reordering]` on
+ *  the dragged element; charts inject this CSS in their `static styles` so
+ *  every chart gets the same drop-shadow lift without per-chart duplication.
+ *  SVG `filter` renders drop-shadow correctly for `<path>` / `<rect>` / `<g>`. */
+export const REORDER_ELEVATION_CSS = `
+  [data-reordering] {
+    filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.45));
+    cursor: grabbing !important;
+  }
+`;

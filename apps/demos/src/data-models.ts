@@ -10,6 +10,11 @@ export interface DemoDataModel {
   /** Re-feed the chart's data in the given order (charts without a live
    *  sortBy property tween on data-order changes instead). Rebuilds root. */
   setSort?(this: DemoDataModel, el: any, sort: 'index' | 'value'): void;
+  /** Commit a user-driven reorder (drag-to-reorder, WIN-262). Persists as the
+   *  new natural index order and re-feeds. Only wired for flat charts whose
+   *  order lives in the data model (pie/bar); hierarchical / task-based
+   *  models own their order elsewhere. */
+  setOrder?(this: DemoDataModel, el: any, ids: string[]): void;
   sync: (el: any) => () => void;
   columns?: ColumnDef[];
 }
@@ -125,6 +130,18 @@ function valueData(
         ? byIndex.slice().sort((a, b) => b.value - a.value)
         : byIndex.slice();
       apply(this, el, next);
+    },
+    setOrder(el: any, ids: string[]) {
+      // Fold edits back before permuting.
+      const cur = el.dataCell?.value as any[] | undefined;
+      if (cur) applied.forEach((item, i) => { if (cur[i] != null) item.value = readItemValue(cur[i]); });
+      // Permute byIndex to match the new natural order.
+      const byId = new Map(byIndex.map(x => [x.id, x]));
+      const next = ids.map(id => byId.get(id)!).filter(Boolean);
+      if (next.length !== byIndex.length) return;
+      byIndex.length = 0;
+      byIndex.push(...next);
+      apply(this, el, byIndex.slice());
     },
     sync: () => () => {},
     columns: [{ key: "value", label: "Value", width: 80 }],
