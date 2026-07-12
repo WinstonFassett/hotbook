@@ -390,7 +390,7 @@ export class DockView extends HTMLElement {
     // data-flip-key lives on the group element
     el.dataset.flipKey = group.id
 
-    // Update focus indicator
+    // Update focused state
     el.classList.toggle('dv-group--focused', group.id === this._focusedGroupId)
 
     // Reconcile tab strip: rebuild if the panel list (count, ids, or order) changed.

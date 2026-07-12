@@ -228,7 +228,7 @@ export class MdRadarChartLC extends Diagram {
     const polyD = derive(() => {
       const rows = data.value as Spoke[];
       const cxv = cx.value, cyv = cy.value;
-      const pts = rows.map((d, i) => {
+      const pts = rows.map((_, i) => {
         const a = angle(i);
         const r = rPxCells[i]?.value ?? 0;
         const x = (cxv + Math.cos(a) * r).toFixed(1);

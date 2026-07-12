@@ -13,6 +13,7 @@ import {
   easeOut,
   effect as biEffect,
   untracked,
+  type AnyShape,
 } from "bireactive";
 import { Diagram } from "../lib/diagram";
 import type { ElementWithBridge } from "../lib/hud-bridge";
@@ -96,7 +97,7 @@ export class MdTreemapLC extends Diagram {
         .paddingOuter(PAD_OUTER)
         .paddingInner(PAD_INNER)
         .paddingTop(PAD_TOP)
-        .round(false)(h);
+        .round(true)(h);
       const map = new Map<BiNode, HierarchyRectangularNode<BiNode>>();
       h.each((d) => map.set(d.data, d as HierarchyRectangularNode<BiNode>));
       return map;
@@ -138,7 +139,9 @@ export class MdTreemapLC extends Diagram {
       if (id) {
         const biNode = nodeById.get(id);
         const lnode = biNode ? lmap.get(biNode) : null;
-        if (lnode) return { fx0: lnode.x0, fy0: lnode.y0, fx1: lnode.x1, fy1: lnode.y1 };
+        // Exclude PAD_TOP from focus box so it doesn't get scaled by affine transform.
+        // Headers are fixed-pixel, but D3 includes padding in layout coordinates.
+        if (lnode) return { fx0: lnode.x0, fy0: lnode.y0 + PAD_TOP, fx1: lnode.x1, fy1: lnode.y1 };
       }
       return { fx0: 0, fy0: 0, fx1: W0, fy1: H0 };
     };
@@ -164,6 +167,9 @@ export class MdTreemapLC extends Diagram {
     // can tween them. Populated in the forEach body, pruned on tile teardown.
     type TileGeo = { cx: ReturnType<typeof num>; cy: ReturnType<typeof num>; cw: ReturnType<typeof num>; ch: ReturnType<typeof num> };
     const tileGeo = new Map<BiNode, TileGeo>();
+    // Live registry of each rendered tile shape (and its label, if any) so the
+    // reorder effect can keep nodeLayer children in paint order.
+    const tileMap = new Map<BiNode, { tile: AnyShape; label?: AnyShape }>();
 
     const maxDepthCell = this._maxDepthCell;
 
@@ -376,8 +382,8 @@ export class MdTreemapLC extends Diagram {
       });
       // Geometry (x/y/w/h) is driven by the per-tile drill tween on this.anim —
       // NO CSS transition on those attrs (it would double-animate / lag the tween).
-      // Prune the geometry registry when this tile is torn down (left the window).
-      tile.track(() => { if (tileGeo.get(node)?.cx === cx) tileGeo.delete(node); });
+      // Prune the geometry/shape registries when this tile is torn down (left the window).
+      tile.track(() => { if (tileGeo.get(node)?.cx === cx) { tileGeo.delete(node); tileMap.delete(node); } });
       tile.el.addEventListener("click", () => { state.focused.value = node; });
       tile.el.addEventListener("focus", () => { state.focused.value = node; });
       tile.el.addEventListener("blur", () => { if (state.focused.value === node) state.focused.value = null; });
@@ -416,26 +422,47 @@ export class MdTreemapLC extends Diagram {
             ? `${node.value.label}\n${node.value.total.value.toFixed(0)}`
             : node.value.label;
         });
+        // Fade the label in with the tile and out when the tile leaves the window.
+        const labelOpacity = num(0);
         const lbl = label(
           Vec.derive(() => ({ x: x.value + w.value / 2, y: y.value + (isLeaf ? h.value / 2 : 10) })),
           text,
-          { size: isLeaf ? 11 : 10, align: Anchor.Center, fill: labelInk(nodeFill), bold: !isLeaf },
+          { size: isLeaf ? 11 : 10, align: Anchor.Center, fill: labelInk(nodeFill), bold: !isLeaf, opacity: labelOpacity },
         );
+        lbl.el.style.transition = `opacity ${ENTER_MS}ms cubic-bezier(0.4,0,0.2,1)`;
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          const disposeLabelOpacity = biEffect(() => {
+            labelOpacity.value = tilePresent.value && !isContextNode.value ? 1 : 0;
+          });
+          lbl.track(disposeLabelOpacity);
+        }));
+        tileMap.set(node, { tile, label: lbl });
         return [tile, lbl];
       }
+      tileMap.set(node, { tile });
       return tile;
     }, { key: (n) => n.value.id ?? "" });
 
-    // Context header label overlay — rendered after nodeLayer so it sits on top of all child tiles.
-    const ctxLabelText = derive(() => {
-      const id = this._drillIdCell.value;
-      return id ? (nodeById.get(id)?.value.label ?? "") : "";
+    // Keep the SVG paint order in sync with the tree view: leavers (which are
+    // fading out) go behind, current-window nodes go in front, and within each
+    // group we follow the pre-order set by the layout.
+    biEffect(() => {
+      const rendered = renderedSet.value;
+      const members = windowMembership.value as unknown as Set<BiNode>;
+      const nextSet = new Set<BiNode>(members);
+      const leavers: BiNode[] = [];
+      const current: BiNode[] = [];
+      for (const n of rendered) {
+        if (nextSet.has(n)) current.push(n); else leavers.push(n);
+      }
+      const ordered = [...leavers, ...current];
+      for (const n of ordered) {
+        const entry = tileMap.get(n);
+        if (!entry) continue;
+        nodeLayer.el.appendChild(entry.tile.el);
+        if (entry.label) nodeLayer.el.appendChild(entry.label.el);
+      }
     });
-    s(label(
-      Vec.derive(() => ({ x: Wc.value / 2, y: ctxLabelText.value ? 10 : -100 })),
-      ctxLabelText,
-      { size: 10, align: Anchor.Center, fill: "#e0e0e0", bold: true },
-    ));
 
     if (!this.hasAttribute('no-source')) s(label(view.bottom.up(10), derive(() => {
       const f = state.focused.value;
