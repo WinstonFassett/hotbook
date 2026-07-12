@@ -29,7 +29,7 @@ import {
   Anchor, cell, circle, derive, effect as biEffect,
   ensureArrowMarker,
   label, line, type Mount, pathD, rect, Vec,
-  num, tween, easeOut, untracked,
+  num, tween, easeOut, untracked, forEach,
 } from "bireactive";
 import { Diagram } from "../lib/diagram";
 import { scaleTime } from "d3-scale";
@@ -50,6 +50,7 @@ import {
 import { lightenHex } from "../lib/color-utils";
 import { PALETTE } from "@hotbook/core";
 import { attachReorderGesture } from "../lib/reorder-gesture";
+import { withExitDelay, membershipCell } from "../lib/mark-lifecycle";
 
 const W = 720;
 const H = 360;
@@ -175,6 +176,13 @@ export class MdGanttChartLC extends Diagram {
       }
       return tasks;
     });
+
+    // Rendered set with exit delay (WIN-287 follow-up): tasks held briefly on
+    // removal so exit animations can play. Entry animations fade in from 0.
+    const renderedSet = withExitDelay(sortedData, {
+      key: (task) => task.id,
+    });
+    const membership = membershipCell(sortedData, (task) => task.id);
 
     const plotW = derive(() => Math.max(0, Wc.value - PAD.left - PAD.right));
     const plotH = derive(() => Math.max(0, Hc.value - PAD.top - PAD.bottom));
