@@ -27,7 +27,7 @@
 
 import {
   Anchor, cell, circle, derive, effect as biEffect,
-  ensureArrowMarker,
+  ensureArrowMarker, forEach, group,
   label, line, type Mount, pathD, rect, Vec,
   num, tween, easeOut, untracked,
 } from "bireactive";
@@ -44,10 +44,13 @@ import {
 import {
   GESTURE_ACTIVE_CLASS,
   GESTURE_SUPPRESSION_CSS,
+  REORDER_ELEVATION_CSS,
   hoverTransition,
 } from "../lib/transitions";
 import { lightenHex } from "../lib/color-utils";
 import { PALETTE } from "@hotbook/core";
+import { attachReorderGesture } from "../lib/reorder-gesture";
+import { withExitDelay, membershipCell } from "../lib/mark-lifecycle";
 
 const W = 720;
 const H = 360;
@@ -98,7 +101,7 @@ function makeSample(): GanttTask[] {
 type DragKind = 'move' | 'start' | 'end';
 
 export class MdGanttChartLC extends Diagram {
-  static styles = `text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}`;
+  static styles = `text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}${REORDER_ELEVATION_CSS}`;
 
   readonly dataCell = cell<readonly GanttTask[]>(makeSample());
 
@@ -113,6 +116,19 @@ export class MdGanttChartLC extends Diagram {
   private _sortByCell = cell<'index' | 'value'>('index')
   get sortBy(): 'index' | 'value' { return this._sortByCell.value }
   set sortBy(v: 'index' | 'value') { this._sortByCell.value = v }
+
+  /** Drag-to-reorder (WIN-287). When true and sortBy='index', dragging a row
+   *  up/down reorders tasks. Caller handles data persistence via onReorder. */
+  private _canReorderCell = cell<boolean>(false)
+  get canReorder(): boolean { return this._canReorderCell.value }
+  set canReorder(v: boolean) { this._canReorderCell.value = v }
+
+  /** Fired when a drag-to-reorder commits. Receives the new task id sequence.
+   *  Chart previews the reorder but doesn't persist; caller mutates data. */
+  onReorder?: (orderedIds: string[]) => void
+
+  /** Incremented when a user-driven reorder commits. Triggers y-cell tweens. */
+  private _reorderTickCell = cell(0)
 
   set externalData(v: GanttTask[] | undefined) {
     if (v) this.dataCell.value = v;
@@ -161,6 +177,11 @@ export class MdGanttChartLC extends Diagram {
       return tasks;
     });
 
+    // Rendered set (WIN-296): current tasks + departing tasks held briefly so
+    // the exit CSS fade can play. Exiting tasks freeze their tween cells.
+    const renderedSet = withExitDelay(sortedData, { key: (t) => t.id });
+    const membership = membershipCell(sortedData, (t) => t.id);
+
     const plotW = derive(() => Math.max(0, Wc.value - PAD.left - PAD.right));
     const plotH = derive(() => Math.max(0, Hc.value - PAD.top - PAD.bottom));
 
@@ -181,10 +202,10 @@ export class MdGanttChartLC extends Diagram {
 
     // Create per-task tweened y-position cells.
     // Map from task ID to {yCell, cancelFn}.
-    const taskYCells = new Map<string, { yCell: ReturnType<typeof num>, yCenter: ReturnType<typeof derive>, cancel: (() => void) | null }>();
+    const taskYCells = new Map<string, { yCell: ReturnType<typeof num>, yCenter: ReturnType<typeof derive<number>>, cancel: (() => void) | null }>();
     for (const task of rows0) {
       const yCell = num(plotY); // Will be initialized below
-      const yCenter = derive(() => yCell.value + ROW_H / 2);
+      const yCenter = derive<number>(() => yCell.value + ROW_H / 2);
       taskYCells.set(task.id, { yCell, yCenter, cancel: null });
     }
 
@@ -195,12 +216,14 @@ export class MdGanttChartLC extends Diagram {
       return idx === -1 ? plotY : plotY + (idx * ROW_STEP);
     };
 
-    // Initialize and react to sort changes: tween each task's y position to its new row.
+    // Initialize and react to sort/reorder changes: tween each task's y position to its new row.
     let sortInited = false;
     let lastSortBy = untracked(() => this._sortByCell.value);
+    let lastReorderTick = untracked(() => this._reorderTickCell.value);
     biEffect(() => {
-      const sorted = sortedData.value; // track sorted order
+      void sortedData.value; // track sorted order
       const sortBy = this._sortByCell.value; // track sort key
+      const reorderTick = this._reorderTickCell.value; // track reorder commits
 
       if (!sortInited) {
         // Initial placement: snap to positions
@@ -210,23 +233,26 @@ export class MdGanttChartLC extends Diagram {
         }
         sortInited = true;
         lastSortBy = sortBy;
+        lastReorderTick = reorderTick;
         return;
       }
 
-      // Sort changed: tween all tasks to their new row positions, but only if not dragging.
+      // Tween on sort change OR committed reorder (but not during active gesture)
       const sortChanged = sortBy !== lastSortBy;
+      const reorderCommitted = reorderTick !== lastReorderTick;
       lastSortBy = sortBy;
+      lastReorderTick = reorderTick;
 
-      if (sortChanged && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
+      if ((sortChanged || reorderCommitted) && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
         for (const task of rows0) {
           const entry = taskYCells.get(task.id);
           if (!entry) continue;
           const targetY = getTargetY(task.id);
           entry.cancel?.();
-          entry.cancel = this.anim.start(tween(entry.yCell, targetY, SORT_SEC, easeOut));
+          entry.cancel = this.anim.start(tween(entry.yCell, targetY, SORT_SEC, easeOut) as any);
         }
-      } else if (!sortChanged) {
-        // Data or size changed but sort didn't: snap to new positions
+      } else if (!sortChanged && !reorderCommitted) {
+        // Data or size changed but sort/reorder didn't: snap to new positions
         for (const task of rows0) {
           const entry = taskYCells.get(task.id);
           if (entry) {
@@ -237,10 +263,6 @@ export class MdGanttChartLC extends Diagram {
         }
       }
     });
-
-    // Row positioning now uses sortedData for index lookups
-    const rowY = (index: number) => plotY + (index * ROW_STEP);
-    const rowCenterY = (index: number) => rowY(index) + ROW_H / 2;
 
     const hover = cell<GanttTask | null>(null);
     const selected = cell<GanttTask | null>(null);
@@ -800,135 +822,234 @@ export class MdGanttChartLC extends Diagram {
       { thin: true, dashed: true, stroke: "#e08888", opacity: derive(() => nowX.value == null ? 0 : 0.7) },
     ));
 
-    // ─── Row labels (live read so reorder reflows) ─────────────────────────
-    const MAX_ROWS = rows0.length;
-    for (let idx = 0; idx < MAX_ROWS; idx++) {
-      const di = (): GanttTask | null => sortedData.value[idx] ?? null;
+    // ─── Row labels (forEach with lifecycle) ───────────────────────────────
+    const rowLabelsLayer = s(group());
+    forEach(rowLabelsLayer, renderedSet, (task) => {
       // Get the tweened y position for this task
-      const getY = (): number => {
-        const d = di();
-        if (!d) return rowY(idx);
-        const entry = taskYCells.get(d.id);
-        return entry ? entry.yCell.value : rowY(idx);
-      };
-      const getYCenter = (): number => {
-        const d = di();
-        if (!d) return rowCenterY(idx);
-        const entry = taskYCells.get(d.id);
-        return entry ? entry.yCenter.value : rowCenterY(idx);
-      };
+      const entry = taskYCells.get(task.id);
+      const getY = (): number => entry ? entry.yCell.value : plotY;
+      const getYCenter = (): number => entry ? entry.yCenter.value : plotY + ROW_H / 2;
 
-      s(label(
+      // Lifecycle: fade in/out based on membership
+      const isPresent = derive(() => membership.value.has(task.id));
+      const opacity = num(1); // Start at 1 (will be 0 initially via CSS, then transition)
+
+      // Entry/exit fade effect
+      const rowGroup = group();
+      rowGroup.el.style.opacity = '0';
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        biEffect(() => {
+          const present = isPresent.value;
+          opacity.value = present ? 1 : 0;
+          rowGroup.el.style.opacity = String(opacity.value);
+        });
+      }));
+
+      const rowLabel = label(
         Vec.derive(() => ({ x: plotX - 8, y: getYCenter() })),
-        derive(() => di()?.label ?? ""),
+        derive(() => task.label ?? ""),
         { size: 11, align: Anchor.Right, fill: "#bbb", opacity: 0.85 },
-      ));
+      );
+      rowGroup.add(rowLabel);
 
       // Row highlight (subtle background on hover/selected).
       const rowFill = derive(() => {
-        const d = di(); if (!d) return 0;
-        return (hover.value === d || selected.value === d) ? 0.05 : 0;
+        return (hover.value === task || selected.value === task) ? 0.05 : 0;
       });
-      const rh = s(rect(
+      const rh = rect(
         derive(() => plotX),
         derive(() => getY()),
         derive(() => plotW.value),
         ROW_H,
         { fill: "#ffffff", opacity: rowFill },
-      ));
+      );
       rh.el.style.pointerEvents = "none";
       rh.el.style.transition = "opacity 0.1s ease";
-    }
+      rowGroup.add(rh);
 
-    // ─── Task bars ─────────────────────────────────────────────────────────
-    for (let idx = 0; idx < MAX_ROWS; idx++) {
-      const di = (): GanttTask | null => sortedData.value[idx] ?? null;
-      const base = (() => {
-        const t = rows0[idx]; return t ? this.#color(idx, t) : '#888';
-      })();
-      const hoverColor = lightenHex(base, 0.35);
+      // ─── Drag-to-reorder hit target (WIN-287) ──────────────────────────────
+      // Invisible rect in the label lane (left of plot) that captures reorder drags.
+      // This keeps the bar free for time-axis drag (horizontal move/resize).
+      const labelLaneW = PAD.left - 16; // Label lane width (leave margin)
+      const reorderHitTarget = rect(
+        derive(() => 0),
+        derive(() => getY()),
+        labelLaneW,
+        ROW_H,
+        { fill: "#ffffff", opacity: 0 },
+      );
+      reorderHitTarget.el.style.cursor = "grab";
+      reorderHitTarget.el.style.touchAction = "none";
+      rowGroup.add(reorderHitTarget);
+
+      // Attach reorder gesture to the label lane hit target, not the bar
+      biEffect(() => {
+        const enabled = this._canReorderCell.value && this._sortByCell.value === 'index';
+        // Track reorder commits (not data changes during drag preview)
+        void this._reorderTickCell.value;
+
+        if (!enabled || !task.id) {
+          reorderHitTarget.el.style.cursor = "default";
+          return;
+        }
+
+        reorderHitTarget.el.style.cursor = "grab";
+        let initialSnapshot: GanttTask[] = [];
+        const detach = attachReorderGesture({
+          hitEl: reorderHitTarget.el,
+          dragEl: reorderHitTarget.el,
+          itemId: task.id,
+          host: this,
+          // No filter needed - label lane doesn't conflict with bar gestures
+          getInitialOrder: () => (data.value as GanttTask[]).map(t => t.id),
+          computeTargetIndex: (e) => {
+            const { y } = localPoint(e);
+            // Map pointer y to row index
+            const raw = (y - plotY) / ROW_STEP;
+            return Math.floor(raw);
+          },
+          onActivate: () => {
+            // Snapshot the initial task array for potential revert
+            initialSnapshot = [...(data.value as GanttTask[])];
+          },
+          onPreview: (order) => {
+            // Imperatively reorder the data array. When sortBy='index', sortedData
+            // will reflect this new order and the existing y-cell tween system
+            // (lines 199-239) will animate rows to their new positions.
+            const tasks = data.value as GanttTask[];
+            const byId = new Map(tasks.map(t => [t.id, t]));
+            const reordered = order.map(id => byId.get(id)).filter(Boolean) as GanttTask[];
+            if (reordered.length === tasks.length) {
+              data.value = reordered;
+            }
+          },
+          onEnd: (finalOrder, canceled) => {
+            if (canceled) {
+              // Revert to the initial snapshot from onActivate
+              data.value = initialSnapshot;
+              this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled: true } }));
+              return;
+            }
+
+            // Commit: check if order actually changed from initial
+            const initialIds = initialSnapshot.map(t => t.id);
+            const changed = finalOrder.some((id, i) => id !== initialIds[i]);
+            if (changed) {
+              // Data is already reordered from onPreview; notify caller and trigger tweens
+              this._reorderTickCell.value = this._reorderTickCell.value + 1;
+              this.onReorder?.(finalOrder.slice());
+              this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled: false, reorder: true } }));
+            } else {
+              this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled: false } }));
+            }
+          },
+        });
+
+        // Cleanup when effect re-runs or component unmounts
+        return detach;
+      });
+
+      return rowGroup;
+    }, { key: (t) => t.id });
+
+    // ─── Task bars (forEach with lifecycle) ────────────────────────────────
+    const barsLayer = s(group());
+    forEach(barsLayer, renderedSet, (task) => {
+      // Get current index for color calculation (reactive, updates on reorder)
+      const currentIdx = derive(() => sortedData.value.findIndex(t => t.id === task.id));
+      const base = derive(() => {
+        const idx = currentIdx.value;
+        return idx >= 0 ? this.#color(idx, task) : '#888';
+      });
+      const hoverColor = derive(() => lightenHex(base.value, 0.35));
 
       // Get tweened y position for this task
-      const getY = (): number => {
-        const d = di();
-        if (!d) return rowY(idx);
-        const entry = taskYCells.get(d.id);
-        return entry ? entry.yCell.value : rowY(idx);
-      };
-      const getYCenter = (): number => {
-        const d = di();
-        if (!d) return rowCenterY(idx);
-        const entry = taskYCells.get(d.id);
-        return entry ? entry.yCenter.value : rowCenterY(idx);
-      };
+      const entry = taskYCells.get(task.id);
+      const getY = (): number => entry ? entry.yCell.value : plotY;
+      const getYCenter = (): number => entry ? entry.yCenter.value : plotY + ROW_H / 2;
 
       const barY = derive(() => getY());
       const barCY = derive(() => getYCenter());
-      const xS = derive(() => { const d = di(); return d ? (xScale.value as any)(d.start) as number : 0; });
-      const xE = derive(() => { const d = di(); return d ? (xScale.value as any)(d.end)   as number : 0; });
+      const xS = derive(() => (xScale.value as any)(task.start) as number);
+      const xE = derive(() => (xScale.value as any)(task.end) as number);
       const barW = derive(() => Math.max(0, xE.value - xS.value));
       const fill = derive(() => {
-        const d = di();
-        return selected.value === d ? "#fff" : hover.value === d ? hoverColor : base;
+        return selected.value === task ? "#fff" : hover.value === task ? hoverColor.value : base.value;
       });
 
-      const tile = s(rect(xS, barY, barW, ROW_H, { fill, corner: 3 }));
+      // Lifecycle: fade in/out based on membership
+      const isPresent = derive(() => membership.value.has(task.id));
+      const opacity = num(1);
+
+      const barGroup = group();
+      barGroup.el.style.opacity = '0';
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        biEffect(() => {
+          const present = isPresent.value;
+          opacity.value = present ? 1 : 0;
+          barGroup.el.style.opacity = String(opacity.value);
+        });
+      }));
+
+      const tile = rect(xS, barY, barW, ROW_H, { fill, corner: 3 });
       tile.el.style.cursor = "grab";
       tile.el.style.touchAction = "none";
+      barGroup.add(tile);
       // Value geometry (x/width = task start/duration) is write-through — no settle.
 
       // Inside label (task name) — shown when bar wide enough.
       const inOpacity = derive(() => barW.value >= 60 ? 1 : 0);
-      const labelFill = derive(() => { const d = di(); return selected.value === d ? base : "#fff"; });
-      s(label(
+      const labelFill = derive(() => selected.value === task ? base.value : "#fff");
+      barGroup.add(label(
         Vec.derive(() => ({ x: xS.value + 8, y: barCY.value })),
-        derive(() => di()?.label ?? ""),
+        derive(() => task.label ?? ""),
         { size: 11, align: Anchor.Left, fill: labelFill, opacity: inOpacity },
       ));
 
       // Duration label (outside, right of bar) on hover/select.
       const showDur = derive(() => {
-        const d = di();
-        return (hover.value === d || selected.value === d) ? 1 : 0;
+        return (hover.value === task || selected.value === task) ? 1 : 0;
       });
-      s(label(
+      barGroup.add(label(
         Vec.derive(() => ({ x: xE.value + 6, y: barCY.value })),
         derive(() => {
-          const d = di(); if (!d) return "";
-          const days = Math.round((d.end.getTime() - d.start.getTime()) / DAY_MS);
+          const days = Math.round((task.end.getTime() - task.start.getTime()) / DAY_MS);
           return `${days}d`;
         }),
         { size: 10, align: Anchor.Left, fill: "#aaa", opacity: showDur },
       ));
 
       // Resize handles at edges — visible on hover/selected.
-      const handleR = derive(() => { const d = di(); return selected.value === d ? 5 : 4; });
+      const handleR = derive(() => selected.value === task ? 5 : 4);
       const handleOpacity = derive(() => {
-        const d = di();
-        return (hover.value === d || selected.value === d) ? 1 : 0;
+        return (hover.value === task || selected.value === task) ? 1 : 0;
       });
-      const handleFill = derive(() => { const d = di(); return selected.value === d ? "#fff" : hoverColor; });
+      const handleFill = derive(() => selected.value === task ? "#fff" : hoverColor.value);
 
-      const startHandle = s(circle(
+      const startHandle = circle(
         Vec.derive(() => ({ x: xS.value, y: barCY.value })),
         handleR,
         { fill: handleFill, stroke: "#0b0d12", strokeWidth: 1.5, opacity: handleOpacity },
-      ));
+      );
       startHandle.el.style.cursor = "ew-resize";
       startHandle.el.style.transition = hoverTransition("opacity");
       startHandle.el.style.touchAction = "none";
+      barGroup.add(startHandle);
 
-      const endHandle = s(circle(
+      const endHandle = circle(
         Vec.derive(() => ({ x: xE.value, y: barCY.value })),
         handleR,
         { fill: handleFill, stroke: "#0b0d12", strokeWidth: 1.5, opacity: handleOpacity },
-      ));
+      );
       endHandle.el.style.cursor = "ew-resize";
       endHandle.el.style.transition = hoverTransition("opacity");
       endHandle.el.style.touchAction = "none";
-    }
+      barGroup.add(endHandle);
 
-    // ─── Dependency connectors ────────────────────────────────────────────
+      return barGroup;
+    }, { key: (t) => t.id });
+
+    // ─── Dependency connectors (forEach with lifecycle) ────────────────────
     // Finish-to-start orthogonal arrows: predecessor end-edge → small stub →
     // vertical channel → small stub → dependent start-edge. Routed via the
     // task gap, so the path slots between rows instead of overlapping bars.
@@ -936,34 +1057,37 @@ export class MdGanttChartLC extends Diagram {
     const STUB = 8;       // horizontal stub before the bar edge
     const ARROW_GAP = 6;  // space before successor bar so arrowhead doesn't overlap
 
-    // Build a (id → live index) lookup that re-derives when sort order changes.
-    const indexById = derive(() => {
-      const m = new Map<string, number>();
-      const rows = sortedData.value;
-      for (let i = 0; i < rows.length; i++) m.set(rows[i]!.id, i);
-      return m;
+    // Build edges from sortedData (re-derives when tasks change).
+    type DepEdge = { from: string; to: string; key: string };
+    const edges = derive(() => {
+      const result: DepEdge[] = [];
+      const tasks = sortedData.value;
+      for (const t of tasks) {
+        for (const dep of t.deps ?? []) {
+          const fromId = getDepId(dep);
+          const key = `${fromId}->${t.id}`;
+          result.push({ from: fromId, to: t.id, key });
+        }
+      }
+      return result;
     });
 
-    // One pathD per dependency edge; iterate over the initial dep set —
-    // pathD's `d` string is reactive, so positions follow drag/resize.
-    type DepEdge = { from: string; to: string };
-    const initialEdges: DepEdge[] = [];
-    for (const t of rows0) for (const dep of t.deps ?? []) initialEdges.push({ from: getDepId(dep), to: t.id });
+    // Rendered edges with lifecycle
+    const edgesSet = withExitDelay(edges, { key: (e) => e.key });
+    const edgesMembership = membershipCell(edges, (e) => e.key);
 
-    for (const edge of initialEdges) {
-      // Live lookup from sortedData (re-derives when sort order changes).
-      const fromTask = (): GanttTask | null => {
-        const idx = indexById.value.get(edge.from);
-        return idx == null ? null : (sortedData.value[idx] ?? null);
-      };
-      const toTask = (): GanttTask | null => {
-        const idx = indexById.value.get(edge.to);
-        return idx == null ? null : (sortedData.value[idx] ?? null);
-      };
+    const connectorsLayer = s(group());
+    forEach(connectorsLayer, edgesSet, (edge) => {
+      // Build a (id → task) lookup from sortedData
+      const taskById = derive(() => {
+        const m = new Map<string, GanttTask>();
+        for (const t of sortedData.value) m.set(t.id, t);
+        return m;
+      });
 
       const dStr = derive(() => {
-        const f = fromTask();
-        const t = toTask();
+        const f = taskById.value.get(edge.from);
+        const t = taskById.value.get(edge.to);
         if (!f || !t) return "";
         const xS = xScale.value as any;
         const x0 = xS(f.end) as number;
@@ -971,8 +1095,8 @@ export class MdGanttChartLC extends Diagram {
         // Get tweened y center positions for each task
         const fEntry = taskYCells.get(f.id);
         const tEntry = taskYCells.get(t.id);
-        const y0 = fEntry ? fEntry.yCenter.value : plotY + ROW_H / 2;
-        const y1 = tEntry ? tEntry.yCenter.value : plotY + ROW_H / 2;
+        const y0: number = fEntry ? fEntry.yCenter.value : plotY + ROW_H / 2;
+        const y1: number = tEntry ? tEntry.yCenter.value : plotY + ROW_H / 2;
         // Step path: out from f end, vertical to t row, in to t start.
         // If t.start is to the left of f.end, route around: go right STUB,
         // down/up half a row, back left, vertical, then in to t.start.
@@ -992,28 +1116,56 @@ export class MdGanttChartLC extends Diagram {
       const involved = derive(() => {
         const sel = selected.value;
         const hov = hover.value;
-        const f = fromTask(); const t = toTask();
+        const f = taskById.value.get(edge.from);
+        const t = taskById.value.get(edge.to);
         if (!sel && !hov) return false;
         return sel === f || sel === t || hov === f || hov === t;
       });
-      const opacity = derive(() => involved.value ? 1 : 0.45);
+      const baseOpacity = derive(() => involved.value ? 1 : 0.45);
       const stroke = derive(() => involved.value ? "#fff" : "#7a8390");
+
+      // Lifecycle: fade in/out based on membership
+      const isPresent = derive(() => edgesMembership.value.has(edge.key));
+      const lifecycleOpacity = num(0); // Start at 0 for entry fade
+
+      const connectorGroup = group();
 
       const p = pathD(dStr, {
         stroke, strokeWidth: derive(() => involved.value ? 1.6 : 1.1),
-        fill: "none", cap: "round", join: "round", opacity,
+        fill: "none", cap: "round", join: "round",
+        opacity: derive(() => baseOpacity.value * lifecycleOpacity.value),
       });
-      const shape = s(p);
-      // Arrowhead via the bireactive shared marker.
-      shape.el.setAttribute("marker-end", "url(#bireactive-arrow)");
-      shape.el.style.pointerEvents = "none";
-      shape.el.style.transition = "stroke 0.12s ease, stroke-width 0.12s ease, opacity 0.12s ease";
-    }
+      connectorGroup.add(p);
+
+      // Set marker-end after element is in DOM
+      requestAnimationFrame(() => {
+        const pathEl = p.el as SVGPathElement;
+        pathEl.setAttribute("marker-end", "url(#bireactive-arrow)");
+        console.log('[Gantt] Set marker-end, value now:', pathEl.getAttribute("marker-end"));
+        pathEl.style.pointerEvents = "none";
+        pathEl.style.transition = "stroke 0.12s ease, stroke-width 0.12s ease, opacity 0.12s ease";
+      });
+
+      // Entry/exit fade via tween
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        biEffect(() => {
+          const present = isPresent.value;
+          lifecycleOpacity.value = present ? 1 : 0;
+        });
+      }));
+
+      return connectorGroup;
+    }, { key: (e) => e.key });
 
     // ─── Caption / readout ────────────────────────────────────────────────
+    const statusText = derive(() => {
+      const base = "Gantt — click select · Tab navigate · ←/→ shift · ↑/↓ resize · drag body/handles · ctrl+wheel resize · Esc revert";
+      const canReorder = this._canReorderCell.value && this._sortByCell.value === 'index';
+      return canReorder ? base + " · drag row to reorder" : base;
+    });
     s(label(
       Vec.derive(() => ({ x: Wc.value / 2, y: 12 })),
-      "Gantt — click select · Tab navigate · ←/→ shift · ↑/↓ resize · drag body/handles · ctrl+wheel resize · Esc revert",
+      statusText,
       { size: 11, align: Anchor.Center, opacity: 0.7 },
     ));
 

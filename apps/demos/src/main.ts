@@ -26,6 +26,8 @@ import { sharedRows, sharedEdges } from "./layout/demo-data";
 import { mountControls } from "./layout/controls";
 import { getChartSchema } from "@hotbook/core";
 import "@hotbook/bireactive"; // Import to trigger schema registration
+import { MdViewerDemo } from "./viewer-demo-element";
+import { MdCartesianViewerDemo } from "./cartesian-viewer-demo";
 
 class MdBandsChartLC extends MdBarChartLC {
   constructor() { super(); this.orientation = 'horizontal'; this.colorMode = 'palette'; this.labelMode = 'inside'; this.valueMode = 'inside'; }
@@ -65,6 +67,8 @@ const experiments: Array<{
   ctor: CustomElementConstructor;
   custom?: (section: HTMLElement, demo: HTMLElement, el: HTMLElement) => void;
 }> = [
+  { id: "viewer-demo", title: "Viewer (pan/zoom/show demo)", tag: "md-viewer-demo", ctor: MdViewerDemo as unknown as CustomElementConstructor },
+  { id: "cartesian-viewer", title: "CartesianViewer (zoomable scatterplot with axes)", tag: "md-cartesian-viewer", ctor: MdCartesianViewerDemo as unknown as CustomElementConstructor },
   { id: "line-chart", title: "LineChart", tag: "v-line-chart", ctor: MdLineChartLC },
   { id: "area-chart", title: "AreaChart", tag: "v-area-chart", ctor: MdAreaChartLC },
   { id: "bar-chart", title: "BarChart (vertical)", tag: "v-bar-chart", ctor: MdBarChartLC },
@@ -145,6 +149,20 @@ function applySort(el: HTMLElement, treetable: HTMLElement | null, model: DemoDa
     }
   }
   if (treetable && 'sortBy' in treetable) (treetable as any).sortBy = config.sort;
+  // Drag-to-reorder gate (WIN-262): only active when sort is by natural order.
+  if ('canReorder' in el) (el as any).canReorder = (config.sort === 'index');
+}
+
+function wireReorder(el: HTMLElement, treetable: HTMLElement | null, model: DemoDataModel | undefined) {
+  if (!('onReorder' in el) && !('canReorder' in el)) return;
+  if (!model?.setOrder) return;
+  (el as any).onReorder = (ids: string[]) => {
+    model.setOrder!(el, ids);
+    if (treetable) {
+      (treetable as any).externalRoot = model.root;
+      (treetable as any).refresh?.();
+    }
+  };
 }
 
 function mountLayoutSection(section: HTMLElement, demo: HTMLElement, el: HTMLElement): void {
@@ -397,6 +415,7 @@ if (app) {
       demo.style.overflow = 'hidden';
       demo.appendChild(chartAndTableWrap);
 
+      wireReorder(el, treetable, dataModel);
       applySort(el, treetable, dataModel);
       mounted.push({ el, treetable, model: dataModel });
     }

@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gantt Drag-to-Reorder Test</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0b0d12;
+      color: #fff;
+    }
+    #chart-container {
+      width: 100%;
+      height: 600px;
+      margin: 20px 0;
+    }
+    .controls {
+      margin: 20px 0;
+      display: flex;
+      gap: 20px;
+      align-items: center;
+    }
+    button {
+      padding: 8px 16px;
+      background: #4a9eff;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button:hover {
+      background: #3a8eef;
+    }
+    label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+    }
+    #log {
+      background: #1a1c21;
+      padding: 12px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 12px;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .log-entry {
+      margin: 4px 0;
+      padding: 4px;
+    }
+    .log-reorder {
+      color: #4a9eff;
+    }
+  </style>
+</head>
+<body>
+  <h1>Gantt Chart Drag-to-Reorder Test (WIN-287)</h1>
+
+  <div class="controls">
+    <label>
+      <input type="checkbox" id="canReorder" checked>
+      Enable Drag-to-Reorder
+    </label>
+
+    <label>
+      <input type="checkbox" id="enforceDeps">
+      Enforce Dependencies
+    </label>
+
+    <button id="resetData">Reset Data</button>
+  </div>
+
+  <div id="chart-container"></div>
+
+  <h3>Event Log:</h3>
+  <div id="log"></div>
+
+  <script type="module">
+    import { MdGanttChartLC } from './packages/bireactive/src/charts/gantt.ts';
+
+    // Register custom element
+    if (!customElements.get('v-br-gantt')) {
+      customElements.define('v-br-gantt', MdGanttChartLC);
+    }
+
+    const DAY_MS = 86400 * 1000;
+    const start = new Date(2026, 0, 1).getTime();
+
+    function makeSampleData() {
+      return [
+        { id: 't1', label: 'Discovery',   start: new Date(start + 0  * DAY_MS), end: new Date(start + 7  * DAY_MS) },
+        { id: 't2', label: 'Design',      start: new Date(start + 5  * DAY_MS), end: new Date(start + 14 * DAY_MS), deps: ['t1'] },
+        { id: 't3', label: 'Build core',  start: new Date(start + 12 * DAY_MS), end: new Date(start + 28 * DAY_MS), deps: ['t2'] },
+        { id: 't4', label: 'QA',          start: new Date(start + 25 * DAY_MS), end: new Date(start + 34 * DAY_MS), deps: ['t3'] },
+        { id: 't5', label: 'Launch',      start: new Date(start + 33 * DAY_MS), end: new Date(start + 36 * DAY_MS), deps: ['t3', 't4'] },
+      ];
+    }
+
+    // Create chart
+    const chartEl = document.createElement('v-br-gantt');
+    chartEl.style.width = '100%';
+    chartEl.style.height = '100%';
+    chartEl.externalData = makeSampleData();
+    chartEl.canReorder = true;
+    chartEl.sortBy = 'index';
+
+    // Setup event logging
+    const logEl = document.getElementById('log');
+    function log(message, type = 'info') {
+      const entry = document.createElement('div');
+      entry.className = `log-entry log-${type}`;
+      entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+      logEl.insertBefore(entry, logEl.firstChild);
+    }
+
+    // Listen for reorder events
+    chartEl.onReorder = (orderedIds) => {
+      log(`Reorder committed: ${orderedIds.join(', ')}`, 'reorder');
+      console.log('New task order:', orderedIds);
+    };
+
+    chartEl.addEventListener('gesturecommit', (e) => {
+      if (e.detail.reorder) {
+        log('Reorder gesture committed', 'reorder');
+      } else if (e.detail.canceled) {
+        log('Gesture canceled (Esc pressed)');
+      } else {
+        log('Gesture committed (other)');
+      }
+    });
+
+    // Controls
+    document.getElementById('canReorder').addEventListener('change', (e) => {
+      chartEl.canReorder = e.target.checked;
+      log(`canReorder: ${e.target.checked}`);
+    });
+
+    document.getElementById('enforceDeps').addEventListener('change', (e) => {
+      chartEl.enforceDeps = e.target.checked;
+      log(`enforceDeps: ${e.target.checked}`);
+    });
+
+    document.getElementById('resetData').addEventListener('click', () => {
+      chartEl.externalData = makeSampleData();
+      log('Data reset to initial state');
+    });
+
+    // Mount chart
+    document.getElementById('chart-container').appendChild(chartEl);
+    log('Gantt chart loaded with drag-to-reorder enabled');
+  </script>
+</body>
+</html>

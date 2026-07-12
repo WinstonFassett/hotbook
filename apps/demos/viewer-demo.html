@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Viewer Demo - Pan/Zoom/Show</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0b0d12;
+      color: #cdd5e0;
+    }
+    h1 {
+      margin: 0 0 20px 0;
+      font-size: 24px;
+      font-weight: 600;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .viewer-container {
+      position: relative;
+      width: 100%;
+      height: 600px;
+      background: #1a1d24;
+      border: 1px solid #2a2d34;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      overflow: hidden;
+    }
+    svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    .controls {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+    button {
+      padding: 8px 16px;
+      background: #2a2d34;
+      border: 1px solid #3a3d44;
+      color: #cdd5e0;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: background 0.2s;
+    }
+    button:hover {
+      background: #3a3d44;
+    }
+    button:active {
+      background: #4a4d54;
+    }
+    .info {
+      padding: 16px;
+      background: #1a1d24;
+      border: 1px solid #2a2d34;
+      border-radius: 8px;
+      line-height: 1.6;
+    }
+    .info h2 {
+      margin: 0 0 12px 0;
+      font-size: 18px;
+      font-weight: 600;
+    }
+    .info ul {
+      margin: 8px 0;
+      padding-left: 24px;
+    }
+    .info li {
+      margin: 4px 0;
+    }
+    .info code {
+      background: #2a2d34;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Viewer Demo — Pan/Zoom/Show Architecture</h1>
+
+    <div class="info">
+      <h2>Interaction Guide</h2>
+      <ul>
+        <li><strong>Pan:</strong> Click and drag anywhere on the diagram to pan the view</li>
+        <li><strong>Zoom:</strong> Scroll wheel to zoom in/out (zooms around cursor position)</li>
+        <li><strong>Buttons:</strong> Try the buttons below to programmatically navigate the view</li>
+      </ul>
+      <p>
+        This demonstrates the <code>Viewer</code> primitive from
+        <code>wiki/viewer-architecture.md</code> — a viewport over diagram data-space that owns
+        pan/zoom/fit/show, decoupled from the diagram's geometry.
+      </p>
+    </div>
+
+    <div class="controls">
+      <button id="btn-fit">Fit to Bounds</button>
+      <button id="btn-zoom-in">Zoom In</button>
+      <button id="btn-zoom-out">Zoom Out</button>
+      <button id="btn-show-top">Show Top Region</button>
+      <button id="btn-show-bottom">Show Bottom Region</button>
+      <button id="btn-pan-left">Pan Left</button>
+      <button id="btn-pan-right">Pan Right</button>
+    </div>
+
+    <div class="viewer-container">
+      <svg id="demo-svg"></svg>
+    </div>
+  </div>
+
+  <script type="module">
+    import { Viewer } from '../../packages/bireactive/src/lib/viewer.ts';
+
+    // Create a simple test diagram with some shapes to visualize pan/zoom
+    const svg = document.getElementById('demo-svg');
+    const NS = 'http://www.w3.org/2000/svg';
+
+    // Draw a grid to show pan/zoom clearly
+    const grid = document.createElementNS(NS, 'g');
+    grid.id = 'grid';
+    for (let x = 0; x <= 1000; x += 50) {
+      const line = document.createElementNS(NS, 'line');
+      line.setAttribute('x1', x);
+      line.setAttribute('y1', 0);
+      line.setAttribute('x2', x);
+      line.setAttribute('y2', 600);
+      line.setAttribute('stroke', x % 100 === 0 ? '#3a3d44' : '#2a2d34');
+      line.setAttribute('stroke-width', x % 100 === 0 ? 2 : 1);
+      grid.appendChild(line);
+    }
+    for (let y = 0; y <= 600; y += 50) {
+      const line = document.createElementNS(NS, 'line');
+      line.setAttribute('x1', 0);
+      line.setAttribute('y1', y);
+      line.setAttribute('x2', 1000);
+      line.setAttribute('y2', y);
+      line.setAttribute('stroke', y % 100 === 0 ? '#3a3d44' : '#2a2d34');
+      line.setAttribute('stroke-width', y % 100 === 0 ? 2 : 1);
+      grid.appendChild(line);
+    }
+    svg.appendChild(grid);
+
+    // Add some colorful shapes to make pan/zoom visible
+    const shapes = document.createElementNS(NS, 'g');
+    shapes.id = 'shapes';
+
+    // Top region (red boxes)
+    for (let i = 0; i < 5; i++) {
+      const rect = document.createElementNS(NS, 'rect');
+      rect.setAttribute('x', 100 + i * 150);
+      rect.setAttribute('y', 50);
+      rect.setAttribute('width', 100);
+      rect.setAttribute('height', 100);
+      rect.setAttribute('fill', '#ff6b6b');
+      rect.setAttribute('opacity', '0.7');
+      shapes.appendChild(rect);
+    }
+
+    // Middle region (blue circles)
+    for (let i = 0; i < 4; i++) {
+      const circle = document.createElementNS(NS, 'circle');
+      circle.setAttribute('cx', 200 + i * 200);
+      circle.setAttribute('cy', 300);
+      circle.setAttribute('r', 60);
+      circle.setAttribute('fill', '#4dabf7');
+      circle.setAttribute('opacity', '0.7');
+      shapes.appendChild(circle);
+    }
+
+    // Bottom region (green triangles)
+    for (let i = 0; i < 3; i++) {
+      const path = document.createElementNS(NS, 'path');
+      const x = 250 + i * 250;
+      const y = 500;
+      path.setAttribute('d', `M ${x},${y-50} L ${x+50},${y+50} L ${x-50},${y+50} Z`);
+      path.setAttribute('fill', '#51cf66');
+      path.setAttribute('opacity', '0.7');
+      shapes.appendChild(path);
+    }
+
+    svg.appendChild(shapes);
+
+    // Add labels
+    const labels = document.createElementNS(NS, 'g');
+    labels.id = 'labels';
+
+    const topLabel = document.createElementNS(NS, 'text');
+    topLabel.setAttribute('x', 500);
+    topLabel.setAttribute('y', 30);
+    topLabel.setAttribute('text-anchor', 'middle');
+    topLabel.setAttribute('fill', '#cdd5e0');
+    topLabel.setAttribute('font-size', '16');
+    topLabel.textContent = 'Top Region';
+    labels.appendChild(topLabel);
+
+    const bottomLabel = document.createElementNS(NS, 'text');
+    bottomLabel.setAttribute('x', 500);
+    bottomLabel.setAttribute('y', 580);
+    bottomLabel.setAttribute('text-anchor', 'middle');
+    bottomLabel.setAttribute('fill', '#cdd5e0');
+    bottomLabel.setAttribute('font-size', '16');
+    bottomLabel.textContent = 'Bottom Region';
+    labels.appendChild(bottomLabel);
+
+    svg.appendChild(labels);
+
+    // Initialize the Viewer
+    const bounds = { x: 0, y: 0, w: 1000, h: 600 };
+    const containerEl = document.querySelector('.viewer-container');
+    const rect = containerEl.getBoundingClientRect();
+    const viewer = new Viewer(svg, bounds, rect.width, rect.height, {
+      enablePan: true,
+      enableZoom: true,
+      minZoom: 0.5,
+      maxZoom: 5,
+    });
+
+    // Button handlers to demonstrate the show() API
+    document.getElementById('btn-fit').addEventListener('click', () => {
+      viewer.fit(bounds, 10);
+    });
+
+    document.getElementById('btn-zoom-in').addEventListener('click', () => {
+      viewer.zoomBy(1.3);
+    });
+
+    document.getElementById('btn-zoom-out').addEventListener('click', () => {
+      viewer.zoomBy(1 / 1.3);
+    });
+
+    document.getElementById('btn-show-top').addEventListener('click', () => {
+      viewer.show({ x: 50, y: 0, w: 900, h: 200 }, {
+        zoomToContain: true,
+        animate: false,
+        padding: 20
+      });
+    });
+
+    document.getElementById('btn-show-bottom').addEventListener('click', () => {
+      viewer.show({ x: 100, y: 400, w: 800, h: 200 }, {
+        zoomToContain: true,
+        animate: false,
+        padding: 20
+      });
+    });
+
+    document.getElementById('btn-pan-left').addEventListener('click', () => {
+      viewer.pan(-100, 0);
+    });
+
+    document.getElementById('btn-pan-right').addEventListener('click', () => {
+      viewer.pan(100, 0);
+    });
+
+    // Handle window resize
+    window.addEventListener('resize', () => {
+      const newRect = containerEl.getBoundingClientRect();
+      viewer.setPixelSize(newRect.width, newRect.height);
+    });
+  </script>
+</body>
+</html>
