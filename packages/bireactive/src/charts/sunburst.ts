@@ -763,8 +763,13 @@ export class MdSunburstLC extends Diagram {
           onEnd: () => {
             active.value = false;
             handle.el.style.cursor = "grab";
+            const wasFrozen = !!frozenSortKey;
             gestureActiveCell.value = false;
             frozenSortKey = null;
+            // Trigger animation if we had frozen sort - slices need to tween to new sorted positions
+            if (wasFrozen) {
+              this._reorderTickCell.value = this._reorderTickCell.value + 1;
+            }
           },
         });
         handle.track(dispose);

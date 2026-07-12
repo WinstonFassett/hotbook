@@ -856,8 +856,13 @@ export class MdIcicleLC extends Diagram {
             active.value = false;
             handle.el.style.cursor = "grab";
             // WIN-257: Clear gesture flag and frozen sort order
+            const wasFrozen = !!frozenSortKey;
             gestureActiveCell.value = false;
             frozenSortKey = null;
+            // Trigger animation if we had frozen sort - tiles need to tween to new sorted positions
+            if (wasFrozen) {
+              this._reorderTickCell.value = this._reorderTickCell.value + 1;
+            }
           },
         });
         handle.track(dispose);
