@@ -1,5 +1,5 @@
 import { num, Num, treeNode as node, type Writable, type Num as NumType } from "bireactive";
-import { group, leaf, type BiNode, type ColumnDef } from "@hotbook/bireactive";
+import { type BiNode, type ColumnDef } from "@hotbook/bireactive";
 import type { GanttTask } from "@hotbook/bireactive";
 import { sharedRows, items } from "./layout/demo-data";
 import { PALETTE, getChartSchema } from "@hotbook/core";
@@ -37,9 +37,11 @@ function valueLeaf(
   label: string,
   value: number,
   color: string,
+  value2: number = value,
 ): BiNode {
   const v = bi(value);
-  return node({ id, label, color, total: v, measures: { value: v } } as any);
+  const v2 = bi(value2);
+  return node({ id, label, color, total: v, measures: { value: v, value2: v2 } } as any);
 }
 
 function writeItemValue(item: any, target: number, key: string = "value"): void {
@@ -62,11 +64,11 @@ function addSecondMeasure(item: { id: string; label: string; value: number; colo
   };
 }
 
-function buildValueRow(r: ValueItem, i: number, kind: string): FlatRow {
+function buildValueRow(r: ValueItem, i: number, kind: string, measureKey: string): FlatRow {
   return {
     id: r.id,
     label: r.label,
-    value: r.value,
+    value: r[measureKey as keyof ValueItem] as number,
     value2: r.value2,
     color: r.color,
     index: i,
@@ -100,14 +102,13 @@ function valueData(
     applied = ordered;
     const measureKey = getMeasureKey(el);
     currentMeasureKey = measureKey;
-    const mapped = ordered.map((r) => ({ ...r, value: r[measureKey as keyof ValueItem] as number }));
     const chartCtx: ChartContext = {
       valueBinding: measureKey,
       orderBinding,
       orderDir,
       tile: { title: kind },
     };
-    const chartData = schema!.toChart!(mapped.map((r, i) => buildValueRow(r, i, kind)), chartCtx);
+    const chartData = schema!.toChart!(ordered.map((r, i) => buildValueRow(r, i, kind, measureKey)), chartCtx);
     el.externalData = chartData;
     const data = el.dataCell;
 
@@ -122,7 +123,10 @@ function valueData(
       }
     }
 
-    const leaves = mapped.map((item, i) => {
+    const isValue = measureKey === 'value';
+    const isValue2 = measureKey === 'value2';
+
+    const leaves = ordered.map((item, i) => {
       const total = Num.lens(
         data,
         (d: any[]) => (d && d[i] ? schema!.readValue!(d[i]) : 0),
@@ -132,14 +136,63 @@ function valueData(
           return next;
         },
       );
-      return node({ id: item.id, label: item.label, color: item.color, total, measures: { value: total, value2: total } } as any);
+      const valueCell = Num.lens(
+        data,
+        (d: any[]) => {
+          if (!d || !d[i]) return 0;
+          return isValue ? schema!.readValue!(d[i]) : (d[i].valueOriginal ?? 0);
+        },
+        (target: number, d: any[]) => {
+          const next = d.slice();
+          if (next[i]) {
+            if (isValue) {
+              schema!.writeValue!(next[i], target);
+            } else {
+              next[i].valueOriginal = target;
+            }
+            item.value = target;
+          }
+          return next;
+        },
+      );
+      const value2Cell = Num.lens(
+        data,
+        (d: any[]) => {
+          if (!d || !d[i]) return 0;
+          return isValue2 ? schema!.readValue!(d[i]) : (d[i].value2Original ?? 0);
+        },
+        (target: number, d: any[]) => {
+          const next = d.slice();
+          if (next[i]) {
+            if (isValue2) {
+              schema!.writeValue!(next[i], target);
+            } else {
+              next[i].value2Original = target;
+            }
+            item.value2 = target;
+          }
+          return next;
+        },
+      );
+      return node({ id: item.id, label: item.label, color: item.color, total, measures: { value: valueCell, value2: value2Cell } } as any);
     });
+
+    const valueSum = Num.lens(
+      data,
+      (d: any[]) => d.reduce((sum, _, i) => sum + (d[i]?.valueOriginal ?? 0), 0),
+      (_target, d) => d,
+    );
+    const value2Sum = Num.lens(
+      data,
+      (d: any[]) => d.reduce((sum, _, i) => sum + (d[i]?.value2Original ?? 0), 0),
+      (_target, d) => d,
+    );
     const rootTotal = Num.lens(
       data,
       (d: any[]) => d.reduce((sum, _, i) => sum + (schema!.readValue!(d[i]) ?? 0), 0),
       (_target, d) => d,
     );
-    model.root = node({ id: "root", label: "Data", color: "#222", total: rootTotal, measures: { value: rootTotal, value2: rootTotal } } as any, leaves);
+    model.root = node({ id: "root", label: "Data", color: "#222", total: rootTotal, measures: { value: valueSum, value2: value2Sum } } as any, leaves);
   }
 
   return {
@@ -376,11 +429,13 @@ function sankeyData(
             return leaf;
           }
           const linkLeaves = outLinks.map((l) => {
+            const value2 = Math.max(0, Math.round(l.value * 0.7 + 10));
             const leaf = valueLeaf(
               `${l.source}-${l.target}`,
               `${l.source} → ${l.target}`,
               l.value,
               PALETTE[layer % PALETTE.length]!,
+              value2,
             );
             leaves.push(leaf);
             return leaf;
@@ -400,6 +455,7 @@ function sankeyData(
 
   const root = dataRoot(layerNodes);
 
+  let selectedKey = 'value';
   const getLinks = () =>
     leaves
       .map((leaf) => {
@@ -409,7 +465,7 @@ function sankeyData(
         return {
           source: parts[0]!,
           target: parts[1]!,
-          value: (leaf.value as any).measures.value.value,
+          value: (leaf.value as any).measures[selectedKey]?.value ?? 0,
         };
       })
       .filter(Boolean) as { source: string; target: string; value: number }[];
@@ -428,8 +484,9 @@ function sankeyData(
   return {
     root,
     setChartData(this: DemoDataModel, el: any) {
+      selectedKey = el.measureKey || 'value';
       const chartCtx: ChartContext = {
-        valueBinding: 'value',
+        valueBinding: selectedKey,
         orderBinding: 'index',
         orderDir: 'asc',
         rawNodes: [],
@@ -439,38 +496,111 @@ function sankeyData(
       mountProps(el);
     },
     sync: () => () => {},
+    columns: [
+      { key: "value", label: "Value", width: 80 },
+      { key: "value2", label: "Value 2", width: 80 },
+    ],
   };
 }
 
+function value2For(value: number): number {
+  return Math.max(0, Math.round(value * 0.7 + 10));
+}
+
+interface HierSpec {
+  id: string;
+  label: string;
+  color: string;
+  value?: number;
+  children?: HierSpec[];
+}
+
+function buildHierNode(spec: HierSpec, selectedKey: string): { node: BiNode; value: number; value2: number } {
+  if (spec.children && spec.children.length > 0) {
+    const built = spec.children.map(c => buildHierNode(c, selectedKey));
+    const childNodes = built.map(b => b.node);
+    const value = built.reduce((sum, b) => sum + b.value, 0);
+    const value2 = built.reduce((sum, b) => sum + b.value2, 0);
+    const valueCell = Num.lens(
+      childNodes.map(c => c.value.measures!.value),
+      (vs: readonly number[]) => vs.reduce((a, b) => a + b, 0),
+      (target, vs) => {
+        const arr = vs as readonly number[];
+        const cur = arr.reduce((a, b) => a + b, 0);
+        if (cur === 0) return arr.map(() => target / arr.length) as never;
+        const scale = target / cur;
+        return arr.map(v => v * scale) as never;
+      },
+    );
+    const value2Cell = Num.lens(
+      childNodes.map(c => c.value.measures!.value2),
+      (vs: readonly number[]) => vs.reduce((a, b) => a + b, 0),
+      (target, vs) => {
+        const arr = vs as readonly number[];
+        const cur = arr.reduce((a, b) => a + b, 0);
+        if (cur === 0) return arr.map(() => target / arr.length) as never;
+        const scale = target / cur;
+        return arr.map(v => v * scale) as never;
+      },
+    );
+    const total = selectedKey === 'value2' ? value2Cell : valueCell;
+    const treeNode = node({ id: spec.id, label: spec.label, color: spec.color, total, measures: { value: valueCell, value2: value2Cell } } as any, childNodes);
+    return { node: treeNode, value, value2 };
+  }
+  const value = spec.value ?? 0;
+  const value2 = value2For(value);
+  const valueCell = num(value);
+  const value2Cell = value2For(value) !== value ? num(value2For(value)) : num(value);
+  const total = selectedKey === 'value2' ? value2Cell : valueCell;
+  const treeNode = node({ id: spec.id, label: spec.label, color: spec.color, total, measures: { value: valueCell, value2: value2Cell } } as any);
+  return { node: treeNode, value, value2 };
+}
+
 function hierarchicalData(kind: string): DemoDataModel {
-  const schema = getChartSchema(kind)
-  const root = group("portfolio", "Portfolio", "#222", [
-    group("tech", "Tech", "#5b8def", [
-      leaf("aapl", "AAPL", 35, "#86acf5"),
-      leaf("msft", "MSFT", 28, "#86acf5"),
-      leaf("nvda", "NVDA", 22, "#86acf5"),
-    ]),
-    group("finance", "Finance", "#7ed321", [
-      leaf("jpm", "JPM", 18, "#a6df5e"),
-      leaf("brk", "BRK", 14, "#a6df5e"),
-    ]),
-    group("energy", "Energy", "#f5a623", [
-      leaf("xom", "XOM", 10, "#f7be5a"),
-      leaf("shel", "SHEL", 8, "#f7be5a"),
-    ]),
-    group("health", "Health", "#e25c5c", [
-      leaf("jnj", "JNJ", 9, "#ec8a8a"),
-      leaf("pfe", "PFE", 6, "#ec8a8a"),
-    ]),
-  ]);
+  const schema = getChartSchema(kind);
+  const spec: HierSpec = {
+    id: "portfolio",
+    label: "Portfolio",
+    color: "#222",
+    children: [
+      { id: "tech", label: "Tech", color: "#5b8def", children: [
+        { id: "aapl", label: "AAPL", value: 35, color: "#86acf5" },
+        { id: "msft", label: "MSFT", value: 28, color: "#86acf5" },
+        { id: "nvda", label: "NVDA", value: 22, color: "#86acf5" },
+      ]},
+      { id: "finance", label: "Finance", color: "#7ed321", children: [
+        { id: "jpm", label: "JPM", value: 18, color: "#a6df5e" },
+        { id: "brk", label: "BRK", value: 14, color: "#a6df5e" },
+      ]},
+      { id: "energy", label: "Energy", color: "#f5a623", children: [
+        { id: "xom", label: "XOM", value: 10, color: "#f7be5a" },
+        { id: "shel", label: "SHEL", value: 8, color: "#f7be5a" },
+      ]},
+      { id: "health", label: "Health", color: "#e25c5c", children: [
+        { id: "jnj", label: "JNJ", value: 9, color: "#ec8a8a" },
+        { id: "pfe", label: "PFE", value: 6, color: "#ec8a8a" },
+      ]},
+    ],
+  };
+
+  function buildRoot(selectedKey: string): BiNode {
+    return buildHierNode(spec, selectedKey).node;
+  }
+
+  const root = buildRoot('value');
 
   return {
     root,
     setChartData(this: DemoDataModel, el: any) {
-      el.externalRoot = schema?.toChart ? schema!.toChart(root, { valueBinding: 'value' }) : root;
+      const measureKey = el.measureKey || 'value';
+      this.root = buildRoot(measureKey);
+      el.externalRoot = schema?.toChart ? schema!.toChart(this.root, { valueBinding: measureKey }) : this.root;
     },
     sync: () => () => {},
-    columns: [{ key: "total", label: "Value", width: 80 }],
+    columns: [
+      { key: "value", label: "Value", width: 80 },
+      { key: "value2", label: "Value 2", width: 80 },
+    ],
   };
 }
 

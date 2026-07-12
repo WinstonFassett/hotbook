@@ -267,7 +267,7 @@ function buildChartConfigUI(demoId: string, chartEl: HTMLElement, dataModel?: De
 
       case 'measure': {
         const columns = dataModel?.columns?.filter(c => c.key !== 'index' && c.key !== '_index') ?? [];
-        if (columns.length < 2) break;
+        if (columns.length === 0) break;
 
         const label = document.createElement('label');
         label.textContent = `${field.label}:`;
