@@ -49,7 +49,7 @@ export class MdScatterChartLC extends Diagram {
   private _xBindingCell = cell<(d: Point) => number>((d) => d.x);
   private _yBindingCell = cell<(d: Point) => number>((d) => d.y);
 
-  get xBinding(): string { return (this as any)._xBindingName ?? 'x' }
+  get xBinding(): string { return (this as any)._xBindingName ?? '_index' }
   set xBinding(v: string) {
     const prev = (this as any)._xBindingName
     ;(this as any)._xBindingName = v;

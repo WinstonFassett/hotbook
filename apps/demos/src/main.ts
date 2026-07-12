@@ -138,14 +138,19 @@ let config = readConfig();
 // Live sort: hierarchical charts expose a reactive sortBy and animate the
 // toggle themselves; flat charts tween on data-order changes, so their demo
 // data model re-feeds sorted data (setSort). Treetables re-sort via sortBy.
-function applySort(el: HTMLElement, treetable: HTMLElement | null, model: DemoDataModel | undefined) {
-  if ('sortBy' in el) {
-    (el as any).sortBy = config.sort;
-  } else if (model?.setSort) {
-    model.setSort(el, config.sort);
-    if (treetable) {
-      (treetable as any).externalRoot = model.root;
-      (treetable as any).refresh?.();
+function applySort(el: HTMLElement, treetable: HTMLElement | null, model: DemoDataModel | undefined, kind?: string) {
+  // Only drive chart sort if the schema actually declares a sort field.
+  const schema = kind ? getChartSchema(kind) : undefined;
+  const hasSort = schema?.ui.fields.some(f => f.type === 'sort') ?? false;
+  if (hasSort) {
+    if ('sortBy' in el) {
+      (el as any).sortBy = config.sort;
+    } else if (model?.setSort) {
+      model.setSort(el, config.sort);
+      if (treetable) {
+        (treetable as any).externalRoot = model.root;
+        (treetable as any).refresh?.();
+      }
     }
   }
   if (treetable && 'sortBy' in treetable) (treetable as any).sortBy = config.sort;
@@ -261,7 +266,29 @@ function buildChartConfigUI(demoId: string, chartEl: HTMLElement, dataModel?: De
       }
 
       case 'measure': {
-        // Skip measure picker for demos - would need dataset integration
+        const columns = dataModel?.columns?.filter(c => c.key !== 'index' && c.key !== '_index') ?? [];
+        if (columns.length < 2) break;
+
+        const label = document.createElement('label');
+        label.textContent = `${field.label}:`;
+        label.style.cssText = 'font-size:12px;color:var(--text-muted,#999);margin-left:8px;';
+
+        const sel = document.createElement('select');
+        sel.style.cssText = 'padding:2px 4px;font-size:12px;';
+        columns.forEach(c => {
+          const opt = document.createElement('option');
+          opt.value = c.key;
+          opt.textContent = c.label;
+          sel.appendChild(opt);
+        });
+        sel.value = (chartEl as any).measureKey || columns[0].key;
+        sel.addEventListener('change', () => {
+          (chartEl as any).measureKey = sel.value;
+          dataModel?.setChartData?.(chartEl);
+          chartEl.dispatchEvent(new CustomEvent('chartconfigchange', { bubbles: true }));
+        });
+        controls.appendChild(label);
+        controls.appendChild(sel);
         break;
       }
 
@@ -283,6 +310,7 @@ function buildChartConfigUI(demoId: string, chartEl: HTMLElement, dataModel?: De
           } else if (dataModel?.setSort) {
             dataModel.setSort(chartEl, newSort);
           }
+          chartEl.dispatchEvent(new CustomEvent('chartconfigchange', { bubbles: true }));
         });
         controls.appendChild(label);
         controls.appendChild(sel);
@@ -290,9 +318,40 @@ function buildChartConfigUI(demoId: string, chartEl: HTMLElement, dataModel?: De
       }
 
       case 'xKey':
-      case 'yKey':
-        // Skip x/y pickers for demos - would need measure list
+      case 'yKey': {
+        const isX = field.type === 'xKey';
+        const columns = dataModel?.columns ?? [];
+        const label = document.createElement('label');
+        label.textContent = `${field.label || (isX ? 'X' : 'Y')}:`;
+        label.style.cssText = 'font-size:12px;color:var(--text-muted,#999);margin-left:8px;';
+
+        const sel = document.createElement('select');
+        sel.style.cssText = 'padding:2px 4px;font-size:12px;';
+        if (isX) {
+          const idxOpt = document.createElement('option');
+          idxOpt.value = '_index';
+          idxOpt.textContent = 'Index';
+          sel.appendChild(idxOpt);
+        }
+        columns.forEach(c => {
+          const opt = document.createElement('option');
+          opt.value = c.key;
+          opt.textContent = c.label;
+          sel.appendChild(opt);
+        });
+
+        const prop = isX ? 'xKey' : 'yKey';
+        const fallback = isX ? '_index' : (columns[1]?.key ?? columns[0]?.key);
+        sel.value = (chartEl as any)[prop] ?? (chartEl as any)[field.path] ?? fallback;
+        sel.addEventListener('change', () => {
+          (chartEl as any)[prop] = sel.value;
+          dataModel?.setChartData?.(chartEl);
+          chartEl.dispatchEvent(new CustomEvent('chartconfigchange', { bubbles: true }));
+        });
+        controls.appendChild(label);
+        controls.appendChild(sel);
         break;
+      }
     }
   }
 
@@ -319,7 +378,7 @@ function buildConfigBar(): HTMLElement {
 }
 
 const app = document.getElementById("app");
-const mounted: Array<{ el: HTMLElement; treetable: HTMLElement | null; model?: DemoDataModel }> = [];
+const mounted: Array<{ el: HTMLElement; treetable: HTMLElement | null; model?: DemoDataModel; kind?: string }> = [];
 if (app) {
   app.prepend(buildConfigBar());
   const shown = config.only
@@ -348,13 +407,17 @@ if (app) {
       // display order hasn't reconciled to match the (possibly sorted) store order.
       // Re-applying the current sort triggers the reorder animation, matching the
       // tile-binder behavior that hotbook uses.
-      el.addEventListener('gesturecommit', (e: Event) => {
-        const detail = (e as CustomEvent).detail;
+      el.addEventListener('gesturecommit', (ev: Event) => {
+        const detail = (ev as CustomEvent).detail;
         // Only re-apply on commit (not cancel), matching tile-binder's contract.
         if (!detail || typeof detail.canceled !== 'boolean' || detail.canceled) return;
+        const kind = demoIdToKind[e.id];
+        const schema = kind ? getChartSchema(kind) : undefined;
+        const hasSort = schema?.ui.fields.some(f => f.type === 'sort') ?? false;
         queueMicrotask(() => {
-          if (!(el as any).gestureActive && dataModel.setSort) {
+          if (!(el as any).gestureActive && hasSort && dataModel.setSort) {
             dataModel.setSort(el, config.sort);
+            el.dispatchEvent(new CustomEvent('chartconfigchange', { bubbles: true }));
           }
         });
       });
@@ -382,6 +445,18 @@ if (app) {
     if (e.custom) {
       e.custom(section, demo, el);
     } else {
+      let treetable: HTMLElement | null = null;
+
+      // Keep the side treetable in sync when the config UI changes data/sort.
+      if (dataModel) {
+        el.addEventListener('chartconfigchange', () => {
+          if (treetable) {
+            (treetable as any).externalRoot = dataModel.root;
+            (treetable as any).refresh?.();
+          }
+        });
+      }
+
       // Build schema-driven config UI
       const configUI = buildChartConfigUI(e.id, el, dataModel);
       if (configUI) {
@@ -399,7 +474,7 @@ if (app) {
       const tableWrap = document.createElement('div');
       tableWrap.style.cssText = 'width:240px;min-width:240px;height:100%;overflow:hidden;border-left:1px solid var(--border);';
 
-      const treetable = document.createElement('v-treetable') as any;
+      treetable = document.createElement('v-treetable') as any;
       treetable.style.cssText = 'width:100%;height:100%;';
       if (dataModel) {
         treetable.externalRoot = dataModel.root;
@@ -415,9 +490,10 @@ if (app) {
       demo.style.overflow = 'hidden';
       demo.appendChild(chartAndTableWrap);
 
+      const kind = demoIdToKind[e.id];
       wireReorder(el, treetable, dataModel);
-      applySort(el, treetable, dataModel);
-      mounted.push({ el, treetable, model: dataModel });
+      applySort(el, treetable, dataModel, kind);
+      mounted.push({ el, treetable, model: dataModel, kind });
     }
   }
 }
@@ -432,7 +508,7 @@ window.addEventListener('hashchange', () => {
   config = next;
   if (needsReload) { location.reload(); return; }
   updateSortLabel();
-  for (const { el, treetable, model } of mounted) applySort(el, treetable, model);
+  for (const { el, treetable, model, kind } of mounted) applySort(el, treetable, model, kind);
 });
 
 function dedentFn(s: string): string {

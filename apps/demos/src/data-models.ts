@@ -59,28 +59,50 @@ function readItemValue(item: any): number {
   return typeof v === "number" ? v : 0;
 }
 
-function writeItemValue(item: any, target: number): void {
-  const v = item?.value;
+function writeItemValue(item: any, target: number, key: string = "value"): void {
+  const v = item?.[key];
   if (v && typeof v === "object" && typeof v.value === "number") {
     v.value = target;
   } else {
-    item.value = target;
+    item[key] = target;
   }
 }
 
-type ValueItem = { id: string; label: string; value: number; color: string };
+const SECOND_MEASURE_KEY = "value2";
+
+type ValueItem = { id: string; label: string; value: number; value2: number; color: string };
+
+function addSecondMeasure(item: { id: string; label: string; value: number; color: string }): ValueItem {
+  return {
+    ...item,
+    value2: Math.max(0, Math.round(item.value * 0.7 + 10)),
+  };
+}
 
 function valueData(
   _title: string,
-  items: ValueItem[],
+  items: Omit<ValueItem, "value2">[],
   toChart: (values: ValueItem[]) => any,
 ): DemoDataModel {
-  const byIndex = items.slice();
+  const byIndex = items.map(addSecondMeasure);
   let applied = byIndex;
+  let currentMeasureKey = "value";
+
+  function getMeasureKey(el: any): string {
+    return el.measureKey || "value";
+  }
+
+  function foldEdits(el: any, key: string) {
+    const cur = el.dataCell?.value as any[] | undefined;
+    if (cur) applied.forEach((item, i) => { if (cur[i] != null) writeItemValue(item, readItemValue(cur[i]), key); });
+  }
 
   function apply(model: DemoDataModel, el: any, ordered: ValueItem[]) {
     applied = ordered;
-    const chartData = toChart(ordered);
+    const measureKey = getMeasureKey(el);
+    currentMeasureKey = measureKey;
+    const mapped = ordered.map((r) => ({ ...r, value: r[measureKey as keyof ValueItem] as number }));
+    const chartData = toChart(mapped);
     el.externalData = chartData;
     const data = el.dataCell;
 
@@ -92,49 +114,55 @@ function valueData(
         const chartItem = chartData[i];
         const dataItem = current[i];
         if (chartItem && dataItem) {
-          writeItemValue(dataItem, chartItem.value);
+          writeItemValue(dataItem, chartItem.value, "value");
         }
       }
     }
 
-    const leaves = ordered.map((item, i) => {
+    const leaves = mapped.map((item, i) => {
       const total = Num.lens(
         data,
         (d: any[]) => (d && d[i] ? readItemValue(d[i]) : 0),
         (target: number, d: any[]) => {
           const next = d.slice();
-          if (next[i]) writeItemValue(next[i], target);
+          if (next[i]) writeItemValue(next[i], target, "value");
           return next;
         },
       );
-      return node({ id: item.id, label: item.label, color: item.color, total, measures: { value: total } } as any);
+      return node({ id: item.id, label: item.label, color: item.color, total, measures: { value: total, value2: total } } as any);
     });
     const rootTotal = Num.lens(
       data,
       (d: any[]) => d.reduce((sum, _, i) => sum + readItemValue(d[i]), 0),
       (target, d) => d,
     );
-    model.root = node({ id: "root", label: "Data", color: "#222", total: rootTotal, measures: { value: rootTotal } } as any, leaves);
+    model.root = node({ id: "root", label: "Data", color: "#222", total: rootTotal, measures: { value: rootTotal, value2: rootTotal } } as any, leaves);
   }
 
   return {
     setChartData(el: any) {
+      // Preserve any chart edits under the previous measure before switching.
+      // Only fold when the measure actually changed; on init the chart data is
+      // the element's default sample data, not a user edit.
+      if (currentMeasureKey !== getMeasureKey(el)) {
+        foldEdits(el, currentMeasureKey);
+      }
       apply(this, el, byIndex);
     },
     setSort(el: any, sort: 'index' | 'value') {
       // Fold the chart's current (possibly edited) values back into the item
       // records before reordering, so edits survive a sort toggle.
-      const cur = el.dataCell?.value as any[] | undefined;
-      if (cur) applied.forEach((item, i) => { if (cur[i] != null) item.value = readItemValue(cur[i]); });
+      const key = getMeasureKey(el);
+      foldEdits(el, key);
       const next = sort === 'value'
-        ? byIndex.slice().sort((a, b) => b.value - a.value)
+        ? byIndex.slice().sort((a, b) => (b as any)[key] - (a as any)[key])
         : byIndex.slice();
       apply(this, el, next);
     },
     setOrder(el: any, ids: string[]) {
       // Fold edits back before permuting.
-      const cur = el.dataCell?.value as any[] | undefined;
-      if (cur) applied.forEach((item, i) => { if (cur[i] != null) item.value = readItemValue(cur[i]); });
+      const key = getMeasureKey(el);
+      foldEdits(el, key);
       // Permute byIndex to match the new natural order.
       const byId = new Map(byIndex.map(x => [x.id, x]));
       const next = ids.map(id => byId.get(id)!).filter(Boolean);
@@ -144,7 +172,10 @@ function valueData(
       apply(this, el, byIndex.slice());
     },
     sync: () => () => {},
-    columns: [{ key: "value", label: "Value", width: 80 }],
+    columns: [
+      { key: "value", label: "Value", width: 80 },
+      { key: SECOND_MEASURE_KEY, label: "Value 2", width: 80 },
+    ],
   };
 }
 
@@ -162,7 +193,13 @@ function scatterData(): DemoDataModel {
   });
   return {
     setChartData(el: any) {
-      el.externalData = items.map((r) => ({ id: r.id, x: r.x, y: r.y }));
+      const xKey = el.xKey ?? el.xBinding ?? '_index';
+      const yKey = el.yKey ?? el.yBinding ?? 'y';
+      el.externalData = items.map((r, i) => ({
+        id: r.id,
+        x: xKey === '_index' ? i : (r as any)[xKey],
+        y: yKey === '_index' ? i : (r as any)[yKey],
+      }));
       const data = el.dataCell;
       const leaves = items.map((item, i) => {
         const xCell = Num.lens(
@@ -392,6 +429,7 @@ function hierarchicalData(): DemoDataModel {
       el.externalRoot = root;
     },
     sync: () => () => {},
+    columns: [{ key: "total", label: "Value", width: 80 }],
   };
 }
 
