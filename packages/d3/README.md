@@ -1,46 +1,74 @@
 # @hotbook/d3
 
-Pure D3 + TypeScript rendering engine for proportional and hierarchical visualizations. It has no framework dependencies and renders into SVG inside a container element. It is used by `@hotbook/bireactive` and the host apps for lower-level rendering and tile binding.
+Pure D3 + TypeScript rendering engine for proportional and hierarchical visualizations. It has no framework dependencies and renders to SVG inside a container. It is used directly by `@hotbook/bireactive` and the host apps for lower-level rendering and reactive tile binding.
 
-## What it does
+## Overview
 
-- `VizRenderer` renders single-level (flat) data across `treemap`, `radial`, and `bands` modes, with drag-to-edit and drag-to-reorder support.
-- `mountTreemap`, `mountIcicle`, and `mountSunburst` mount hierarchical visualizations from a `GoalTree`.
-- `tile-binder` connects reactive data sources to `bireactive` custom chart elements in a framework-agnostic way.
-- `biTree` builds `bireactive` tree nodes from flat `VizNode` arrays.
+The package is split into three rendering surfaces:
 
-## High-level structure
+1. **Flat visualizations** (`VizRenderer`) — treemap, radial, and bands from a `Goal` array.
+2. **Hierarchical visualizations** (`mountTreemap`, `mountIcicle`, `mountSunburst`) — from a `GoalTree`.
+3. **Reactive host glue** (`tile-binder`, `biTree`) — connecting a reactive store to a `bireactive` custom chart element.
 
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph Flat
+    F[Goal array]
+    VR[VizRenderer]
+    FM[treemap, radial, bands]
+  end
+  subgraph Hierarchical
+    H[GoalTree]
+    MT[mountTreemap]
+    MI[mountIcicle]
+    MS[mountSunburst]
+  end
+  subgraph HostBinding
+    V[VizNode array]
+    BT[biTree]
+    TS[TileSource]
+    TB[bindTile]
+  end
+  F --> VR
+  VR --> FM
+  FM --> SVG[SVG]
+  H --> MT
+  H --> MI
+  H --> MS
+  MT --> SVG
+  MI --> SVG
+  MS --> SVG
+  V --> BT
+  BT --> TS
+  TS --> TB
+  TB --> CE[bireactive chart element]
 ```
-src/
-  viz/                  # Flat visualization engine
-    VizRenderer.ts      # Flat viz renderer
-    chrome/             # Radial and bands chrome
-    layout*.ts          # Treemap, bands, radial layout helpers
-    pathPrimitives.ts   # Shape morphing primitives
-  hviz/                 # Hierarchical visualization engine
-    treemap.ts          # mountTreemap
-    icicle.ts           # mountIcicle
-    sunburst.ts         # mountSunburst
-    pnodeUtils.ts       # Tree build and rollup helpers
-  host/                 # Glue for reactive charts
-    tile-binder.ts      # bindTile, TileSource, TileController
-    biTree.ts           # buildBiTree, biLeaf, biGroup
-  colors.ts             # pickColor, colorFor
-  types.ts              # Re-exported from @hotbook/core
-  index.ts              # Public exports
-```
 
-## Build / develop scripts
+- **Flat rendering** uses `VizRenderer` to compute geometry and morph shapes between the three modes. It supports drag-to-edit and drag-to-reorder.
+- **Hierarchical rendering** uses `d3-hierarchy` to compute layout and returns a mounted object with `destroy()`.
+- **Host binding** converts `VizNode` arrays into `bireactive` `BiNode` trees with `biTree`, wraps them in a `TileSource`, and then `bindTile` mounts the `bireactive` element and wires hover/select/edit back to the store.
+- `colors.ts` and `types.ts` re-export the shared palette and domain types from `@hotbook/core`.
+
+## How to use it
+
+- For flat data, create a `VizRenderer` with a `Goal` array and a `FlatMode` (`treemap`, `radial`, `bands`).
+- For hierarchical data, call `mountTreemap`, `mountIcicle`, or `mountSunburst` with a `GoalTree`.
+- For reactive dashboards, build a `TileSource` and use `bindTile` to keep a `bireactive` chart element in sync with your store.
+- Use `biLeaf`/`biGroup`/`buildBiTree` when you want a reactive `BiNode` tree from a flat `VizNode` array.
+
+## Development
 
 ```sh
-npm run build      # vite build — produces dist/hotbook-d3.js, dist/hotbook-d3.umd.cjs, dist/index.d.ts
+npm install
+npm run build      # vite build — dist/hotbook-d3.js, .umd.cjs, index.d.ts
 npm run watch      # vite build --watch
 npm run test       # vitest run
 npm run test:watch # vitest
 ```
 
-The build output is published under `dist/`. `files` in `package.json` includes only `dist`.
+The published package only ships `dist/`.
 
 ## License
 

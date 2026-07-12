@@ -2,31 +2,45 @@
 
 APITable widget adapter that renders a datasheet view as a hotbook visualization. It supports flat modes (treemap, bands, pie, arc) and hierarchical modes (h-treemap, h-icicle, h-sunburst) based on the active view's grouping. It is currently stale and not actively maintained.
 
-## What it does
+## Overview
 
-- Implements a single React widget (`src/index.tsx`) using `@apitable/widget-sdk` to read the active view, records, fields, and group info.
-- Maps numeric APITable fields to a value and builds a `bireactive` `BiNode` tree for grouped records.
-- Registers custom elements from `@hotbook/bireactive` under APITable-specific tags and mounts them inside the widget.
-- `widget.config.json` contains package metadata, host, and entry point.
+The package is a single React widget that bridges the APITable SDK to `@hotbook/bireactive` chart components. It reads the datasheet, builds a `BiNode` tree, registers the appropriate `bireactive` custom element, and mounts it inside the widget.
 
-## High-level structure
+## Architecture
 
+```mermaid
+flowchart LR
+  DS[APITable datasheet] --> SDK[apitable widget sdk]
+  SDK --> RW[React widget]
+  RW --> NF[numeric fields]
+  RW --> GI[group info]
+  NF --> BT[BiNode tree]
+  GI --> BT
+  BT --> CE[bireactive chart element]
+  CE --> SVG[SVG visualization]
+  CFG[widget config] --> RW
 ```
-src/
-  index.tsx        # Widget component and initializeWidget call
-  widget.config.json
-package.json
-```
+
+- The widget reads the active view's records, fields, and group info from `@apitable/widget-sdk`.
+- Numeric fields (Number, Currency, Percent, Rating) become the value measure.
+- If the view has groups, the widget builds a hierarchical `BiNode` tree; otherwise it builds a single-level tree.
+- The widget registers APITable-specific custom elements (`v-apitable-*`) backed by `MdBarChartLC`, `MdPieChartLC`, `MdTreemapLC`, etc., and mounts the element for the selected mode.
+- `widget.config.json` defines the package id, host, and entry.
+
+## How to use it
+
+- Configure `widget.config.json` with the host, spaceId, and packageId.
+- Run `npm run start` to develop locally with HMR.
+- Run `npm run build` to release to APITable with `widget-cli release`.
+- The first release to a new `packageId` must be run interactively; `--ci` does not bypass the prompt.
 
 ## Dependencies
 
-- Peer dependency on `react >=17` (APITable widget SDK constraint).
-- Uses `@apitable/widget-sdk` and `@apitable/widget-cli`.
-- Depends on `@hotbook/core` and `@hotbook/bireactive` from the workspace.
+- `react >=17` peer dependency (APITable widget SDK constraint).
+- `@apitable/widget-sdk` and `@apitable/widget-cli`.
+- `@hotbook/core` and `@hotbook/bireactive` from the workspace.
 
-## Setup / develop scripts
-
-This is not a standard npm library; it is a widget project deployed to an APITable space.
+## Development
 
 ```sh
 npm install
@@ -34,7 +48,7 @@ npm run start   # widget-cli start — dev server with HMR
 npm run build   # widget-cli release — bundle and upload to APITable
 ```
 
-For release, see the root repo README for the full recipe (token, spaceId, host, self-hosted vs. aitable.ai differences). First release to a new `packageId` must be interactive; `--ci` does not bypass the prompt.
+For the full release recipe (token, spaceId, host, self-hosted vs. aitable.ai differences), see the root repo README.
 
 ## License
 
