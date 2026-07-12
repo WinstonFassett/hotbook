@@ -727,7 +727,7 @@ export class DockView extends HTMLElement {
 
   private _syncChart(panelId: string, tileRec: TileRecord) {
     const existing = this._panelCtrls.get(panelId)
-    if (!existing?.tileCtrl) return
+    if (!existing) return
     const { tile, ds, measureKey } = tileRec
     const drillNodeId = hudStore.getSnapshot().drills[tile.id] ?? null
     const ctx: TileRenderContext = { tile, ds, measureKey, drillNodeId,
@@ -735,8 +735,15 @@ export class DockView extends HTMLElement {
       onUpdateMany: tileRec.onUpdateMany as any,
       onNodeReorder: tileRec.onNodeReorder,
     }
-    const source = buildTileSource(ctx)
-    if (source) existing.tileCtrl.update(source)
+    if (existing.tileCtrl) {
+      const source = buildTileSource(ctx)
+      if (source) existing.tileCtrl.update(source)
+    } else if (existing.simpleEl && existing.wrap) {
+      // Re-apply simple-mount props (sortBy, externalData) on tile changes.
+      // _mountChart remounts if the data key changed, otherwise re-uses the
+      // element so reactive transitions (e.g. sankey sortBy) can run.
+      this._mountChart(existing.container, panelId, tileRec, existing.wrap)
+    }
   }
 
   // ─── Chart mounting ───────────────────────────────────────────────────────
@@ -805,6 +812,9 @@ export class DockView extends HTMLElement {
           this._panelCtrls.set(panelId, ctrl)
         } else {
           body.appendChild(existing.simpleEl!)
+          // Re-apply props so reactive sort/options changes reach the element
+          // without a remount (e.g. sankey sortBy transitions).
+          setup(existing.simpleEl!)
         }
       } else {
         // Unsupported retired kind — show placeholder

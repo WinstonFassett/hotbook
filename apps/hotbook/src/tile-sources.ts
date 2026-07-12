@@ -428,7 +428,9 @@ export function buildSimpleMount(ctx: TileRenderContext): ((el: HTMLElement) => 
     const nodeNames = [...new Set(edges.flatMap(e => [e.source, e.target]))]
     const links = edges.map(e => ({ source: e.source, target: e.target, value: e.value }))
     const data = { nodes: nodeNames, links }
-    return (el: any) => { el.externalData = data }
+    const { orderBinding } = resolveTileBindings(tile, measureKey)
+    const sortBy: 'index' | 'value' = (orderBinding === 'value' || orderBinding === '_value' || orderBinding === valueBinding) ? 'value' : 'index'
+    return (el: any) => { el.externalData = data; el.sortBy = sortBy }
   }
 
   return null

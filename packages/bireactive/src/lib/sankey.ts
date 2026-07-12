@@ -214,6 +214,9 @@ export function sankeyScene(
   // dropped d3 to avoid). The diagram grows/shrinks in its own space; the viewer
   // frames the announced bounds (below).
   const baseTopology: SankeyTopology = buildTopology(nodeIds.length, src, tgt);
+  // Existing code uses the original (unsorted) `topology` variable for link
+  // incidence and node flow; the layout is computed from `sortedTopology.value`.
+  const topology = baseTopology;
 
   // Sorted topology: reorder nodes within each column based on sortBy.
   // When sortBy = 'value', sort by node throughput descending.
