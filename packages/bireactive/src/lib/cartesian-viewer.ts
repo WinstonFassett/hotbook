@@ -72,6 +72,9 @@ export class CartesianViewer {
   private width: number;
   private height: number;
 
+  // Unique id for the plot-area clip path
+  private clipId = `cartesian-viewer-clip-${Math.random().toString(36).slice(2)}`;
+
   // Margins for axes
   private margin = { top: 20, right: 20, bottom: 40, left: 50 };
 
@@ -149,6 +152,22 @@ export class CartesianViewer {
     this.svg.setAttribute('viewBox', `0 0 ${this.width} ${this.height}`);
     this.svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
 
+    const innerWidth = this.width - this.margin.left - this.margin.right;
+    const innerHeight = this.height - this.margin.top - this.margin.bottom;
+
+    // Clip path for the plot area so grid/data never draw over the axes/labels
+    const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+    const clipPath = document.createElementNS('http://www.w3.org/2000/svg', 'clipPath');
+    clipPath.setAttribute('id', this.clipId);
+    const clipRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    clipRect.setAttribute('x', '0');
+    clipRect.setAttribute('y', '0');
+    clipRect.setAttribute('width', String(innerWidth));
+    clipRect.setAttribute('height', String(innerHeight));
+    clipPath.appendChild(clipRect);
+    defs.appendChild(clipPath);
+    this.svg.appendChild(defs);
+
     // Create main group with margins
     const mainGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     mainGroup.setAttribute('transform', `translate(${this.margin.left},${this.margin.top})`);
@@ -158,16 +177,17 @@ export class CartesianViewer {
     if (this.opts.showGrid) {
       this.gridGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
       this.gridGroup.setAttribute('class', 'grid');
+      this.gridGroup.setAttribute('clip-path', `url(#${this.clipId})`);
       mainGroup.appendChild(this.gridGroup);
     }
 
     // Data layer (charts render here)
     this.dataGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     this.dataGroup.setAttribute('class', 'data');
+    this.dataGroup.setAttribute('clip-path', `url(#${this.clipId})`);
     mainGroup.appendChild(this.dataGroup);
 
     // X axis (positioned at bottom of inner chart area)
-    const innerHeight = this.height - this.margin.top - this.margin.bottom;
     this.xAxisGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     this.xAxisGroup.setAttribute('class', 'x-axis');
     this.xAxisGroup.setAttribute('transform', `translate(0,${innerHeight})`);
@@ -179,8 +199,6 @@ export class CartesianViewer {
     mainGroup.appendChild(this.yAxisGroup);
 
     // Axis labels (positioned relative to inner chart area)
-    const innerWidth = this.width - this.margin.left - this.margin.right;
-
     if (this.opts.xLabel) {
       const xLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
       xLabel.setAttribute('class', 'x-label');
@@ -323,7 +341,7 @@ export class CartesianViewer {
     const yScale = this.yScale.value;
 
     const [xMin, xMax] = xScale.domain();
-    const [yMax, yMin] = yScale.domain(); // Inverted
+    const [yMin, yMax] = yScale.domain();
 
     const cx = centerX ?? (xMin + xMax) / 2;
     const cy = centerY ?? (yMin + yMax) / 2;
@@ -353,7 +371,7 @@ export class CartesianViewer {
     const yScale = this.yScale.value;
 
     const [xMin, xMax] = xScale.domain();
-    const [yMax, yMin] = yScale.domain(); // Inverted
+    const [yMin, yMax] = yScale.domain();
 
     const innerWidth = this.width - this.margin.left - this.margin.right;
     const innerHeight = this.height - this.margin.top - this.margin.bottom;
@@ -393,7 +411,7 @@ export class CartesianViewer {
     const xScale = this.xScale.value;
     const yScale = this.yScale.value;
     const [xMin, xMax] = xScale.domain();
-    const [yMax, yMin] = yScale.domain();
+    const [yMin, yMax] = yScale.domain();
 
     this.panStartDomain = { xMin, xMax, yMin, yMax };
 

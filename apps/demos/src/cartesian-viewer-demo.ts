@@ -1,5 +1,5 @@
 // Zoomable Scatterplot Demo - demonstrates CartesianViewer with axis-aware pan/zoom
-import { Diagram } from '../../../packages/bireactive/src/lib/diagram';
+import { Diagram, css } from '../../../packages/bireactive/src/lib/diagram';
 import { CartesianViewer, type CartesianDomain } from '@hotbook/bireactive';
 import { effect } from 'bireactive';
 import type { Mount } from 'bireactive';
@@ -20,9 +20,23 @@ function generateScatterData(n: number): Array<{ x: number; y: number; r: number
 }
 
 export class MdCartesianViewerDemo extends Diagram {
+  static styles = css`
+    :host {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      margin: 0 auto;
+    }
+    svg {
+      flex: 1 1 0;
+      min-height: 0;
+    }
+  `;
+
   private viewer?: CartesianViewer;
   private data = generateScatterData(200);
   private disposeEffect?: () => void;
+  private resizeObserver?: ResizeObserver;
 
   protected scene(s: Mount): void {
     const W = 800;
@@ -54,6 +68,12 @@ export class MdCartesianViewerDemo extends Diagram {
 
     // Add controls
     this.addControls();
+
+    // Fit the chart into the available space after the chrome layer is laid out
+    requestAnimationFrame(() => this.updateSize());
+    this.resizeObserver = new ResizeObserver(() => this.updateSize());
+    this.resizeObserver.observe(this);
+    this.resizeObserver.observe(this.chromeLayer);
   }
 
   private renderScatter(): void {
@@ -83,6 +103,13 @@ export class MdCartesianViewerDemo extends Diagram {
 
       dataGroup.appendChild(circle);
     }
+  }
+
+  private updateSize(): void {
+    if (!this.viewer || this.clientWidth === 0 || this.clientHeight === 0) return;
+    const chromeHeight = this.chromeLayer?.offsetHeight ?? 0;
+    const availableHeight = Math.max(120, this.clientHeight - chromeHeight);
+    this.viewer.setSize(this.clientWidth, availableHeight);
   }
 
   private addControls(): void {
@@ -124,6 +151,7 @@ export class MdCartesianViewerDemo extends Diagram {
 
   disconnectedCallback(): void {
     this.disposeEffect?.();
+    this.resizeObserver?.disconnect();
     this.viewer?.dispose();
     super.disconnectedCallback();
   }
