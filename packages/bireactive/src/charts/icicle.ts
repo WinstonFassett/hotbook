@@ -196,10 +196,18 @@ export class MdIcicleLC extends Diagram {
       const active = gestureActiveCell.value;
 
       // WIN-257: During active gesture, freeze both sort AND geometry.
-      // Return the frozen layout to prevent tiles from resizing/repositioning
-      // as values change during the drag.
-      if (active && frozenLayout) {
-        return frozenLayout;
+      // Lazy capture: if gesture just became active and we don't have a frozen layout yet,
+      // calculate and capture it now. If we already have a frozen layout, return it
+      // to prevent recalculation during the gesture.
+      if (active) {
+        if (frozenLayout) {
+          // Already frozen - return snapshot without recalculating
+          return frozenLayout;
+        }
+        // First active derive - capture sort order but continue to calculate layout this once
+        if (!frozenSortKey) {
+          frozenSortKey = snapshotSortKey();
+        }
       }
 
       const h = buildHierarchy(rootCell.value, this._sortByCell.value);
@@ -234,6 +242,15 @@ export class MdIcicleLC extends Diagram {
           } as HierarchyRectangularNode<BiNode>);
         }
       });
+
+      // If gesture just became active, capture this layout as the frozen snapshot
+      if (active && !frozenLayout) {
+        frozenLayout = new Map();
+        for (const [key, node] of map) {
+          frozenLayout.set(key, { ...node });
+        }
+      }
+
       return map;
     });
 
@@ -854,15 +871,13 @@ export class MdIcicleLC extends Diagram {
           onStart: () => {
             active.value = true;
             handle.el.style.cursor = "grabbing";
-            // WIN-257 / Rule 7: Freeze both sort order AND layout geometry.
-            // Snapshot AFTER cell writes so `layout` reflects any pending value setup.
-            frozenSortKey = snapshotSortKey();
-            frozenLayout = new Map(layout.value);
+            // WIN-257 / Rule 7: Set gesture flag - layout derive will handle lazy capture
             gestureActiveCell.value = true;
           },
           onEnd: () => {
             active.value = false;
             handle.el.style.cursor = "grab";
+            // WIN-257: Clear gesture flag and frozen state
             gestureActiveCell.value = false;
             frozenSortKey = null;
             frozenLayout = null;

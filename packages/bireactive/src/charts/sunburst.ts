@@ -126,10 +126,14 @@ export class MdSunburstLC extends Diagram {
       const active = gestureActiveCell.value;
 
       // WIN-257: During active gesture, freeze both sort AND geometry.
-      // Return the frozen layout to prevent slices from resizing/repositioning
-      // as values change during the drag.
-      if (active && frozenLayout) {
-        return frozenLayout;
+      // Lazy capture approach avoids timing issues with onStart.
+      if (active) {
+        if (frozenLayout) {
+          return frozenLayout;
+        }
+        if (!frozenSortKey) {
+          frozenSortKey = snapshotSortKey();
+        }
       }
 
       const h = buildHierarchy(root, this._sortByCell.value);
@@ -141,6 +145,15 @@ export class MdSunburstLC extends Diagram {
       partition<BiNode>().size([2 * Math.PI, rfull])(h);
       const map = new Map<BiNode, HierarchyRectangularNode<BiNode>>();
       h.each((d) => map.set(d.data, d as HierarchyRectangularNode<BiNode>));
+
+      // Capture frozen layout on first active derive
+      if (active && !frozenLayout) {
+        frozenLayout = new Map();
+        for (const [key, node] of map) {
+          frozenLayout.set(key, { ...node });
+        }
+      }
+
       return map;
     });
 
@@ -762,10 +775,7 @@ export class MdSunburstLC extends Diagram {
           onStart: () => {
             active.value = true;
             handle.el.style.cursor = "grabbing";
-            // WIN-257 / Rule 7: Freeze both sort order AND layout geometry.
-            // Snapshot AFTER cell writes so `layout` reflects any pending value setup.
-            frozenSortKey = snapshotSortKey();
-            frozenLayout = new Map(layout.value);
+            // WIN-257 / Rule 7: Set gesture flag - layout derive will handle lazy capture
             gestureActiveCell.value = true;
           },
           onEnd: () => {
