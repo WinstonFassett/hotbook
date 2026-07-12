@@ -180,7 +180,6 @@ export class CartesianViewer {
 
     // Axis labels (positioned relative to inner chart area)
     const innerWidth = this.width - this.margin.left - this.margin.right;
-    const innerHeight = this.height - this.margin.top - this.margin.bottom;
 
     if (this.opts.xLabel) {
       const xLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
