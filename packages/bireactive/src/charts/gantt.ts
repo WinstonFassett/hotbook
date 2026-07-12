@@ -44,10 +44,12 @@ import {
 import {
   GESTURE_ACTIVE_CLASS,
   GESTURE_SUPPRESSION_CSS,
+  REORDER_ELEVATION_CSS,
   hoverTransition,
 } from "../lib/transitions";
 import { lightenHex } from "../lib/color-utils";
 import { PALETTE } from "@hotbook/core";
+import { attachReorderGesture } from "../lib/reorder-gesture";
 
 const W = 720;
 const H = 360;
@@ -98,7 +100,7 @@ function makeSample(): GanttTask[] {
 type DragKind = 'move' | 'start' | 'end';
 
 export class MdGanttChartLC extends Diagram {
-  static styles = `text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}`;
+  static styles = `text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}${REORDER_ELEVATION_CSS}`;
 
   readonly dataCell = cell<readonly GanttTask[]>(makeSample());
 
@@ -113,6 +115,19 @@ export class MdGanttChartLC extends Diagram {
   private _sortByCell = cell<'index' | 'value'>('index')
   get sortBy(): 'index' | 'value' { return this._sortByCell.value }
   set sortBy(v: 'index' | 'value') { this._sortByCell.value = v }
+
+  /** Drag-to-reorder (WIN-287). When true and sortBy='index', dragging a row
+   *  up/down reorders tasks. Caller handles data persistence via onReorder. */
+  private _canReorderCell = cell<boolean>(false)
+  get canReorder(): boolean { return this._canReorderCell.value }
+  set canReorder(v: boolean) { this._canReorderCell.value = v }
+
+  /** Fired when a drag-to-reorder commits. Receives the new task id sequence.
+   *  Chart previews the reorder but doesn't persist; caller mutates data. */
+  onReorder?: (orderedIds: string[]) => void
+
+  /** Incremented when a user-driven reorder commits. Triggers y-cell tweens. */
+  private _reorderTickCell = cell(0)
 
   set externalData(v: GanttTask[] | undefined) {
     if (v) this.dataCell.value = v;
@@ -195,12 +210,14 @@ export class MdGanttChartLC extends Diagram {
       return idx === -1 ? plotY : plotY + (idx * ROW_STEP);
     };
 
-    // Initialize and react to sort changes: tween each task's y position to its new row.
+    // Initialize and react to sort/reorder changes: tween each task's y position to its new row.
     let sortInited = false;
     let lastSortBy = untracked(() => this._sortByCell.value);
+    let lastReorderTick = untracked(() => this._reorderTickCell.value);
     biEffect(() => {
       const sorted = sortedData.value; // track sorted order
       const sortBy = this._sortByCell.value; // track sort key
+      const reorderTick = this._reorderTickCell.value; // track reorder commits
 
       if (!sortInited) {
         // Initial placement: snap to positions
@@ -210,14 +227,17 @@ export class MdGanttChartLC extends Diagram {
         }
         sortInited = true;
         lastSortBy = sortBy;
+        lastReorderTick = reorderTick;
         return;
       }
 
-      // Sort changed: tween all tasks to their new row positions, but only if not dragging.
+      // Tween on sort change OR committed reorder (but not during active gesture)
       const sortChanged = sortBy !== lastSortBy;
+      const reorderCommitted = reorderTick !== lastReorderTick;
       lastSortBy = sortBy;
+      lastReorderTick = reorderTick;
 
-      if (sortChanged && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
+      if ((sortChanged || reorderCommitted) && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
         for (const task of rows0) {
           const entry = taskYCells.get(task.id);
           if (!entry) continue;
@@ -225,8 +245,8 @@ export class MdGanttChartLC extends Diagram {
           entry.cancel?.();
           entry.cancel = this.anim.start(tween(entry.yCell, targetY, SORT_SEC, easeOut));
         }
-      } else if (!sortChanged) {
-        // Data or size changed but sort didn't: snap to new positions
+      } else if (!sortChanged && !reorderCommitted) {
+        // Data or size changed but sort/reorder didn't: snap to new positions
         for (const task of rows0) {
           const entry = taskYCells.get(task.id);
           if (entry) {
@@ -818,7 +838,7 @@ export class MdGanttChartLC extends Diagram {
         return entry ? entry.yCenter.value : rowCenterY(idx);
       };
 
-      s(label(
+      const rowLabel = s(label(
         Vec.derive(() => ({ x: plotX - 8, y: getYCenter() })),
         derive(() => di()?.label ?? ""),
         { size: 11, align: Anchor.Right, fill: "#bbb", opacity: 0.85 },
@@ -838,6 +858,89 @@ export class MdGanttChartLC extends Diagram {
       ));
       rh.el.style.pointerEvents = "none";
       rh.el.style.transition = "opacity 0.1s ease";
+
+      // ─── Drag-to-reorder hit target (WIN-287) ──────────────────────────────
+      // Invisible rect in the label lane (left of plot) that captures reorder drags.
+      // This keeps the bar free for time-axis drag (horizontal move/resize).
+      const labelLaneW = PAD.left - 16; // Label lane width (leave margin)
+      const reorderHitTarget = s(rect(
+        derive(() => 0),
+        derive(() => getY()),
+        labelLaneW,
+        ROW_H,
+        { fill: "#ffffff", opacity: 0 },
+      ));
+      reorderHitTarget.el.style.cursor = "grab";
+      reorderHitTarget.el.style.touchAction = "none";
+
+      // Attach reorder gesture to the label lane hit target, not the bar
+      biEffect(() => {
+        const enabled = this._canReorderCell.value && this._sortByCell.value === 'index';
+        // Track reorder commits (not data changes during drag preview)
+        void this._reorderTickCell.value;
+
+        // Read current task without tracking to avoid re-runs during drag
+        const task = untracked(() => di());
+        if (!enabled || !task || !task.id) {
+          reorderHitTarget.el.style.cursor = "default";
+          return;
+        }
+
+        reorderHitTarget.el.style.cursor = "grab";
+        let initialSnapshot: GanttTask[] = [];
+        const detach = attachReorderGesture({
+          hitEl: reorderHitTarget.el,
+          dragEl: reorderHitTarget.el,
+          itemId: task.id,
+          host: this,
+          // No filter needed - label lane doesn't conflict with bar gestures
+          getInitialOrder: () => (data.value as GanttTask[]).map(t => t.id),
+          computeTargetIndex: (e) => {
+            const { y } = localPoint(e);
+            // Map pointer y to row index
+            const raw = (y - plotY) / ROW_STEP;
+            return Math.floor(raw);
+          },
+          onActivate: () => {
+            // Snapshot the initial task array for potential revert
+            initialSnapshot = [...(data.value as GanttTask[])];
+          },
+          onPreview: (order) => {
+            // Imperatively reorder the data array. When sortBy='index', sortedData
+            // will reflect this new order and the existing y-cell tween system
+            // (lines 199-239) will animate rows to their new positions.
+            const tasks = data.value as GanttTask[];
+            const byId = new Map(tasks.map(t => [t.id, t]));
+            const reordered = order.map(id => byId.get(id)).filter(Boolean) as GanttTask[];
+            if (reordered.length === tasks.length) {
+              data.value = reordered;
+            }
+          },
+          onEnd: (finalOrder, canceled) => {
+            if (canceled) {
+              // Revert to the initial snapshot from onActivate
+              data.value = initialSnapshot;
+              this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled: true } }));
+              return;
+            }
+
+            // Commit: check if order actually changed from initial
+            const initialIds = initialSnapshot.map(t => t.id);
+            const changed = finalOrder.some((id, i) => id !== initialIds[i]);
+            if (changed) {
+              // Data is already reordered from onPreview; notify caller and trigger tweens
+              this._reorderTickCell.value = this._reorderTickCell.value + 1;
+              this.onReorder?.(finalOrder.slice());
+              this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled: false, reorder: true } }));
+            } else {
+              this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled: false } }));
+            }
+          },
+        });
+
+        // Cleanup when effect re-runs or component unmounts
+        return detach;
+      });
     }
 
     // ─── Task bars ─────────────────────────────────────────────────────────
@@ -1011,9 +1114,14 @@ export class MdGanttChartLC extends Diagram {
     }
 
     // ─── Caption / readout ────────────────────────────────────────────────
+    const statusText = derive(() => {
+      const base = "Gantt — click select · Tab navigate · ←/→ shift · ↑/↓ resize · drag body/handles · ctrl+wheel resize · Esc revert";
+      const canReorder = this._canReorderCell.value && this._sortByCell.value === 'index';
+      return canReorder ? base + " · drag row to reorder" : base;
+    });
     s(label(
       Vec.derive(() => ({ x: Wc.value / 2, y: 12 })),
-      "Gantt — click select · Tab navigate · ←/→ shift · ↑/↓ resize · drag body/handles · ctrl+wheel resize · Esc revert",
+      statusText,
       { size: 11, align: Anchor.Center, opacity: 0.7 },
     ));
 
