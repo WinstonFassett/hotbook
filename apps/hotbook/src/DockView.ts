@@ -103,6 +103,12 @@ export class DockView extends HTMLElement {
   private _flipMode: 'manual' | 'library' | 'css' | 'none' = 'manual'
   /** Flipping library instance for Option B */
   private _flipping: FlippingWeb | null = null
+  /** Duration used by the Flipping library so cleanup can match it */
+  private _flipDuration = 400
+  /** Active FLIP cleanup timers, keyed by data-flip-key */
+  private _flipTimers = new Map<string, number>()
+  /** Active library FLIP cleanup timer */
+  private _libraryFlipTimer: number | null = null
   /** Debug panel element */
   private _debugPanel: HTMLElement | null = null
   /** Whether animations are enabled (respects prefers-reduced-motion) */
@@ -165,8 +171,9 @@ export class DockView extends HTMLElement {
     this.addEventListener('keydown', this._onKeyDown)
 
     // Initialize Flipping library for Option B
+    this._flipDuration = 400
     this._flipping = new FlippingWeb({
-      duration: 400,
+      duration: this._flipDuration,
       easing: 'cubic-bezier(0.25, 0.46, 0.45, 0.94)'
     })
 
@@ -335,7 +342,6 @@ export class DockView extends HTMLElement {
       // Structural change — full rebuild
       root.innerHTML = ''
       const nodeEl = this._buildNode(target, tiles)
-      if (target.kind === 'group') (nodeEl as HTMLElement).dataset.flipKey = target.id
       root.appendChild(nodeEl)
       return
     }
@@ -367,13 +373,13 @@ export class DockView extends HTMLElement {
       const cell = cells[i]!
       // Hot path for gutter drag: just update flex, no DOM rebuild
       cell.style.flex = String((split.sizes[i] ?? 1) / total)
+      // data-flip-key lives on .dv-group, not on the cell
+      cell.removeAttribute('data-flip-key')
       const childEl = cell.firstElementChild as HTMLElement | null
       const childId = childEl?.dataset.splitId ?? childEl?.dataset.groupId
       if (!childEl || childId !== child.id) {
         cell.innerHTML = ''
         cell.appendChild(this._buildNode(child, tiles))
-        if (child.kind === 'group') cell.dataset.flipKey = child.id
-        else delete cell.dataset.flipKey
       } else {
         this._patchNode(childEl, child, tiles, tilesChanged)
       }
@@ -381,6 +387,9 @@ export class DockView extends HTMLElement {
   }
 
   private _patchGroup(el: HTMLElement, group: DockGroup, tiles: TileRecord[], tilesChanged: boolean) {
+    // data-flip-key lives on the group element
+    el.dataset.flipKey = group.id
+
     // Update focus indicator
     el.classList.toggle('dv-group--focused', group.id === this._focusedGroupId)
 
@@ -497,7 +506,6 @@ export class DockView extends HTMLElement {
       cell.className = 'dv-cell'
       cell.style.cssText = `flex:${(split.sizes[i] ?? 1) / total};min-width:0;min-height:0;overflow:hidden;position:relative`
       cell.appendChild(this._buildNode(child, tiles))
-      if (child.kind === 'group') cell.dataset.flipKey = child.id
       el.appendChild(cell)
 
       if (i < split.children.length - 1) {
@@ -518,6 +526,7 @@ export class DockView extends HTMLElement {
     const el = document.createElement('div')
     el.className = 'dv-group'
     el.dataset.groupId = group.id
+    el.dataset.flipKey = group.id
     el.style.cssText = 'display:flex;flex-direction:column;width:100%;height:100%;overflow:hidden'
     // Set focus indicator class if this group is focused
     if (group.id === this._focusedGroupId) {
@@ -956,15 +965,49 @@ export class DockView extends HTMLElement {
   // ─── FLIP Animations ──────────────────────────────────────────────────────
 
   /**
+   * Cancel any in-flight FLIP styles/timers and restore the natural layout.
+   * Called before each FLIP run so first/last rect reads are accurate.
+   */
+  private _resetFlipStyles() {
+    this._flipTimers.forEach(id => clearTimeout(id))
+    this._flipTimers.clear()
+    if (this._libraryFlipTimer) {
+      clearTimeout(this._libraryFlipTimer)
+      this._libraryFlipTimer = null
+    }
+    this.querySelectorAll('[data-flip-key]').forEach(el => {
+      const htmlEl = el as HTMLElement
+      htmlEl.style.position = ''
+      htmlEl.style.left = ''
+      htmlEl.style.top = ''
+      htmlEl.style.width = ''
+      htmlEl.style.height = ''
+      htmlEl.style.margin = ''
+      htmlEl.style.zIndex = ''
+      htmlEl.style.transform = ''
+      htmlEl.style.transformOrigin = ''
+      htmlEl.style.transition = ''
+      htmlEl.style.opacity = ''
+      htmlEl.classList.remove('dv-animating')
+      htmlEl.removeAttribute('data-flip-state')
+    })
+  }
+
+  /**
    * Shared helper for Option A (Manual) and Option C (CSS Spring).
-   * Uses stable data-flip-key attributes to match elements before and after
-   * a bireactive layout update, then applies FLIP transform transitions.
+   * Uses stable data-flip-key attributes on .dv-group elements to match panes
+   * before and after a bireactive layout update. During the animation the pane
+   * is promoted to position:fixed so it can slide over the gutter dividers and
+   * is not clipped by the parent dv-cell overflow. The focused pane gets a
+   * higher z-index so it stays on top.
    */
   private _applyFLIPWithTransition(callback: () => void, transition: string, duration: number) {
     if (!this._animationsEnabled || this._flipMode === 'none') {
       callback()
       return
     }
+
+    this._resetFlipStyles()
 
     const firstRects = new Map<string, DOMRect>()
     const firstElements = this.querySelectorAll('[data-flip-key]')
@@ -1014,6 +1057,17 @@ export class DockView extends HTMLElement {
 
       if (dx === 0 && dy === 0 && dw === 1 && dh === 1) return
 
+      // Promote the pane to fixed so it escapes the overflow:hidden clip of the
+      // dv-cell and can slide over the divider. Anchor at the new (last)
+      // position and offset the transform to the old (first) position.
+      const isFocused = el.dataset.groupId === this._focusedGroupId
+      el.style.position = 'fixed'
+      el.style.left = `${last.left}px`
+      el.style.top = `${last.top}px`
+      el.style.width = `${last.width}px`
+      el.style.height = `${last.height}px`
+      el.style.margin = '0'
+      el.style.zIndex = isFocused ? '1000' : '100'
       el.style.transformOrigin = '0 0'
       el.style.transform = `translate(${dx}px, ${dy}px) scale(${dw}, ${dh})`
       el.style.transition = 'none'
@@ -1023,12 +1077,21 @@ export class DockView extends HTMLElement {
         el.style.transition = transition
         el.style.transform = 'translate(0, 0) scale(1, 1)'
 
-        setTimeout(() => {
+        const timer = window.setTimeout(() => {
+          el.style.position = ''
+          el.style.left = ''
+          el.style.top = ''
+          el.style.width = ''
+          el.style.height = ''
+          el.style.margin = ''
+          el.style.zIndex = ''
           el.style.transform = ''
           el.style.transformOrigin = ''
           el.style.transition = ''
           el.classList.remove('dv-animating')
+          this._flipTimers.delete(key)
         }, duration)
+        this._flipTimers.set(key, timer)
       })
     })
   }
@@ -1071,10 +1134,74 @@ export class DockView extends HTMLElement {
       return
     }
 
+    this._resetFlipStyles()
+
+    const firstRects = new Map<string, DOMRect>()
+    const firstElements = this.querySelectorAll('[data-flip-key]')
+    firstElements.forEach(el => {
+      const key = (el as HTMLElement).dataset.flipKey
+      if (key) firstRects.set(key, el.getBoundingClientRect())
+    })
+
     this._flipping.read()
     callback()
     biSettle()
+
+    const duration = this._flipDuration
+    this.querySelectorAll('[data-flip-key]').forEach(el => {
+      const htmlEl = el as HTMLElement
+      const key = htmlEl.dataset.flipKey
+      if (!key) return
+      const first = firstRects.get(key)
+
+      // New elements fade in
+      if (!first) {
+        htmlEl.style.opacity = '0'
+        htmlEl.style.transition = 'none'
+        htmlEl.classList.add('dv-animating')
+        requestAnimationFrame(() => {
+          htmlEl.style.transition = `opacity ${duration}ms cubic-bezier(0.25, 0.46, 0.45, 0.94)`
+          htmlEl.style.opacity = '1'
+          setTimeout(() => {
+            htmlEl.style.opacity = ''
+            htmlEl.style.transition = ''
+            htmlEl.classList.remove('dv-animating')
+          }, duration)
+        })
+        return
+      }
+
+      // Promote the pane to fixed so it escapes the parent dv-cell overflow
+      // clip. The library supplies the transform via WAAPI.
+      const last = htmlEl.getBoundingClientRect()
+      const isFocused = htmlEl.dataset.groupId === this._focusedGroupId
+      htmlEl.classList.add('dv-animating')
+      htmlEl.style.position = 'fixed'
+      htmlEl.style.left = `${last.left}px`
+      htmlEl.style.top = `${last.top}px`
+      htmlEl.style.width = `${last.width}px`
+      htmlEl.style.height = `${last.height}px`
+      htmlEl.style.margin = '0'
+      htmlEl.style.zIndex = isFocused ? '1000' : '100'
+    })
+
     this._flipping.flip()
+
+    this._libraryFlipTimer = window.setTimeout(() => {
+      this.querySelectorAll('[data-flip-key]').forEach(el => {
+        const htmlEl = el as HTMLElement
+        htmlEl.style.position = ''
+        htmlEl.style.left = ''
+        htmlEl.style.top = ''
+        htmlEl.style.width = ''
+        htmlEl.style.height = ''
+        htmlEl.style.margin = ''
+        htmlEl.style.zIndex = ''
+        htmlEl.classList.remove('dv-animating')
+        htmlEl.removeAttribute('data-flip-state')
+      })
+      this._libraryFlipTimer = null
+    }, duration)
   }
 
   /**
