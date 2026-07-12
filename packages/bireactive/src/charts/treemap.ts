@@ -95,7 +95,7 @@ export class MdTreemapLC extends Diagram {
         .paddingOuter(PAD_OUTER)
         .paddingInner(PAD_INNER)
         .paddingTop(PAD_TOP)
-        .round(false)(h);
+        .round(true)(h);
       const map = new Map<BiNode, HierarchyRectangularNode<BiNode>>();
       h.each((d) => map.set(d.data, d as HierarchyRectangularNode<BiNode>));
       return map;
