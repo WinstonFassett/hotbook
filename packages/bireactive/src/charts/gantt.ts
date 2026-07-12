@@ -126,6 +126,9 @@ export class MdGanttChartLC extends Diagram {
    *  Chart previews the reorder but doesn't persist; caller mutates data. */
   onReorder?: (orderedIds: string[]) => void
 
+  /** Incremented when a user-driven reorder commits. Triggers y-cell tweens. */
+  private _reorderTickCell = cell(0)
+
   set externalData(v: GanttTask[] | undefined) {
     if (v) this.dataCell.value = v;
   }
@@ -207,12 +210,14 @@ export class MdGanttChartLC extends Diagram {
       return idx === -1 ? plotY : plotY + (idx * ROW_STEP);
     };
 
-    // Initialize and react to sort changes: tween each task's y position to its new row.
+    // Initialize and react to sort/reorder changes: tween each task's y position to its new row.
     let sortInited = false;
     let lastSortBy = untracked(() => this._sortByCell.value);
+    let lastReorderTick = untracked(() => this._reorderTickCell.value);
     biEffect(() => {
       const sorted = sortedData.value; // track sorted order
       const sortBy = this._sortByCell.value; // track sort key
+      const reorderTick = this._reorderTickCell.value; // track reorder commits
 
       if (!sortInited) {
         // Initial placement: snap to positions
@@ -222,14 +227,17 @@ export class MdGanttChartLC extends Diagram {
         }
         sortInited = true;
         lastSortBy = sortBy;
+        lastReorderTick = reorderTick;
         return;
       }
 
-      // Sort changed: tween all tasks to their new row positions, but only if not dragging.
+      // Tween on sort change OR committed reorder (but not during active gesture)
       const sortChanged = sortBy !== lastSortBy;
+      const reorderCommitted = reorderTick !== lastReorderTick;
       lastSortBy = sortBy;
+      lastReorderTick = reorderTick;
 
-      if (sortChanged && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
+      if ((sortChanged || reorderCommitted) && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
         for (const task of rows0) {
           const entry = taskYCells.get(task.id);
           if (!entry) continue;
@@ -237,8 +245,8 @@ export class MdGanttChartLC extends Diagram {
           entry.cancel?.();
           entry.cancel = this.anim.start(tween(entry.yCell, targetY, SORT_SEC, easeOut));
         }
-      } else if (!sortChanged) {
-        // Data or size changed but sort didn't: snap to new positions
+      } else if (!sortChanged && !reorderCommitted) {
+        // Data or size changed but sort/reorder didn't: snap to new positions
         for (const task of rows0) {
           const entry = taskYCells.get(task.id);
           if (entry) {
@@ -894,7 +902,7 @@ export class MdGanttChartLC extends Diagram {
       // reorders the task list. The filter yields to time-axis resize handles.
       biEffect(() => {
         const enabled = this._canReorderCell.value && this._sortByCell.value === 'index';
-        const task = rows0[idx];
+        const task = di();  // Get CURRENT task at this position, not initial snapshot
         if (!enabled || !task || !task.id) {
           tile.el.style.cursor = "grab";
           return;
@@ -953,7 +961,8 @@ export class MdGanttChartLC extends Diagram {
             const initialIds = initialSnapshot.map(t => t.id);
             const changed = finalOrder.some((id, i) => id !== initialIds[i]);
             if (changed) {
-              // Data is already reordered from onPreview; just notify the caller
+              // Data is already reordered from onPreview; notify caller and trigger tweens
+              this._reorderTickCell.value = this._reorderTickCell.value + 1;
               this.onReorder?.(finalOrder.slice());
               this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled: false, reorder: true } }));
             } else {
