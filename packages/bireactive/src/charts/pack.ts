@@ -18,7 +18,7 @@ import { Diagram } from "../lib/diagram";
 import type { ElementWithBridge } from "../lib/hud-bridge";
 import { pack as d3pack, type HierarchyCircularNode } from "d3-hierarchy";
 import { depthFill, labelInk } from "../lib/depth-color";
-import { buildHierarchy } from "../lib/interaction";
+import { buildHierarchy, globalGestureActive } from "../lib/interaction";
 import { buildParentIndex, type BiNode, portfolio, walkWithDepth } from "../lib/tree";
 import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
@@ -77,6 +77,14 @@ export class MdPack extends Diagram {
     attachChartGestures(this, { root, parentOf, state });
     const hoverCell = cell<BiNode | null>(null);
     state.hoverCell = hoverCell;
+
+    // WIN-300: Watch global gesture state and apply GESTURE_ACTIVE_CLASS when
+    // ANY gesture is active (including table value drags). This freezes sort
+    // order during cross-component gestures.
+    biEffect(() => {
+      const active = globalGestureActive.value;
+      this.classList.toggle(GESTURE_ACTIVE_CLASS, active);
+    });
 
     const layout = derive(() => {
       const h = buildHierarchy(root, this._sortByCell.value);

@@ -1,5 +1,5 @@
 import { hierarchy } from "d3-hierarchy";
-import { effect as biEffect, batch } from "bireactive";
+import { effect as biEffect, batch, cell } from "bireactive";
 import { leaves, type BiNode } from "./tree";
 
 /** Per-call scaling mode for {@link applyDelta}. Mirrors the public
@@ -188,6 +188,21 @@ if (typeof window !== "undefined") {
 export function realModifierDown(): boolean { return _realCtrlDown || _realMetaDown; }
 
 // ===========================================================================
+// GLOBAL GESTURE STATE (WIN-300)
+//
+// Shared gesture-active cell that charts can watch to freeze sort order during
+// table value drags. When dragController or wheelController is active, this
+// cell is set to true; charts subscribe to this and apply GESTURE_ACTIVE_CLASS
+// to suppress sort tweens. This extends the gesture freeze behavior from
+// handle drags and wheel gestures to table value drags.
+// ===========================================================================
+
+/** Global gesture-active state. True when ANY gesture (drag or wheel) is live
+ *  anywhere in the app. Charts subscribe to this to freeze sort order during
+ *  table value drags. */
+export const globalGestureActive = cell(false);
+
+// ===========================================================================
 // ONE wheel controller + ONE drag controller for the WHOLE app.
 //
 // A human has one pointer. Only one wheel gesture and one drag gesture can ever
@@ -268,6 +283,7 @@ function makeWheelController(): WheelController {
     target = null;
     snap = undefined;
     cfg = null;
+    globalGestureActive.value = false; // WIN-300: signal gesture end
     onEnd?.(canceled);
   };
   const commit = () => { if (target !== null) end(false); };
@@ -318,6 +334,7 @@ function makeWheelController(): WheelController {
       cfg = config;
       snap = config.snapshot(t);
       isPinchGesture = opts?.pinch ?? false;
+      globalGestureActive.value = true; // WIN-300: signal gesture start
 
       if (isPinchGesture) {
         // Trackpad pinch: synthetic ctrlKey, no real key was pressed, so keyup
@@ -412,6 +429,7 @@ function makeDragController(): DragController {
     target = null;
     snap = undefined;
     cfg = null;
+    globalGestureActive.value = false; // WIN-300: signal gesture end
     onEnd?.(canceled);
   };
   const commit = () => { if (target !== null) end(false); };
@@ -430,6 +448,7 @@ function makeDragController(): DragController {
       target = t;
       cfg = config;
       snap = config.snapshot(t);
+      globalGestureActive.value = true; // WIN-300: signal gesture start
       const onPointerMove = (e: Event) => config.onMove(e as PointerEvent, snap);
       const onPointerUp = () => commit();
       const onBlur = () => commit();

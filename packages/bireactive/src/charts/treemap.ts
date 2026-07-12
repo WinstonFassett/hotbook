@@ -19,12 +19,12 @@ import { Diagram } from "../lib/diagram";
 import type { ElementWithBridge } from "../lib/hud-bridge";
 import { treemap, treemapSquarify, type HierarchyRectangularNode } from "d3-hierarchy";
 import { depthFill, labelInk } from "../lib/depth-color";
-import { buildHierarchy } from "../lib/interaction";
+import { buildHierarchy, globalGestureActive } from "../lib/interaction";
 import { buildParentIndex, type BiNode, portfolio, walkWithDepth } from "../lib/tree";
 import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { mountDrillBreadcrumb } from "../lib/drill-breadcrumb";
-import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, ENTER_MS } from "../lib/transitions";
+import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, GESTURE_ACTIVE_GLOBAL_CLASS, ENTER_MS } from "../lib/transitions";
 import { withExitDelay, membershipCell } from "../lib/mark-lifecycle";
 import { numberDrag } from "../lib/number-drag";
 
@@ -101,6 +101,14 @@ export class MdTreemapLC extends Diagram {
     attachChartGestures(this, { root, parentOf, state, scalingMode: "proportional-neighbor" });
     const hoverCell = cell<BiNode | null>(null);
     state.hoverCell = hoverCell;
+
+    // WIN-300: Watch global gesture state and apply GESTURE_ACTIVE_GLOBAL_CLASS
+    // when table value drags or other cross-component gestures are active.
+    // Uses separate class from local gestures to avoid conflicts.
+    biEffect(() => {
+      const active = globalGestureActive.value;
+      this.classList.toggle(GESTURE_ACTIVE_GLOBAL_CLASS, active);
+    });
 
     // Pre-build static maps (tree structure is immutable).
     const nodeById = new Map<string, BiNode>();

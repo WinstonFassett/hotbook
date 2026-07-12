@@ -18,7 +18,7 @@ import { lineHandle } from "../lib/handles";
 import { Diagram } from "../lib/diagram";
 import { partition, type HierarchyRectangularNode } from "d3-hierarchy";
 import { depthFill, labelInk } from "../lib/depth-color";
-import { buildHierarchy } from "../lib/interaction";
+import { buildHierarchy, globalGestureActive } from "../lib/interaction";
 import { buildParentIndex, type BiNode, portfolio, walkWithDepth } from "../lib/tree";
 import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
@@ -175,6 +175,14 @@ export class MdIcicleLC extends Diagram {
     this._trackScene(() => { gestureDispose?.(); gestureDispose = null; });
     const hoverCell = cell<BiNode | null>(null);
     state.hoverCell = hoverCell;
+
+    // WIN-300: Watch global gesture state and apply GESTURE_ACTIVE_CLASS when
+    // ANY gesture is active (including table value drags). This freezes sort
+    // order during cross-component gestures.
+    this._trackScene(biEffect(() => {
+      const active = globalGestureActive.value;
+      this.classList.toggle(GESTURE_ACTIVE_CLASS, active);
+    }));
 
     // Partition layout — orientation-aware. The depth axis is scaled so one
     // extra row sits above the viewport, then coords are shifted so depth-1
