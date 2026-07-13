@@ -18,12 +18,29 @@ SCREENSHOTS_DIR.mkdir(parents=True, exist_ok=True)
 issues = []
 screenshot_counter = 0
 
-def save_screenshot(page, name):
-    """Save a screenshot and return the path"""
+def save_screenshot(page, name, element=None):
+    """Save a screenshot and return the path
+
+    Args:
+        page: Playwright page object
+        name: Screenshot filename
+        element: Optional element to screenshot (instead of full page)
+    """
     global screenshot_counter
     screenshot_counter += 1
     path = SCREENSHOTS_DIR / f"{screenshot_counter:03d}_{name}.png"
-    page.screenshot(path=str(path), full_page=True)
+
+    if element:
+        # Screenshot just the element
+        try:
+            element.screenshot(path=str(path))
+        except:
+            # Fallback to page screenshot if element screenshot fails
+            page.screenshot(path=str(path), full_page=False)
+    else:
+        # Screenshot visible viewport only (not full page)
+        page.screenshot(path=str(path), full_page=False)
+
     return str(path)
 
 def capture_console_errors(page):
@@ -122,15 +139,21 @@ def test_hierarchical_chart(page, chart_name, url):
             console_errors.append({'type': msg.type, 'text': msg.text})
     page.on('console', on_console)
 
-    # Look for the chart by name or header
-    chart_section = page.locator(f'text={chart_name}').first
-    if chart_section.is_visible():
-        chart_section.scroll_into_view_if_needed()
+    # Look for the chart section by heading
+    try:
+        # Try to find section containing this chart name
+        section = page.locator(f'section:has(h2:has-text("{chart_name}")), section:has(h3:has-text("{chart_name}"))').first
+        if not section.is_visible(timeout=1000):
+            raise Exception(f"Section not found for {chart_name}")
+
+        section.scroll_into_view_if_needed()
         time.sleep(0.5)
-        screenshot = save_screenshot(page, f"{chart_name}_initial")
+
+        # Screenshot just this section
+        screenshot = save_screenshot(page, f"{chart_name}_initial", element=section)
 
         # Try to find SVG elements (d3 charts are typically SVG)
-        svg = page.locator('svg').first
+        svg = section.locator('svg').first
         if svg.is_visible():
             bbox = svg.bounding_box()
             if bbox:
@@ -152,7 +175,7 @@ def test_hierarchical_chart(page, chart_name, url):
                 page.mouse.up()
                 time.sleep(0.3)
 
-                screenshot_after = save_screenshot(page, f"{chart_name}_after_drag")
+                screenshot_after = save_screenshot(page, f"{chart_name}_after_drag", element=section)
 
                 # Check for console errors during interaction
                 if console_errors:
@@ -170,7 +193,8 @@ def test_hierarchical_chart(page, chart_name, url):
                             'Check console'
                         ]
                     )
-    else:
+    except Exception as e:
+        print(f"  - {chart_name} not found: {e}")
         log_issue(
             severity='Medium',
             category='Functional',

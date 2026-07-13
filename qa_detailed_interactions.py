@@ -17,15 +17,30 @@ DETAILED_DIR.mkdir(parents=True, exist_ok=True)
 issues = []
 test_counter = 0
 
-def save_screenshot(page, name, subdir="detailed"):
-    """Save a screenshot"""
+def save_screenshot(page, name, subdir="detailed", element=None):
+    """Save a screenshot
+
+    Args:
+        page: Playwright page object
+        name: Screenshot filename
+        subdir: Subdirectory for screenshot
+        element: Optional element to screenshot (instead of page)
+    """
     global test_counter
     test_counter += 1
     if subdir:
         path = SCREENSHOTS_DIR / subdir / f"{test_counter:03d}_{name}.png"
     else:
         path = SCREENSHOTS_DIR / f"{test_counter:03d}_{name}.png"
-    page.screenshot(path=str(path), full_page=False)
+
+    if element:
+        try:
+            element.screenshot(path=str(path))
+        except:
+            page.screenshot(path=str(path), full_page=False)
+    else:
+        page.screenshot(path=str(path), full_page=False)
+
     return str(path)
 
 def log_issue(severity, category, title, description, url, screenshot_paths=None, console_errors=None, steps=None, expected=None, actual=None):
