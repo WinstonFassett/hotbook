@@ -71,3 +71,22 @@ export const REORDER_ELEVATION_CSS = `
     cursor: grabbing !important;
   }
 `;
+
+/** Toggle the gesture-active class and property on the host element. Charts call
+ *  this at gesture start/end so autonomous transitions are suppressed while the
+ *  user is actively dragging/wheeling (see GESTURE_SUPPRESSION_CSS). */
+export function setGestureActive(host: HTMLElement | SVGElement, on: boolean): void {
+  host.classList.toggle(GESTURE_ACTIVE_CLASS, on);
+  (host as any).gestureActive = on;
+}
+
+/** Dispatch a "gesturecommit" event from the host. Charts fire this at gesture
+ *  end (onEnd, keyup, Escape) so parent contexts know a value-change cycle is
+ *  complete. The `canceled` flag signals whether the gesture was abandoned (Esc)
+ *  or committed. Optional `detail` can include extra fields like `reorder: true`. */
+export function dispatchGestureCommit(
+  host: HTMLElement | SVGElement,
+  detail?: { canceled?: boolean; [key: string]: any }
+): void {
+  host.dispatchEvent(new CustomEvent("gesturecommit", { detail: detail ?? {} }));
+}

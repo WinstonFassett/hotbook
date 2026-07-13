@@ -47,6 +47,8 @@ import {
   GESTURE_SUPPRESSION_CSS,
   REORDER_ELEVATION_CSS,
   hoverTransition,
+  setGestureActive,
+  dispatchGestureCommit,
 } from "../lib/transitions";
 import { lightenHex } from "../lib/color-utils";
 import { PALETTE } from "@hotbook/core";
@@ -287,9 +289,6 @@ export class MdGanttChartLC extends Diagram {
       }
       return null;
     };
-
-    const setGestureActive = (on: boolean) => this.classList.toggle(GESTURE_ACTIVE_CLASS, on);
-    const commit = () => this.dispatchEvent(new CustomEvent("gesturecommit"));
 
     // Mutate one task; keep ms granularity but snap to whole days.
     const snapDay = (ms: number) => Math.round(ms / DAY_MS) * DAY_MS;
@@ -544,7 +543,7 @@ export class MdGanttChartLC extends Diagram {
 
     const dragConfig = (kind: DragKind, originMs: number) => ({
       snapshot: (t: GanttTask): DragSnap => {
-        setGestureActive(true);
+        setGestureActive(this, true);
 
         // Snapshot ALL task positions for bidirectional solving and space conservation
         const allPositions = new Map<string, {start: number; end: number}>();
@@ -610,7 +609,7 @@ export class MdGanttChartLC extends Diagram {
           (this as any).releasePointerCapture(dragPointerId);
         }
         dragPointerId = -1;
-        setGestureActive(false);
+        setGestureActive(this, false);
 
         // Final propagation on commit (if not canceled)
         if (this.enforceDeps && !_canceled) {
@@ -620,7 +619,7 @@ export class MdGanttChartLC extends Diagram {
             data.value = [...data.value];
           }
         }
-        commit();
+        dispatchGestureCommit(this);
       },
     });
 
@@ -694,7 +693,7 @@ export class MdGanttChartLC extends Diagram {
     // Shared wheelController gives us Esc-revert + meta-keyup commit for free.
     const wheelConfig = {
       snapshot: (t: GanttTask): DragSnap => {
-        setGestureActive(true);
+        setGestureActive(this, true);
         // Capture all task positions for constraint solving
         const allPositions = new Map<string, {start: number; end: number}>();
         const rows = data.value as GanttTask[];
@@ -719,9 +718,9 @@ export class MdGanttChartLC extends Diagram {
         data.value = [...data.value];
       },
       onEnd: () => {
-        setGestureActive(false);
+        setGestureActive(this, false);
         // Constraints are now enforced in real-time during wheel gesture
-        commit();
+        dispatchGestureCommit(this);
       },
     };
     this.addEventListener("wheel", (e) => {
@@ -928,7 +927,7 @@ export class MdGanttChartLC extends Diagram {
             if (canceled) {
               // Revert to the initial snapshot from onActivate
               data.value = initialSnapshot;
-              this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled: true } }));
+              dispatchGestureCommit(this, { canceled: true });
               return;
             }
 
@@ -939,9 +938,9 @@ export class MdGanttChartLC extends Diagram {
               // Data is already reordered from onPreview; notify caller and trigger tweens
               this._reorderTickCell.value = this._reorderTickCell.value + 1;
               this.onReorder?.(finalOrder.slice());
-              this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled: false, reorder: true } }));
+              dispatchGestureCommit(this, { canceled: false, reorder: true });
             } else {
-              this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled: false } }));
+              dispatchGestureCommit(this, { canceled: false });
             }
           },
         });

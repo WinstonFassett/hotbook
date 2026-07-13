@@ -8,7 +8,7 @@ import { arc as d3Arc } from "d3-shape";
 import { wheelController, dragController, realModifierDown } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
-import { GESTURE_ACTIVE_CLASS } from "../lib/transitions";
+import { GESTURE_ACTIVE_CLASS, setGestureActive, dispatchGestureCommit } from "../lib/transitions";
 
 const W = 640;
 const H = 640;
@@ -124,13 +124,11 @@ export class MdConcentricArcLC extends Diagram {
     };
     const mutateDatum = (d: Ring, delta: number) => setValue(d, d.value + delta);
 
-    const setGestureActive = (on: boolean) => { this.classList.toggle(GESTURE_ACTIVE_CLASS, on); (this as any).gestureActive = on; };
-
     // Config handed to the SHARED wheel controller (app-wide singleton).
     const wheelConfig = {
-      snapshot: (d: Ring) => { setGestureActive(true); return d.value; },
+      snapshot: (d: Ring) => { setGestureActive(this, true); return d.value; },
       restore: (d: Ring, v: number) => mutateDatum(d, v - d.value),
-      onEnd: (canceled: boolean) => { setGestureActive(false); this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } })); },
+      onEnd: (canceled: boolean) => { setGestureActive(this, false); dispatchGestureCommit(this, { canceled }); },
     };
     // Last ring the pointer was over — kept past pointerleave so a wheel edit can
     // still target it for a moment after the cursor exits the ring band.
@@ -183,10 +181,10 @@ export class MdConcentricArcLC extends Diagram {
           (this as any).releasePointerCapture(dragPointerId);
         }
         dragPointerId = -1;
-        setGestureActive(false);
+        setGestureActive(this, false);
         if (activeHandle) activeHandle.style.cursor = "grab";
         activeHandle = null;
-        this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled: false } }));
+        dispatchGestureCommit(this, { canceled: false });
       },
     };
 
@@ -325,7 +323,7 @@ export class MdConcentricArcLC extends Diagram {
         if (!d) return;
         const pe = e as PointerEvent;
         dragPointerId = pe.pointerId;
-        setGestureActive(true);
+        setGestureActive(this, true);
         selected.value = d;
         activeHandle = handleEl.el;
         handleEl.el.style.cursor = "grabbing";

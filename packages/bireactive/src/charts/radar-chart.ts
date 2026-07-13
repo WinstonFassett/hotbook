@@ -9,7 +9,7 @@ import { extent, ticks as d3Ticks } from "d3-array";
 import { wheelController, dragController, dynamicWheelStep, realModifierDown } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
-import { GESTURE_ACTIVE_CLASS } from "../lib/transitions";
+import { GESTURE_ACTIVE_CLASS, setGestureActive, dispatchGestureCommit } from "../lib/transitions";
 
 const W = 640;
 const H = 640;
@@ -82,13 +82,11 @@ export class MdRadarChartLC extends Diagram {
       data.value = [...data.value];
     };
 
-    const setGestureActive = (on: boolean) => { this.classList.toggle(GESTURE_ACTIVE_CLASS, on); (this as any).gestureActive = on; };
-
     // Config handed to the SHARED wheel controller (app-wide singleton).
     const wheelConfig = {
-      snapshot: (d: Spoke) => { setGestureActive(true); return d.value; },
+      snapshot: (d: Spoke) => { setGestureActive(this, true); return d.value; },
       restore: (d: Spoke, v: number) => mutateDatum(d, v - d.value),
-      onEnd: (canceled: boolean) => { setGestureActive(false); hover.value = null; this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } })); },
+      onEnd: (canceled: boolean) => { setGestureActive(this, false); hover.value = null; dispatchGestureCommit(this, { canceled }); },
     };
 
     // y: scaleLinear 0–100 → radius 0–R_MAX
@@ -351,8 +349,8 @@ export class MdRadarChartLC extends Diagram {
           (this as any).releasePointerCapture(dragPointerId);
         }
         dragPointerId = -1;
-        setGestureActive(false);
-        this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } }));
+        setGestureActive(this, false);
+        dispatchGestureCommit(this, { canceled });
       },
     };
     this.addEventListener("pointerdown", (e) => {
@@ -370,7 +368,7 @@ export class MdRadarChartLC extends Diagram {
       const dy = y - (cy.peek() + Math.sin(a) * r);
       if (Math.sqrt(dx*dx + dy*dy) > hitTolerance) return;
       dragPointerId = pe.pointerId;
-      setGestureActive(true);
+      setGestureActive(this, true);
       selected.value = spoke;
       (this as any).setPointerCapture(pe.pointerId);
       dragController.begin(spoke, dragConfig); // controller owns move/up/Esc from here

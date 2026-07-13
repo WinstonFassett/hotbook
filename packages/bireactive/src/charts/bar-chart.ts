@@ -16,6 +16,8 @@ import {
   GESTURE_SUPPRESSION_CSS,
   REORDER_ELEVATION_CSS,
   hoverTransition,
+  setGestureActive,
+  dispatchGestureCommit,
 } from "../lib/transitions";
 import { lightenHex } from "../lib/color-utils";
 import { attachReorderGesture } from "../lib/reorder-gesture";
@@ -284,17 +286,15 @@ export class MdBarChartLC extends Diagram {
       data.value = [...data.value];
     };
 
-    const setGestureActive = (on: boolean) => { this.classList.toggle(GESTURE_ACTIVE_CLASS, on); (this as any).gestureActive = on; };
-
     // ─── Gesture configs (shared controllers) ─────────────────────────────
     const wheelConfig = {
-      snapshot: (d: Bar) => { setGestureActive(true); return d.value; },
+      snapshot: (d: Bar) => { setGestureActive(this, true); return d.value; },
       restore: (d: Bar, v: number) => mutateDatum(d, v - d.value),
-      onEnd: (canceled: boolean) => { setGestureActive(false); hover.value = null; this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } })); },
+      onEnd: (canceled: boolean) => { setGestureActive(this, false); hover.value = null; dispatchGestureCommit(this, { canceled }); },
     };
     let dragPointerId = -1;
     const dragConfig = {
-      snapshot: (d: Bar) => { setGestureActive(true); return d.value; },
+      snapshot: (d: Bar) => { setGestureActive(this, true); return d.value; },
       restore: (d: Bar, v: number) => mutateDatum(d, v - d.value),
       onMove: (pe: PointerEvent) => {
         const t = dragController.target as Bar | null;
@@ -308,8 +308,8 @@ export class MdBarChartLC extends Diagram {
       onEnd: (canceled: boolean) => {
         if (dragPointerId >= 0 && (this as any).hasPointerCapture?.(dragPointerId)) (this as any).releasePointerCapture(dragPointerId);
         dragPointerId = -1;
-        setGestureActive(false);
-        this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } }));
+        setGestureActive(this, false);
+        dispatchGestureCommit(this, { canceled });
       },
     };
 
@@ -366,7 +366,7 @@ export class MdBarChartLC extends Diagram {
       if (dist > hitTolerance) return;
       dragPointerId = pe.pointerId;
       selected.value = pt;
-      setGestureActive(true);
+      setGestureActive(this, true);
       (this as any).setPointerCapture(pe.pointerId);
       dragController.begin(pt, dragConfig);
       pe.preventDefault();
@@ -836,7 +836,7 @@ export class MdBarChartLC extends Diagram {
               // structural branch — sort tweens from current visual position
               // (Rule 4 settle from where they are).
               this.onReorder?.(finalOrder.slice());
-              this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled: false, reorder: true } }));
+              dispatchGestureCommit(this, { canceled: false, reorder: true });
               return;
             }
             // Cancel / no-op: tween each bar back to its initial slot.
@@ -860,7 +860,7 @@ export class MdBarChartLC extends Diagram {
                 valCell.value = isV ? valTarget : plotX.peek();
               }
             });
-            this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } }));
+            dispatchGestureCommit(this, { canceled });
           },
         });
         reorderDetachers.push(detach);

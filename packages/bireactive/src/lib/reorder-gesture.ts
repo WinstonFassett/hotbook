@@ -17,7 +17,7 @@
 // hooks: computeTargetIndex (pointer → slot) and onPreview (imperative draw).
 
 import { dragController } from "./interaction";
-import { GESTURE_ACTIVE_CLASS } from "./transitions";
+import { setGestureActive } from "./transitions";
 
 export interface ReorderGestureConfig {
   /** Element that receives pointerdown to start a reorder drag. Usually the
@@ -77,8 +77,6 @@ export function attachReorderGesture(cfg: ReorderGestureConfig): () => void {
   let prevBodyCursor = "";
   let prevBodyUserSelect = "";
 
-  const setGestureActive = (on: boolean) => host.classList.toggle(GESTURE_ACTIVE_CLASS, on);
-
   const raiseAndElevate = () => {
     // DOM raise so the dragged element paints above siblings. SVG has no
     // z-index; paint order = document order.
@@ -134,7 +132,7 @@ export function attachReorderGesture(cfg: ReorderGestureConfig): () => void {
           const dy = pe2.clientY - startY;
           if (dx * dx + dy * dy < threshSq) return;
           activated = true;
-          setGestureActive(true);
+          setGestureActive(host, true);
           raiseAndElevate();
           cfg.onActivate?.();
         }
@@ -147,7 +145,7 @@ export function attachReorderGesture(cfg: ReorderGestureConfig): () => void {
         activated = false;
         if (wasActivated) {
           drop();
-          setGestureActive(false);
+          setGestureActive(host, false);
           cfg.onEnd(currentOrder, canceled);
         }
         // Below threshold: not a drag — treat as click, no onEnd call.

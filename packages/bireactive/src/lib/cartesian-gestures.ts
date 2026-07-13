@@ -7,7 +7,7 @@ import { bisector } from "d3-array";
 import { effect as biEffect } from "bireactive";
 import type { Cell, Writable } from "bireactive";
 import { makeBridge, type ElementWithBridge } from "./hud-bridge";
-import { GESTURE_ACTIVE_CLASS } from "./transitions";
+import { setGestureActive, dispatchGestureCommit } from "./transitions";
 
 export interface CartesianGestureState<TData> {
   hover: Writable<Cell<TData | null>>;
@@ -59,8 +59,6 @@ export function attachCartesianGestures<TData>(
   // (Bridge identity is by datum id now, so a shifted order can't mis-resolve.)
   let gestureOrder: TData[] | null = null;
 
-  const setGestureActive = (on: boolean) => { host.classList.toggle(GESTURE_ACTIVE_CLASS, on); (host as any).gestureActive = on; };
-
   // Captured at wheel gesture start for scale-aware delta computation.
   let wheelStartScale: any = null;
 
@@ -68,17 +66,17 @@ export function attachCartesianGestures<TData>(
   // wide singletons; one pointer → one live gesture).
   const wheelConfig = {
     snapshot: (d: TData) => {
-      setGestureActive(true);
+      setGestureActive(host, true);
       wheelStartScale = ctx.yScale.value;
       return ctx.yAcc(d) as number;
     },
     restore: (d: TData, v: number) => mutateDatum(d, v - (ctx.yAcc(d) as number)),
     onEnd: (canceled: boolean) => {
-      setGestureActive(false);
+      setGestureActive(host, false);
       state.hover.value = null;
       gestureOrder = null;
       wheelStartScale = null;
-      host.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } }));
+      dispatchGestureCommit(host, { canceled });
     },
   };
 
@@ -116,8 +114,8 @@ export function attachCartesianGestures<TData>(
       dragStartScale = null;
       gestureOrder = null;
       host.style.cursor = "";
-      setGestureActive(false);
-      host.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled: false } }));
+      setGestureActive(host, false);
+      dispatchGestureCommit(host, { canceled: false });
     },
   };
 
@@ -206,7 +204,7 @@ export function attachCartesianGestures<TData>(
     dragStartScale = ctx.yScale.value;
     state.selected.value = pt;
     host.style.cursor = "ns-resize";
-    setGestureActive(true);
+    setGestureActive(host, true);
     (host as any).setPointerCapture(pe.pointerId);
     dragController.begin(pt, dragConfig); // controller owns move/up/Esc from here
     pe.preventDefault();

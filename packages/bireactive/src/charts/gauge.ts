@@ -18,6 +18,7 @@ import { numberDrag } from "../lib/number-drag";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { PALETTE } from "@hotbook/core";
+import { setGestureActive, dispatchGestureCommit } from "../lib/transitions";
 
 const W = 320;
 const H = 240;
@@ -170,8 +171,8 @@ export class MdGaugeLC extends Diagram {
     handle.el.style.cursor = "grab";
     dragCancelable(handle, handleTarget, [value], {
       host: this,
-      onStart: () => { active.value = true; (this as any).gestureActive = true; },
-      onEnd: () => { active.value = false; (this as any).gestureActive = false; this.dispatchEvent(new CustomEvent("gesturecommit")); },
+      onStart: () => { active.value = true; setGestureActive(this, true); },
+      onEnd: () => { active.value = false; setGestureActive(this, false); dispatchGestureCommit(this); },
     });
     handle.el.addEventListener("pointerenter", () => { hovered.value = true; });
     handle.el.addEventListener("pointerleave", () => { if (!active.value) hovered.value = false; });
@@ -212,8 +213,8 @@ export class MdGaugeLC extends Diagram {
       min: minV,
       max: maxV,
       pxPerUnit: Math.max(1, 200 / range), // ~200px = full range
-      onStart: () => { active.value = true; (this as any).gestureActive = true; },
-      onEnd: () => { active.value = false; (this as any).gestureActive = false; this.dispatchEvent(new CustomEvent("gesturecommit")); },
+      onStart: () => { active.value = true; setGestureActive(this, true); },
+      onEnd: () => { active.value = false; setGestureActive(this, false); dispatchGestureCommit(this); },
     });
 
     // Min/max endpoint labels.
@@ -230,9 +231,9 @@ export class MdGaugeLC extends Diagram {
 
     // Wheel edit on the whole diagram (cmd+wheel, like sibling charts).
     const wheelConfig = {
-      snapshot: () => { (this as any).gestureActive = true; return value.value; },
+      snapshot: () => { setGestureActive(this, true); return value.value; },
       restore: (_t: unknown, snap: number) => { value.value = Math.max(minV, Math.min(maxV, snap)); },
-      onEnd: () => { (this as any).gestureActive = false; this.dispatchEvent(new CustomEvent("gesturecommit")); },
+      onEnd: () => { setGestureActive(this, false); dispatchGestureCommit(this); },
     };
     this.addEventListener("wheel", (e) => {
       const we = e as WheelEvent;

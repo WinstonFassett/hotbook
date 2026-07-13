@@ -6,7 +6,7 @@ import { wheelController, dynamicWheelStep, realModifierDown } from "../lib/inte
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { dragCancelable } from "../lib/esc-contract";
-import { GESTURE_ACTIVE_CLASS } from "../lib/transitions";
+import { GESTURE_ACTIVE_CLASS, setGestureActive, dispatchGestureCommit } from "../lib/transitions";
 import { PALETTE } from "@hotbook/core";
 
 const W = 640;
@@ -79,13 +79,11 @@ export class MdPieChartLC extends Diagram {
       d.value.value = Math.max(1, d.value.value + delta);
     };
 
-    const setGestureActive = (on: boolean) => { this.classList.toggle(GESTURE_ACTIVE_CLASS, on); (this as any).gestureActive = on; };
-
     // Config handed to the SHARED wheel controller (app-wide singleton).
     const wheelConfig = {
-      snapshot: (d: Slice) => { setGestureActive(true); return d.value.value; },
+      snapshot: (d: Slice) => { setGestureActive(this, true); return d.value.value; },
       restore: (d: Slice, v: number) => { d.value.value = Math.max(1, v); },
-      onEnd: (canceled: boolean) => { setGestureActive(false); hover.value = null; this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } })); },
+      onEnd: (canceled: boolean) => { setGestureActive(this, false); hover.value = null; dispatchGestureCommit(this, { canceled }); },
     };
 
     // Per-slice tweened value cells — TWEEN on measure swap (animate arcs to
@@ -278,8 +276,8 @@ export class MdPieChartLC extends Diagram {
         // there is no sort-order concern here.
         dragCancelable(handle, knob, [a, b], {
           host: this,
-          onStart: () => { active.value = true; setGestureActive(true); handle.el.style.cursor = "grabbing"; },
-          onEnd: (canceled: boolean) => { active.value = false; setGestureActive(false); handle.el.style.cursor = "grab"; this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } })); },
+          onStart: () => { active.value = true; setGestureActive(this, true); handle.el.style.cursor = "grabbing"; },
+          onEnd: (canceled: boolean) => { active.value = false; setGestureActive(this, false); handle.el.style.cursor = "grab"; dispatchGestureCommit(this, { canceled }); },
         });
         handle.el.style.cursor = "grab";
         handle.el.addEventListener("pointerenter", () => { active.value = true; });
