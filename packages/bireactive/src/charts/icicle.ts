@@ -25,8 +25,8 @@ import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { mountDrillBreadcrumb } from "../lib/drill-breadcrumb";
 import { dragCancelable } from "../lib/esc-contract";
 import { attachReorderGesture } from "../lib/reorder-gesture";
-import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, settleTransition, REORDER_ELEVATION_CSS } from "../lib/transitions";
-import { withExitDelay, membershipCell } from "../lib/mark-lifecycle";
+import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, REORDER_ELEVATION_CSS, TRANSITION_DURATION, TRANSITION_EASING } from "../lib/transitions";
+import { enterExitFade, windowedMarks } from "../lib/mark-lifecycle";
 import type { ElementWithBridge } from "../lib/hud-bridge";
 
 const W = 720;
@@ -264,13 +264,12 @@ export class MdIcicleLC extends Diagram {
       return result;
     });
 
-    // Rendered set (WIN-155): current window + departing nodes held briefly so
-    // the exit CSS fade can play — including on drill. Exiting tiles freeze
-    // their tween cells so they don't ghost through the viewport tween.
-    const renderedSet = withExitDelay(windowTarget, {
-      key: (n) => n,
-    });
-    const windowMembership = membershipCell(windowTarget, (n) => n);
+    // Rendered set (WIN-155 / WIN-292): current window + departing nodes held
+    // briefly so the exit CSS fade can play — including on drill. Exiting tiles
+    // freeze their tween cells via `freezeOnExit` so they don't ghost through
+    // the viewport tween.
+    const marks = windowedMarks(windowTarget, { key: (n) => n });
+    const { renderedSet } = marks;
 
     // Drill viewport tween: compute target viewport from focus node bounds and
     // tween all 4 cells. Uses untracked for layout reads so value changes don't
@@ -377,7 +376,7 @@ export class MdIcicleLC extends Diagram {
 
     // Windowed tile rendering via forEach (keyed by node id).
     const tileLayer = s(group());
-    forEach(tileLayer, renderedSet, (node) => {
+    marks.renderLayer(tileLayer, (node: BiNode) => {
       // peek: a data swap creates new nodes → new tiles, so depth is stable
       // for this tile's lifetime.
       const depth = untracked(() => structure.value.nodeDepth.get(node)) ?? 0;
@@ -440,21 +439,19 @@ export class MdIcicleLC extends Diagram {
         }
       });
 
-      // WIN-155: freeze remapped geometry for exiting tiles so the fade plays
-      // in place instead of ghosting through the drill viewport tween.
-      let frozenGeom: { x: number; y: number; w: number; h: number } | null = null;
-      const xRaw = derive(() => remapX(lx0.value));
-      const yRaw = derive(() => remapY(ly0.value));
-      const wRaw = derive(() => Math.max(0, remapX(lx1.value) - remapX(lx0.value)));
-      const hRaw = derive(() => Math.max(0, remapY(ly1.value) - remapY(ly0.value)));
-      const x = derive(() => {
-        if (windowMembership.value.has(node)) { frozenGeom = null; return xRaw.value; }
-        if (!frozenGeom) frozenGeom = { x: xRaw.peek(), y: yRaw.peek(), w: wRaw.peek(), h: hRaw.peek() };
-        return frozenGeom.x;
-      });
-      const y = derive(() => (frozenGeom ? frozenGeom.y : yRaw.value));
-      const w = derive(() => (frozenGeom ? frozenGeom.w : wRaw.value));
-      const h = derive(() => (frozenGeom ? frozenGeom.h : hRaw.value));
+      // WIN-155 / WIN-292: freeze remapped geometry for exiting tiles so the
+      // fade plays in place instead of ghosting through the drill viewport
+      // tween.
+      const geom = marks.freezeOnExit(node, () => ({
+        x: remapX(lx0.value),
+        y: remapY(ly0.value),
+        w: Math.max(0, remapX(lx1.value) - remapX(lx0.value)),
+        h: Math.max(0, remapY(ly1.value) - remapY(ly0.value)),
+      }));
+      const x = derive(() => geom.value.x);
+      const y = derive(() => geom.value.y);
+      const w = derive(() => geom.value.w);
+      const h = derive(() => geom.value.h);
 
       const stroke = derive(() =>
         state.focused.value === node ? "#fff"
@@ -473,7 +470,6 @@ export class MdIcicleLC extends Diagram {
         corner: 2,
       });
       tile.el.dataset.id = node.value.id ?? "";
-      tile.el.style.transition = settleTransition(["fill", "stroke", "stroke-width", "opacity"]);
       tile.el.style.cursor = "pointer";
       tile.el.setAttribute('tabindex', '0');
       tile.el.setAttribute('data-focusable', 'tile');
@@ -483,18 +479,17 @@ export class MdIcicleLC extends Diagram {
       rowGroup.add(tile);
       tileCellsByNode.set(node, { lx0, ly0, lx1, ly1, tileEl: tile.el as SVGRectElement });
 
-      // WIN-155: compose lifecycle (enter/exit) with context dim in a single
-      // opacity effect so the two don't fight. Start at 0, RAF to lifecycle
-      // opacity for the enter fade.
-      const tilePresent = derive(() => windowMembership.value.has(node));
-      tile.el.style.opacity = '0';
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        biEffect(() => {
-          const present = tilePresent.value;
-          const dim = isContextNode.value ? 0.35 : 1;
-          tile.el.style.opacity = present ? String(dim) : '0';
-        });
-      }));
+      // WIN-155 / WIN-292: enter/exit fade composed with context-dim opacity
+      // via the shared `enterExitFade` helper. Preserve icicle's per-tile
+      // settle-rhythm transitions for fill/stroke/stroke-width by appending
+      // them via `extraTransitionCss` so they ride the same `style.transition`.
+      const tilePresent = marks.isPresent(node);
+      const settleTail = `fill ${TRANSITION_DURATION.settle}ms ${TRANSITION_EASING}, stroke ${TRANSITION_DURATION.settle}ms ${TRANSITION_EASING}, stroke-width ${TRANSITION_DURATION.settle}ms ${TRANSITION_EASING}`;
+      enterExitFade(tile.el, {
+        present: tilePresent,
+        presentOpacity: derive(() => isContextNode.value ? 0.35 : 1),
+        extraTransitionCss: settleTail,
+      });
       biEffect(() => {
         tile.el.setAttribute('aria-label', `${node.value.label}: ${node.value.total.value.toFixed(0)}`);
       });
@@ -698,7 +693,7 @@ export class MdIcicleLC extends Diagram {
       });
 
       return rowGroup;
-    }, { key: (n) => n.value.id ?? "" });
+    }, { key: (n: BiNode) => n.value.id ?? "" });
 
     // Boundary-knob resize handles: for each parent with >=2 children, drop a
     // draggable pill on each interior sibling boundary. The two adjacent

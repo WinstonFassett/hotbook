@@ -1,7 +1,6 @@
 import {
   Anchor,
   derive,
-  forEach,
   group,
   label,
   type Mount,
@@ -24,8 +23,8 @@ import { buildParentIndex, type BiNode, portfolio, walkWithDepth } from "../lib/
 import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { mountDrillBreadcrumb } from "../lib/drill-breadcrumb";
-import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, ENTER_MS } from "../lib/transitions";
-import { withExitDelay, membershipCell } from "../lib/mark-lifecycle";
+import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS } from "../lib/transitions";
+import { enterExitFade, windowedMarks } from "../lib/mark-lifecycle";
 import { numberDrag } from "../lib/number-drag";
 
 const W = 720;
@@ -314,13 +313,12 @@ export class MdTreemapLC extends Diagram {
       return result;
     });
 
-    // Rendered set (WIN-155): current window + departing nodes held briefly so
-    // the exit CSS fade can play — including on drill. Exiting tiles freeze
-    // their tile-geometry cells below so they don't ghost through the drill.
-    const renderedSet = withExitDelay(windowTarget, {
-      key: (n) => n,
-    });
-    const windowMembership = membershipCell(windowTarget, (n) => n);
+    // Rendered set (WIN-155 / WIN-292): current window + departing nodes held
+    // briefly so the exit CSS fade can play — including on drill. Exiting tiles
+    // freeze their tile-geometry cells below so they don't ghost through the
+    // drill.
+    const marks = windowedMarks(windowTarget, { key: (n) => n });
+    const { renderedSet, windowMembership } = marks;
     windowMembershipRef = windowMembership;
 
     // Flush a pending drill animation once forEach has populated tileGeo.
@@ -349,7 +347,7 @@ export class MdTreemapLC extends Diagram {
 
     // Windowed node rendering.
     const nodeLayer = s(group());
-    forEach(nodeLayer, renderedSet, (node) => {
+    marks.renderLayer(nodeLayer, (node: BiNode) => {
       const nd = nodeDepth.get(node) ?? 0;
       const isLeaf = (node.children as BiNode[]).length === 0;
 
@@ -378,19 +376,14 @@ export class MdTreemapLC extends Diagram {
         corner: 3,
       });
       tile.el.dataset.id = node.value.id ?? "";
-      // WIN-155: compose lifecycle (enter/exit) with the context-dim opacity in
-      // a single effect so they don't fight. Start at 0 pre-frame, then RAF to
-      // the composed opacity so the enter fade plays over the CSS transition.
-      const tilePresent = derive(() => windowMembership.value.has(node));
-      tile.el.style.transition = `opacity ${ENTER_MS}ms cubic-bezier(0.4,0,0.2,1)`;
-      tile.el.style.opacity = '0';
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        biEffect(() => {
-          const present = tilePresent.value;
-          const dim = (nd === 0 || isContextNode.value) ? 0.18 : 1;
-          tile.el.style.opacity = present ? String(dim) : '0';
-        });
-      }));
+      // WIN-155 / WIN-292: enter/exit fade composed with context-dim opacity
+      // via the shared `enterExitFade` helper; presentOpacity is reactive so
+      // the drilled context tile dims to 0.18 while it lives.
+      const tilePresent = marks.isPresent(node);
+      enterExitFade(tile.el, {
+        present: tilePresent,
+        presentOpacity: derive(() => (nd === 0 || isContextNode.value) ? 0.18 : 1),
+      });
       // WIN-260: drag-to-resize affordance — ew-resize cursor signals horizontal drag
       tile.el.style.cursor = "ew-resize";
       tile.el.setAttribute('tabindex', '0');
@@ -439,27 +432,21 @@ export class MdTreemapLC extends Diagram {
             ? `${node.value.label}\n${node.value.total.value.toFixed(0)}`
             : node.value.label;
         });
-        // Fade the label in with the tile and out when the tile leaves the window.
-        const labelOpacity = num(0);
+        // Fade the label in with the tile and out when the tile leaves the
+        // window — same enter/exit rhythm as the tile via the shared helper.
         const labelFill = derive(() => isContextNode.value ? "#fff" : labelInk(nodeFill));
         const lbl = label(
           Vec.derive(() => ({ x: x.value + w.value / 2, y: y.value + (isLeaf ? h.value / 2 : 10) })),
           text,
-          { size: isLeaf ? 11 : 10, align: Anchor.Center, fill: labelFill, bold: !isLeaf, opacity: labelOpacity },
+          { size: isLeaf ? 11 : 10, align: Anchor.Center, fill: labelFill, bold: !isLeaf },
         );
-        lbl.el.style.transition = `opacity ${ENTER_MS}ms cubic-bezier(0.4,0,0.2,1)`;
-        requestAnimationFrame(() => requestAnimationFrame(() => {
-          const disposeLabelOpacity = biEffect(() => {
-            labelOpacity.value = tilePresent.value ? 1 : 0;
-          });
-          lbl.track(disposeLabelOpacity);
-        }));
+        enterExitFade(lbl.el, { present: tilePresent });
         tileMap.set(node, { tile, label: lbl });
         return [tile, lbl];
       }
       tileMap.set(node, { tile });
       return tile;
-    }, { key: (n) => n.value.id ?? "" });
+    }, { key: (n: BiNode) => n.value.id ?? "" });
 
     // Keep the SVG paint order in sync with the tree view: leavers (which are
     // fading out) go behind, current-window nodes go in front, and within each

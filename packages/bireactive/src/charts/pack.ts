@@ -1,7 +1,6 @@
 import {
   Anchor,
   derive,
-  forEach,
   group,
   label,
   type Mount,
@@ -23,8 +22,8 @@ import { buildParentIndex, type BiNode, portfolio, walkWithDepth } from "../lib/
 import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { mountDrillBreadcrumb } from "../lib/drill-breadcrumb";
-import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, ENTER_MS } from "../lib/transitions";
-import { withExitDelay, membershipCell } from "../lib/mark-lifecycle";
+import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS } from "../lib/transitions";
+import { enterExitFade, windowedMarks } from "../lib/mark-lifecycle";
 import { numberDrag } from "../lib/number-drag";
 
 const W = 480;
@@ -211,17 +210,15 @@ export class MdPack extends Diagram {
       return result;
     });
 
-    // Rendered set (WIN-155): current window + departing nodes held briefly so
-    // the exit CSS fade can play — including on drill. Exiting circles freeze
-    // their remapped geometry below so they don't ghost through the drill zoom.
-    const renderedSet = withExitDelay(windowTarget, {
-      key: (n) => n,
-    });
-    const windowMembership = membershipCell(windowTarget, (n) => n);
+    // Rendered set (WIN-155 / WIN-292): current window + departing nodes held
+    // briefly so the exit CSS fade can play — including on drill. Exiting
+    // circles freeze their remapped geometry below via `freezeOnExit` so they
+    // don't ghost through the drill zoom.
+    const marks = windowedMarks(windowTarget, { key: (n) => n });
 
     // Windowed node rendering.
     const nodeLayer = s(group());
-    forEach(nodeLayer, renderedSet, (node) => {
+    marks.renderLayer(nodeLayer, (node: BiNode) => {
       const nd = nodeDepth.get(node) ?? 0;
       const isLeaf = (node.children as BiNode[]).length === 0;
 
@@ -290,16 +287,16 @@ export class MdPack extends Diagram {
         const scale = Math.min(Wc.value / spanW, Hc.value / spanH);
         return lr.value * scale;
       });
-      // WIN-155: freeze remapped geometry for exiting circles so the fade
-      // plays in place instead of ghosting through the drill viewport tween.
-      let frozenGeom: { cx: number; cy: number; r: number } | null = null;
-      const cx = derive(() => {
-        if (windowMembership.value.has(node)) { frozenGeom = null; return cxRaw.value; }
-        if (!frozenGeom) frozenGeom = { cx: cxRaw.peek(), cy: cyRaw.peek(), r: rRaw.peek() };
-        return frozenGeom.cx;
-      });
-      const cy = derive(() => (frozenGeom ? frozenGeom.cy : cyRaw.value));
-      const r = derive(() => (frozenGeom ? frozenGeom.r : rRaw.value));
+      // WIN-155 / WIN-292: freeze remapped geometry for exiting circles so the
+      // fade plays in place instead of ghosting through the drill viewport tween.
+      const geom = marks.freezeOnExit(node, () => ({
+        cx: cxRaw.value,
+        cy: cyRaw.value,
+        r: rRaw.value,
+      }));
+      const cx = derive(() => geom.value.cx);
+      const cy = derive(() => geom.value.cy);
+      const r = derive(() => geom.value.r);
       const stroke = derive(() =>
         state.focused.value === node ? "#fff"
         : hoverCell.value === node ? "#c8cdd6"
@@ -315,19 +312,13 @@ export class MdPack extends Diagram {
         strokeWidth,
       });
       disc.el.dataset.id = node.value.id ?? "";
-      // WIN-155: compose lifecycle (enter/exit) with context-dim opacity in a
-      // single effect. Start at 0 pre-frame, then RAF to composed opacity so
-      // the enter fade plays over the CSS transition.
-      const discPresent = derive(() => windowMembership.value.has(node));
-      disc.el.style.transition = `opacity ${ENTER_MS}ms cubic-bezier(0.4,0,0.2,1)`;
-      disc.el.style.opacity = '0';
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        biEffect(() => {
-          const present = discPresent.value;
-          const dim = (nd === 0 || isContextNode.value) ? 0.18 : 1;
-          disc.el.style.opacity = present ? String(dim) : '0';
-        });
-      }));
+      // WIN-155 / WIN-292: enter/exit fade composed with context-dim opacity
+      // via the shared `enterExitFade` helper; presentOpacity is reactive so
+      // the drilled context node dims to 0.18 while it lives.
+      enterExitFade(disc.el, {
+        present: marks.isPresent(node),
+        presentOpacity: derive(() => (nd === 0 || isContextNode.value) ? 0.18 : 1),
+      });
       // WIN-260: drag-to-resize affordance — ew-resize cursor signals horizontal drag
       disc.el.style.cursor = "ew-resize";
       // No CSS transition on cx/cy/r — the viewport tween (vx0..vy1) drives

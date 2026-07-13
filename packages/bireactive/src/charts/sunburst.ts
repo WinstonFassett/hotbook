@@ -15,6 +15,7 @@ import {
   effect as biEffect,
   untracked,
 } from "bireactive";
+import { windowedMarks } from "../lib/mark-lifecycle";
 import { lineHandle } from "../lib/handles";
 import { Diagram } from "../lib/diagram";
 import { partition, type HierarchyRectangularNode } from "d3-hierarchy";
@@ -26,7 +27,7 @@ import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { mountDrillBreadcrumb } from "../lib/drill-breadcrumb";
 import { dragCancelable } from "../lib/esc-contract";
 import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS } from "../lib/transitions";
-import { withExitDelay, enterExitFade, membershipCell } from "../lib/mark-lifecycle";
+import { enterExitFade } from "../lib/mark-lifecycle";
 import type { ElementWithBridge } from "../lib/hud-bridge";
 import { attachReorderGesture } from "../lib/reorder-gesture";
 import { REORDER_ELEVATION_CSS } from "../lib/transitions";
@@ -153,14 +154,12 @@ export class MdSunburstLC extends Diagram {
       return result;
     });
 
-    // Rendered set (WIN-155): current window + departing nodes held briefly so
-    // the exit CSS fade can play — including on drill. Exiting arcs freeze
-    // their layout cells below so they don't remap to degenerate geometry as
-    // the viewport tweens.
-    const renderedSet = withExitDelay(windowTarget, {
-      key: (n) => n,
-    });
-    const windowMembership = membershipCell(windowTarget, (n) => n);
+    // Rendered set (WIN-155 / WIN-292): current window + departing nodes held
+    // briefly so the exit CSS fade can play — including on drill. Exiting arcs
+    // freeze their remapped geometry below via `freezeOnExit` so they don't
+    // remap to degenerate geometry as the viewport tweens.
+    const marks = windowedMarks(windowTarget, { key: (n) => n });
+    const { renderedSet, windowMembership } = marks;
 
     let drillInited = false;
     let lastDrillId: string | null = null;
@@ -293,7 +292,7 @@ export class MdSunburstLC extends Diagram {
 
     // Windowed arc rendering.
     const arcLayer = s(group());
-    forEach(arcLayer, renderedSet, (node) => {
+    marks.renderLayer(arcLayer, (node: BiNode) => {
       const depth = nodeDepth.get(node) ?? 1;
 
       // Per-arc raw layout-position cells. Tweened on sort change so arcs sweep
@@ -347,22 +346,19 @@ export class MdSunburstLC extends Diagram {
         }
       });
 
-      // WIN-155: while an arc is exiting, freeze its remapped geometry to the
-      // last visible snapshot so the fade-out plays in place instead of
-      // sliding through the drill viewport tween.
-      let frozenGeom: { a0: number; a1: number; rIn: number; rOut: number } | null = null;
-      const a0Raw = derive(() => remapAngle(la0.value));
-      const a1Raw = derive(() => remapAngle(la1.value));
-      const rInRaw = derive(() => Math.max(0, remapRadius(lr0.value)));
-      const rOutRaw = derive(() => Math.max(0, remapRadius(lr1.value)));
-      const a0 = derive(() => {
-        if (windowMembership.value.has(node)) { frozenGeom = null; return a0Raw.value; }
-        if (!frozenGeom) frozenGeom = { a0: a0Raw.peek(), a1: a1Raw.peek(), rIn: rInRaw.peek(), rOut: rOutRaw.peek() };
-        return frozenGeom.a0;
-      });
-      const a1 = derive(() => (frozenGeom ? frozenGeom.a1 : a1Raw.value));
-      const rIn = derive(() => (frozenGeom ? frozenGeom.rIn : rInRaw.value));
-      const rOut = derive(() => (frozenGeom ? frozenGeom.rOut : rOutRaw.value));
+      // WIN-155 / WIN-292: while an arc is exiting, freeze its remapped
+      // geometry to the last visible snapshot so the fade-out plays in place
+      // instead of sliding through the drill viewport tween.
+      const geom = marks.freezeOnExit(node, () => ({
+        a0: remapAngle(la0.value),
+        a1: remapAngle(la1.value),
+        rIn: Math.max(0, remapRadius(lr0.value)),
+        rOut: Math.max(0, remapRadius(lr1.value)),
+      }));
+      const a0 = derive(() => geom.value.a0);
+      const a1 = derive(() => geom.value.a1);
+      const rIn = derive(() => geom.value.rIn);
+      const rOut = derive(() => geom.value.rOut);
       const stroke = derive(() =>
         state.focused.value === node ? "#fff"
         : hoverCell.value === node ? "#c8cdd6"
@@ -576,8 +572,7 @@ export class MdSunburstLC extends Diagram {
 
       // WIN-155 enter/exit fade — arc fades in on mount, fades out when the
       // node leaves the drill window (held in renderedSet by withExitDelay).
-      const arcPresent = derive(() => windowMembership.value.has(node));
-      enterExitFade(arc.el, { present: arcPresent });
+      enterExitFade(arc.el, { present: marks.isPresent(node) });
       biEffect(() => {
         arc.el.setAttribute('aria-label', `${node.value.label}: ${node.value.total.value.toFixed(0)}`);
       });
@@ -622,7 +617,7 @@ export class MdSunburstLC extends Diagram {
       // silently swallowed it (labels-only sunburst). Wrap both in a group.
       rowGroup.add(lbl);
       return rowGroup;
-    }, { key: (n) => n.value.id });
+    }, { key: (n: BiNode) => n.value.id });
 
     // Windowed handle rendering.
     if (!this.hasAttribute("no-handles")) {
