@@ -29,6 +29,11 @@ import {
   type SankeyLayout,
   type SankeyTopology,
 } from "./sankey-layout";
+import {
+  GESTURE_ACTIVE_CLASS,
+  TRANSITION_DURATION,
+  hoverTransition,
+} from "./transitions";
 
 // ---------------------------------------------------------------------------
 // Conservation propagation — the "form fill"
@@ -140,7 +145,8 @@ export interface SankeySceneOptions {
 }
 
 export const LINK_MIN = 0.5; // floor so a flow never collapses to an ungrabbable sliver
-export const SORT_SEC = 0.35; // Sort/reorder tween duration in seconds (matching Gantt)
+// Sort/reorder tween duration in seconds — uses TRANSITION_DURATION.reorder
+export const SORT_SEC = TRANSITION_DURATION.reorder / 1000;
 
 /**
  * Pick the constant px-per-unit ONCE from the initial values so the diagram opens
@@ -284,7 +290,6 @@ export function sankeyScene(
   // tween the offset back to 0.
   let sortInited = false;
   let lastSortBy = untracked(() => sortByCell.value);
-  const GESTURE_ACTIVE_CLASS = "gesture-active";
   biEffect(() => {
     const _layout = layout.value; // track layout changes
     const sortBy = sortByCell.value; // track sort key
@@ -355,7 +360,12 @@ export function sankeyScene(
     restore: (_idx: number, snap: number[]) => {
       batch(() => { linkValues.forEach((lv, i) => { lv.value.value = snap[i]!; }); });
     },
-    onEnd: () => { wheelLocked.value = null; hovered.value = null; tooltipVis.value = false; },
+    onEnd: () => {
+      host.classList.remove(GESTURE_ACTIVE_CLASS);
+      wheelLocked.value = null;
+      hovered.value = null;
+      tooltipVis.value = false;
+    },
   };
 
   const hitTestRibbon = (clientX: number, clientY: number): number | null => {
@@ -384,7 +394,12 @@ export function sankeyScene(
     restore: (_nodeIdx: number, snap: number[]) => {
       batch(() => { linkValues.forEach((lv, i) => { lv.value.value = snap[i]!; }); });
     },
-    onEnd: () => { wheelLocked.value = null; tooltipVis.value = false; tooltipNodeIdx.value = null; },
+    onEnd: () => {
+      host.classList.remove(GESTURE_ACTIVE_CLASS);
+      wheelLocked.value = null;
+      tooltipVis.value = false;
+      tooltipNodeIdx.value = null;
+    },
   };
 
   host.addEventListener("wheel", ((e: WheelEvent) => {
@@ -400,6 +415,7 @@ export function sankeyScene(
         { pinch: !realModifierDown() },
       );
       if (idx === null) return;
+      host.classList.add(GESTURE_ACTIVE_CLASS);
       wheelLocked.value = idx;
       e.preventDefault();
       
@@ -459,6 +475,7 @@ export function sankeyScene(
       { pinch: !realModifierDown() },
     );
     if (idx === null) return;
+    host.classList.add(GESTURE_ACTIVE_CLASS);
     wheelLocked.value = idx;
     e.preventDefault();
     const v = linkValues[idx]!.value;
@@ -702,7 +719,7 @@ export function sankeyScene(
         corner: 2,
       }));
       grip.el.style.cursor = "ns-resize";
-      grip.el.style.transition = "opacity 0.12s";
+      grip.el.style.transition = hoverTransition("opacity");
       grip.el.addEventListener("pointerenter", (e) => { nodeActive.value = true; showBarTooltip(e as PointerEvent); });
       grip.el.addEventListener("pointermove", (e) => { tooltipAt.value = toSVG(e as PointerEvent); });
       grip.el.addEventListener("pointerleave", () => { nodeActive.value = false; tooltipVis.value = false; tooltipNodeIdx.value = null; });
@@ -712,6 +729,7 @@ export function sankeyScene(
       if (grip.el.firstElementChild) groupNodeEls.set(grip.el.firstElementChild, n);
       dragCancelable(grip, lens, allCells, {
         onStart: () => {
+          host.classList.add(GESTURE_ACTIVE_CLASS);
           nodeActive.value = true;
           tooltipNodeIdx.value = n; tooltipVis.value = true;
           const p = gripPos();
@@ -719,7 +737,10 @@ export function sankeyScene(
           startVals = allCells.map((c) => c.value);
           startTot = groupLinks.reduce((a, li) => a + startVals[li]!, 0);
         },
-        onEnd: () => { nodeActive.value = false; },
+        onEnd: () => {
+          host.classList.remove(GESTURE_ACTIVE_CLASS);
+          nodeActive.value = false;
+        },
       });
     }
 
@@ -806,7 +827,7 @@ export function sankeyScene(
         opacity: derive(() => (active.value || hovered.value === li || focused.value === li) ? 1 : 0.5),
       }));
       grip.el.style.cursor = "ns-resize";
-      grip.el.style.transition = "opacity 0.12s, r 0.12s";
+      grip.el.style.transition = hoverTransition(["opacity", "r"]);
       grip.el.addEventListener("pointerenter", (e) => {
         active.value = true; hovered.value = li;
         tooltipNodeIdx.value = null; tooltipLinkIdx.value = li;
@@ -815,8 +836,18 @@ export function sankeyScene(
       grip.el.addEventListener("pointermove", (e) => { tooltipAt.value = toSVG(e as PointerEvent); });
       grip.el.addEventListener("pointerleave", () => { active.value = false; if (hovered.value === li) hovered.value = null; tooltipVis.value = false; tooltipLinkIdx.value = null; });
       dragCancelable(grip, lens, allCells, {
-        onStart: () => { active.value = true; focused.value = li; tooltipLinkIdx.value = li; tooltipVis.value = true; startAllVals = allCells.map((c) => c.value); },
-        onEnd: () => { active.value = false; },
+        onStart: () => {
+          host.classList.add(GESTURE_ACTIVE_CLASS);
+          active.value = true;
+          focused.value = li;
+          tooltipLinkIdx.value = li;
+          tooltipVis.value = true;
+          startAllVals = allCells.map((c) => c.value);
+        },
+        onEnd: () => {
+          host.classList.remove(GESTURE_ACTIVE_CLASS);
+          active.value = false;
+        },
       });
     }
   }
@@ -892,7 +923,7 @@ export function sankeyScene(
         opacity: derive(() => (active.value || hovered.value === li || focused.value === li) ? 1 : 0.5),
       }));
       grip.el.style.cursor = "ns-resize";
-      grip.el.style.transition = "opacity 0.12s, r 0.12s";
+      grip.el.style.transition = hoverTransition(["opacity", "r"]);
       grip.el.addEventListener("pointerenter", (e) => {
         active.value = true; hovered.value = li;
         tooltipNodeIdx.value = null; tooltipLinkIdx.value = li;
@@ -901,8 +932,18 @@ export function sankeyScene(
       grip.el.addEventListener("pointermove", (e) => { tooltipAt.value = toSVG(e as PointerEvent); });
       grip.el.addEventListener("pointerleave", () => { active.value = false; if (hovered.value === li) hovered.value = null; tooltipVis.value = false; tooltipLinkIdx.value = null; });
       dragCancelable(grip, lens, allCells, {
-        onStart: () => { active.value = true; focused.value = li; tooltipLinkIdx.value = li; tooltipVis.value = true; startAllVals = allCells.map((c) => c.value); },
-        onEnd: () => { active.value = false; },
+        onStart: () => {
+          host.classList.add(GESTURE_ACTIVE_CLASS);
+          active.value = true;
+          focused.value = li;
+          tooltipLinkIdx.value = li;
+          tooltipVis.value = true;
+          startAllVals = allCells.map((c) => c.value);
+        },
+        onEnd: () => {
+          host.classList.remove(GESTURE_ACTIVE_CLASS);
+          active.value = false;
+        },
       });
     }
   }
