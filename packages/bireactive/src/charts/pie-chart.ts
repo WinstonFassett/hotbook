@@ -1,4 +1,4 @@
-import { Anchor, annularSector, cell, derive, easeOut, effect as biEffect, label, type Mount, Num, num, tween, untracked, Vec, type Writable } from "bireactive";
+import { Anchor, annularSector, cell, derive, easeOut, effect as biEffect, forEach, group, label, type Mount, Num, num, tween, untracked, Vec, type Writable } from "bireactive";
 import { circleHandle } from "../lib/handles";
 import { Diagram } from "../lib/diagram";
 import { pie } from "d3-shape";
@@ -91,11 +91,18 @@ export class MdPieChartLC extends Diagram {
     // Per-slice tweened value cells — TWEEN on measure swap (animate arcs to
     // new values), SNAP on value edits / gestures (write-through, no lag).
     // Same two-lane gate pattern as hier charts (WIN-143).
+    //
+    // vTarget follows the CURRENT Slice object for each sid so the chart stays
+    // in sync with the table/store even when the data array is re-ordered.
     const slices0 = data.peek() as Slice[];
     const tweenedValues = new Map<string, Writable<Num>>();
     for (const d of slices0) {
       const sid = d.id ?? d.label;
-      const vTarget = derive(() => { void data.value; return d.value.value; });
+      const vTarget = derive(() => {
+        void data.value;
+        const current = (data.value as Slice[]).find(s => (s.id ?? s.label) === sid);
+        return current ? current.value.value : 0;
+      });
       const tv = num(vTarget.value);
       tweenedValues.set(sid, tv);
       let tvCancel: (() => void) | null = null;
@@ -119,8 +126,8 @@ export class MdPieChartLC extends Diagram {
     // Tweened data for the pie layout — replaces raw values with tweened values.
     // Boundary knobs still write to raw value cells; tween cells snap to follow.
     const tweenedData = derive(() => {
-      void data.value; // track data changes (reorder, add/remove)
-      return (data.peek() as Slice[]).map(d => {
+      const arr = data.value as Slice[];
+      return arr.map(d => {
         const sid = d.id ?? d.label;
         const tv = tweenedValues.get(sid);
         return tv ? { ...d, value: tv } : d;
@@ -143,8 +150,9 @@ export class MdPieChartLC extends Diagram {
     // Order hash — detects sort (reorder) vs value edit. When the id sequence
     // changes, it's a sort; the arc angles need to tween (slices rotate).
     const orderHash = derive(() => (data.value as Slice[]).map(d => d.id ?? d.label).join(','));
-    for (let i = 0; i < slices0.length; i++) {
-      const d = slices0[i]!;
+
+    const sliceLayer = s(group());
+    forEach(sliceLayer, data, (d, i) => {
       const color = PALETTE[i % PALETTE.length]!;
 
       const arcDatum = derive(() => arcs.value[i]);
@@ -184,12 +192,12 @@ export class MdPieChartLC extends Diagram {
       );
       const opacity = derive(() => selected.value && selected.value !== d ? 0.5 : 1);
 
-      const sector = s(annularSector(center, r, R_INNER, a0, a1, {
+      const sector = annularSector(center, r, R_INNER, a0, a1, {
         fill: color,
         stroke: "#0b0d12",
         strokeWidth: 1,
         opacity,
-      }));
+      });
       sliceElements.set(d, sector.el); // Store for focus management
       // Make each slice individually focusable
       sector.el.setAttribute('tabindex', '0');
@@ -212,27 +220,34 @@ export class MdPieChartLC extends Diagram {
         const total = (data.value as Slice[]).reduce((a, b) => a + b.value.value, 0);
         return `${d.label}\n${((d.value.value / total) * 100).toFixed(0)}%`;
       });
-      s(label(labelPos, sliceLabel, { size: 11, align: Anchor.Center, fill: "#fff" }));
-    }
+      const lbl = label(labelPos, sliceLabel, { size: 11, align: Anchor.Center, fill: "#fff" });
+      return [sector, lbl];
+    }, { key: (d) => d.id ?? d.label });
 
     if (!this.hasAttribute("no-handles")) {
-      const rows = data.peek() as Slice[];
-      for (let i = 0; i < rows.length - 1; i++) {
-        const a = rows[i]!.value;
-        const b = rows[i + 1]!.value;
+      const handlePairs = derive(() => {
+        const arr = data.value as Slice[];
+        const out: { a: Slice; b: Slice; i: number }[] = [];
+        for (let i = 0; i < arr.length - 1; i++) out.push({ a: arr[i]!, b: arr[i + 1]!, i });
+        return out;
+      });
+      const handleLayer = s(group());
+      forEach(handleLayer, handlePairs, ({ a, b, i }) => {
+        const av = a.value;
+        const bv = b.value;
         // Shared angular span of the two adjacent slices. Peeked geometry —
         // these are derived layout outputs, never lens sources.
         const span0 = derive(() => arcs.value[i]?.startAngle ?? 0);
         const span1 = derive(() => arcs.value[i + 1]?.endAngle ?? 0);
 
         // Canonical boundary knob — IDENTICAL pattern to icicle/sunburst:
-        //   sources = the two writable value cells [a, b]
-        //   read    = position from (a,b) + peeked span geometry
+        //   sources = the two writable value cells [av, bv]
+        //   read    = position from (av,bv) + peeked span geometry
         //   write   = returns [newA, newB]; framework flushes both atomically
         // No imperative side-effects, no reading the live `arcs` layout during
         // the drag — that coupling is what made the old pie jump.
         const knob = Vec.lens(
-          [a, b] as const,
+          [av, bv] as const,
           (vals: readonly [number, number]) => {
             const [va, vb] = vals;
             const s0 = span0.peek();
@@ -261,7 +276,7 @@ export class MdPieChartLC extends Diagram {
         // Separate reactive derive drives the VISUAL position so the dot tracks
         // layout live (matches the sibling layercharts charts' knobPos).
         const knobPos = Vec.derive(() => {
-          const va = a.value, vb = b.value;
+          const va = av.value, vb = bv.value;
           const sum = va + vb;
           const frac = sum === 0 ? 0.5 : va / sum;
           const ang = span0.value + frac * (span1.value - span0.value);
@@ -269,14 +284,13 @@ export class MdPieChartLC extends Diagram {
         });
 
         const active = cell(false);
-        const handle = s(circleHandle(knobPos, {
+        const handle = circleHandle(knobPos, {
           kind: "divider",
           active,
-        }));
-        // Cancelable divider drag: snapshots [a,b] on down, redistributes between
-        // the two adjacent slices. Pie layout is .sort(null) (never reorders), so
-        // there is no sort-order concern here.
-        dragCancelable(handle, knob, [a, b], {
+        });
+        // Cancelable divider drag: snapshots [av,bv] on down, redistributes between
+        // the two adjacent slices.
+        dragCancelable(handle, knob, [av, bv], {
           host: this,
           onStart: () => { active.value = true; setGestureActive(true); handle.el.style.cursor = "grabbing"; },
           onEnd: (canceled: boolean) => { active.value = false; setGestureActive(false); handle.el.style.cursor = "grab"; this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } })); },
@@ -284,7 +298,8 @@ export class MdPieChartLC extends Diagram {
         handle.el.style.cursor = "grab";
         handle.el.addEventListener("pointerenter", () => { active.value = true; });
         handle.el.addEventListener("pointerleave", () => { if (!(this as any).gestureActive) active.value = false; });
-      }
+        return handle;
+      }, { key: ({ a, b }) => `${a.id ?? a.label}:${b.id ?? b.label}` });
     }
 
     this.addEventListener("wheel", (e) => {

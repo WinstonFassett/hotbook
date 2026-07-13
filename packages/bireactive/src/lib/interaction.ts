@@ -133,6 +133,25 @@ export function flatOrder(root: BiNode): BiNode[] {
 }
 
 export function buildHierarchy(root: BiNode, sortBy?: 'index' | 'value') {
+  // Sort the live BiNode children so the tree order matches the selected sort
+  // key. This makes applyDelta sibling lookups (used by wheel/click and handle
+  // drags) agree with the visual layout order, and ensures d3 layouts use the
+  // same ordering when they consume hierarchy children.
+  if (sortBy) {
+    const sortNode = (n: BiNode) => {
+      const kids = (n as any).children as BiNode[];
+      if (kids && kids.length > 1) {
+        if (sortBy === 'value') {
+          kids.sort((a, b) => (b.value.total.value ?? 0) - (a.value.total.value ?? 0));
+        } else {
+          kids.sort((a, b) => (a.value.index ?? 0) - (b.value.index ?? 0));
+        }
+      }
+      for (const c of kids ?? []) sortNode(c);
+    };
+    sortNode(root);
+  }
+
   const h = hierarchy<BiNode>(root, (n) => n.children as BiNode[])
     .sum((n) => (n.children.length > 0 ? 0 : n.value.total.value));
   if (sortBy === 'value') {

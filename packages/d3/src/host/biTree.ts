@@ -17,22 +17,24 @@ export interface NodeValue {
   label: string
   color: string
   total: Writable<Num>
+  /** Original index from the source VizNode, so sorting can restore index order. */
+  index?: number
   /** All measures from VizNode, keyed by measure name. total is always measures[primaryMeasureKey]. */
   measures?: Record<string, Writable<Num>>
 }
 
 export type BiNode = TreeNode<NodeValue>
 
-export function biLeaf(id: string, label: string, measuresData: Record<string, number>, primaryKey: string, color: string): BiNode {
+export function biLeaf(id: string, label: string, measuresData: Record<string, number>, primaryKey: string, color: string, index?: number): BiNode {
   const measures: Record<string, Writable<Num>> = {}
   for (const [key, value] of Object.entries(measuresData)) {
     measures[key] = num(value)
   }
   const total = measures[primaryKey] ?? num(0)
-  return treeNode({ id, label, color, total, measures })
+  return treeNode({ id, label, color, total, index, measures })
 }
 
-export function biGroup(id: string, label: string, color: string, children: BiNode[], primaryKey: string): BiNode {
+export function biGroup(id: string, label: string, color: string, children: BiNode[], primaryKey: string, index?: number): BiNode {
   // Collect all measure keys from children
   const allMeasureKeys = new Set<string>()
   for (const child of children) {
@@ -58,7 +60,7 @@ export function biGroup(id: string, label: string, color: string, children: BiNo
   }
 
   const total = measures[primaryKey] ?? num(0)
-  return treeNode({ id, label, color, total, measures }, children)
+  return treeNode({ id, label, color, total, index, measures }, children)
 }
 
 export function buildParentIndex(root: BiNode): WeakMap<BiNode, BiNode> {
@@ -109,14 +111,14 @@ export function buildBiTree(nodes: VizNode[], measureKey: string, allMeasureKeys
     const color = pnodeColor(byId, n)
     const kids = nodes
       .filter(c => c.parentId === n.id)
-      .sort((a, b) => a.index - b.index)
+      .sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
     if (kids.length === 0) {
-      return biLeaf(n.id, n.name, n.measures, measureKey, color)
+      return biLeaf(n.id, n.name, n.measures, measureKey, color, n.index)
     }
-    return biGroup(n.id, n.name, color, kids.map(build), measureKey)
+    return biGroup(n.id, n.name, color, kids.map(build), measureKey, n.index)
   }
 
-  const roots = nodes.filter(n => n.parentId === null).sort((a, b) => a.index - b.index)
+  const roots = nodes.filter(n => n.parentId === null).sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
   if (roots.length === 0) return null
   if (roots.length === 1) return build(roots[0]!)
   return biGroup('__root__', 'root', colorFor('root'), roots.map(build), measureKey)

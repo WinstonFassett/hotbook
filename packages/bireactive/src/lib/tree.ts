@@ -13,6 +13,8 @@ export interface NodeValue {
   label: string;
   color: string;
   total: Writable<Num>;
+  /** Original index for restoring index-based sort order. */
+  index?: number;
   /** Optional: all measures keyed by name. For backward compat, may be undefined. */
   measures?: Record<string, Writable<Num>>;
 }
