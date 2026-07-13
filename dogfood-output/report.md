@@ -1,7 +1,7 @@
 # Hotbook Demos QA Report
 
-**Date**: 2026-07-13 17:19:11
-**Target**: http://127.0.0.1:4816/demos/
+**Date**: 2026-07-13 17:52:02
+**Target**: http://127.0.0.1:4600/demos/
 **Total Issues**: 3
 
 ## Executive Summary
@@ -34,7 +34,7 @@ This QA pass focused on:
 
 **Severity**: Medium  
 **Category**: Functional  
-**URL**: `http://127.0.0.1:4816/demos/`
+**URL**: `http://127.0.0.1:4600/demos/`
 
 **Description**: Could not locate budget-tree chart on the demos page
 
@@ -48,7 +48,7 @@ This QA pass focused on:
 
 **Severity**: Medium  
 **Category**: Functional  
-**URL**: `http://127.0.0.1:4816/demos/`
+**URL**: `http://127.0.0.1:4600/demos/`
 
 **Description**: Could not locate tree-chart chart on the demos page
 
@@ -62,7 +62,7 @@ This QA pass focused on:
 
 **Severity**: Medium  
 **Category**: Functional  
-**URL**: `http://127.0.0.1:4816/demos/`
+**URL**: `http://127.0.0.1:4600/demos/`
 
 **Description**: Could not locate Gantt chart on demos page
 
@@ -83,7 +83,7 @@ This QA pass focused on:
 - Testing performed on local dev server
 - Browser: Chromium (headless)
 
-## Detailed Interaction Testing (2026-07-13 17:21:15)
+## Detailed Interaction Testing (2026-07-13 17:52:28)
 
 **New issues found**: 0
 

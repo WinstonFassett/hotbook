@@ -7,6 +7,7 @@ Focuses on interactivity, gestures, hierarchical charts, and UX
 from playwright.sync_api import sync_playwright
 import json
 import time
+import os
 from pathlib import Path
 
 # Output directory
@@ -349,7 +350,8 @@ def generate_report():
     with open(report_path, 'w') as f:
         f.write("# Hotbook Demos QA Report\n\n")
         f.write(f"**Date**: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-        f.write(f"**Target**: http://127.0.0.1:4816/demos/\n")
+        port = os.environ.get('PORT', '4262')
+        f.write(f"**Target**: http://127.0.0.1:{port}/demos/\n")
         f.write(f"**Total Issues**: {len(issues)}\n\n")
 
         f.write("## Executive Summary\n\n")
@@ -419,7 +421,8 @@ def generate_report():
 
 def main():
     """Main test execution"""
-    url = "http://127.0.0.1:4816/demos/"
+    port = os.environ.get('PORT', '4262')
+    url = f"http://127.0.0.1:{port}/demos/"
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)

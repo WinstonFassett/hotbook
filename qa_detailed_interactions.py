@@ -7,6 +7,7 @@ Focus on Winston's specific concerns: gestures, sort freezing, handle stability,
 from playwright.sync_api import sync_playwright
 import json
 import time
+import os
 from pathlib import Path
 
 OUTPUT_DIR = Path("dogfood-output")
@@ -437,7 +438,8 @@ def append_to_report(new_issues):
             f.write("---\n\n")
 
 def main():
-    url = "http://127.0.0.1:4816/demos/"
+    port = os.environ.get('PORT', '4262')
+    url = f"http://127.0.0.1:{port}/demos/"
 
     # Charts to test based on Winston's priorities
     hierarchical_charts = ['treemap', 'icicle', 'sunburst', 'pack']
