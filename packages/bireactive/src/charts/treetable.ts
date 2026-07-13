@@ -382,12 +382,16 @@ export class MdTreetableLC extends HTMLElement {
 
           this.valueEffectDisposers.set(effectKey, dispose);
 
-          // Attach numberDrag for drag-to-edit on this value cell
-          // Self-contained: no host wiring needed.
+          // Attach numberDrag for drag-to-edit on this value cell.
+          // Host wiring lets tile-binder freeze applyData during the gesture.
           numberDrag(valueCell, {
             get: () => measureValue.value,
             set: (v: number) => { measureValue.value = v; },
             pxPerUnit: 4,
+            host: this,
+            onEnd: (canceled) => {
+              this.dispatchEvent(new CustomEvent('gesturecommit', { detail: { canceled } }));
+            },
           });
         }
       }

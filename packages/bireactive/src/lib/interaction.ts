@@ -1,6 +1,7 @@
 import { hierarchy } from "d3-hierarchy";
 import { effect as biEffect, batch } from "bireactive";
 import { leaves, type BiNode } from "./tree";
+import { startGesture, commitGesture, cancelGesture } from "./gesture-state";
 
 /** Per-call scaling mode for {@link applyDelta}. Mirrors the public
  *  `ScalingMode` in @hotbook/core; kept structural so this
@@ -269,6 +270,7 @@ function makeWheelController(): WheelController {
     snap = undefined;
     cfg = null;
     onEnd?.(canceled);
+    if (canceled) cancelGesture(); else commitGesture();
   };
   const commit = () => { if (target !== null) end(false); };
   const cancel = (): boolean => {
@@ -288,6 +290,7 @@ function makeWheelController(): WheelController {
       cfg = null;
       suppressedTarget = cancelledTarget;
       onEnd?.(true);
+      cancelGesture();
       armSuppress();
     } else {
       end(true);
@@ -318,6 +321,7 @@ function makeWheelController(): WheelController {
       cfg = config;
       snap = config.snapshot(t);
       isPinchGesture = opts?.pinch ?? false;
+      startGesture();
 
       if (isPinchGesture) {
         // Trackpad pinch: synthetic ctrlKey, no real key was pressed, so keyup
@@ -413,6 +417,7 @@ function makeDragController(): DragController {
     snap = undefined;
     cfg = null;
     onEnd?.(canceled);
+    if (canceled) cancelGesture(); else commitGesture();
   };
   const commit = () => { if (target !== null) end(false); };
   const cancel = (): boolean => {
@@ -430,6 +435,7 @@ function makeDragController(): DragController {
       target = t;
       cfg = config;
       snap = config.snapshot(t);
+      startGesture();
       const onPointerMove = (e: Event) => config.onMove(e as PointerEvent, snap);
       const onPointerUp = () => commit();
       const onBlur = () => commit();

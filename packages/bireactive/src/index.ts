@@ -25,6 +25,7 @@ export { wheelController, dragController, realModifierDown } from './lib/interac
 export type { BiNode } from './lib/tree'
 export { group, leaf, leaves } from './lib/tree'
 export { numberDrag, type NumberDragOpts } from './lib/number-drag'
+export { gestureState, globalGestureActive, startGesture, commitGesture, cancelGesture, type GesturePhase } from './lib/gesture-state'
 export { circleHandle, lineHandle, type HandleKind, type HandleStyle } from './lib/handles'
 export { Viewer, type ViewerOptions, type ShowOptions } from './lib/viewer'
 export { CartesianViewer, type CartesianViewerOptions, type CartesianDomain } from './lib/cartesian-viewer'

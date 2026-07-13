@@ -457,7 +457,15 @@ export function makeHierSource(spec: HierSpec): TileSource {
               }
             }
 
-            disposers.push(numberDrag(cell, { get, set, pxPerUnit }))
+            disposers.push(numberDrag(cell, {
+              get,
+              set,
+              pxPerUnit,
+              host: el,
+              onEnd: (canceled) => {
+                el.dispatchEvent(new CustomEvent('gesturecommit', { detail: { canceled } }))
+              },
+            }))
           }
         })
 
