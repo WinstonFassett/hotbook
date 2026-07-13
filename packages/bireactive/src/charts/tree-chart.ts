@@ -8,8 +8,6 @@ import {
   pathD,
   rect,
   group,
-  tween,
-  easeOut,
   untracked,
   Vec,
   cell,
@@ -23,11 +21,10 @@ import { buildParentIndex, type BiNode, portfolio, walkWithDepth } from "../lib/
 import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize } from "../lib/host-size";
 import { FILL_STYLE } from "../lib/host-size";
-import { GESTURE_ACTIVE_CLASS } from "../lib/transitions";
+import { applyMultiWithTweenGate } from "../lib/tween-gate";
 
 const W = 560;
 const H = 400;
-const SORT_SEC = 0.35;
 
 // Rounded-rect node style: rectangle encloses the label (big hit target).
 const NODE_H = 24;
@@ -302,16 +299,16 @@ export class MdTreeChart extends Diagram {
           maxDepthV !== seenMaxDepth;
         seenSort = sort; seenOrient = orient; seenMeasureKey = measureKey;
         seenCollapsed = collapsed; seenExpanded = expanded; seenMaxDepth = maxDepthV;
-        if (structural && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
-          lcancel?.();
-          lcancel = this.anim.start(
-            tween(lx, t.x, SORT_SEC, easeOut) as any,
-            tween(ly, t.y, SORT_SEC, easeOut) as any,
-          );
-        } else {
-          lcancel?.(); lcancel = null;
-          lx.value = t.x; ly.value = t.y;
-        }
+        lcancel?.();
+        lcancel = applyMultiWithTweenGate({
+          updates: [
+            { cell: lx, target: t.x },
+            { cell: ly, target: t.y },
+          ],
+          structural,
+          host: this,
+          anim: this.anim,
+        });
       });
     }
 

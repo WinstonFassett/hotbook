@@ -2,7 +2,7 @@
 // Mirrors LC's radial Chart + scaleBand for x (angle per category).
 // Grid: polygon rings at radius ticks + spoke lines. Points on polygon are clickable/editable.
 
-import { Anchor, cell, circle, derive, easeOut, effect as biEffect, label, type Mount, num, pathD, tween, untracked, Vec } from "bireactive";
+import { Anchor, cell, circle, derive, effect as biEffect, label, type Mount, num, pathD, untracked, Vec } from "bireactive";
 import { Diagram } from "../lib/diagram";
 import { scaleLinear } from "d3-scale";
 import { extent, ticks as d3Ticks } from "d3-array";
@@ -10,10 +10,10 @@ import { wheelController, dragController, dynamicWheelStep, realModifierDown } f
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { GESTURE_ACTIVE_CLASS } from "../lib/transitions";
+import { applyMultiWithTweenGate } from "../lib/tween-gate";
 
 const W = 640;
 const H = 640;
-const SORT_SEC = 0.35; // s — measure-swap tween duration
 
 const COLOR = "#7aaae8";
 
@@ -214,13 +214,13 @@ export class MdRadarChartLC extends Diagram {
         // morphs. Value edits (same datum, different value) snap per R2.
         const structural = measureKey !== seenMeasureKey || order !== seenOrder;
         seenMeasureKey = measureKey; seenOrder = order;
-        if (structural && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
-          rCancel?.();
-          rCancel = this.anim.start(tween(rPx, target, SORT_SEC, easeOut) as any);
-        } else {
-          rCancel?.(); rCancel = null;
-          rPx.value = target;
-        }
+        rCancel?.();
+        rCancel = applyMultiWithTweenGate({
+          updates: [{ cell: rPx, target }],
+          structural,
+          host: this,
+          anim: this.anim,
+        });
       });
     }
 

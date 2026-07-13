@@ -2,18 +2,17 @@
 // Full-360° track per ring, rounded ends, value arc on top.
 // Click ring to select · Tab/←/→ nav · ↑/↓ edit · cmd+wheel.
 
-import { Anchor, cell, circle, derive, easeInOut, easeOut, effect as biEffect, group, label, mount, type Mount, num, pathD, tween, untracked, Vec } from "bireactive";
+import { Anchor, cell, circle, derive, easeInOut, effect as biEffect, group, label, mount, type Mount, num, pathD, tween, untracked, Vec } from "bireactive";
 import { Diagram } from "../lib/diagram";
 import { arc as d3Arc } from "d3-shape";
 import { wheelController, dragController, realModifierDown } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { GESTURE_ACTIVE_CLASS } from "../lib/transitions";
+import { applyWithTweenGate } from "../lib/tween-gate";
 
 const W = 640;
 const H = 640;
-
-const SORT_SEC = 0.35; // s — measure-swap tween duration
 const RING_GAP = 8;
 // Fraction of total radius reserved as empty center (for label readout / future hover info).
 // 1.5 means the dead zone equals 1.5 ring-step widths.
@@ -266,13 +265,15 @@ export class MdConcentricArcLC extends Diagram {
         if (!fracInited) { fracInited = true; seenMeasureKey = measureKey; frac.value = target; return; }
         const measureSwapped = measureKey !== seenMeasureKey;
         seenMeasureKey = measureKey;
-        if (measureSwapped && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
-          fracCancel?.();
-          fracCancel = this.anim.start(tween(frac, target, SORT_SEC, easeOut));
-        } else {
-          fracCancel?.(); fracCancel = null;
-          frac.value = target;
-        }
+        const structural = measureSwapped;
+        fracCancel?.();
+        fracCancel = applyWithTweenGate({
+          cell: frac,
+          target,
+          structural,
+          host: this,
+          anim: this.anim,
+        });
       });
 
       // Value arc.
