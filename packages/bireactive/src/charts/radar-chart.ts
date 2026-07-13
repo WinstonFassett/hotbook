@@ -9,11 +9,10 @@ import { extent, ticks as d3Ticks } from "d3-array";
 import { wheelController, dragController, dynamicWheelStep, realModifierDown } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
-import { GESTURE_ACTIVE_CLASS } from "../lib/transitions";
+import { applyWithTweenGate, SORT_SEC } from "../lib/tween-gate";
 
 const W = 640;
 const H = 640;
-const SORT_SEC = 0.35; // s — measure-swap tween duration
 
 const COLOR = "#7aaae8";
 
@@ -214,13 +213,14 @@ export class MdRadarChartLC extends Diagram {
         // morphs. Value edits (same datum, different value) snap per R2.
         const structural = measureKey !== seenMeasureKey || order !== seenOrder;
         seenMeasureKey = measureKey; seenOrder = order;
-        if (structural && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
-          rCancel?.();
-          rCancel = this.anim.start(tween(rPx, target, SORT_SEC, easeOut) as any);
-        } else {
-          rCancel?.(); rCancel = null;
-          rPx.value = target;
-        }
+        rCancel?.();
+        rCancel = applyWithTweenGate({
+          cell: rPx,
+          target,
+          structural,
+          host: this,
+          anim: this.anim,
+        });
       });
     }
 

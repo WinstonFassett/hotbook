@@ -12,7 +12,6 @@ import { wheelController, dragController, dynamicWheelStep, realModifierDown } f
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import {
-  GESTURE_ACTIVE_CLASS,
   GESTURE_SUPPRESSION_CSS,
   REORDER_ELEVATION_CSS,
   hoverTransition,
@@ -20,11 +19,11 @@ import {
 import { lightenHex } from "../lib/color-utils";
 import { attachReorderGesture } from "../lib/reorder-gesture";
 import { PALETTE, type ColorStrategy, getColorByStrategy } from "@hotbook/core";
+import { applyMultiWithTweenGate, SORT_SEC } from "../lib/tween-gate";
 
 const W = 720;
 const H = 360;
 const SINGLE_COLOR = "#7aaae8";
-const SORT_SEC = 0.35; // s — orientation/measure swap tween duration
 
 interface Bar { id?: string; label: string; value: number; }
 
@@ -512,12 +511,6 @@ export class MdBarChartLC extends Diagram {
       let seenOrient = untracked(() => this._orientationCell.value);
       let seenMeasureKey = untracked(() => this._measureKeyCell.value);
       let seenOrder = untracked(() => orderHash.value);
-      // Apply a target to a (a, b) cell pair — tweened together if `animate`,
-      // snapped instantly otherwise. Returns the two tweens to run, if any.
-      const applyPair = (a: ReturnType<typeof num>, b: ReturnType<typeof num>, at: number, bt: number, animate: boolean) => {
-        if (!animate) { a.value = at; b.value = bt; return []; }
-        return [tween(a, at, SORT_SEC, easeInOut), tween(b, bt, SORT_SEC, easeInOut)];
-      };
       biEffect(() => {
         const xt = barXTarget.value, yt = barYTarget.value, wt = barWTarget.value, ht = barHTarget.value;
         const orient = this._orientationCell.value;
@@ -532,26 +525,27 @@ export class MdBarChartLC extends Diagram {
         const orderChanged = order !== seenOrder;
         const measureChanged = measureKey !== seenMeasureKey;
         seenOrient = orient; seenMeasureKey = measureKey; seenOrder = order;
-        if (this.classList.contains(GESTURE_ACTIVE_CLASS)) {
-          // This bar is being directly gestured — snap everything.
-          animCancel?.(); animCancel = null;
-          barX.value = xt; barY.value = yt; barW.value = wt; barH.value = ht;
-          return;
-        }
         const vertical = orient === 'vertical';
         const [posA, posB, posAt, posBt] = vertical ? [barX, barW, xt, wt] as const : [barY, barH, yt, ht] as const;
         const [valA, valB, valAt, valBt] = vertical ? [barY, barH, yt, ht] as const : [barX, barW, xt, wt] as const;
-        // Orientation swap morphs both roles at once. Sort moves position
-        // only; measure swap (or a plain value edit — the drag/wheel/cross-
-        // tile case) moves value only.
-        const tweenPos = orientChanged || orderChanged;
-        const tweenVal = orientChanged || measureChanged || !orderChanged;
+        const structuralPos = orientChanged || orderChanged;
+        const structuralVal = orientChanged || measureChanged;
         animCancel?.();
-        const tweens = [
-          ...applyPair(posA, posB, posAt, posBt, tweenPos),
-          ...applyPair(valA, valB, valAt, valBt, tweenVal),
-        ];
-        animCancel = tweens.length ? this.anim.start(...(tweens as any)) : null;
+        const posCancel = applyMultiWithTweenGate({
+          updates: [{ cell: posA, target: posAt }, { cell: posB, target: posBt }],
+          structural: structuralPos,
+          host: this,
+          anim: this.anim,
+          easing: easeInOut,
+        });
+        const valCancel = applyMultiWithTweenGate({
+          updates: [{ cell: valA, target: valAt }, { cell: valB, target: valBt }],
+          structural: structuralVal,
+          host: this,
+          anim: this.anim,
+          easing: easeInOut,
+        });
+        animCancel = posCancel && valCancel ? () => { posCancel(); valCancel(); } : (posCancel || valCancel);
       });
 
       const fill = derive(() => { const d = di(); return selected.value === d ? "#fff" : hover.value === d ? hoverBaseColor() : baseColor(); });

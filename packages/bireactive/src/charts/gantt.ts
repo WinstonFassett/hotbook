@@ -52,6 +52,7 @@ import { lightenHex } from "../lib/color-utils";
 import { PALETTE } from "@hotbook/core";
 import { attachReorderGesture } from "../lib/reorder-gesture";
 import { withExitDelay, membershipCell } from "../lib/mark-lifecycle";
+import { applyWithTweenGate, SORT_SEC } from "../lib/tween-gate";
 
 const W = 720;
 const H = 360;
@@ -61,7 +62,6 @@ const DAY_MS = 86400 * 1000;
 const ROW_H = 32;      // Row height
 const ROW_GAP = 8;     // Gap between rows
 const ROW_STEP = ROW_H + ROW_GAP; // Total step per row
-const SORT_SEC = 0.35; // Sort/reorder tween duration in seconds
 
 export interface GanttDependency {
   from: string;  // predecessor task ID
@@ -244,24 +244,19 @@ export class MdGanttChartLC extends Diagram {
       lastSortBy = sortBy;
       lastReorderTick = reorderTick;
 
-      if ((sortChanged || reorderCommitted) && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
-        for (const task of rows0) {
-          const entry = taskYCells.get(task.id);
-          if (!entry) continue;
-          const targetY = getTargetY(task.id);
-          entry.cancel?.();
-          entry.cancel = this.anim.start(tween(entry.yCell, targetY, SORT_SEC, easeOut) as any);
-        }
-      } else if (!sortChanged && !reorderCommitted) {
-        // Data or size changed but sort/reorder didn't: snap to new positions
-        for (const task of rows0) {
-          const entry = taskYCells.get(task.id);
-          if (entry) {
-            entry.cancel?.();
-            entry.cancel = null;
-            entry.yCell.value = getTargetY(task.id);
-          }
-        }
+      const structural = sortChanged || reorderCommitted;
+      for (const task of rows0) {
+        const entry = taskYCells.get(task.id);
+        if (!entry) continue;
+        const targetY = getTargetY(task.id);
+        entry.cancel?.();
+        entry.cancel = applyWithTweenGate({
+          cell: entry.yCell,
+          target: targetY,
+          structural,
+          host: this,
+          anim: this.anim,
+        });
       }
     });
 
