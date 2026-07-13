@@ -25,17 +25,17 @@ import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { mountDrillBreadcrumb } from "../lib/drill-breadcrumb";
 import { dragCancelable } from "../lib/esc-contract";
-import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS } from "../lib/transitions";
+import { GESTURE_SUPPRESSION_CSS } from "../lib/transitions";
 import { withExitDelay, enterExitFade, membershipCell } from "../lib/mark-lifecycle";
 import type { ElementWithBridge } from "../lib/hud-bridge";
 import { attachReorderGesture } from "../lib/reorder-gesture";
 import { REORDER_ELEVATION_CSS } from "../lib/transitions";
+import { applyMultiWithTweenGate, SORT_SEC } from "../lib/tween-gate";
 
 const W = 480;
 const H = 480;
 const DRILL_DURATION = 800; // ms — leave-timer / CSS settle window
 const DRILL_SEC = DRILL_DURATION / 1000; // s — bireactive anim clock runs in seconds
-const SORT_SEC = 0.35; // s — sort/reorder tween duration
 
 export class MdSunburstLC extends Diagram {
   static styles = `:host { overflow: hidden; }text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}${REORDER_ELEVATION_CSS}:host(.vf-gesture-active) circle[r="5"] { opacity: 0; } circle[r="5"] { transition: opacity 0.3s ease; }[data-focusable]:focus { outline: 2px solid #4a9eff; outline-offset: 2px; } [data-focusable]:focus:not(:focus-visible) { outline: none; }`
@@ -313,38 +313,31 @@ export class MdSunburstLC extends Diagram {
       let seenMeasureKey = untracked(() => this._measureKeyCell.value);
       let seenReorderTick = untracked(() => this._reorderTickCell.value);
       biEffect(() => {
-        const t = ltarget.value; // track layout (reacts to sort + value + size + reorder-tick)
-        const sortBy = this._sortByCell.value; // track sort key so a toggle re-fires this effect
-        const reorderTick = this._reorderTickCell.value; // track reorder commits (WIN-262)
-        const measureKey = untracked(() => this._measureKeyCell.value); // read untracked — effect fires on layout change (leaf writes), by which point measureKey is already set
-        // WIN-155: freeze layout for arcs that have left the window so their
-        // exit fade plays at the last visible position instead of remapping
-        // through the drill viewport tween.
+        const t = ltarget.value;
+        const sortBy = this._sortByCell.value;
+        const reorderTick = this._reorderTickCell.value;
+        const measureKey = untracked(() => this._measureKeyCell.value);
         if (lInited && !untracked(() => windowMembership.value.has(node))) return;
         if (!lInited) { lInited = true; seenSortBy = sortBy; seenMeasureKey = measureKey; seenReorderTick = reorderTick; la0.value = t.x0; la1.value = t.x1; lr0.value = t.y0; lr1.value = t.y1; return; }
-        // Two-lane split. TWEEN for a real reorder (sort key toggled, drag
-        // commit) or measure swap — arcs sweep to new angular slots. SNAP for
-        // everything else: active gesture (real-time drag), and — crucially —
-        // value edits / commits / resize, including REMOTE cross-tile edits
-        // that carry no gesture class (R2).
         const reordered = sortBy !== seenSortBy;
         const measureSwapped = measureKey !== seenMeasureKey;
         const reorderCommitted = reorderTick !== seenReorderTick;
         seenSortBy = sortBy;
         seenMeasureKey = measureKey;
         seenReorderTick = reorderTick;
-        if ((reordered || measureSwapped || reorderCommitted) && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
-          lcancel?.();
-          lcancel = this.anim.start(
-            tween(la0, t.x0, SORT_SEC, easeOut),
-            tween(la1, t.x1, SORT_SEC, easeOut),
-            tween(lr0, t.y0, SORT_SEC, easeOut),
-            tween(lr1, t.y1, SORT_SEC, easeOut),
-          );
-        } else {
-          lcancel?.(); lcancel = null;
-          la0.value = t.x0; la1.value = t.x1; lr0.value = t.y0; lr1.value = t.y1;
-        }
+        const structural = reordered || measureSwapped || reorderCommitted;
+        lcancel?.();
+        lcancel = applyMultiWithTweenGate({
+          updates: [
+            { cell: la0, target: t.x0 },
+            { cell: la1, target: t.x1 },
+            { cell: lr0, target: t.y0 },
+            { cell: lr1, target: t.y1 },
+          ],
+          structural,
+          host: this,
+          anim: this.anim,
+        });
       });
 
       // WIN-155: while an arc is exiting, freeze its remapped geometry to the

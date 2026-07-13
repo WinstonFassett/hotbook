@@ -13,10 +13,10 @@
 // (same binding, different data) → SNAP. Same two-lane gate as WIN-143,
 // but unified in the context instead of duplicated per chart.
 
-import { cell, derive, easeOut, effect as biEffect, isCell, num, tween, untracked, type Cell } from "bireactive";
+import { cell, derive, easeOut, effect as biEffect, isCell, num, untracked, type Cell } from "bireactive";
 import { extent } from "d3-array";
 import { scaleLinear, scaleTime, type ScaleLinear, type ScaleTime } from "d3-scale";
-import { GESTURE_ACTIVE_CLASS } from "./transitions";
+import { applyMultiWithTweenGate } from "./tween-gate";
 
 export type Accessor<TData> = ((d: TData) => any) | keyof TData & string;
 
@@ -185,16 +185,17 @@ export function chartContext<TData>(opts: ChartContextOpts<TData>): ChartContext
         }
         const structural = (tweenX && xa !== seenXAcc) || (tweenY && ya !== seenYAcc);
         seenXAcc = xa; seenYAcc = ya;
-        if (structural && !host.classList.contains(GESTURE_ACTIVE_CLASS)) {
-          cancel?.();
-          const anims: any[] = [];
-          if (xc) anims.push(tween(xc, xt, tweenSec, easeOut));
-          if (yc) anims.push(tween(yc, yt, tweenSec, easeOut));
-          cancel = anim.start(...anims);
-        } else {
-          cancel?.(); cancel = null;
-          if (xc) xc.value = xt; if (yc) yc.value = yt;
-        }
+        cancel?.();
+        const updates: Array<{ cell: any; target: number }> = [];
+        if (xc) updates.push({ cell: xc, target: xt });
+        if (yc) updates.push({ cell: yc, target: yt });
+        cancel = applyMultiWithTweenGate({
+          updates,
+          structural,
+          host,
+          anim,
+          duration: tweenSec,
+        });
       });
     }
   }

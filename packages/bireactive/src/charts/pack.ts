@@ -23,16 +23,16 @@ import { buildParentIndex, type BiNode, portfolio, walkWithDepth } from "../lib/
 import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { mountDrillBreadcrumb } from "../lib/drill-breadcrumb";
-import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, ENTER_MS } from "../lib/transitions";
+import { GESTURE_SUPPRESSION_CSS, ENTER_MS } from "../lib/transitions";
 import { withExitDelay, membershipCell } from "../lib/mark-lifecycle";
 import { numberDrag } from "../lib/number-drag";
+import { applyMultiWithTweenGate, SORT_SEC } from "../lib/tween-gate";
 
 const W = 480;
 const H = 480;
 const PAD = 2;
 const DRILL_DURATION = 800; // ms — leave-timer / CSS settle window
 const DRILL_SEC = DRILL_DURATION / 1000; // s — bireactive anim clock runs in seconds
-const SORT_SEC = 0.35; // s — sort/reorder tween duration
 
 export class MdPack extends Diagram {
   static styles = `:host { overflow: hidden; }text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}[data-focusable]:focus { outline: 2px solid #4a9eff; outline-offset: 2px; } [data-focusable]:focus:not(:focus-visible) { outline: none; }`
@@ -241,30 +241,26 @@ export class MdPack extends Diagram {
       let seenSortBy = untracked(() => this._sortByCell.value);
       let seenMeasureKey = untracked(() => this._measureKeyCell.value);
       biEffect(() => {
-        const t = ltarget.value; // track layout (reacts to sort + value + size)
-        const sortBy = this._sortByCell.value; // track sort key so a toggle re-fires this effect
-        const measureKey = untracked(() => this._measureKeyCell.value); // read untracked — effect fires on layout change (leaf writes), by which point measureKey is already set
+        const t = ltarget.value;
+        const sortBy = this._sortByCell.value;
+        const measureKey = untracked(() => this._measureKeyCell.value);
         if (!lInited) { lInited = true; seenSortBy = sortBy; seenMeasureKey = measureKey; lx.value = t.x; ly.value = t.y; lr.value = t.r; return; }
-        // Two-lane split. TWEEN for a real reorder (sort key toggled) or measure
-        // swap — circles slide to new pack positions. SNAP for everything else:
-        // active gesture (real-time drag), and — crucially — value edits / commits
-        // / resize, including REMOTE cross-tile edits that carry no gesture class
-        // (R2: value changes are write-through, no 250-350ms settle-lag).
         const reordered = sortBy !== seenSortBy;
         const measureSwapped = measureKey !== seenMeasureKey;
         seenSortBy = sortBy;
         seenMeasureKey = measureKey;
-        if ((reordered || measureSwapped) && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
-          lcancel?.();
-          lcancel = this.anim.start(
-            tween(lx, t.x, SORT_SEC, easeOut),
-            tween(ly, t.y, SORT_SEC, easeOut),
-            tween(lr, t.r, SORT_SEC, easeOut),
-          );
-        } else {
-          lcancel?.(); lcancel = null;
-          lx.value = t.x; ly.value = t.y; lr.value = t.r;
-        }
+        const structural = reordered || measureSwapped;
+        lcancel?.();
+        lcancel = applyMultiWithTweenGate({
+          updates: [
+            { cell: lx, target: t.x },
+            { cell: ly, target: t.y },
+            { cell: lr, target: t.r },
+          ],
+          structural,
+          host: this,
+          anim: this.anim,
+        });
       });
 
       // Uniform scale — pack circles must stay circular or they overlap.

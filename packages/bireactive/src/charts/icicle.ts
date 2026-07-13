@@ -25,15 +25,15 @@ import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { mountDrillBreadcrumb } from "../lib/drill-breadcrumb";
 import { dragCancelable } from "../lib/esc-contract";
 import { attachReorderGesture } from "../lib/reorder-gesture";
-import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, settleTransition, REORDER_ELEVATION_CSS } from "../lib/transitions";
+import { GESTURE_SUPPRESSION_CSS, settleTransition, REORDER_ELEVATION_CSS } from "../lib/transitions";
 import { withExitDelay, membershipCell } from "../lib/mark-lifecycle";
 import type { ElementWithBridge } from "../lib/hud-bridge";
+import { applyMultiWithTweenGate, SORT_SEC } from "../lib/tween-gate";
 
 const W = 720;
 const H = 360;
 const DRILL_DURATION = 800; // ms — leave-timer / CSS settle window
 const DRILL_SEC = DRILL_DURATION / 1000; // s — bireactive anim clock runs in seconds
-const SORT_SEC = 0.35; // s — sort/reorder tween duration
 
 export class MdIcicleLC extends Diagram {
   static styles = `
@@ -402,20 +402,13 @@ export class MdIcicleLC extends Diagram {
       let seenMaxDepth = untracked(() => this._maxDepthCell.value);
       let seenReorderTick = untracked(() => this._reorderTickCell.value);
       biEffect(() => {
-        const t = ltarget.value; // track layout (reacts to sort + value + size + orientation + depth + reorder)
-        const sortBy = this._sortByCell.value; // track sort key so a toggle re-fires this effect
-        const measureKey = untracked(() => this._measureKeyCell.value); // read untracked — effect fires on layout change (leaf writes), by which point measureKey is already set
-        const orientation = untracked(() => this._orientationCell.value); // read untracked — same reason
-        const maxDepth = this._maxDepthCell.value; // WIN-155: track so a levels dropdown change tweens the surviving tiles into the reclaimed space instead of snapping.
-        const reorderTick = this._reorderTickCell.value; // WIN-262: a user-driven reorder commits new children order.
+        const t = ltarget.value;
+        const sortBy = this._sortByCell.value;
+        const measureKey = untracked(() => this._measureKeyCell.value);
+        const orientation = untracked(() => this._orientationCell.value);
+        const maxDepth = this._maxDepthCell.value;
+        const reorderTick = this._reorderTickCell.value;
         if (!lInited) { lInited = true; seenSortBy = sortBy; seenMeasureKey = measureKey; seenOrientation = orientation; seenMaxDepth = maxDepth; seenReorderTick = reorderTick; lx0.value = t.x0; ly0.value = t.y0; lx1.value = t.x1; ly1.value = t.y1; return; }
-        // Two-lane split. TWEEN for a real reorder (sort key toggled), measure
-        // swap, orientation toggle, depth change, or committed drag reorder —
-        // partitions slide to new slots/axes/extents. SNAP for everything else:
-        // active gesture (real-time drag), and — crucially — value edits /
-        // commits / resize, including REMOTE cross-tile edits that carry no
-        // gesture class (R2: value changes are write-through, no 250-350ms
-        // settle-lag).
         const reordered = sortBy !== seenSortBy;
         const measureSwapped = measureKey !== seenMeasureKey;
         const orientationChanged = orientation !== seenOrientation;
@@ -426,18 +419,19 @@ export class MdIcicleLC extends Diagram {
         seenOrientation = orientation;
         seenMaxDepth = maxDepth;
         seenReorderTick = reorderTick;
-        if ((reordered || measureSwapped || orientationChanged || depthChanged || reorderCommitted) && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
-          lcancel?.();
-          lcancel = this.anim.start(
-            tween(lx0, t.x0, SORT_SEC, easeOut),
-            tween(ly0, t.y0, SORT_SEC, easeOut),
-            tween(lx1, t.x1, SORT_SEC, easeOut),
-            tween(ly1, t.y1, SORT_SEC, easeOut),
-          );
-        } else {
-          lcancel?.(); lcancel = null;
-          lx0.value = t.x0; ly0.value = t.y0; lx1.value = t.x1; ly1.value = t.y1;
-        }
+        const structural = reordered || measureSwapped || orientationChanged || depthChanged || reorderCommitted;
+        lcancel?.();
+        lcancel = applyMultiWithTweenGate({
+          updates: [
+            { cell: lx0, target: t.x0 },
+            { cell: ly0, target: t.y0 },
+            { cell: lx1, target: t.x1 },
+            { cell: ly1, target: t.y1 },
+          ],
+          structural,
+          host: this,
+          anim: this.anim,
+        });
       });
 
       // WIN-155: freeze remapped geometry for exiting tiles so the fade plays

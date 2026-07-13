@@ -6,13 +6,12 @@ import { wheelController, dynamicWheelStep, realModifierDown } from "../lib/inte
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { dragCancelable } from "../lib/esc-contract";
-import { GESTURE_ACTIVE_CLASS } from "../lib/transitions";
 import { PALETTE } from "@hotbook/core";
+import { applyWithTweenGate, applyMultiWithTweenGate, SORT_SEC } from "../lib/tween-gate";
 
 const W = 640;
 const H = 640;
 const R_INNER = 0;
-const SORT_SEC = 0.35; // s — measure-swap tween duration
 
 interface Slice {
   id?: string;
@@ -107,13 +106,14 @@ export class MdPieChartLC extends Diagram {
         if (!tvInited) { tvInited = true; seenMeasureKey = measureKey; tv.value = target; return; }
         const measureSwapped = measureKey !== seenMeasureKey;
         seenMeasureKey = measureKey;
-        if (measureSwapped && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
-          tvCancel?.();
-          tvCancel = this.anim.start(tween(tv, target, SORT_SEC, easeOut));
-        } else {
-          tvCancel?.(); tvCancel = null;
-          tv.value = target;
-        }
+        tvCancel?.();
+        tvCancel = applyWithTweenGate({
+          cell: tv,
+          target,
+          structural: measureSwapped,
+          host: this,
+          anim: this.anim,
+        });
       });
     }
     // Tweened data for the pie layout — replaces raw values with tweened values.
@@ -167,14 +167,17 @@ export class MdPieChartLC extends Diagram {
         if (!aInited) { aInited = true; seenMeasureKey = measureKey; seenOrder = order; a0.value = t0; a1.value = t1; return; }
         const structural = measureKey !== seenMeasureKey || order !== seenOrder;
         seenMeasureKey = measureKey; seenOrder = order;
-        if (structural && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
-          aCancel?.();
-          aCancel = this.anim.start(
-            tween(a0, t0, SORT_SEC, easeOut) as any,
-            tween(a1, t1, SORT_SEC, easeOut) as any,
-          );
-        } else {
-          aCancel?.(); aCancel = null;
+        aCancel?.();
+        aCancel = applyMultiWithTweenGate({
+          updates: [
+            { cell: a0, target: t0 },
+            { cell: a1, target: t1 },
+          ],
+          structural,
+          host: this,
+          anim: this.anim,
+        }) as (() => void) | null;
+        if (!aCancel) {
           a0.value = t0; a1.value = t1;
         }
       });
