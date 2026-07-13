@@ -106,7 +106,7 @@ h-treemap, h-icicle, h-radial (sunburst) must:
 **Partial.** `prefers-reduced-motion` zeroes `DUR`, `REORDER_DUR`, `EXIT_DUR` — correctly suppresses autonomous. Drag-position updates use `.interrupt().attr()` not transitions, so reactive motion is already frame-driven. The distinction is implicitly correct but not by explicit design.
 
 ### Rule 10 — Single source of truth for timing
-**Partial.** `constants.ts` has `DUR`, `REORDER_DUR`, `EXIT_DUR`, `DUR_MOVE`, `DUR_ENTER`, `DUR_EXIT`. Independent literals, not expressed as multipliers of a base. Coherent in practice; derivation not visible in code.
+**Partial.** `constants.ts` has `DUR`, `REORDER_DUR`, `EXIT_DUR`, `DUR_MOVE`, `DUR_ENTER`, `DUR_EXIT`. Independent literals, not expressed as multipliers of a base. Coherent in practice; derivation not visible in code. See `wiki/cross-file-maintainability-audit.md` (WIN-288) and the linked sub-tickets for the remediation plan.
 
 ### Rule 11 — Interruptibility
 **Partial.** Mode-change morph interrupts prior transitions before starting. Reorder transitions interrupted at drag end. Gap: mid-morph interruption needs verification that D3 reads the current mid-tween DOM position correctly.
