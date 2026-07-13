@@ -25,15 +25,12 @@ import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { mountDrillBreadcrumb } from "../lib/drill-breadcrumb";
 import { dragCancelable } from "../lib/esc-contract";
 import { attachReorderGesture } from "../lib/reorder-gesture";
-import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, settleTransition, REORDER_ELEVATION_CSS } from "../lib/transitions";
+import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, settleTransition, REORDER_ELEVATION_CSS, DRILL_SEC, DRILL_DURATION, SORT_SEC } from "../lib/transitions";
 import { withExitDelay, membershipCell } from "../lib/mark-lifecycle";
 import type { ElementWithBridge } from "../lib/hud-bridge";
 
 const W = 720;
 const H = 360;
-const DRILL_DURATION = 800; // ms — leave-timer / CSS settle window
-const DRILL_SEC = DRILL_DURATION / 1000; // s — bireactive anim clock runs in seconds
-const SORT_SEC = 0.35; // s — sort/reorder tween duration
 
 export class MdIcicleLC extends Diagram {
   static styles = `

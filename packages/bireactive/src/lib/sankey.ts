@@ -22,6 +22,7 @@ import { scaleSequential } from "d3-scale";
 import { interpolateCool } from "d3-scale-chromatic";
 import { wheelController, dynamicWheelStep, realModifierDown } from "./interaction";
 import { dragCancelable } from "./esc-contract";
+import { SORT_SEC, hoverTransition } from "./transitions";
 import {
   buildTopology,
   computeLayout,
@@ -140,7 +141,6 @@ export interface SankeySceneOptions {
 }
 
 export const LINK_MIN = 0.5; // floor so a flow never collapses to an ungrabbable sliver
-export const SORT_SEC = 0.35; // Sort/reorder tween duration in seconds (matching Gantt)
 
 /**
  * Pick the constant px-per-unit ONCE from the initial values so the diagram opens
@@ -702,7 +702,7 @@ export function sankeyScene(
         corner: 2,
       }));
       grip.el.style.cursor = "ns-resize";
-      grip.el.style.transition = "opacity 0.12s";
+      grip.el.style.transition = hoverTransition("opacity");
       grip.el.addEventListener("pointerenter", (e) => { nodeActive.value = true; showBarTooltip(e as PointerEvent); });
       grip.el.addEventListener("pointermove", (e) => { tooltipAt.value = toSVG(e as PointerEvent); });
       grip.el.addEventListener("pointerleave", () => { nodeActive.value = false; tooltipVis.value = false; tooltipNodeIdx.value = null; });
@@ -806,7 +806,7 @@ export function sankeyScene(
         opacity: derive(() => (active.value || hovered.value === li || focused.value === li) ? 1 : 0.5),
       }));
       grip.el.style.cursor = "ns-resize";
-      grip.el.style.transition = "opacity 0.12s, r 0.12s";
+      grip.el.style.transition = hoverTransition(["opacity", "r"]);
       grip.el.addEventListener("pointerenter", (e) => {
         active.value = true; hovered.value = li;
         tooltipNodeIdx.value = null; tooltipLinkIdx.value = li;
@@ -892,7 +892,7 @@ export function sankeyScene(
         opacity: derive(() => (active.value || hovered.value === li || focused.value === li) ? 1 : 0.5),
       }));
       grip.el.style.cursor = "ns-resize";
-      grip.el.style.transition = "opacity 0.12s, r 0.12s";
+      grip.el.style.transition = hoverTransition(["opacity", "r"]);
       grip.el.addEventListener("pointerenter", (e) => {
         active.value = true; hovered.value = li;
         tooltipNodeIdx.value = null; tooltipLinkIdx.value = li;

@@ -18,16 +18,31 @@ export const EXIT_MS = 400;
 // can be tuned in one place. Names match interaction-principles.md vocabulary.
 export const TRANSITION_DURATION = {
   /** Value-change settle (Part 2): bar height, slice radius, etc. */
-  settle: 2.5 * TRANSITION_BASE_MS,        // 250ms
+  settle: 3.5 * TRANSITION_BASE_MS,        // 350ms (matches existing SORT_SEC 0.35s)
   /** Reorder slide (Part 3): item moves to new slot position. */
-  reorder: 2.5 * TRANSITION_BASE_MS,       // 250ms
+  reorder: 3.5 * TRANSITION_BASE_MS,       // 350ms
+  /** Sort/reorder tween (same as reorder, kept for API clarity). */
+  sort: 3.5 * TRANSITION_BASE_MS,          // 350ms
   /** Hover/select micro-feedback (was inline 0.1s / 0.12s — kept identical). */
   hover: 1.0 * TRANSITION_BASE_MS,          // 100ms
   /** Highlight rect sliding between columns/rows. */
   highlight: 1.5 * TRANSITION_BASE_MS,      // 150ms
-  /** Drill in/out zoom (Part 5 placeholder). */
-  drill: 3.0 * TRANSITION_BASE_MS,          // 300ms
+  /** Drill in/out zoom (Part 5). */
+  drill: 8.0 * TRANSITION_BASE_MS,          // 800ms
+  /** Mark enter fade-in. */
+  enter: 4.0 * TRANSITION_BASE_MS,          // 400ms
+  /** Mark exit fade-out before removal. */
+  exit: 4.0 * TRANSITION_BASE_MS,           // 400ms
 } as const;
+
+// Bireactive tween API uses seconds, not milliseconds. Export role-based
+// durations in seconds for consistency with the tween(target, duration, easing)
+// signature. These are the single source of truth for all chart animations.
+export const SORT_SEC = TRANSITION_DURATION.sort / 1000;      // 0.35s
+export const REORDER_SEC = TRANSITION_DURATION.reorder / 1000; // 0.35s
+export const DRILL_SEC = TRANSITION_DURATION.drill / 1000;     // 0.8s
+export const SETTLE_SEC = TRANSITION_DURATION.settle / 1000;   // 0.35s
+export const DRILL_DURATION = TRANSITION_DURATION.drill;       // 800ms (for setTimeout)
 
 /** True when the user has asked for reduced motion. Reactive (gesture-driven)
  *  motion ignores this; autonomous transitions (settle/reorder/drill) must
@@ -50,6 +65,20 @@ export function hoverTransition(properties: string | readonly string[]): string 
   const props = typeof properties === "string" ? [properties] : properties;
   return props.map(p => `${p} ${TRANSITION_DURATION.hover}ms ${TRANSITION_EASING}`).join(", ");
 }
+
+export function highlightTransition(properties: string | readonly string[]): string {
+  const props = typeof properties === "string" ? [properties] : properties;
+  return props.map(p => `${p} ${TRANSITION_DURATION.highlight}ms ${TRANSITION_EASING}`).join(", ");
+}
+
+export function enterTransition(properties: string | readonly string[]): string {
+  const props = typeof properties === "string" ? [properties] : properties;
+  return props.map(p => `${p} ${ENTER_MS}ms ${TRANSITION_EASING}`).join(", ");
+}
+
+/** CSS transition rule for settle rhythm on opacity (for static styles injection).
+ *  Example: `circle { ${SETTLE_OPACITY_CSS} }` */
+export const SETTLE_OPACITY_CSS = `transition: opacity ${TRANSITION_DURATION.settle}ms ${TRANSITION_EASING};`;
 
 /** Reactive class name used by charts to suppress autonomous transitions while
  *  a gesture is active. Apply via `el.classList.toggle(GESTURE_ACTIVE_CLASS, ...)`

@@ -8,7 +8,7 @@ import { arc as d3Arc } from "d3-shape";
 import { wheelController, dragController, realModifierDown } from "../lib/interaction";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
-import { GESTURE_ACTIVE_CLASS } from "../lib/transitions";
+import { GESTURE_ACTIVE_CLASS, hoverTransition } from "../lib/transitions";
 
 const W = 640;
 const H = 640;
@@ -314,7 +314,7 @@ export class MdConcentricArcLC extends Diagram {
       }));
       handleEl.el.style.cursor = "grab";
       handleEl.el.style.touchAction = "none";
-      handleEl.el.style.transition = "opacity 0.12s";
+      handleEl.el.style.transition = hoverTransition("opacity");
       handleEl.el.addEventListener("pointerenter", () => { const d = di(); if (!dragController.active && d) hover.value = d; });
       handleEl.el.addEventListener("pointerleave", () => { const d = di(); if (!dragController.active && d && hover.value === d) hover.value = null; });
       // Drag the handle around the ring to set its value; the shared controller

@@ -23,16 +23,13 @@ import { buildParentIndex, type BiNode, portfolio, walkWithDepth } from "../lib/
 import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { mountDrillBreadcrumb } from "../lib/drill-breadcrumb";
-import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, ENTER_MS } from "../lib/transitions";
+import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, ENTER_MS, DRILL_SEC, DRILL_DURATION, SORT_SEC, enterTransition } from "../lib/transitions";
 import { withExitDelay, membershipCell } from "../lib/mark-lifecycle";
 import { numberDrag } from "../lib/number-drag";
 
 const W = 480;
 const H = 480;
 const PAD = 2;
-const DRILL_DURATION = 800; // ms — leave-timer / CSS settle window
-const DRILL_SEC = DRILL_DURATION / 1000; // s — bireactive anim clock runs in seconds
-const SORT_SEC = 0.35; // s — sort/reorder tween duration
 
 export class MdPack extends Diagram {
   static styles = `:host { overflow: hidden; }text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}[data-focusable]:focus { outline: 2px solid #4a9eff; outline-offset: 2px; } [data-focusable]:focus:not(:focus-visible) { outline: none; }`
@@ -319,7 +316,7 @@ export class MdPack extends Diagram {
       // single effect. Start at 0 pre-frame, then RAF to composed opacity so
       // the enter fade plays over the CSS transition.
       const discPresent = derive(() => windowMembership.value.has(node));
-      disc.el.style.transition = `opacity ${ENTER_MS}ms cubic-bezier(0.4,0,0.2,1)`;
+      disc.el.style.transition = enterTransition("opacity");
       disc.el.style.opacity = '0';
       requestAnimationFrame(() => requestAnimationFrame(() => {
         biEffect(() => {

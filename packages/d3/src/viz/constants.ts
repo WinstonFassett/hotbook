@@ -2,11 +2,11 @@ import * as d3 from 'd3-ease'
 
 export const DEFAULT_SIZE = 5
 
-// Legacy tokens — used by src/components/* (pre-PowerView). Don't add new
-// callers; use motion() below.
-export const DUR = 380
-export const REORDER_DUR = 220
-export const EXIT_DUR = 200
+// Timing tokens aligned with bireactive (packages/bireactive/src/lib/transitions.ts).
+// Role-based durations derive from a single source of truth (Interaction Principle 10).
+export const DUR = 350            // settle/sort baseline (was 380)
+export const REORDER_DUR = 350    // reorder (was 220, now matches settle)
+export const EXIT_DUR = 400       // exit fade (was 200, now matches bireactive)
 export const EASE = d3.easeExpOut
 
 // ---------- Motion tokens (PowerView) ----------
@@ -15,9 +15,9 @@ export const EASE = d3.easeExpOut
 // movement uses ease-in-out (gentle attack + settle). Built-in CSS-style
 // easings feel weak — we use d3-ease equivalents of strong custom curves.
 
-export const DUR_MOVE = 600
-export const DUR_ENTER = 380
-export const DUR_EXIT = 240
+export const DUR_MOVE = 800       // drill/zoom (was 600, now matches bireactive DRILL)
+export const DUR_ENTER = 400      // enter fade (was 380, now matches bireactive)
+export const DUR_EXIT = 400       // exit fade (was 240, now matches bireactive)
 
 // Shape = the curve formula. Direction = where the deceleration is.
 // User picks shape; we choose direction per role (movement = inOut, since

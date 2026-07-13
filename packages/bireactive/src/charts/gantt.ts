@@ -47,6 +47,7 @@ import {
   GESTURE_SUPPRESSION_CSS,
   REORDER_ELEVATION_CSS,
   hoverTransition,
+  SORT_SEC,
 } from "../lib/transitions";
 import { lightenHex } from "../lib/color-utils";
 import { PALETTE } from "@hotbook/core";
@@ -61,7 +62,6 @@ const DAY_MS = 86400 * 1000;
 const ROW_H = 32;      // Row height
 const ROW_GAP = 8;     // Gap between rows
 const ROW_STEP = ROW_H + ROW_GAP; // Total step per row
-const SORT_SEC = 0.35; // Sort/reorder tween duration in seconds
 
 export interface GanttDependency {
   from: string;  // predecessor task ID
@@ -865,7 +865,7 @@ export class MdGanttChartLC extends Diagram {
         { fill: "#ffffff", opacity: rowFill },
       );
       rh.el.style.pointerEvents = "none";
-      rh.el.style.transition = "opacity 0.1s ease";
+      rh.el.style.transition = hoverTransition("opacity");
       rowGroup.add(rh);
 
       // ─── Drag-to-reorder hit target (WIN-287) ──────────────────────────────
@@ -1144,7 +1144,7 @@ export class MdGanttChartLC extends Diagram {
         pathEl.setAttribute("marker-end", "url(#bireactive-arrow)");
         console.log('[Gantt] Set marker-end, value now:', pathEl.getAttribute("marker-end"));
         pathEl.style.pointerEvents = "none";
-        pathEl.style.transition = "stroke 0.12s ease, stroke-width 0.12s ease, opacity 0.12s ease";
+        pathEl.style.transition = hoverTransition(["stroke", "stroke-width", "opacity"]);
       });
 
       // Entry/exit fade via tween

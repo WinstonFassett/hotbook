@@ -1,7 +1,8 @@
 import { effect, type Mount, cell, tween, easeOut, untracked } from "bireactive";
 import { Diagram } from "../lib/diagram";
 import { interpolateWarm, interpolateRainbow } from "d3-scale-chromatic";
-import { sankeyScene, renderColorControls, type LinkDef, SORT_SEC } from "../lib/sankey";
+import { sankeyScene, renderColorControls, type LinkDef } from "../lib/sankey";
+import { SORT_SEC } from "../lib/transitions";
 
 // ---------------------------------------------------------------------------
 // Take 1: Simple editable graph

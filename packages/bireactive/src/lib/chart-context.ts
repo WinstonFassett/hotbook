@@ -16,7 +16,7 @@
 import { cell, derive, easeOut, effect as biEffect, isCell, num, tween, untracked, type Cell } from "bireactive";
 import { extent } from "d3-array";
 import { scaleLinear, scaleTime, type ScaleLinear, type ScaleTime } from "d3-scale";
-import { GESTURE_ACTIVE_CLASS } from "./transitions";
+import { GESTURE_ACTIVE_CLASS, SETTLE_SEC } from "./transitions";
 
 export type Accessor<TData> = ((d: TData) => any) | keyof TData & string;
 
@@ -105,7 +105,6 @@ function asCell<T>(v: Cell<T> | T): Cell<T> {
 }
 
 const DEFAULT_PADDING: Padding = { top: 0, right: 0, bottom: 0, left: 0 };
-const DEFAULT_TWEEN_SEC = 0.35;
 
 export function chartContext<TData>(opts: ChartContextOpts<TData>): ChartContext<TData> {
   const data = opts.data;
@@ -149,7 +148,7 @@ export function chartContext<TData>(opts: ChartContextOpts<TData>): ChartContext
   const tweenY = canTween && yIsReactive && typeof yVal0 === 'number';
   const xTweens = new Map<string, ReturnType<typeof num>>();
   const yTweens = new Map<string, ReturnType<typeof num>>();
-  const tweenSec = opts.tweenSec ?? DEFAULT_TWEEN_SEC;
+  const tweenSec = opts.tweenSec ?? SETTLE_SEC;
 
   if (tweenX || tweenY) {
     const idOf = opts.idOf!;

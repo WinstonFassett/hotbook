@@ -16,6 +16,7 @@ import {
   GESTURE_SUPPRESSION_CSS,
   REORDER_ELEVATION_CSS,
   hoverTransition,
+  highlightTransition,
 } from "../lib/transitions";
 import { lightenHex } from "../lib/color-utils";
 import { attachReorderGesture } from "../lib/reorder-gesture";
@@ -419,7 +420,7 @@ export class MdBarChartLC extends Diagram {
     const hlRect = s(rect(hlX, hlY, hlW, hlH, {
       fill: "#ffffff", opacity: derive(() => hlTarget.value ? 0.06 : 0),
     }));
-    hlRect.el.style.transition = "x 0.15s ease, y 0.15s ease, opacity 0.1s ease";
+    hlRect.el.style.transition = `${highlightTransition(["x", "y"])}, ${hoverTransition("opacity")}`;
     hlRect.el.style.pointerEvents = "none";
 
     // ─── Category labels (axis / both mode) — identity-keyed, tweened ─────

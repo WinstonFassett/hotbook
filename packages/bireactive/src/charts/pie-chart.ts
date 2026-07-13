@@ -6,13 +6,12 @@ import { wheelController, dynamicWheelStep, realModifierDown } from "../lib/inte
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { dragCancelable } from "../lib/esc-contract";
-import { GESTURE_ACTIVE_CLASS } from "../lib/transitions";
+import { GESTURE_ACTIVE_CLASS, SORT_SEC } from "../lib/transitions";
 import { PALETTE } from "@hotbook/core";
 
 const W = 640;
 const H = 640;
 const R_INNER = 0;
-const SORT_SEC = 0.35; // s — measure-swap tween duration
 
 interface Slice {
   id?: string;

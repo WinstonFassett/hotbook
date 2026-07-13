@@ -106,7 +106,7 @@ h-treemap, h-icicle, h-radial (sunburst) must:
 **Partial.** `prefers-reduced-motion` zeroes `DUR`, `REORDER_DUR`, `EXIT_DUR` — correctly suppresses autonomous. Drag-position updates use `.interrupt().attr()` not transitions, so reactive motion is already frame-driven. The distinction is implicitly correct but not by explicit design.
 
 ### Rule 10 — Single source of truth for timing
-**Partial.** `constants.ts` has `DUR`, `REORDER_DUR`, `EXIT_DUR`, `DUR_MOVE`, `DUR_ENTER`, `DUR_EXIT`. Independent literals, not expressed as multipliers of a base. Coherent in practice; derivation not visible in code. See `wiki/cross-file-maintainability-audit.md` (WIN-288) and the linked sub-tickets for the remediation plan.
+**Done.** All durations derive from `TRANSITION_BASE_MS = 100` in `packages/bireactive/src/lib/transitions.ts`. Role-specific durations (`settle`, `reorder`, `sort`, `drill`, `enter`, `exit`, `hover`, `highlight`) are explicit multipliers of the base (350ms, 800ms, 400ms, 100ms, 150ms). Exported as both milliseconds (`TRANSITION_DURATION`) for CSS and seconds (`SORT_SEC`, `DRILL_SEC`, etc.) for bireactive's tween API. The d3 package (`packages/d3/src/viz/constants.ts`) aligns `DUR`, `REORDER_DUR`, `EXIT_DUR`, `DUR_MOVE`, `DUR_ENTER`, `DUR_EXIT` with the same role tokens. Inline CSS transition strings replaced with helper functions (`settleTransition`, `hoverTransition`, `highlightTransition`, `enterTransition`) or CSS constants (`SETTLE_OPACITY_CSS`).
 
 ### Rule 11 — Interruptibility
 **Partial.** Mode-change morph interrupts prior transitions before starting. Reorder transitions interrupted at drag end. Gap: mid-morph interruption needs verification that D3 reads the current mid-tween DOM position correctly.

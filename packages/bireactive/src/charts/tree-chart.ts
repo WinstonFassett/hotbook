@@ -23,11 +23,10 @@ import { buildParentIndex, type BiNode, portfolio, walkWithDepth } from "../lib/
 import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize } from "../lib/host-size";
 import { FILL_STYLE } from "../lib/host-size";
-import { GESTURE_ACTIVE_CLASS } from "../lib/transitions";
+import { GESTURE_ACTIVE_CLASS, SORT_SEC } from "../lib/transitions";
 
 const W = 560;
 const H = 400;
-const SORT_SEC = 0.35;
 
 // Rounded-rect node style: rectangle encloses the label (big hit target).
 const NODE_H = 24;
