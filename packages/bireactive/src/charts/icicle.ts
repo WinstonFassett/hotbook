@@ -27,6 +27,7 @@ import { dragCancelable } from "../lib/esc-contract";
 import { attachReorderGesture } from "../lib/reorder-gesture";
 import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, settleTransition, REORDER_ELEVATION_CSS } from "../lib/transitions";
 import { withExitDelay, membershipCell } from "../lib/mark-lifecycle";
+import { boundaryHandles, defaultBoundaryKey } from "../lib/boundary-handles";
 import type { ElementWithBridge } from "../lib/hud-bridge";
 
 const W = 720;
@@ -708,46 +709,24 @@ export class MdIcicleLC extends Diagram {
     // the partition layout re-derives reactively. Skip the synthetic root row
     // (depth 0). Orientation picks which canvas axis the boundary runs along.
     if (!this.hasAttribute("no-handles")) {
-      type HandleItem = { aNode: BiNode; bNode: BiNode };
-      const handleWindow = derive((): readonly HandleItem[] => {
-        const fd = focusDepth.value;
-        const { nodeDepth, totalDepth } = structure.value;
-        const rawMaxD = this._maxDepthCell.value;
-        const maxD = rawMaxD !== undefined && rawMaxD > 0 ? rawMaxD : undefined;
-        const maxWindow = maxD !== undefined ? fd + maxD : totalDepth;
-
-        // Group nodes by depth level
-        const byDepth = new Map<number, BiNode[]>();
-        for (const n of renderedSet.value) {
-          const d = nodeDepth.get(n) ?? 0;
-          if (d <= fd || d > maxWindow) continue;
-          if (!byDepth.has(d)) byDepth.set(d, []);
-          byDepth.get(d)!.push(n);
-        }
-
-        // For each depth level, sort nodes by sibling axis position and create handles
-        const items: HandleItem[] = [];
-        const lmap = layout.value;
-        const h = isHoriz.value;
-
-        for (const nodes of byDepth.values()) {
-          // Sort by position along sibling axis
-          nodes.sort((a, b) => {
-            const aLayout = lmap.get(a);
-            const bLayout = lmap.get(b);
-            if (!aLayout || !bLayout) return 0;
-            const aPos = h ? aLayout.y0 : aLayout.x0;
-            const bPos = h ? bLayout.y0 : bLayout.x0;
-            return aPos - bPos;
-          });
-
-          // Create handles between all adjacent pairs at this depth
-          for (let i = 1; i < nodes.length; i++) {
-            items.push({ aNode: nodes[i - 1]!, bNode: nodes[i]! });
-          }
-        }
-
-        return items;
+      const totalDepthCell = derive(() => structure.value.totalDepth);
+      const handleWindow = boundaryHandles<BiNode>({
+        renderedSet,
+        nodeDepth: (n) => structure.value.nodeDepth.get(n) ?? 0,
+        focusDepth,
+        totalDepth: totalDepthCell,
+        maxDepth: this._maxDepthCell,
+        gestureHost: this,
+        compareSiblings: (a, b) => {
+          const lmap = layout.value;
+          const aLayout = lmap.get(a);
+          const bLayout = lmap.get(b);
+          if (!aLayout || !bLayout) return 0;
+          const h = isHoriz.value;
+          const aPos = h ? aLayout.y0 : aLayout.x0;
+          const bPos = h ? bLayout.y0 : bLayout.x0;
+          return aPos - bPos;
+        },
       });
 
       const handleLayer = s(group());
@@ -829,7 +808,7 @@ export class MdIcicleLC extends Diagram {
         handle.el.addEventListener("pointerleave", () => { active.value = false; });
 
         return handle;
-      }, { key: ({ aNode, bNode }) => `${aNode.value.id ?? ""}:${bNode.value.id ?? ""}` });
+      }, { key: defaultBoundaryKey });
     }
 
     if (!this.hasAttribute('no-source')) s(label(view.bottom.up(10), derive(() => {

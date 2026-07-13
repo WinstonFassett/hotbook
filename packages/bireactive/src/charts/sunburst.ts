@@ -27,6 +27,7 @@ import { mountDrillBreadcrumb } from "../lib/drill-breadcrumb";
 import { dragCancelable } from "../lib/esc-contract";
 import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS } from "../lib/transitions";
 import { withExitDelay, enterExitFade, membershipCell } from "../lib/mark-lifecycle";
+import { boundaryHandles, defaultBoundaryKey } from "../lib/boundary-handles";
 import type { ElementWithBridge } from "../lib/hud-bridge";
 import { attachReorderGesture } from "../lib/reorder-gesture";
 import { REORDER_ELEVATION_CSS } from "../lib/transitions";
@@ -624,43 +625,26 @@ export class MdSunburstLC extends Diagram {
       return rowGroup;
     }, { key: (n) => n.value.id });
 
-    // Windowed handle rendering.
+    // Windowed handle rendering. Sibling order comes from live angular layout;
+    // gesture-freeze in `boundaryHandles` keeps pair identities (and thus the
+    // forEach keys) stable while `GESTURE_ACTIVE_CLASS` is on, so a live
+    // `dragCancelable` handle survives sort:value re-ranks and reorder tweens
+    // mid-gesture (WIN-257).
     if (!this.hasAttribute("no-handles")) {
-      type HandleItem = { aNode: BiNode; bNode: BiNode };
-      const handleWindow = derive((): readonly HandleItem[] => {
-        const fd = focusDepth.value;
-        const maxD = maxDepthCell.value;
-        const maxWindow = maxD !== undefined && maxD > 0 ? fd + maxD : totalDepth;
-
-        // Group nodes by depth level
-        const byDepth = new Map<number, BiNode[]>();
-        for (const n of renderedSet.value) {
-          const d = nodeDepth.get(n) ?? 0;
-          if (d <= fd || d > maxWindow) continue;
-          if (!byDepth.has(d)) byDepth.set(d, []);
-          byDepth.get(d)!.push(n);
-        }
-
-        // For each depth level, sort nodes by angle and create handles
-        const items: HandleItem[] = [];
-        const lmap = layout.value;
-
-        for (const nodes of byDepth.values()) {
-          // Sort by angular position
-          nodes.sort((a, b) => {
-            const aLayout = lmap.get(a);
-            const bLayout = lmap.get(b);
-            if (!aLayout || !bLayout) return 0;
-            return aLayout.x0 - bLayout.x0;
-          });
-
-          // Create handles between all adjacent pairs at this depth
-          for (let i = 1; i < nodes.length; i++) {
-            items.push({ aNode: nodes[i - 1]!, bNode: nodes[i]! });
-          }
-        }
-
-        return items;
+      const handleWindow = boundaryHandles<BiNode>({
+        renderedSet,
+        nodeDepth: (n) => nodeDepth.get(n) ?? 0,
+        focusDepth,
+        totalDepth,
+        maxDepth: maxDepthCell,
+        gestureHost: this,
+        compareSiblings: (a, b) => {
+          const lmap = layout.value;
+          const aLayout = lmap.get(a);
+          const bLayout = lmap.get(b);
+          if (!aLayout || !bLayout) return 0;
+          return aLayout.x0 - bLayout.x0;
+        },
       });
 
       const handleLayer = s(group());
@@ -739,7 +723,7 @@ export class MdSunburstLC extends Diagram {
         handle.el.addEventListener("pointerleave", () => { active.value = false; });
 
         return handle;
-      }, { key: ({ aNode, bNode }) => `${aNode.value.id}:${bNode.value.id}` });
+      }, { key: defaultBoundaryKey });
     }
 
     // Center hub rendered LAST so it sits above arcLayer and receives pointer events.
