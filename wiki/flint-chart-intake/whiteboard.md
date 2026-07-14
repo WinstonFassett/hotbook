@@ -364,9 +364,14 @@ Source: [03-flint-community-testing.md](../../../tmp/win-317/03-flint-community-
 
 ## 9. Big questions for discussion
 
-1. Do we want flint as an actual dependency (a real 4th backend, `vizform/bireactive`),
-   or only as a *pattern* source (semantic type registry idea, layout-budget IR shape)
-   the way we treated LayerChart — study, don't port?
+> **Direction:** the original request was to explore flint as a candidate for a
+> **JSON-render chart adapter inside hotbook**. That means flint as a dependency/
+> compile layer feeding vizform's live surface, not hotbook content embedded into
+> flint. The questions below assume that direction.
+
+1. What is the right integration shape for flint as a hotbook dependency: a
+   shallow bridge from a flint `ChartAssemblyInput` to a vizform tile config, or a
+   deeper Phase-2 backend that consumes `ChannelSemantics` + `LayoutResult`?
 2. If we do build a bireactive backend: do we accept the `declareLayoutMode`
    donor-backend dependency as-is, or fork/vendor just that seam, or file upstream
    against flint (issue #45's NTChart exploration suggests they'd be receptive)?
