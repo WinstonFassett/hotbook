@@ -24,6 +24,8 @@ import { buildParentIndex, type BiNode, portfolio, walkWithDepth } from "../lib/
 import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { mountDrillBreadcrumb } from "../lib/drill-breadcrumb";
+import { DataViewController } from "../lib/data-view-controller";
+import { createDataViewCell, type DataViewCellHandle } from "../lib/data-view-adapter";
 import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, ENTER_MS } from "../lib/transitions";
 import { withExitDelay, membershipCell } from "../lib/mark-lifecycle";
 import { numberDrag } from "../lib/number-drag";
@@ -58,10 +60,22 @@ export class MdTreemapLC extends Diagram {
 
   private breadcrumbDisposer?: () => void
 
+  dataView!: DataViewController;
+  #dvCell?: DataViewCellHandle;
+
+  connectedCallback(): void {
+    this.dataView = new DataViewController();
+    this.#dvCell = createDataViewCell(this.dataView);
+    super.connectedCallback();
+  }
+
   disconnectedCallback(): void {
     this.breadcrumbDisposer?.();
     this.breadcrumbDisposer = undefined;
     super.disconnectedCallback();
+    this.#dvCell?.dispose();
+    this.#dvCell = undefined;
+    this.dataView?.dispose();
   }
 
   // Reactive so the levels dropdown drives enter/exit fades instead of a remount.
@@ -98,7 +112,7 @@ export class MdTreemapLC extends Diagram {
       hovered: { current: null },
       wheelLocked: { current: null },
     };
-    attachChartGestures(this, { root, parentOf, state, scalingMode: "proportional-neighbor" });
+    attachChartGestures(this, { root, parentOf, state, scalingMode: "proportional-neighbor", dataView: this.dataView });
     const hoverCell = cell<BiNode | null>(null);
     state.hoverCell = hoverCell;
 
@@ -286,7 +300,7 @@ export class MdTreemapLC extends Diagram {
       const measureSwapped = measureKey !== seenMeasureKey;
       seenSortBy = sortBy;
       seenMeasureKey = measureKey;
-      const animate = (reordered || measureSwapped) && !this.classList.contains(GESTURE_ACTIVE_CLASS);
+      const animate = (reordered || measureSwapped) && this.dataView.getState().key !== 'Gesturing';
       // Defer past the forEach commit so tileGeo is fresh.
       requestAnimationFrame(() => {
         if (tileGeo.size > 0) {
@@ -429,6 +443,9 @@ export class MdTreemapLC extends Diagram {
         get: () => node.value.total.value,
         set: (v: number) => { node.value.total.value = v; },
         pxPerUnit: 4,
+        dataView: this.dataView,
+        intent: 'edit',
+        origin: this,
       });
 
       if (nd > 0) {

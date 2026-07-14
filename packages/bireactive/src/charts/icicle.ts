@@ -24,6 +24,9 @@ import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { mountDrillBreadcrumb } from "../lib/drill-breadcrumb";
 import { dragCancelable } from "../lib/esc-contract";
+import { DataViewController } from "../lib/data-view-controller";
+import { createDataViewCell, type DataViewCellHandle } from "../lib/data-view-adapter";
+import { withAnimSettle } from "../lib/with-settle";
 import { attachReorderGesture } from "../lib/reorder-gesture";
 import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, settleTransition, REORDER_ELEVATION_CSS } from "../lib/transitions";
 import { withExitDelay, membershipCell } from "../lib/mark-lifecycle";
@@ -97,6 +100,15 @@ export class MdIcicleLC extends Diagram {
 
   private _reorderTickCell = cell(0)
 
+  dataView!: DataViewController;
+  #dvCell?: DataViewCellHandle;
+
+  connectedCallback(): void {
+    this.dataView = new DataViewController();
+    this.#dvCell = createDataViewCell(this.dataView);
+    super.connectedCallback();
+  }
+
   // Effects created in scene() must die with the scene: Diagram re-runs
   // scene() per connect, and without this the old scene's effects would pile
   // up across dock moves / tab reparents.
@@ -108,6 +120,9 @@ export class MdIcicleLC extends Diagram {
   disconnectedCallback(): void {
     this._disposeScene()
     super.disconnectedCallback()
+    this.#dvCell?.dispose();
+    this.#dvCell = undefined;
+    this.dataView?.dispose();
   }
 
   protected scene(s: Mount): void {
@@ -170,7 +185,7 @@ export class MdIcicleLC extends Diagram {
     this._trackScene(biEffect(() => {
       const root = rootCell.value;
       gestureDispose?.();
-      gestureDispose = attachChartGestures(this, { root, parentOf, state, scalingMode: "proportional-neighbor" });
+      gestureDispose = attachChartGestures(this, { root, parentOf, state, scalingMode: "proportional-neighbor", dataView: this.dataView });
     }));
     this._trackScene(() => { gestureDispose?.(); gestureDispose = null; });
     const hoverCell = cell<BiNode | null>(null);
@@ -426,7 +441,7 @@ export class MdIcicleLC extends Diagram {
         seenOrientation = orientation;
         seenMaxDepth = maxDepth;
         seenReorderTick = reorderTick;
-        if ((reordered || measureSwapped || orientationChanged || depthChanged || reorderCommitted) && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
+        if ((reordered || measureSwapped || orientationChanged || depthChanged || reorderCommitted) && this.dataView.getState().key !== 'Gesturing') {
           lcancel?.();
           lcancel = this.anim.start(
             tween(lx0, t.x0, SORT_SEC, easeOut),
@@ -591,7 +606,9 @@ export class MdIcicleLC extends Diagram {
           // Raise the whole row group (tile + label) so the label is not occluded.
           dragEl: tile.el.parentElement as unknown as SVGGElement,
           itemId: node.value.id ?? '',
-          host: this,
+          dataView: this.dataView,
+          intent: 'reorder' as const,
+          origin: this,
           getInitialOrder: () => siblings.map(c => c.value.id ?? ''),
           computeTargetIndex: (e, order) => {
             if (Number.isNaN(startPointerSib)) return order.indexOf(node.value.id ?? '');
@@ -675,12 +692,14 @@ export class MdIcicleLC extends Diagram {
                 this._reorderTickCell.value = this._reorderTickCell.value + 1;
                 this.onReorder?.(parent.value.id ?? null, finalOrder.slice());
               }
-              this.dispatchEvent(new CustomEvent('gesturecommit', { detail: { canceled: false, reorder: true } }));
+              // The view slides to the new order; settle when the animation finishes.
+              withAnimSettle(this.anim, this.dataView, tween(num(0), 1, SORT_SEC, easeOut) as any);
               return;
             }
             // Cancel / no-op: tween each sibling back to its layout slot.
             const lmap = layout.peek();
             const h = isHoriz.peek();
+            const tweens: any[] = [];
             for (const c of siblings) {
               const cells = tileCellsByNode.get(c);
               const ln = lmap.get(c);
@@ -688,10 +707,11 @@ export class MdIcicleLC extends Diagram {
               const { sib0, sib1 } = getSibCells(cells);
               const sib0Target = h ? ln.y0 : ln.x0;
               const sib1Target = h ? ln.y1 : ln.x1;
-              this.anim.start(tween(sib0, sib0Target, SORT_SEC, easeOut) as any);
-              this.anim.start(tween(sib1, sib1Target, SORT_SEC, easeOut) as any);
+              tweens.push(tween(sib0, sib0Target, SORT_SEC, easeOut) as any);
+              tweens.push(tween(sib1, sib1Target, SORT_SEC, easeOut) as any);
             }
-            this.dispatchEvent(new CustomEvent('gesturecommit', { detail: { canceled } }));
+            if (tweens.length) withAnimSettle(this.anim, this.dataView, ...tweens);
+            else this.dataView.settle();
           },
         });
         reorderDetach = detach;
@@ -819,9 +839,11 @@ export class MdIcicleLC extends Diagram {
           active,
         });
         const dispose = dragCancelable(handle, knob, [a, b], {
-          host: this,
+          dataView: this.dataView,
+          intent: 'edit',
+          origin: this,
           onStart: () => { active.value = true; handle.el.style.cursor = "grabbing"; },
-          onEnd: () => { active.value = false; handle.el.style.cursor = "grab"; },
+          onEnd: () => { active.value = false; handle.el.style.cursor = "grab"; this.dataView.settle(); },
         });
         handle.track(dispose);
         biEffect(() => { handle.el.style.cursor = isHoriz.value ? "ns-resize" : "ew-resize"; });

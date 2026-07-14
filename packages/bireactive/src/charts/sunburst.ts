@@ -25,7 +25,10 @@ import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { mountDrillBreadcrumb } from "../lib/drill-breadcrumb";
 import { dragCancelable } from "../lib/esc-contract";
-import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS } from "../lib/transitions";
+import { DataViewController } from "../lib/data-view-controller";
+import { createDataViewCell, type DataViewCellHandle } from "../lib/data-view-adapter";
+import { withAnimSettle } from "../lib/with-settle";
+import { GESTURE_SUPPRESSION_CSS } from "../lib/transitions";
 import { withExitDelay, enterExitFade, membershipCell } from "../lib/mark-lifecycle";
 import type { ElementWithBridge } from "../lib/hud-bridge";
 import { attachReorderGesture } from "../lib/reorder-gesture";
@@ -42,6 +45,22 @@ export class MdSunburstLC extends Diagram {
   externalRoot?: BiNode
   drillKey?: string
   showBreadcrumb?: boolean
+
+  dataView!: DataViewController;
+  #dvCell?: DataViewCellHandle;
+
+  connectedCallback(): void {
+    this.dataView = new DataViewController();
+    this.#dvCell = createDataViewCell(this.dataView);
+    super.connectedCallback();
+  }
+
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.#dvCell?.dispose();
+    this.#dvCell = undefined;
+    this.dataView?.dispose();
+  }
 
   // Reactive so the levels dropdown drives enter/exit fades instead of a remount.
   private _maxDepthCell = cell<number | undefined>(undefined)
@@ -89,7 +108,7 @@ export class MdSunburstLC extends Diagram {
       hovered: { current: null },
       wheelLocked: { current: null },
     };
-    attachChartGestures(this, { root, parentOf, state, scalingMode: "proportional-neighbor" });
+    attachChartGestures(this, { root, parentOf, state, scalingMode: "proportional-neighbor", dataView: this.dataView });
     const hoverCell = cell<BiNode | null>(null);
     state.hoverCell = hoverCell;
 
@@ -333,7 +352,7 @@ export class MdSunburstLC extends Diagram {
         seenSortBy = sortBy;
         seenMeasureKey = measureKey;
         seenReorderTick = reorderTick;
-        if ((reordered || measureSwapped || reorderCommitted) && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
+        if ((reordered || measureSwapped || reorderCommitted) && this.dataView.getState().key !== 'Gesturing') {
           lcancel?.();
           lcancel = this.anim.start(
             tween(la0, t.x0, SORT_SEC, easeOut),
@@ -471,7 +490,9 @@ export class MdSunburstLC extends Diagram {
           // top of the arc and is not occluded when the arc is re-appended.
           dragEl: arc.el.parentElement as unknown as SVGGElement,
           itemId: node.value.id ?? '',
-          host: this,
+          dataView: this.dataView,
+          intent: 'reorder' as const,
+          origin: this,
           getInitialOrder: () => siblings.map(x => x.value.id ?? ''),
           computeTargetIndex: (e, order) => {
             if (Number.isNaN(startMouseAngle)) return order.indexOf(node.value.id ?? '');
@@ -556,19 +577,22 @@ export class MdSunburstLC extends Diagram {
                 this._reorderTickCell.value = this._reorderTickCell.value + 1;
                 this.onReorder?.(parent.value.id ?? null, finalOrder.slice());
               }
-              this.dispatchEvent(new CustomEvent('gesturecommit', { detail: { canceled: false, reorder: true } }));
+              // The view slides to the new order; settle when the animation finishes.
+              withAnimSettle(this.anim, this.dataView, tween(num(0), 1, SORT_SEC, easeOut) as any);
               return;
             }
             // Cancel or no-op: tween each sibling back to its initial slot.
             const lmap = layout.peek();
+            const tweens: any[] = [];
             for (const c of siblings) {
               const cells = arcCellsByNode.get(c);
               const ln = lmap.get(c);
               if (!cells || !ln) continue;
-              this.anim.start(tween(cells.la0, ln.x0, REORDER_SEC_LOCAL, easeOut) as any);
-              this.anim.start(tween(cells.la1, ln.x1, REORDER_SEC_LOCAL, easeOut) as any);
+              tweens.push(tween(cells.la0, ln.x0, REORDER_SEC_LOCAL, easeOut) as any);
+              tweens.push(tween(cells.la1, ln.x1, REORDER_SEC_LOCAL, easeOut) as any);
             }
-            this.dispatchEvent(new CustomEvent('gesturecommit', { detail: { canceled } }));
+            if (tweens.length) withAnimSettle(this.anim, this.dataView, ...tweens);
+            else this.dataView.settle();
           },
         });
         reorderDetach = detach;
@@ -729,9 +753,11 @@ export class MdSunburstLC extends Diagram {
           active,
         });
         const dispose = dragCancelable(handle, knob, [a, b], {
-          host: this,
+          dataView: this.dataView,
+          intent: 'edit',
+          origin: this,
           onStart: () => { active.value = true; handle.el.style.cursor = "grabbing"; },
-          onEnd: () => { active.value = false; handle.el.style.cursor = "grab"; },
+          onEnd: () => { active.value = false; handle.el.style.cursor = "grab"; this.dataView.settle(); },
         });
         handle.track(dispose);
         handle.el.style.cursor = "grab";

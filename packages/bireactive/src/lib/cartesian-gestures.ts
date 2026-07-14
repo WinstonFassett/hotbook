@@ -76,7 +76,7 @@ export function attachCartesianGestures<TData>(
     dataView,
     intent: 'edit' as const,
     origin: host,
-    onEnd: (canceled: boolean) => {
+    onEnd: (_canceled: boolean) => {
       state.hover.value = null;
       gestureOrder = null;
       wheelStartScale = null;

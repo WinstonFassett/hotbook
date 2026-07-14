@@ -23,7 +23,7 @@ import { buildParentIndex, type BiNode, portfolio, walkWithDepth } from "../lib/
 import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize } from "../lib/host-size";
 import { FILL_STYLE } from "../lib/host-size";
-import { GESTURE_ACTIVE_CLASS } from "../lib/transitions";
+import { DataViewController } from "../lib/data-view-controller";
 
 const W = 560;
 const H = 400;
@@ -129,12 +129,20 @@ export class MdTreeChart extends Diagram {
   private _collapsedCell = cell<Set<BiNode>>(new Set<BiNode>())
   private _expandedCell = cell<Set<BiNode>>(new Set<BiNode>())
 
+  dataView!: DataViewController;
+
+  connectedCallback(): void {
+    this.dataView = new DataViewController();
+    super.connectedCallback();
+  }
+
   private _zoomSelection?: any;
 
   disconnectedCallback() {
     super.disconnectedCallback();
     this._zoomSelection?.on('.zoom', null);
     this.style.cursor = '';
+    this.dataView?.dispose();
   }
 
   protected scene(s: Mount): void {
@@ -156,7 +164,7 @@ export class MdTreeChart extends Diagram {
       hovered: { current: null },
       wheelLocked: { current: null },
     };
-    attachChartGestures(this, { root, parentOf, state });
+    attachChartGestures(this, { root, parentOf, state, dataView: this.dataView });
     const hoverCell = cell<BiNode | null>(null);
     state.hoverCell = hoverCell;
 
@@ -302,7 +310,7 @@ export class MdTreeChart extends Diagram {
           maxDepthV !== seenMaxDepth;
         seenSort = sort; seenOrient = orient; seenMeasureKey = measureKey;
         seenCollapsed = collapsed; seenExpanded = expanded; seenMaxDepth = maxDepthV;
-        if (structural && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
+        if (structural && this.dataView.getState().key !== 'Gesturing') {
           lcancel?.();
           lcancel = this.anim.start(
             tween(lx, t.x, SORT_SEC, easeOut) as any,

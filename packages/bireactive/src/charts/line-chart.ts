@@ -11,6 +11,7 @@ import { chartContext } from "../lib/chart-context";
 import { attachCartesianGestures, makeBisectFinder } from "../lib/cartesian-gestures";
 import { spline } from "../lib/spline";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
+import { DataViewController } from "../lib/data-view-controller";
 
 const W = 720;
 const H = 360;
@@ -72,6 +73,18 @@ export class MdLineChartLC extends Diagram {
     return this.dataCell.value as Point[];
   }
 
+  dataView!: DataViewController;
+
+  connectedCallback(): void {
+    this.dataView = new DataViewController();
+    super.connectedCallback();
+  }
+
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.dataView?.dispose();
+  }
+
   protected scene(s: Mount): void {
     const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
     this.view(Wc, Hc);
@@ -86,6 +99,7 @@ export class MdLineChartLC extends Diagram {
       y: this._yBindingCell as any,
       idOf: (d) => d.id ?? String(d.date.getTime()),
       host: this,
+      dataView: this.dataView,
       anim: this.anim,
       padding: { top: 16, right: 24, bottom: 36, left: 56 },
       yNice: true, yBaseline: 0,
@@ -126,6 +140,7 @@ export class MdLineChartLC extends Diagram {
 
     attachCartesianGestures(this, svgEl, {
       ctx, state: { hover, selected },
+      dataView: this.dataView,
       findAtPixel: (px) => bisectFind(px, ctx.xScale.value),
       yPixel: (d) => (ctx.yScale.value as any)(d.value),
       mutateDatum: (d, delta) => mutateDatum(d, delta),

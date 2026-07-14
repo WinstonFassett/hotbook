@@ -7,10 +7,10 @@ import { Diagram } from "../lib/diagram";
 import { scaleLinear } from "d3-scale";
 import { extent, ticks as d3Ticks } from "d3-array";
 import { wheelController, dragController, dynamicWheelStep, realModifierDown } from "../lib/interaction";
-import { globalGestureActive } from "../lib/gesture-state";
+import { globalGestureActive, createDataViewCell, type DataViewCellHandle } from "../lib/data-view-adapter";
+import { DataViewController } from "../lib/data-view-controller";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
-import { GESTURE_ACTIVE_CLASS } from "../lib/transitions";
 
 const W = 640;
 const H = 640;
@@ -60,6 +60,23 @@ export class MdRadarChartLC extends Diagram {
   get externalData(): { label: string; value: number }[] | undefined {
     return this.dataCell.value as unknown as { label: string; value: number }[];
   }
+
+  dataView!: DataViewController;
+  #dvCell?: DataViewCellHandle;
+
+  connectedCallback(): void {
+    this.dataView = new DataViewController();
+    this.#dvCell = createDataViewCell(this.dataView);
+    super.connectedCallback();
+  }
+
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.#dvCell?.dispose();
+    this.#dvCell = undefined;
+    this.dataView?.dispose();
+  }
+
   protected scene(s: Mount): void {
     const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
     this.view(Wc, Hc);
@@ -83,13 +100,14 @@ export class MdRadarChartLC extends Diagram {
       data.value = [...data.value];
     };
 
-    const setGestureActive = (on: boolean) => { this.classList.toggle(GESTURE_ACTIVE_CLASS, on); (this as any).gestureActive = on; };
-
     // Config handed to the SHARED wheel controller (app-wide singleton).
     const wheelConfig = {
-      snapshot: (d: Spoke) => { setGestureActive(true); return d.value; },
+      snapshot: (d: Spoke) => d.value,
       restore: (d: Spoke, v: number) => mutateDatum(d, v - d.value),
-      onEnd: (canceled: boolean) => { setGestureActive(false); hover.value = null; this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } })); },
+      dataView: this.dataView,
+      intent: 'edit' as const,
+      origin: this,
+      onEnd: (_canceled: boolean) => { hover.value = null; this.dataView.settle(); },
     };
 
     // y: scaleLinear 0–100 → radius 0–R_MAX
@@ -215,7 +233,7 @@ export class MdRadarChartLC extends Diagram {
         // morphs. Value edits (same datum, different value) snap per R2.
         const structural = measureKey !== seenMeasureKey || order !== seenOrder;
         seenMeasureKey = measureKey; seenOrder = order;
-        if (structural && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
+        if (structural && this.dataView.getState().key !== 'Gesturing') {
           rCancel?.();
           rCancel = this.anim.start(tween(rPx, target, SORT_SEC, easeOut) as any);
         } else {
@@ -347,13 +365,15 @@ export class MdRadarChartLC extends Diagram {
       snapshot: (d: Spoke) => d.value,
       restore: (d: Spoke, v: number) => mutateDatum(d, v - d.value),
       onMove: onDragMove,
-      onEnd: (canceled: boolean) => {
+      dataView: this.dataView,
+      intent: 'edit' as const,
+      origin: this,
+      onEnd: (_canceled: boolean) => {
         if (dragPointerId >= 0 && (this as any).hasPointerCapture?.(dragPointerId)) {
           (this as any).releasePointerCapture(dragPointerId);
         }
         dragPointerId = -1;
-        setGestureActive(false);
-        this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } }));
+        this.dataView.settle();
       },
     };
     this.addEventListener("pointerdown", (e) => {
@@ -371,7 +391,6 @@ export class MdRadarChartLC extends Diagram {
       const dy = y - (cy.peek() + Math.sin(a) * r);
       if (Math.sqrt(dx*dx + dy*dy) > hitTolerance) return;
       dragPointerId = pe.pointerId;
-      setGestureActive(true);
       selected.value = spoke;
       (this as any).setPointerCapture(pe.pointerId);
       dragController.begin(spoke, dragConfig); // controller owns move/up/Esc from here

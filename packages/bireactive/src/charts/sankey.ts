@@ -2,6 +2,25 @@ import { effect, type Mount, cell, tween, easeOut, untracked } from "bireactive"
 import { Diagram } from "../lib/diagram";
 import { interpolateWarm, interpolateRainbow } from "d3-scale-chromatic";
 import { sankeyScene, renderColorControls, type LinkDef, SORT_SEC } from "../lib/sankey";
+import { DataViewController } from "../lib/data-view-controller";
+
+// ---------------------------------------------------------------------------
+// Base class for the three sankey variants
+// ---------------------------------------------------------------------------
+
+class SankeyDiagram extends Diagram {
+  dataView!: DataViewController;
+
+  connectedCallback(): void {
+    this.dataView = new DataViewController();
+    super.connectedCallback();
+  }
+
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.dataView?.dispose();
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Take 1: Simple editable graph
@@ -18,7 +37,7 @@ const SIMPLE_LINKS: LinkDef[] = [
   {source:"C3",target:"D2",init:1},
 ];
 
-export class MdSankeySimple extends Diagram {
+export class MdSankeySimple extends SankeyDiagram {
   static styles = `
     text { pointer-events: none; }
     [data-focusable]:focus {
@@ -48,6 +67,7 @@ export class MdSankeySimple extends Diagram {
     const { focused, hovered, wheelLocked, linkValues, nodeColorProp, linkColorMode } = sankeyScene(this, s, {
       W, H, nodeIds, linkDefs, labelSize: 11, stringIds: true, nodePadding,
       sortByCell: this._sortByCell,
+      dataView: this.dataView,
     });
 
     // Animate link values when externalData changes (e.g. measure binding).
@@ -127,7 +147,7 @@ const COMPLEX_LINKS: LinkDef[] = [
   {source:46,target:15,init:2.096},{source:47,target:15,init:79.329},
 ];
 
-export class MdSankeyComplex extends Diagram {
+export class MdSankeyComplex extends SankeyDiagram {
   static styles = `
     text { pointer-events: none; }
     [data-focusable]:focus {
@@ -150,6 +170,7 @@ export class MdSankeyComplex extends Diagram {
       W, H, nodeIds: COMPLEX_NODES, linkDefs: COMPLEX_LINKS,
       nodePadding: 4, interp: interpolateWarm, labelSize: 9, stringIds: false,
       sortByCell: this._sortByCell,
+      dataView: this.dataView,
     });
     renderColorControls(this, nodeColorProp, linkColorMode);
     {
@@ -289,7 +310,7 @@ function hierarchyToSankey(root: HNode): { nodeIds: string[]; linkDefs: LinkDef[
   return { nodeIds, linkDefs };
 }
 
-export class MdSankeyHierarchy extends Diagram {
+export class MdSankeyHierarchy extends SankeyDiagram {
   static styles = `
     text { pointer-events: none; }
     [data-focusable]:focus {
@@ -309,6 +330,7 @@ export class MdSankeyHierarchy extends Diagram {
       W, H, nodeIds, linkDefs,
       nodePadding: 3, interp: interpolateRainbow, labelSize: 8, stringIds: true,
       stepFn: (v, shift) => Math.max(1, Math.round(v * (shift ? 0.25 : 0.1))),
+      dataView: this.dataView,
     });
     renderColorControls(this, nodeColorProp, linkColorMode);
     {

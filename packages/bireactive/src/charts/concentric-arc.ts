@@ -6,10 +6,10 @@ import { Anchor, cell, circle, derive, easeInOut, easeOut, effect as biEffect, g
 import { Diagram } from "../lib/diagram";
 import { arc as d3Arc } from "d3-shape";
 import { wheelController, dragController, realModifierDown } from "../lib/interaction";
-import { globalGestureActive } from "../lib/gesture-state";
+import { globalGestureActive, createDataViewCell, type DataViewCellHandle } from "../lib/data-view-adapter";
+import { DataViewController } from "../lib/data-view-controller";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
-import { GESTURE_ACTIVE_CLASS } from "../lib/transitions";
 
 const W = 640;
 const H = 640;
@@ -90,6 +90,23 @@ export class MdConcentricArcLC extends Diagram {
   get externalData(): { label: string; value: number }[] | undefined {
     return this.dataCell.value as unknown as { label: string; value: number }[];
   }
+
+  dataView!: DataViewController;
+  #dvCell?: DataViewCellHandle;
+
+  connectedCallback(): void {
+    this.dataView = new DataViewController();
+    this.#dvCell = createDataViewCell(this.dataView);
+    super.connectedCallback();
+  }
+
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.#dvCell?.dispose();
+    this.#dvCell = undefined;
+    this.dataView?.dispose();
+  }
+
   protected scene(s: Mount): void {
     const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
     this.view(Wc, Hc);
@@ -125,13 +142,14 @@ export class MdConcentricArcLC extends Diagram {
     };
     const mutateDatum = (d: Ring, delta: number) => setValue(d, d.value + delta);
 
-    const setGestureActive = (on: boolean) => { this.classList.toggle(GESTURE_ACTIVE_CLASS, on); (this as any).gestureActive = on; };
-
     // Config handed to the SHARED wheel controller (app-wide singleton).
     const wheelConfig = {
-      snapshot: (d: Ring) => { setGestureActive(true); return d.value; },
+      snapshot: (d: Ring) => d.value,
       restore: (d: Ring, v: number) => mutateDatum(d, v - d.value),
-      onEnd: (canceled: boolean) => { setGestureActive(false); this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } })); },
+      dataView: this.dataView,
+      intent: 'edit' as const,
+      origin: this,
+      onEnd: (_canceled: boolean) => { this.dataView.settle(); },
     };
     // Last ring the pointer was over — kept past pointerleave so a wheel edit can
     // still target it for a moment after the cursor exits the ring band.
@@ -179,15 +197,17 @@ export class MdConcentricArcLC extends Diagram {
       snapshot: (d: Ring) => d.value,
       restore: (d: Ring, v: number) => setValue(d, v),
       onMove: onDragMove,
+      dataView: this.dataView,
+      intent: 'edit' as const,
+      origin: this,
       onEnd: () => {
         if (dragPointerId >= 0 && (this as any).hasPointerCapture?.(dragPointerId)) {
           (this as any).releasePointerCapture(dragPointerId);
         }
         dragPointerId = -1;
-        setGestureActive(false);
         if (activeHandle) activeHandle.style.cursor = "grab";
         activeHandle = null;
-        this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled: false } }));
+        this.dataView.settle();
       },
     };
 
@@ -267,7 +287,7 @@ export class MdConcentricArcLC extends Diagram {
         if (!fracInited) { fracInited = true; seenMeasureKey = measureKey; frac.value = target; return; }
         const measureSwapped = measureKey !== seenMeasureKey;
         seenMeasureKey = measureKey;
-        if (measureSwapped && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
+        if (measureSwapped && this.dataView.getState().key !== 'Gesturing') {
           fracCancel?.();
           fracCancel = this.anim.start(tween(frac, target, SORT_SEC, easeOut));
         } else {
@@ -326,7 +346,6 @@ export class MdConcentricArcLC extends Diagram {
         if (!d) return;
         const pe = e as PointerEvent;
         dragPointerId = pe.pointerId;
-        setGestureActive(true);
         selected.value = d;
         activeHandle = handleEl.el;
         handleEl.el.style.cursor = "grabbing";

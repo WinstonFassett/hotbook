@@ -23,6 +23,8 @@ import { buildParentIndex, type BiNode, portfolio, walkWithDepth } from "../lib/
 import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { mountDrillBreadcrumb } from "../lib/drill-breadcrumb";
+import { DataViewController } from "../lib/data-view-controller";
+import { createDataViewCell, type DataViewCellHandle } from "../lib/data-view-adapter";
 import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, ENTER_MS } from "../lib/transitions";
 import { withExitDelay, membershipCell } from "../lib/mark-lifecycle";
 import { numberDrag } from "../lib/number-drag";
@@ -39,6 +41,22 @@ export class MdPack extends Diagram {
   externalRoot?: BiNode
   drillKey?: string
   showBreadcrumb?: boolean
+
+  dataView!: DataViewController;
+  #dvCell?: DataViewCellHandle;
+
+  connectedCallback(): void {
+    this.dataView = new DataViewController();
+    this.#dvCell = createDataViewCell(this.dataView);
+    super.connectedCallback();
+  }
+
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.#dvCell?.dispose();
+    this.#dvCell = undefined;
+    this.dataView?.dispose();
+  }
 
   // Reactive so the levels dropdown drives enter/exit fades instead of a remount.
   private _maxDepthCell = cell<number | undefined>(undefined)
@@ -74,7 +92,7 @@ export class MdPack extends Diagram {
       hovered: { current: null },
       wheelLocked: { current: null },
     };
-    attachChartGestures(this, { root, parentOf, state });
+    attachChartGestures(this, { root, parentOf, state, dataView: this.dataView });
     const hoverCell = cell<BiNode | null>(null);
     state.hoverCell = hoverCell;
 
@@ -254,7 +272,7 @@ export class MdPack extends Diagram {
         const measureSwapped = measureKey !== seenMeasureKey;
         seenSortBy = sortBy;
         seenMeasureKey = measureKey;
-        if ((reordered || measureSwapped) && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
+        if ((reordered || measureSwapped) && this.dataView.getState().key !== 'Gesturing') {
           lcancel?.();
           lcancel = this.anim.start(
             tween(lx, t.x, SORT_SEC, easeOut),
@@ -365,6 +383,9 @@ export class MdPack extends Diagram {
         get: () => node.value.total.value,
         set: (v: number) => { node.value.total.value = v; },
         pxPerUnit: 4,
+        dataView: this.dataView,
+        intent: 'edit',
+        origin: this,
       });
 
       if (isLeaf) {

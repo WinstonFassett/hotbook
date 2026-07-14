@@ -24,6 +24,7 @@ import {
 } from "bireactive";
 import { Diagram } from "../lib/diagram";
 import { dragCancelable } from "../lib/esc-contract";
+import { DataViewController } from "../lib/data-view-controller";
 import type { BiNode } from "../lib/tree";
 
 interface Category {
@@ -110,6 +111,18 @@ export class MdBudgetTree extends Diagram {
    *  chart renders those cells directly, so edits round-trip with any other
    *  view bound to the same tree. Falls back to the built-in budget data. */
   externalRoot?: BiNode;
+
+  dataView!: DataViewController;
+
+  connectedCallback(): void {
+    this.dataView = new DataViewController();
+    super.connectedCallback();
+  }
+
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.dataView?.dispose();
+  }
 
   protected scene(s: Mount): void {
     const view = this.view(W, H);
@@ -278,7 +291,12 @@ export class MdBudgetTree extends Diagram {
       // Cancelable drag: lens sources are [a, b, leftX] but only [a, b] are
       // writable cells, so those are the revert snapshot. Esc reverts via the
       // host contract installed below.
-      dragCancelable(pillShape, knob, [a, b], { host: this });
+      dragCancelable(pillShape, knob, [a, b], {
+        dataView: this.dataView,
+        intent: 'edit',
+        origin: this,
+        onEnd: () => { this.dataView.settle(); },
+      });
       pillShape.el.style.cursor = "ew-resize";
     }
     // Esc-revert is owned by each pill's dragCancelable gesture. No selection here.

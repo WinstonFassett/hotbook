@@ -56,7 +56,7 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
     dataView,
     intent: 'edit' as const,
     origin: host,
-    onEnd: (canceled: boolean) => { state.wheelLocked.current = null; dataView.settle(); },
+    onEnd: (_canceled: boolean) => { state.wheelLocked.current = null; dataView.settle(); },
   };
 
   const onWheel = (e: WheelEvent) => {

@@ -11,6 +11,7 @@ import { axis } from "../lib/axis";
 import { chartContext } from "../lib/chart-context";
 import { attachCartesianGestures, makeBisectFinder } from "../lib/cartesian-gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
+import { DataViewController } from "../lib/data-view-controller";
 
 const W = 720;
 const H = 360;
@@ -84,6 +85,18 @@ export class MdScatterChartLC extends Diagram {
     return this.dataCell.value as Point[];
   }
 
+  dataView!: DataViewController;
+
+  connectedCallback(): void {
+    this.dataView = new DataViewController();
+    super.connectedCallback();
+  }
+
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.dataView?.dispose();
+  }
+
   protected scene(s: Mount): void {
     const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
     this.view(Wc, Hc);
@@ -98,6 +111,7 @@ export class MdScatterChartLC extends Diagram {
       y: this._yBindingCell as any,
       idOf: (d) => d.id ?? String(data.peek().indexOf(d)),
       host: this,
+      dataView: this.dataView,
       anim: this.anim,
       padding: { top: 16, right: 24, bottom: 36, left: 48 },
       xNice: true, yNice: true, yBaseline: 0,
@@ -140,6 +154,7 @@ export class MdScatterChartLC extends Diagram {
 
     attachCartesianGestures(this, svgEl, {
       ctx, state: { hover, selected },
+      dataView: this.dataView,
       findAtPixel: (px) => bisectFind(px, ctx.xScale.value),
       yPixel: (d) => (ctx.yScale.value as any)(d.y),
       mutateDatum: (d, delta) => mutateDatum(d, delta),

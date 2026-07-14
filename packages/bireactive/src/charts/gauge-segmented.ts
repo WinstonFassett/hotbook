@@ -9,6 +9,7 @@ import {
   group, label, mount, type Mount, Num, num, pathD, rect, Vec, type Writable,
 } from "bireactive";
 import { Diagram } from "../lib/diagram";
+import { DataViewController } from "../lib/data-view-controller";
 import { arc as d3Arc } from "d3-shape";
 import { wheelController, realModifierDown } from "../lib/interaction";
 import { dragCancelable } from "../lib/esc-contract";
@@ -58,6 +59,18 @@ export class MdGaugeSegmentedLC extends Diagram {
   }
   get externalData(): { value: number; min: number; max: number; color: string; label: string; segments: number } {
     return { value: this.valueCell.value, min: this.minValue, max: this.maxValue, color: this.color, label: this.metricLabel, segments: this.segments };
+  }
+
+  dataView!: DataViewController;
+
+  connectedCallback(): void {
+    this.dataView = new DataViewController();
+    super.connectedCallback();
+  }
+
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.dataView?.dispose();
   }
 
   protected scene(s: Mount): void {
@@ -154,9 +167,11 @@ export class MdGaugeSegmentedLC extends Diagram {
     }));
     handle.el.style.cursor = "grab";
     dragCancelable(handle, handleTarget, [value], {
-      host: this,
-      onStart: () => { active.value = true; (this as any).gestureActive = true; },
-      onEnd: () => { active.value = false; (this as any).gestureActive = false; this.dispatchEvent(new CustomEvent("gesturecommit")); },
+      dataView: this.dataView,
+      intent: 'edit' as const,
+      origin: this,
+      onStart: () => { active.value = true; },
+      onEnd: () => { active.value = false; this.dataView.settle(); },
     });
     handle.el.addEventListener("pointerenter", () => { hovered.value = true; });
     handle.el.addEventListener("pointerleave", () => { if (!active.value) hovered.value = false; });
@@ -194,8 +209,11 @@ export class MdGaugeSegmentedLC extends Diagram {
       min: minV,
       max: maxV,
       pxPerUnit: Math.max(1, 200 / range),
-      onStart: () => { active.value = true; (this as any).gestureActive = true; },
-      onEnd: () => { active.value = false; (this as any).gestureActive = false; this.dispatchEvent(new CustomEvent("gesturecommit")); },
+      dataView: this.dataView,
+      intent: 'edit',
+      origin: this,
+      onStart: () => { active.value = true; },
+      onEnd: () => { active.value = false; },
     });
 
     // Min / max endpoint labels.
@@ -212,9 +230,12 @@ export class MdGaugeSegmentedLC extends Diagram {
 
     // Wheel edit on the whole diagram (cmd/ctrl + wheel).
     const wheelConfig = {
-      snapshot: () => { (this as any).gestureActive = true; return value.value; },
+      snapshot: () => value.value,
       restore: (_t: unknown, snap: number) => { value.value = Math.max(minV, Math.min(maxV, snap)); },
-      onEnd: () => { (this as any).gestureActive = false; this.dispatchEvent(new CustomEvent("gesturecommit")); },
+      dataView: this.dataView,
+      intent: 'edit' as const,
+      origin: this,
+      onEnd: () => { this.dataView.settle(); },
     };
     this.addEventListener("wheel", (e) => {
       const we = e as WheelEvent;

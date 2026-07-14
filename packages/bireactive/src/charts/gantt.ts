@@ -42,9 +42,10 @@ import {
   wheelController,
   realModifierDown,
 } from "../lib/interaction";
-import { globalGestureActive } from "../lib/gesture-state";
+import { globalGestureActive, createDataViewCell, type DataViewCellHandle } from "../lib/data-view-adapter";
+import { DataViewController } from "../lib/data-view-controller";
+import { withAnimSettle } from "../lib/with-settle";
 import {
-  GESTURE_ACTIVE_CLASS,
   GESTURE_SUPPRESSION_CSS,
   REORDER_ELEVATION_CSS,
   hoverTransition,
@@ -132,6 +133,22 @@ export class MdGanttChartLC extends Diagram {
   /** Incremented when a user-driven reorder commits. Triggers y-cell tweens. */
   private _reorderTickCell = cell(0)
 
+  dataView!: DataViewController;
+  #dvCell?: DataViewCellHandle;
+
+  connectedCallback(): void {
+    this.dataView = new DataViewController();
+    this.#dvCell = createDataViewCell(this.dataView);
+    super.connectedCallback();
+  }
+
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.#dvCell?.dispose();
+    this.#dvCell = undefined;
+    this.dataView?.dispose();
+  }
+
   set externalData(v: GanttTask[] | undefined) {
     if (v) this.dataCell.value = v;
   }
@@ -205,6 +222,7 @@ export class MdGanttChartLC extends Diagram {
     // Create per-task tweened y-position cells.
     // Map from task ID to {yCell, cancelFn}.
     const taskYCells = new Map<string, { yCell: ReturnType<typeof num>, yCenter: Cell<number>, cancel: (() => void) | null }>();
+    let sortTweenCancel: (() => void) | null = null;
     for (const task of rows0) {
       const yCell = num(plotY); // Will be initialized below
       const yCenter = derive<number>(() => yCell.value + ROW_H / 2);
@@ -245,16 +263,22 @@ export class MdGanttChartLC extends Diagram {
       lastSortBy = sortBy;
       lastReorderTick = reorderTick;
 
-      if ((sortChanged || reorderCommitted) && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
+      if ((sortChanged || reorderCommitted) && this.dataView.getState().key !== 'Gesturing') {
+        const tweens: any[] = [];
         for (const task of rows0) {
           const entry = taskYCells.get(task.id);
           if (!entry) continue;
           const targetY = getTargetY(task.id);
           entry.cancel?.();
-          entry.cancel = this.anim.start(tween(entry.yCell, targetY, SORT_SEC, easeOut) as any);
+          entry.cancel = null;
+          tweens.push(tween(entry.yCell, targetY, SORT_SEC, easeOut) as any);
         }
+        sortTweenCancel?.();
+        sortTweenCancel = withAnimSettle(this.anim, this.dataView, ...tweens);
       } else if (!sortChanged && !reorderCommitted) {
         // Data or size changed but sort/reorder didn't: snap to new positions
+        sortTweenCancel?.();
+        sortTweenCancel = null;
         for (const task of rows0) {
           const entry = taskYCells.get(task.id);
           if (entry) {
@@ -289,8 +313,7 @@ export class MdGanttChartLC extends Diagram {
       return null;
     };
 
-    const setGestureActive = (on: boolean) => this.classList.toggle(GESTURE_ACTIVE_CLASS, on);
-    const commit = () => this.dispatchEvent(new CustomEvent("gesturecommit"));
+    const settle = () => this.dataView.settle();
 
     // Mutate one task; keep ms granularity but snap to whole days.
     const snapDay = (ms: number) => Math.round(ms / DAY_MS) * DAY_MS;
@@ -545,8 +568,6 @@ export class MdGanttChartLC extends Diagram {
 
     const dragConfig = (kind: DragKind, originMs: number) => ({
       snapshot: (t: GanttTask): DragSnap => {
-        setGestureActive(true);
-
         // Snapshot ALL task positions for bidirectional solving and space conservation
         const allPositions = new Map<string, {start: number; end: number}>();
         const rows = data.value as GanttTask[];
@@ -572,6 +593,10 @@ export class MdGanttChartLC extends Diagram {
         }
         data.value = [...data.value];
       },
+
+      dataView: this.dataView,
+      intent: 'edit' as const,
+      origin: this,
 
       onMove: (pe: PointerEvent, snap: DragSnap) => {
         const t = dragController.target as GanttTask | null;
@@ -611,7 +636,6 @@ export class MdGanttChartLC extends Diagram {
           (this as any).releasePointerCapture(dragPointerId);
         }
         dragPointerId = -1;
-        setGestureActive(false);
 
         // Final propagation on commit (if not canceled)
         if (this.enforceDeps && !_canceled) {
@@ -621,7 +645,7 @@ export class MdGanttChartLC extends Diagram {
             data.value = [...data.value];
           }
         }
-        commit();
+        settle();
       },
     });
 
@@ -695,7 +719,6 @@ export class MdGanttChartLC extends Diagram {
     // Shared wheelController gives us Esc-revert + meta-keyup commit for free.
     const wheelConfig = {
       snapshot: (t: GanttTask): DragSnap => {
-        setGestureActive(true);
         // Capture all task positions for constraint solving
         const allPositions = new Map<string, {start: number; end: number}>();
         const rows = data.value as GanttTask[];
@@ -719,10 +742,12 @@ export class MdGanttChartLC extends Diagram {
         }
         data.value = [...data.value];
       },
+      dataView: this.dataView,
+      intent: 'edit' as const,
+      origin: this,
       onEnd: () => {
-        setGestureActive(false);
         // Constraints are now enforced in real-time during wheel gesture
-        commit();
+        settle();
       },
     };
     this.addEventListener("wheel", (e) => {
@@ -901,7 +926,9 @@ export class MdGanttChartLC extends Diagram {
           hitEl: reorderHitTarget.el,
           dragEl: reorderHitTarget.el,
           itemId: task.id,
-          host: this,
+          dataView: this.dataView,
+          intent: 'reorder' as const,
+          origin: this,
           // No filter needed - label lane doesn't conflict with bar gestures
           getInitialOrder: () => (data.value as GanttTask[]).map(t => t.id),
           computeTargetIndex: (e) => {
@@ -917,7 +944,7 @@ export class MdGanttChartLC extends Diagram {
           onPreview: (order) => {
             // Imperatively reorder the data array. When sortBy='index', sortedData
             // will reflect this new order and the existing y-cell tween system
-            // (lines 199-239) will animate rows to their new positions.
+            // will animate rows to their new positions.
             const tasks = data.value as GanttTask[];
             const byId = new Map(tasks.map(t => [t.id, t]));
             const reordered = order.map(id => byId.get(id)).filter(Boolean) as GanttTask[];
@@ -929,7 +956,7 @@ export class MdGanttChartLC extends Diagram {
             if (canceled) {
               // Revert to the initial snapshot from onActivate
               data.value = initialSnapshot;
-              this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled: true } }));
+              this.dataView.settle();
               return;
             }
 
@@ -937,12 +964,12 @@ export class MdGanttChartLC extends Diagram {
             const initialIds = initialSnapshot.map(t => t.id);
             const changed = finalOrder.some((id, i) => id !== initialIds[i]);
             if (changed) {
-              // Data is already reordered from onPreview; notify caller and trigger tweens
+              // Data is already reordered from onPreview; notify caller and trigger tweens.
+              // The y-cell tween effect will call dataView.settle() via withAnimSettle.
               this._reorderTickCell.value = this._reorderTickCell.value + 1;
               this.onReorder?.(finalOrder.slice());
-              this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled: false, reorder: true } }));
             } else {
-              this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled: false } }));
+              this.dataView.settle();
             }
           },
         });

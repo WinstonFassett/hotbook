@@ -3,11 +3,11 @@ import { circleHandle } from "../lib/handles";
 import { Diagram } from "../lib/diagram";
 import { pie } from "d3-shape";
 import { wheelController, dynamicWheelStep, realModifierDown } from "../lib/interaction";
-import { globalGestureActive } from "../lib/gesture-state";
+import { globalGestureActive, createDataViewCell, type DataViewCellHandle } from "../lib/data-view-adapter";
+import { DataViewController } from "../lib/data-view-controller";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { dragCancelable } from "../lib/esc-contract";
-import { GESTURE_ACTIVE_CLASS } from "../lib/transitions";
 import { PALETTE } from "@hotbook/core";
 
 const W = 640;
@@ -59,6 +59,23 @@ export class MdPieChartLC extends Diagram {
   get externalData(): { id?: string; label: string; value: number }[] | undefined {
     return this.dataCell.value.map((d) => ({ id: d.id, label: d.label, value: d.value.value }));
   }
+
+  dataView!: DataViewController;
+  #dvCell?: DataViewCellHandle;
+
+  connectedCallback(): void {
+    this.dataView = new DataViewController();
+    this.#dvCell = createDataViewCell(this.dataView);
+    super.connectedCallback();
+  }
+
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.#dvCell?.dispose();
+    this.#dvCell = undefined;
+    this.dataView?.dispose();
+  }
+
   protected scene(s: Mount): void {
     const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
     this.view(Wc, Hc);
@@ -80,13 +97,14 @@ export class MdPieChartLC extends Diagram {
       d.value.value = Math.max(1, d.value.value + delta);
     };
 
-    const setGestureActive = (on: boolean) => { this.classList.toggle(GESTURE_ACTIVE_CLASS, on); (this as any).gestureActive = on; };
-
     // Config handed to the SHARED wheel controller (app-wide singleton).
     const wheelConfig = {
-      snapshot: (d: Slice) => { setGestureActive(true); return d.value.value; },
+      snapshot: (d: Slice) => d.value.value,
       restore: (d: Slice, v: number) => { d.value.value = Math.max(1, v); },
-      onEnd: (canceled: boolean) => { setGestureActive(false); hover.value = null; this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } })); },
+      dataView: this.dataView,
+      intent: 'edit' as const,
+      origin: this,
+      onEnd: (_canceled: boolean) => { hover.value = null; this.dataView.settle(); },
     };
 
     // Per-slice tweened value cells — TWEEN on measure swap (animate arcs to
@@ -115,7 +133,7 @@ export class MdPieChartLC extends Diagram {
         if (!tvInited) { tvInited = true; seenMeasureKey = measureKey; tv.value = target; return; }
         const measureSwapped = measureKey !== seenMeasureKey;
         seenMeasureKey = measureKey;
-        if (measureSwapped && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
+        if (measureSwapped && this.dataView.getState().key !== 'Gesturing') {
           tvCancel?.();
           tvCancel = this.anim.start(tween(tv, target, SORT_SEC, easeOut));
         } else {
@@ -176,7 +194,7 @@ export class MdPieChartLC extends Diagram {
         if (!aInited) { aInited = true; seenMeasureKey = measureKey; seenOrder = order; a0.value = t0; a1.value = t1; return; }
         const structural = measureKey !== seenMeasureKey || order !== seenOrder;
         seenMeasureKey = measureKey; seenOrder = order;
-        if (structural && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
+        if (structural && this.dataView.getState().key !== 'Gesturing') {
           aCancel?.();
           aCancel = this.anim.start(
             tween(a0, t0, SORT_SEC, easeOut) as any,
@@ -292,13 +310,15 @@ export class MdPieChartLC extends Diagram {
         // Cancelable divider drag: snapshots [av,bv] on down, redistributes between
         // the two adjacent slices.
         dragCancelable(handle, knob, [av, bv], {
-          host: this,
-          onStart: () => { active.value = true; setGestureActive(true); handle.el.style.cursor = "grabbing"; },
-          onEnd: (canceled: boolean) => { active.value = false; setGestureActive(false); handle.el.style.cursor = "grab"; this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } })); },
+          dataView: this.dataView,
+          intent: 'edit' as const,
+          origin: this,
+          onStart: () => { active.value = true; handle.el.style.cursor = "grabbing"; },
+          onEnd: (_canceled: boolean) => { active.value = false; handle.el.style.cursor = "grab"; this.dataView.settle(); },
         });
         handle.el.style.cursor = "grab";
         handle.el.addEventListener("pointerenter", () => { active.value = true; });
-        handle.el.addEventListener("pointerleave", () => { if (!(this as any).gestureActive) active.value = false; });
+        handle.el.addEventListener("pointerleave", () => { if (this.dataView.getState().key !== 'Gesturing') active.value = false; });
         return handle;
       }, { key: ({ a, b }) => `${a.id ?? a.label}:${b.id ?? b.label}` });
     }

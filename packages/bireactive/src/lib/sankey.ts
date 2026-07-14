@@ -361,7 +361,7 @@ export function sankeyScene(
     dataView,
     intent: 'edit' as const,
     origin: host,
-    onEnd: (canceled: boolean) => { wheelLocked.value = null; hovered.value = null; tooltipVis.value = false; dataView.settle(); },
+    onEnd: (_canceled: boolean) => { wheelLocked.value = null; hovered.value = null; tooltipVis.value = false; dataView.settle(); },
   };
 
   const hitTestRibbon = (clientX: number, clientY: number): number | null => {
@@ -393,7 +393,7 @@ export function sankeyScene(
     dataView,
     intent: 'edit' as const,
     origin: host,
-    onEnd: (canceled: boolean) => { wheelLocked.value = null; tooltipVis.value = false; tooltipNodeIdx.value = null; dataView.settle(); },
+    onEnd: (_canceled: boolean) => { wheelLocked.value = null; tooltipVis.value = false; tooltipNodeIdx.value = null; dataView.settle(); },
   };
 
   host.addEventListener("wheel", ((e: WheelEvent) => {
