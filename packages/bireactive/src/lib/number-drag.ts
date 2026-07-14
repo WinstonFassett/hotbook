@@ -12,6 +12,7 @@
 
 import { dragController, wheelController, dynamicWheelStep, realModifierDown } from "./interaction";
 import { GESTURE_ACTIVE_CLASS } from "./transitions";
+import { globalGestureActive } from "./gesture-state";
 
 export interface NumberDragOpts {
   /** Get the current value at gesture-start (snapshot) and during drag (read). */
@@ -81,7 +82,7 @@ export function numberDrag(el: HTMLElement | SVGElement, opts: NumberDragOpts): 
   };
 
   const onDown = (e: Event) => {
-    if (dragController.active) return;
+    if (globalGestureActive.value) return;
     const pe = e as PointerEvent;
     if (pe.button !== 0) return;
     pointerId = pe.pointerId;
@@ -116,6 +117,7 @@ export function numberDrag(el: HTMLElement | SVGElement, opts: NumberDragOpts): 
   const onWheel = (e: Event) => {
     const we = e as WheelEvent;
     if (!we.ctrlKey && !we.metaKey) return;
+    if (globalGestureActive.value && wheelController.target !== el) return;
     const t = wheelController.begin(el, wheelConfig, { pinch: !realModifierDown() });
     if (!t) return;
     we.preventDefault();

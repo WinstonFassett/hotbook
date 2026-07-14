@@ -77,7 +77,8 @@ export class MdTreetableLC extends HTMLElement {
   set sortBy(v: 'index' | 'value') {
     if (v === this._sortBy) return;
     this._sortBy = v;
-    if (this.isConnected && this.root) this.render();
+    // The binder calls refresh() after applying data, so re-rendering here
+    // would double-render on every sort-driven applyData.
   }
   maxDepth?: number;
   drillKey?: string;
@@ -289,6 +290,12 @@ export class MdTreetableLC extends HTMLElement {
       if (id) existing.set(id, el);
     }
 
+    // Capture pre-update positions for FLIP reordering.
+    const firstPositions = new Map<string, DOMRect>();
+    for (const [id, el] of existing) {
+      firstPositions.set(id, el.getBoundingClientRect());
+    }
+
     const fragment = document.createDocumentFragment();
     const newRows: HTMLElement[] = [];
     const transitionsOn = this.enableTransitions !== false;
@@ -421,6 +428,26 @@ export class MdTreetableLC extends HTMLElement {
           row.style.transform = 'translateX(0)';
         });
       });
+    }
+
+    // FLIP animate any existing rows that moved vertically.
+    if (transitionsOn && firstPositions.size > 0 && !prefersReducedMotion()) {
+      const newRowsSet = new Set(newRows);
+      for (const [id, first] of firstPositions) {
+        const row = this.body.querySelector<HTMLElement>(`[data-id="${id}"]`);
+        if (!row || newRowsSet.has(row)) continue;
+        const last = row.getBoundingClientRect();
+        const dy = first.top - last.top;
+        if (Math.abs(dy) < 0.5) continue;
+        const originalTransition = row.style.transition;
+        row.style.transition = 'none';
+        row.style.transform = `translateY(${dy}px)`;
+        row.offsetHeight;
+        requestAnimationFrame(() => {
+          row.style.transition = originalTransition;
+          row.style.transform = '';
+        });
+      }
     }
 
     // Notify render listeners (for number-drag attachment)

@@ -14,7 +14,7 @@
 import { effect as biEffect, leavesOf, walkTree } from 'bireactive'
 import type { Cell, Num, Writable } from 'bireactive'
 import type { VizNode } from '@hotbook/core'
-import { numberDrag } from '@hotbook/bireactive'
+import { numberDrag, type GesturePhase } from '@hotbook/bireactive'
 import { buildBiTree } from './biTree'
 import type { BiNode } from './biTree'
 
@@ -36,7 +36,7 @@ export interface TileSource {
   /** Set props that scene() reads on connect, before the element is appended. */
   mountProps?: (el: HTMLElement) => void
   /** Push current display-ordered data into the element. */
-  applyData: (el: HTMLElement, opts: { gestureActive: boolean; lastRef: Map<string, number> }) => void
+  applyData: (el: HTMLElement, opts: { phase: GesturePhase; lastRef: Map<string, number> }) => void
   /** Wire the element's own edits out to the store. Returns a disposer. */
   bindEditOut: (el: HTMLElement, lastRef: Map<string, number>) => () => void
   /** Compute the initial lastRef map after first build (called after el.externalData/externalRoot is set). */
@@ -53,6 +53,10 @@ export interface TileSource {
 // ─── bindTile controller ──────────────────────────────────────────────────────
 
 interface ElWithGesture extends HTMLElement { gestureActive?: boolean }
+
+function getPhase(el: ElWithGesture): GesturePhase {
+  return el.gestureActive ? 'gesturing' : 'idle'
+}
 
 export interface TileController {
   update: (nextSource: TileSource) => void
@@ -141,14 +145,14 @@ export function bindTile(
       if (detail.canceled) return
       queueMicrotask(() => {
         if (el === newEl && !newEl.gestureActive) {
-          currentSourceRef.current.applyData(newEl, { gestureActive: false, lastRef })
+          currentSourceRef.current.applyData(newEl, { phase: 'settling', lastRef })
         }
       })
     }
     newEl.addEventListener('gesturecommit', onCommit)
 
     // Initial data push (element is connected, dataCell is live)
-    src.applyData(newEl, { gestureActive: false, lastRef })
+    src.applyData(newEl, { phase: 'idle', lastRef })
   }
 
   function dismount() {
@@ -192,7 +196,7 @@ export function bindTile(
           // (0ffe125) froze ALL charts during ANY gesture, breaking cross-chart
           // sync: edits on one visible chart never reached the chart next to it
           // until the gesture ended and a tab switch forced a remount.
-          mounted.applyData(el, { gestureActive: !!el.gestureActive, lastRef })
+          mounted.applyData(el, { phase: getPhase(el), lastRef })
         }
       }
     },
@@ -253,7 +257,7 @@ export function makeFlatSource<D>(spec: FlatSpec<D>): TileSource {
       return new Map(arr.map(d => [s.idOf(d), s.readValue(d)]))
     },
 
-    applyData(el: HTMLElement, { gestureActive, lastRef }) {
+    applyData(el: HTMLElement, { phase, lastRef }) {
       const typedEl = el as ElWithDataCell<D>
       if (!typedEl.dataCell) return
       const s = specRef.current
@@ -271,7 +275,7 @@ export function makeFlatSource<D>(spec: FlatSpec<D>): TileSource {
       const valueById = new Map<string, number>()
       for (let j = 0; j < s.ids.length; j++) valueById.set(s.ids[j]!, s.values[j]!)
 
-      if (gestureActive) {
+      if (phase === 'gesturing') {
         // Frozen: values update live, order held.
         let touched = false
         for (const d of arr) {
@@ -284,7 +288,7 @@ export function makeFlatSource<D>(spec: FlatSpec<D>): TileSource {
         return
       }
 
-      // Idle/commit: rebuild in display order (same datum objects), write values,
+      // Idle/settling: rebuild in display order (same datum objects), write values,
       // reassign positional x where the chart needs it.
       const datumById = new Map<string, D>(arr.map(d => [s.idOf(d), d]))
       const newArr: D[] = []
@@ -302,6 +306,9 @@ export function makeFlatSource<D>(spec: FlatSpec<D>): TileSource {
         newArr.push(d)
       }
       if (orderChanged || touched || newArr.length !== arr.length) typedEl.dataCell.value = newArr
+      if (phase === 'settling' || orderChanged || touched) {
+        ;(el as any).refresh?.()
+      }
     },
 
     bindEditOut(el: HTMLElement, lastRef: Map<string, number>): () => void {
@@ -483,11 +490,11 @@ export function makeHierSource(spec: HierSpec): TileSource {
       return new Map(leavesRef.current.map(l => [l.value.id, l.value.total.peek()]))
     },
 
-    applyData(el: HTMLElement, { gestureActive, lastRef }) {
+    applyData(el: HTMLElement, { phase, lastRef }) {
       // Apply external store changes into the live leaf cells, in place.
       // Skip during active gestures — wheel/drag are editing the live cells right
       // now; overwriting them from the store would snap values back.
-      if (gestureActive) return
+      if (phase === 'gesturing') return
       const typedEl = el as ElWithRoot
       // Sync measureKey and orientation BEFORE leaf value writes — the chart's
       // two-lane gate reads these cells (untracked) to decide animate-vs-snap.
@@ -502,6 +509,7 @@ export function makeHierSource(spec: HierSpec): TileSource {
       // accidentally tracking Num cells would make DockView re-render on every value
       // change, causing overwrite loops.
       const byId = new Map(nodesRef.current.map(n => [n.id, n]))
+      let touched = false
       for (const leaf of leavesRef.current) {
         const node = byId.get(leaf.value.id)
         if (!node) continue
@@ -509,6 +517,7 @@ export function makeHierSource(spec: HierSpec): TileSource {
         if (!near(leaf.value.total.peek(), target)) {
           leaf.value.total.value = target
           lastRef.set(leaf.value.id, target)
+          touched = true
         }
       }
       if (drillKeyRef.current !== undefined) typedEl.drillKey = drillKeyRef.current
@@ -517,13 +526,21 @@ export function makeHierSource(spec: HierSpec): TileSource {
       // the layout re-derives and tweens to the new order (no remount).
       // Guard: only write if changed, so a measureKey-only swap doesn't re-fire
       // the layout effect (sortBy is tracked) and overwrite the gate's measureSwapped.
-      if (typedEl.sortBy !== sortByRef.current) typedEl.sortBy = sortByRef.current
+      const sortByChanged = typedEl.sortBy !== sortByRef.current
+      if (sortByChanged) typedEl.sortBy = sortByRef.current
       // WIN-155: sync depth reactively so the levels dropdown drives per-mark
       // enter/exit fades instead of a full remount (see hierShapeKey).
-      if (typedEl.maxDepth !== depthRef.current) typedEl.maxDepth = depthRef.current
+      const maxDepthChanged = typedEl.maxDepth !== depthRef.current
+      if (maxDepthChanged) typedEl.maxDepth = depthRef.current
       // Push drillNodeId so Esc/breadcrumb drill changes reach the chart element.
       if (drillNodeIdRef.current !== undefined && typedEl.drillNodeId !== drillNodeIdRef.current) {
         typedEl.drillNodeId = drillNodeIdRef.current
+      }
+      // For HTML-based consumers (e.g. treetable) that don't have a reactive
+      // layout effect, explicitly re-render after a commit or any non-gesture
+      // change that could affect order/visibility.
+      if (phase === 'settling' || touched || sortByChanged || maxDepthChanged) {
+        ;(el as any).refresh?.()
       }
     },
 
@@ -646,7 +663,7 @@ export function makeHierRootFlatSource(spec: HierRootFlatSpec): TileSource {
       return last
     },
 
-    applyData(el: HTMLElement, { gestureActive, lastRef }) {
+    applyData(el: HTMLElement, { phase, lastRef }) {
       // Apply external store changes into the live LEAF cells (same as
       // makeHierSource) — group/root VizNodes never carry the aggregate measure
       // themselves (only leaves do), so the only correct source of truth for
@@ -654,13 +671,14 @@ export function makeHierRootFlatSource(spec: HierRootFlatSpec): TileSource {
       // leaves lets the lens recompute root totals naturally; comparing/writing
       // root totals directly against node.measures[mk] would compare against
       // 0 (roots have no own measure) and clobber the lens-derived value.
-      if (gestureActive) return
+      if (phase === 'gesturing') return
       const typedEl = el as ElWithDataCell<FlatDatum>
       // Sync measureKey BEFORE data writes — the chart's two-lane gate reads
       // this cell (untracked) to classify a measure swap as structural (tween)
       // vs a value edit (snap). Same requirement as makeFlatSource/makeHierSource.
       typedEl.measureKey = measureKeyRef.current
       const byId = new Map(nodesRef.current.map(n => [n.id, n]))
+      let touched = false
       for (const [, leaves] of leavesByRootRef.current) {
         for (const leaf of leaves) {
           const node = byId.get(leaf.value.id)
@@ -669,6 +687,7 @@ export function makeHierRootFlatSource(spec: HierRootFlatSpec): TileSource {
           if (!near(leaf.value.total.peek(), target)) {
             leaf.value.total.value = target
             lastRef.set(leaf.value.id, target)
+            touched = true
           }
         }
       }
@@ -680,7 +699,6 @@ export function makeHierRootFlatSource(spec: HierRootFlatSpec): TileSource {
       const rootById = new Map(rootsRef.current.map(r => [r.value.id, r]))
       const arr = typedEl.dataCell.peek() as FlatDatum[]
       const datumById = new Map(arr.map(d => [d.id, d]))
-      let touched = false
       let orderChanged = false
       const newArr: FlatDatum[] = []
       for (let k = 0; k < idsRef.current.length; k++) {
@@ -694,6 +712,9 @@ export function makeHierRootFlatSource(spec: HierRootFlatSpec): TileSource {
         newArr.push(near(d.value, v) ? d : { ...d, value: v })
       }
       if (touched || orderChanged || newArr.length !== arr.length) typedEl.dataCell.value = newArr
+      if (phase === 'settling' || orderChanged || touched) {
+        ;(el as any).refresh?.()
+      }
     },
 
     bindEditOut(el: HTMLElement, lastRef: Map<string, number>): () => void {
