@@ -11,8 +11,8 @@
 // scalar is shown.
 
 import { dragController, wheelController, dynamicWheelStep, realModifierDown } from "./interaction";
-import { GESTURE_ACTIVE_CLASS } from "./transitions";
-import { globalGestureActive } from "./gesture-state";
+import type { DataViewController, GestureIntent } from "./data-view-controller";
+import { globalGestureActive } from "./data-view-adapter";
 
 export interface NumberDragOpts {
   /** Get the current value at gesture-start (snapshot) and during drag (read). */
@@ -28,13 +28,17 @@ export interface NumberDragOpts {
   shiftMultiplier?: number;
   /** Multiplier when Alt/Option is held. Default 0.1 (fine). */
   altMultiplier?: number;
-  /** Host element that owns `GESTURE_ACTIVE_CLASS` and `gestureActive`.
-   *  When set, the scrubber lifts the host into the gesture-active state and
-   *  drops it on end, so table value drags freeze the same chart as handle drags. */
-  host?: HTMLElement | SVGElement;
-  /** Called once on gesture-start, after the host has been activated. */
+  /** This gesture's `DataViewController`. `start()` is called on gesture
+   *  begin; `commit()`/`cancel()` run before `onEnd` (owned by
+   *  `dragController`/`wheelController`). Number-drag edits have no
+   *  transition of their own, so `onEnd` calls `dataView.settle()` — no
+   *  `withSettle`/`withAnimSettle` needed for this primitive. */
+  dataView: DataViewController;
+  intent: GestureIntent;
+  origin: unknown;
+  /** Called once on gesture-start. */
   onStart?: () => void;
-  /** Called once on gesture-end, after the host has been deactivated.
+  /** Called once on gesture-end, before `dataView.settle()`.
    *  `canceled` = reverted via Esc. */
   onEnd?: (canceled: boolean) => void;
 }
@@ -53,14 +57,13 @@ export function numberDrag(el: HTMLElement | SVGElement, opts: NumberDragOpts): 
     return v;
   };
 
-  const host = opts.host as HTMLElement | undefined;
-  const setHostActive = (on: boolean) => {
-    if (!host) return;
-    host.classList.toggle(GESTURE_ACTIVE_CLASS, on);
-    (host as any).gestureActive = on;
+  // Number-drag edits have no transition of their own — `dataView.commit()`/
+  // `cancel()` already ran (inside dragController/wheelController `end`), so
+  // `onEnd` settles immediately (Settling -> Idle).
+  const onGestureEnd = (canceled: boolean) => {
+    opts.onEnd?.(canceled);
+    opts.dataView.settle();
   };
-  const startHost = () => { setHostActive(true); opts.onStart?.(); };
-  const endHost = (canceled: boolean) => { setHostActive(false); opts.onEnd?.(canceled); };
 
   // Cursor + touch-action so the OS doesn't fight the gesture.
   const prevCursor = el.style.cursor;
@@ -89,17 +92,20 @@ export function numberDrag(el: HTMLElement | SVGElement, opts: NumberDragOpts): 
     startX = pe.clientX;
     startVal = opts.get();
     try { (el as any).setPointerCapture?.(pe.pointerId); } catch { /* ok */ }
-    startHost();
+    opts.onStart?.();
     // Hand the shared controller this scrubber's value mapping for the gesture.
     // It owns move/up/Esc and reverts via restore on Esc.
     dragController.begin(el, {
       snapshot: () => startVal,
       restore: (_t, snap: number) => { opts.set(clamp(snap)); },
       onMove,
+      dataView: opts.dataView,
+      intent: opts.intent,
+      origin: opts.origin,
       onEnd: (canceled) => {
         try { (el as any).releasePointerCapture?.(pointerId); } catch { /* ok */ }
         pointerId = -1;
-        endHost(canceled);
+        onGestureEnd(canceled);
       },
     });
     pe.preventDefault();
@@ -112,7 +118,10 @@ export function numberDrag(el: HTMLElement | SVGElement, opts: NumberDragOpts): 
   const wheelConfig = {
     snapshot: () => opts.get(),
     restore: (_t: unknown, snap: number) => { opts.set(clamp(snap)); },
-    onEnd: (canceled: boolean) => { endHost(canceled); },
+    dataView: opts.dataView,
+    intent: opts.intent,
+    origin: opts.origin,
+    onEnd: (canceled: boolean) => { onGestureEnd(canceled); },
   };
   const onWheel = (e: Event) => {
     const we = e as WheelEvent;
@@ -121,7 +130,7 @@ export function numberDrag(el: HTMLElement | SVGElement, opts: NumberDragOpts): 
     const t = wheelController.begin(el, wheelConfig, { pinch: !realModifierDown() });
     if (!t) return;
     we.preventDefault();
-    startHost();
+    opts.onStart?.();
     const cur = opts.get();
     const step = dynamicWheelStep(cur, we.shiftKey);
     let mul = 1;

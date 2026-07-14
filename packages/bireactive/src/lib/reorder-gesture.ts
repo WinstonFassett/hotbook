@@ -17,7 +17,7 @@
 // hooks: computeTargetIndex (pointer → slot) and onPreview (imperative draw).
 
 import { dragController } from "./interaction";
-import { GESTURE_ACTIVE_CLASS } from "./transitions";
+import type { DataViewController, GestureIntent } from "./data-view-controller";
 
 export interface ReorderGestureConfig {
   /** Element that receives pointerdown to start a reorder drag. Usually the
@@ -30,9 +30,13 @@ export interface ReorderGestureConfig {
   dragEl?: SVGElement | HTMLElement;
   /** Stable id of the item this hit-element represents. */
   itemId: string;
-  /** Host element that carries GESTURE_ACTIVE_CLASS. Reactive layout effects
-   *  check this class to skip work while a gesture is live. */
-  host: HTMLElement;
+  /** This gesture's `DataViewController`. `begin()` (on activation) calls
+   *  `dataView.start()`; `end()` calls `dataView.commit()`/`cancel()` before
+   *  this config's `onEnd`. The chart's `onEnd` callback is responsible for
+   *  `dataView.settle()` after its own tween/transition. */
+  dataView: DataViewController;
+  intent: GestureIntent;
+  origin: unknown;
   /** Snapshot the initial id sequence at pointerdown. */
   getInitialOrder: () => string[];
   /** Map pointer to a target slot index. Called on every pointermove. Return
@@ -64,7 +68,7 @@ export interface ReorderGestureConfig {
 }
 
 export function attachReorderGesture(cfg: ReorderGestureConfig): () => void {
-  const { hitEl, host, activationThreshold = 5 } = cfg;
+  const { hitEl, activationThreshold = 5 } = cfg;
   const dragEl = cfg.dragEl ?? hitEl;
   const threshSq = activationThreshold * activationThreshold;
 
@@ -76,8 +80,6 @@ export function attachReorderGesture(cfg: ReorderGestureConfig): () => void {
   let currentOrder: string[] = [];
   let prevBodyCursor = "";
   let prevBodyUserSelect = "";
-
-  const setGestureActive = (on: boolean) => host.classList.toggle(GESTURE_ACTIVE_CLASS, on);
 
   const raiseAndElevate = () => {
     // DOM raise so the dragged element paints above siblings. SVG has no
@@ -128,13 +130,15 @@ export function attachReorderGesture(cfg: ReorderGestureConfig): () => void {
         // bookkeeping so a subsequent commit doesn't see a stale order.
         currentOrder = initialOrder.slice();
       },
+      dataView: cfg.dataView,
+      intent: cfg.intent,
+      origin: cfg.origin,
       onMove: (pe2: PointerEvent) => {
         if (!activated) {
           const dx = pe2.clientX - startX;
           const dy = pe2.clientY - startY;
           if (dx * dx + dy * dy < threshSq) return;
           activated = true;
-          setGestureActive(true);
           raiseAndElevate();
           cfg.onActivate?.();
         }
@@ -147,7 +151,6 @@ export function attachReorderGesture(cfg: ReorderGestureConfig): () => void {
         activated = false;
         if (wasActivated) {
           drop();
-          setGestureActive(false);
           cfg.onEnd(currentOrder, canceled);
         }
         // Below threshold: not a drag — treat as click, no onEnd call.

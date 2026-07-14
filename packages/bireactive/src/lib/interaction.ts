@@ -1,7 +1,7 @@
 import { hierarchy } from "d3-hierarchy";
 import { effect as biEffect, batch } from "bireactive";
 import { leaves, type BiNode } from "./tree";
-import { startGesture, commitGesture, cancelGesture } from "./gesture-state";
+import type { DataViewController, GestureIntent } from "./data-view-controller";
 
 /** Per-call scaling mode for {@link applyDelta}. Mirrors the public
  *  `ScalingMode` in @hotbook/core; kept structural so this
@@ -235,6 +235,11 @@ export interface WheelConfig<T> {
   snapshot: (target: T) => unknown;
   /** Applied on cancel (Esc). */
   restore: (target: T, snap: any) => void;
+  /** This gesture's `DataViewController`. `begin()` calls `dataView.start()`;
+   *  `end()` calls `dataView.commit()`/`cancel()` before `onEnd`. */
+  dataView: DataViewController;
+  intent: GestureIntent;
+  origin: unknown;
   /** Runs on any end. `canceled` = reverted via Esc (mirrors DragConfig.onEnd). */
   onEnd?: (canceled: boolean) => void;
 }
@@ -282,14 +287,18 @@ function makeWheelController(): WheelController {
   };
 
   // Remove the gesture-scoped listeners and clear the frame. Idempotent.
+  // `dataView.commit()`/`cancel()` run BEFORE `onEnd` (ADR: interaction.ts
+  // `end` ordering) so `onEnd` sees the controller already `Settling` and
+  // can start its transition + call `dataView.settle()` when done.
   const end = (canceled: boolean) => {
     if (teardown) { teardown(); teardown = null; }
+    const dataView = cfg?.dataView;
     const onEnd = cfg?.onEnd;
     target = null;
     snap = undefined;
     cfg = null;
+    if (canceled) dataView?.cancel(); else dataView?.commit();
     onEnd?.(canceled);
-    if (canceled) cancelGesture(); else commitGesture();
   };
   const commit = () => { if (target !== null) end(false); };
   const cancel = (): boolean => {
@@ -302,14 +311,15 @@ function makeWheelController(): WheelController {
       // physically ends (200ms with no wheel event for it). A different
       // element can start a new gesture immediately.
       const cancelledTarget = target;
+      const dataView = cfg.dataView;
       const onEnd = cfg.onEnd;
       if (teardown) { teardown(); teardown = null; }
       target = null;
       snap = undefined;
       cfg = null;
       suppressedTarget = cancelledTarget;
+      dataView.cancel();
       onEnd?.(true);
-      cancelGesture();
       armSuppress();
     } else {
       end(true);
@@ -340,7 +350,7 @@ function makeWheelController(): WheelController {
       cfg = config;
       snap = config.snapshot(t);
       isPinchGesture = opts?.pinch ?? false;
-      startGesture();
+      config.dataView.start(config.intent, config.origin);
 
       if (isPinchGesture) {
         // Trackpad pinch: synthetic ctrlKey, no real key was pressed, so keyup
@@ -405,6 +415,11 @@ export interface DragConfig<T> {
    *  gesture-start snapshot — so callers that need a start reference read it from
    *  the controller (which owns the frame) instead of stashing loose start vars. */
   onMove: (e: PointerEvent, snapshot: any) => void;
+  /** This gesture's `DataViewController`. `begin()` calls `dataView.start()`;
+   *  `end()` calls `dataView.commit()`/`cancel()` before `onEnd`. */
+  dataView: DataViewController;
+  intent: GestureIntent;
+  origin: unknown;
   /** Runs on any end. `canceled` = reverted via Esc. */
   onEnd?: (canceled: boolean) => void;
 }
@@ -429,14 +444,18 @@ function makeDragController(): DragController {
   let cfg: DragConfig<any> | null = null;
   let teardown: (() => void) | null = null;
 
+  // `dataView.commit()`/`cancel()` run BEFORE `onEnd` (ADR: interaction.ts
+  // `end` ordering) so `onEnd` sees the controller already `Settling` and
+  // can start its transition + call `dataView.settle()` when done.
   const end = (canceled: boolean) => {
     if (teardown) { teardown(); teardown = null; }
+    const dataView = cfg?.dataView;
     const onEnd = cfg?.onEnd;
     target = null;
     snap = undefined;
     cfg = null;
+    if (canceled) dataView?.cancel(); else dataView?.commit();
     onEnd?.(canceled);
-    if (canceled) cancelGesture(); else commitGesture();
   };
   const commit = () => { if (target !== null) end(false); };
   const cancel = (): boolean => {
@@ -454,7 +473,7 @@ function makeDragController(): DragController {
       target = t;
       cfg = config;
       snap = config.snapshot(t);
-      startGesture();
+      config.dataView.start(config.intent, config.origin);
       const onPointerMove = (e: Event) => config.onMove(e as PointerEvent, snap);
       const onPointerUp = () => commit();
       const onBlur = () => commit();
