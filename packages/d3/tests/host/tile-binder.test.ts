@@ -12,6 +12,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { bindTile, near, vkey } from '../../src/host/tile-binder'
 import type { TileSource } from '../../src/host/tile-binder'
+import type { GesturePhase } from '@hotbook/bireactive'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -24,7 +25,7 @@ const noopBindHud = (_el: HTMLElement) => () => {}
 
 interface FakeSource extends TileSource {
   spy: {
-    applyCalls: Array<{ gestureActive: boolean; lastRef: Map<string, number> }>
+    applyCalls: Array<{ phase: GesturePhase; lastRef: Map<string, number> }>
     bindEditOutCalls: number
     mountPropsCalls: number
     syncFromCalls: number
@@ -77,7 +78,7 @@ describe('bindTile', () => {
     bindTile(container, source, noopBindHud)
     expect(source.spy.mountPropsCalls).toBe(1)
     expect(source.spy.applyCalls.length).toBe(1)
-    expect(source.spy.applyCalls[0]?.gestureActive).toBe(false)
+    expect(source.spy.applyCalls[0]?.phase).toBe('idle')
   })
 
   it('calls bindEditOut on mount', () => {
@@ -122,7 +123,7 @@ describe('bindTile.update — same shapeKey (no remount)', () => {
     expect(container.querySelector('x-fake-chart')).toBe(initialEl)
   })
 
-  it('echo-suppression: gestureActive=false → applyData is called with gestureActive:false', () => {
+  it('echo-suppression: phase stays idle when no gesture is active', () => {
     const container = makeContainer()
     const source = makeFakeSource('s1')
     const ctrl = bindTile(container, source, noopBindHud)
@@ -130,12 +131,12 @@ describe('bindTile.update — same shapeKey (no remount)', () => {
     ctrl.update(makeFakeSource('s1'))
 
     const calls = source.spy.applyCalls
-    expect(calls.every(c => c.gestureActive === false)).toBe(true)
+    expect(calls.every(c => c.phase === 'idle')).toBe(true)
   })
 })
 
 describe('bindTile.update — gesture freeze', () => {
-  it('passes gestureActive:true when element has gestureActive flag set', () => {
+  it('passes phase: gesturing when element has gestureActive flag set', () => {
     const container = makeContainer()
     const source = makeFakeSource('s1')
     const ctrl = bindTile(container, source, noopBindHud)
@@ -148,7 +149,7 @@ describe('bindTile.update — gesture freeze', () => {
 
     const calls = source.spy.applyCalls
     const updateCall = calls[calls.length - 1]!
-    expect(updateCall.gestureActive).toBe(true)
+    expect(updateCall.phase).toBe('gesturing')
   })
 })
 
@@ -215,7 +216,7 @@ describe('gesturecommit re-apply', () => {
 
     expect(source.spy.applyCalls.length).toBeGreaterThan(beforeCount)
     const lastCall = source.spy.applyCalls[source.spy.applyCalls.length - 1]!
-    expect(lastCall.gestureActive).toBe(false)
+    expect(lastCall.phase).toBe('settling')
   })
 
   it('does NOT re-apply after a canceled gesturecommit (Esc)', async () => {

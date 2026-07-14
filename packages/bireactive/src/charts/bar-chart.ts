@@ -546,7 +546,7 @@ export class MdBarChartLC extends Diagram {
         // only; measure swap (or a plain value edit — the drag/wheel/cross-
         // tile case) moves value only.
         const tweenPos = orientChanged || orderChanged;
-        const tweenVal = orientChanged || measureChanged || !orderChanged;
+        const tweenVal = orientChanged || measureChanged;
         animCancel?.();
         const tweens = [
           ...applyPair(posA, posB, posAt, posBt, tweenPos),
