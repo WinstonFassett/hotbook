@@ -30,11 +30,11 @@ Not a build spec — that's a follow-on doc if we decide to build against this.
   a backend-neutral chart-type registry. A 4th backend has to borrow one of the three
   existing backends as a "declaration donor." Flint's own docs admit "no formal
   Backend interface — contract is by convention."
-- **Flint and vizform solve orthogonal problems.** Flint compiles a *static* spec to a
-  *static* native config, once, no runtime, no interactivity, no animation DSL. Vizform
+- **Flint is a multi-framework adapter; vizform could be its fourth backend.** Flint
+  compiles a *static* spec to a *static* native config, once, no runtime. Vizform
   *is* the runtime: bidirectional reactive cells, direct manipulation, tweened
-  transitions. They don't compete — flint could be an authoring/compile front-end that
-  feeds vizform's live surface, not a replacement for it.
+  transitions. The open question is whether vizform/hotbook can join Vega-Lite,
+  ECharts, and Chart.js as a flint backend, not whether flint replaces vizform.
 - Community signal is healthy but modest: 1,488 stars, active (v0.2.1 shipped
   2026-07-13, same day as this research), 3 open issues, 4 open PRs, direction is
   template breadth + backend parity + agent infra (MCP HTTP transport, a11y) — no
@@ -364,14 +364,15 @@ Source: [03-flint-community-testing.md](../../../tmp/win-317/03-flint-community-
 
 ## 9. Big questions for discussion
 
-> **Direction:** the original request was to explore flint as a candidate for a
-> **JSON-render chart adapter inside hotbook**. That means flint as a dependency/
-> compile layer feeding vizform's live surface, not hotbook content embedded into
-> flint. The questions below assume that direction.
+> **Direction:** the original request was to explore whether **hotbook/vizform could
+> be a fourth backend for flint**, alongside its Vega-Lite, ECharts, and Chart.js
+> adapters. JSON Render is a separate framework; the flint question is whether flint
+> can adapt to hotbook the same way it adapts to the other three. The questions below
+> assume that direction.
 
-1. What is the right integration shape for flint as a hotbook dependency: a
-   shallow bridge from a flint `ChartAssemblyInput` to a vizform tile config, or a
-   deeper Phase-2 backend that consumes `ChannelSemantics` + `LayoutResult`?
+1. What is the right shape for a hotbook/vizform flint backend: a full Phase-2
+   backend (assemble/instantiate/templates) that flint can select, or a lighter
+   adapter that consumes flint's IR and produces a vizform tile config?
 2. If we do build a bireactive backend: do we accept the `declareLayoutMode`
    donor-backend dependency as-is, or fork/vendor just that seam, or file upstream
    against flint (issue #45's NTChart exploration suggests they'd be receptive)?

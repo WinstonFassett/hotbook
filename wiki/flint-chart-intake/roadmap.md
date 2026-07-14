@@ -7,13 +7,14 @@
 
 ## 1. Framing
 
-- **Working direction: flint as a dependency inside hotbook.** The original
-  request was to explore flint for a JSON-render chart adapter, so flint is the
-  **compile/adapter layer** (spec → static native chart config or backend-neutral
-  IR) and vizform/bireactive remains the **live surface** (reactive cells, direct
-  manipulation, tween/transition). They compose rather than compete — flint sits
-  *upstream* of a bireactive tile (spec in, live chart out). Embedding hotbook
-  content into flint is not the direction.
+- **Working direction: hotbook/vizform as a fourth flint backend.** The original
+  request was to explore whether flint could adapt to hotbook the same way it
+  already adapts to Vega-Lite, ECharts, and Chart.js. JSON Render is a separate
+  framework with its own adapter; the flint question is whether ours is the next
+  backend. Flint stays the **compile/adapter layer** (spec → backend config) and
+  vizform/bireactive stays the **live surface** (reactive cells, direct manipulation,
+  tween/transition). Treating flint as a renderer embedded inside hotbook is not
+  the direction.
 - Optimizing for one steel thread end to end: a chart spec (agent-authored or
   hand-written) → a live, direct-manipulable bireactive chart, with no manual
   glue code in between. Flint's Phase 0/1 (semantic resolution, layout budget)
@@ -118,8 +119,9 @@ graph LR
   Phase 2 for a 4th backend is 2–8k LOC of new axis/mark/legend code per the
   backends report (02); doing that before vizform's own semantic vocabulary
   is settled means building it twice.
-- **Embedding hotbook content into flint.** The direction is flint as a compile/
-  adapter layer inside hotbook, not the reverse.
+- **Treating flint as a renderer embedded inside hotbook.** The direction is to
+  add hotbook/vizform as a flint backend, not to pull flint into hotbook as the
+  rendering engine.
 - **Porting flint code wholesale.** Flint's compiler internals (`compute-layout.ts`
   at 2000+ lines of elastic-budget/gas-pressure math) are valuable as a
   *reference*, not as vendored code — bireactive's layout needs differ
