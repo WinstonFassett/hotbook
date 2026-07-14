@@ -6,6 +6,7 @@ import { Anchor, cell, circle, derive, easeInOut, easeOut, effect as biEffect, g
 import { Diagram } from "../lib/diagram";
 import { arc as d3Arc } from "d3-shape";
 import { wheelController, dragController, realModifierDown } from "../lib/interaction";
+import { globalGestureActive } from "../lib/gesture-state";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { GESTURE_ACTIVE_CLASS } from "../lib/transitions";
@@ -242,8 +243,8 @@ export class MdConcentricArcLC extends Diagram {
         const d = di();
         if (d) trackEl.el.setAttribute('aria-label', `${d.label}: ${Math.round(d.value)}`);
       });
-      trackEl.el.addEventListener("pointerenter", () => { const d = di(); if (d && !wheelController.active && !dragController.active) hover.value = d; });
-      trackEl.el.addEventListener("pointerleave", () => { const d = di(); if (d && !wheelController.active && !dragController.active && hover.value === d) hover.value = null; });
+      trackEl.el.addEventListener("pointerenter", () => { const d = di(); if (d && !globalGestureActive.value) hover.value = d; });
+      trackEl.el.addEventListener("pointerleave", () => { const d = di(); if (d && !globalGestureActive.value && hover.value === d) hover.value = null; });
       trackEl.el.addEventListener("click", () => { const d = di(); if (!d) return; selected.value = selected.value === d ? null : d; this.focus(); });
       trackEl.el.addEventListener("focus", () => { const d = di(); if (d) selected.value = d; });
       trackEl.el.addEventListener("blur", () => { const d = di(); if (d && selected.value === d) selected.value = null; });
@@ -291,8 +292,8 @@ export class MdConcentricArcLC extends Diagram {
       const valueStrokeW = derive(() => { const d = di(); return selected.value === d ? 1.5 : hover.value === d ? 3 : 0; });
       const valueEl = gs(pathD(valueD, { fill: slotColor, stroke: valueStroke, strokeWidth: valueStrokeW }));
       valueEl.el.style.touchAction = "none";
-      valueEl.el.addEventListener("pointerenter", () => { const d = di(); if (d && !wheelController.active && !dragController.active) hover.value = d; });
-      valueEl.el.addEventListener("pointerleave", () => { const d = di(); if (d && !wheelController.active && !dragController.active && hover.value === d) hover.value = null; });
+      valueEl.el.addEventListener("pointerenter", () => { const d = di(); if (d && !globalGestureActive.value) hover.value = d; });
+      valueEl.el.addEventListener("pointerleave", () => { const d = di(); if (d && !globalGestureActive.value && hover.value === d) hover.value = null; });
       valueEl.el.addEventListener("click", () => { const d = di(); if (!d) return; selected.value = selected.value === d ? null : d; this.focus(); });
 
       // End-cap drag handle.
@@ -315,12 +316,12 @@ export class MdConcentricArcLC extends Diagram {
       handleEl.el.style.cursor = "grab";
       handleEl.el.style.touchAction = "none";
       handleEl.el.style.transition = "opacity 0.12s";
-      handleEl.el.addEventListener("pointerenter", () => { const d = di(); if (!dragController.active && d) hover.value = d; });
-      handleEl.el.addEventListener("pointerleave", () => { const d = di(); if (!dragController.active && d && hover.value === d) hover.value = null; });
+      handleEl.el.addEventListener("pointerenter", () => { const d = di(); if (!globalGestureActive.value && d) hover.value = d; });
+      handleEl.el.addEventListener("pointerleave", () => { const d = di(); if (!globalGestureActive.value && d && hover.value === d) hover.value = null; });
       // Drag the handle around the ring to set its value; the shared controller
       // owns move/up/Esc and reverts on Esc.
       handleEl.el.addEventListener("pointerdown", (e) => {
-        if (dragController.active) return;
+        if (globalGestureActive.value) return;
         const d = di();
         if (!d) return;
         const pe = e as PointerEvent;
@@ -368,7 +369,7 @@ export class MdConcentricArcLC extends Diagram {
       mutateDatum(t, we.deltaY < 0 ? (we.shiftKey ? 5 : 1) : (we.shiftKey ? -5 : -1));
     }, { passive: false });
     this.addEventListener("pointermove", (e) => {
-      if (dragController.active || wheelController.active) return;
+      if (globalGestureActive.value) return;
       const pe = e as PointerEvent;
       const { x, y } = localPt(pe);
       const hit = findRingAtLocal(x, y);

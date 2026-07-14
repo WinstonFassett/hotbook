@@ -7,6 +7,7 @@ import { Diagram } from "../lib/diagram";
 import { scaleLinear } from "d3-scale";
 import { extent, ticks as d3Ticks } from "d3-array";
 import { wheelController, dragController, dynamicWheelStep, realModifierDown } from "../lib/interaction";
+import { globalGestureActive } from "../lib/gesture-state";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { GESTURE_ACTIVE_CLASS } from "../lib/transitions";
@@ -287,11 +288,11 @@ export class MdRadarChartLC extends Diagram {
       });
       dot.el.addEventListener("pointerenter", () => {
         const d = (data.value as Spoke[])[i];
-        if (d && !wheelController.active) hover.value = d;
+        if (d && !globalGestureActive.value) hover.value = d;
       });
       dot.el.addEventListener("pointerleave", () => {
         const d = (data.value as Spoke[])[i];
-        if (d && !wheelController.active && hover.value === d) hover.value = null;
+        if (d && !globalGestureActive.value && hover.value === d) hover.value = null;
       });
       dot.el.addEventListener("click", () => {
         const d = (data.value as Spoke[])[i];
@@ -356,7 +357,7 @@ export class MdRadarChartLC extends Diagram {
       },
     };
     this.addEventListener("pointerdown", (e) => {
-      if (dragController.active) return;
+      if (globalGestureActive.value) return;
       const pe = e as PointerEvent;
       const { x, y } = localPt(pe);
       const spoke = hover.value ?? findNearestSpoke(x, y);

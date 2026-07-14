@@ -42,6 +42,7 @@ import {
   wheelController,
   realModifierDown,
 } from "../lib/interaction";
+import { globalGestureActive } from "../lib/gesture-state";
 import {
   GESTURE_ACTIVE_CLASS,
   GESTURE_SUPPRESSION_CSS,
@@ -625,17 +626,17 @@ export class MdGanttChartLC extends Diagram {
     });
 
     this.addEventListener("pointerleave", () => {
-      if (!dragController.active && !wheelController.active) hover.value = null;
+      if (!globalGestureActive.value) hover.value = null;
     });
 
     // Hover tracking while idle. Without this, ctrl+wheel has no target.
     this.addEventListener("pointermove", (e) => {
-      if (dragController.active || wheelController.active) return;
+      if (globalGestureActive.value) return;
       hover.value = findAtPixelY(localPoint(e as PointerEvent).y);
     });
 
     this.addEventListener("pointerdown", (e) => {
-      if (dragController.active) return;
+      if (globalGestureActive.value) return;
       const pe = e as PointerEvent;
       // Pull keyboard focus to the host so arrow keys / inc-dec work after
       // a click — without this, focus stays on whatever was clicked last
@@ -679,7 +680,7 @@ export class MdGanttChartLC extends Diagram {
     this.addEventListener("click", (e) => {
       // A click here only fires when no drag is live (dragController consumes
       // the gesture otherwise). Treat clicks outside any bar as deselect.
-      if (dragController.active) return;
+      if (globalGestureActive.value) return;
       (this as any).focus?.();
       const { x, y } = localPoint(e as PointerEvent);
       const t = findAtPixelY(y);

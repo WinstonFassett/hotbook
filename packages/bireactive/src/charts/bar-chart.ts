@@ -9,6 +9,7 @@ import { Anchor, cell, circle, derive, easeInOut, easeOut, effect as biEffect, l
 import { Diagram } from "../lib/diagram";
 import { scaleLinear, scaleBand } from "d3-scale";
 import { wheelController, dragController, dynamicWheelStep, realModifierDown } from "../lib/interaction";
+import { globalGestureActive } from "../lib/gesture-state";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import {
@@ -314,7 +315,7 @@ export class MdBarChartLC extends Diagram {
     };
 
     // ─── Event listeners ──────────────────────────────────────────────────
-    this.addEventListener("pointerleave", () => { if (!wheelController.active) hover.value = null; });
+    this.addEventListener("pointerleave", () => { if (!globalGestureActive.value) hover.value = null; });
     this.addEventListener("click", e => {
       const { x, y } = localPoint(e as PointerEvent);
       const pt = findAtPixel(x, y);
@@ -353,7 +354,7 @@ export class MdBarChartLC extends Diagram {
       else if (ke.key === valKeys[1]) { mutateDatum(cur, -step); ke.preventDefault(); }
     });
     this.addEventListener("pointerdown", e => {
-      if (dragController.active) return;
+      if (globalGestureActive.value) return;
       const pe = e as PointerEvent;
       const { x, y } = localPoint(pe);
       const pt = findAtPixel(x, y);
@@ -372,7 +373,7 @@ export class MdBarChartLC extends Diagram {
       pe.preventDefault();
     });
     this.addEventListener("pointermove", e => {
-      if (dragController.active || wheelController.active) return;
+      if (globalGestureActive.value) return;
       const { x, y } = localPoint(e as PointerEvent);
       hover.value = findAtPixel(x, y);
     });
@@ -573,8 +574,8 @@ export class MdBarChartLC extends Diagram {
         const d = di();
         if (d) tile.el.setAttribute('aria-label', `${d.label}: ${Math.round(d.value)}`);
       });
-      tile.el.addEventListener("pointerenter", () => { const d = di(); if (!wheelController.active && d) hover.value = d; });
-      tile.el.addEventListener("pointerleave", () => { const d = di(); if (!wheelController.active && d && hover.value === d) hover.value = null; });
+      tile.el.addEventListener("pointerenter", () => { const d = di(); if (!globalGestureActive.value && d) hover.value = d; });
+      tile.el.addEventListener("pointerleave", () => { const d = di(); if (!globalGestureActive.value && d && hover.value === d) hover.value = null; });
       tile.el.addEventListener("click", () => { const d = di(); if (!d) return; selected.value = selected.value === d ? null : d; });
       tile.el.addEventListener("focus", () => { const d = di(); if (d) selected.value = d; });
       tile.el.addEventListener("blur", () => { const d = di(); if (d && selected.value === d) selected.value = null; });
@@ -701,8 +702,8 @@ export class MdBarChartLC extends Diagram {
       handle.el.style.transition = hoverTransition("opacity");
       handle.el.style.touchAction = "none";
       biEffect(() => { handle.el.style.cursor = isVert.value ? "ns-resize" : "ew-resize"; });
-      handle.el.addEventListener("pointerenter", () => { const d = di(); if (!wheelController.active && d) hover.value = d; });
-      handle.el.addEventListener("pointerleave", () => { const d = di(); if (!wheelController.active && d && hover.value === d) hover.value = null; });
+      handle.el.addEventListener("pointerenter", () => { const d = di(); if (!globalGestureActive.value && d) hover.value = d; });
+      handle.el.addEventListener("pointerleave", () => { const d = di(); if (!globalGestureActive.value && d && hover.value === d) hover.value = null; });
     }
 
     // ─── Left-room padding for popped labels ───────────────────────────────

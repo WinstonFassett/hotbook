@@ -3,6 +3,7 @@ import { circleHandle } from "../lib/handles";
 import { Diagram } from "../lib/diagram";
 import { pie } from "d3-shape";
 import { wheelController, dynamicWheelStep, realModifierDown } from "../lib/interaction";
+import { globalGestureActive } from "../lib/gesture-state";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { dragCancelable } from "../lib/esc-contract";
@@ -203,8 +204,8 @@ export class MdPieChartLC extends Diagram {
       sector.el.setAttribute('tabindex', '0');
       sector.el.setAttribute('data-focusable', 'slice');
       sector.el.setAttribute('aria-label', `${d.label}: ${Math.round(d.value.value)}`);
-      sector.el.addEventListener("pointerenter", () => { if (!wheelController.active) hover.value = d; });
-      sector.el.addEventListener("pointerleave", () => { if (!wheelController.active && hover.value === d) hover.value = null; });
+      sector.el.addEventListener("pointerenter", () => { if (!globalGestureActive.value) hover.value = d; });
+      sector.el.addEventListener("pointerleave", () => { if (!globalGestureActive.value && hover.value === d) hover.value = null; });
       sector.el.addEventListener("click", () => { selected.value = selected.value === d ? null : d; });
       sector.el.addEventListener("focus", () => { selected.value = d; });
       sector.el.addEventListener("blur", () => { if (selected.value === d) selected.value = null; });
