@@ -98,6 +98,42 @@ export function bindTile(
   let lastRef = new Map<string, number>()
   let unbindHud: () => void = () => {}
   let unbindEditOut: () => void = () => {}
+  let unbindDataView: () => void = () => {}
+  let dataViewBoundTo: ElWithDataView | null = null
+
+  // Settle-driven re-apply (ADR "settle from the view"): the final value write
+  // of a gesture happens WHILE the machine is Gesturing, so applyData takes the
+  // frozen branch (order held, per Rule 7) and the round-tripped store state is
+  // never reconciled against the frozen display order — a same-chart edit that
+  // should reorder (sorted-by-value) would leave the mark in place. On the
+  // machine's `commit` transition we re-apply with phase 'settling'.
+  //
+  // Commit ONLY: matchina change events carry the transition name, and on
+  // `cancel` (Esc) the chart is restoring the live cells while bindEditOut
+  // pushes the reverted values to the store via its own queueMicrotask — a
+  // re-apply would read the still-stale pre-restore spec and clobber the
+  // revert. The store round-trip owns the cancel path.
+  //
+  // The re-apply is deferred one microtask past bindEditOut's store push so
+  // specRef/lastRef see the committed values before we reindex.
+  //
+  // The chart owns/creates `el.dataView` in its connectedCallback, but tests
+  // (and charts that attach it late) may set it after mount — so binding is
+  // (re)checked on mount AND on every update.
+  function ensureDataViewSubscription() {
+    const target = el
+    if (!target || !target.dataView || dataViewBoundTo === target) return
+    unbindDataView()
+    dataViewBoundTo = target
+    unbindDataView = target.dataView.subscribe((_state, event) => {
+      if (event !== 'commit') return
+      queueMicrotask(() => {
+        if (el !== target) return
+        if (getPhase(target) === 'gesturing') return // a new gesture already started
+        currentSourceRef.current.applyData(target, { phase: 'settling', lastRef })
+      })
+    })
+  }
 
   function mount(src: TileSource) {
     currentSourceRef.current = src
@@ -121,6 +157,9 @@ export function bindTile(
     // Edit-out subscription — uses src's internal refs (updated via syncFrom on same-shapeKey update)
     unbindEditOut = src.bindEditOut(newEl, lastRef)
 
+    // Chart's connectedCallback (fired by appendChild above) created el.dataView.
+    ensureDataViewSubscription()
+
     // Initial data push (element is connected, dataCell is live)
     src.applyData(newEl, { phase: 'idle', lastRef })
   }
@@ -132,6 +171,9 @@ export function bindTile(
     // bindTile does not dispose it here.
     unbindHud()
     unbindEditOut()
+    unbindDataView()
+    unbindDataView = () => {}
+    dataViewBoundTo = null
     if (container.contains(el)) container.removeChild(el)
     el = null
     lastRef = new Map()
@@ -160,6 +202,7 @@ export function bindTile(
         // hier did not.
         const mounted = currentSourceRef.current
         mounted.syncFrom?.(nextSource)
+        ensureDataViewSubscription() // late-attached el.dataView (see helper)
         if (el) {
           // getPhase freezes only the tile that owns the active gesture (or a
           // tile frozen by ANOTHER tile's gesture, per the coordinator). Tiles

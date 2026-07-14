@@ -25,7 +25,7 @@ export { wheelController, dragController, realModifierDown } from './lib/interac
 export type { BiNode } from './lib/tree'
 export { group, leaf, leaves } from './lib/tree'
 export { numberDrag, type NumberDragOpts } from './lib/number-drag'
-export { DataViewController, phaseOf, type DataViewState, type DataViewStateKey, type GestureIntent, type GesturePhase } from './lib/data-view-controller'
+export { DataViewController, phaseOf, type DataViewState, type DataViewStateKey, type DataViewEventType, type GestureIntent, type GesturePhase } from './lib/data-view-controller'
 export { gestureCoordinator, type GestureCoordinator } from './lib/gesture-coordinator'
 export { createDataViewCell, globalGestureActive, type DataViewCellHandle } from './lib/data-view-adapter'
 export { withSettle, withAnimSettle, type AnimLike } from './lib/with-settle'

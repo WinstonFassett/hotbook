@@ -213,6 +213,112 @@ describe('bindTile.update — cross-tile freeze (WIN-300)', () => {
   })
 })
 
+describe('settle-driven re-apply on commit (ADR "settle from the view")', () => {
+  // Stateful fake modeling a sorted-by-value source: while phase is
+  // 'gesturing' the display order is FROZEN (Rule 7); idle/settling re-applies
+  // the source's (store-sorted) id order. The `ids` ref is shared across
+  // update() sources via syncFrom, like makeFlatSource's specRef.
+  function makeSortedSource(shapeKey = 'sorted') {
+    const idsRef = { current: ['a', 'b'] }
+    let displayOrder: string[] = []
+    const source = {
+      tag: 'x-fake-chart',
+      shapeKey,
+      idsRef,
+      getDisplayOrder: () => displayOrder.slice(),
+      mountProps(_el: HTMLElement) {},
+      initialLast(_el: HTMLElement) { return new Map<string, number>() },
+      applyData(_el: HTMLElement, { phase }: { phase: GesturePhase }) {
+        if (phase === 'gesturing') return // frozen: order held
+        displayOrder = idsRef.current.slice()
+      },
+      bindEditOut(_el: HTMLElement, _lastRef: Map<string, number>) { return () => {} },
+      syncFrom(next: TileSource) { idsRef.current = (next as any).idsRef.current },
+    }
+    return source as TileSource & typeof source
+  }
+
+  async function flushMicrotasks() {
+    await new Promise(resolve => queueMicrotask(resolve as () => void))
+  }
+
+  function mountWithDataView(shapeKey = 'sorted') {
+    const container = makeContainer()
+    const source = makeSortedSource(shapeKey)
+    const ctrl = bindTile(container, source, noopBindHud)
+    const el = container.querySelector('x-fake-chart') as any
+    // Chart owns el.dataView; the fake element has no connectedCallback, so
+    // attach it late — update() picks it up (late-attach path).
+    const dv = new DataViewController()
+    el.dataView = dv
+    ctrl.update(makeSortedSource(shapeKey))
+    return { container, source, ctrl, el, dv }
+  }
+
+  it('value edit on sorted-by-value: frozen during the gesture, order re-applied on commit', async () => {
+    const { source, ctrl, el, dv } = mountWithDataView()
+    expect(source.getDisplayOrder()).toEqual(['a', 'b'])
+
+    // Gesture starts; the edit round-trips to the store, which now sorts b first.
+    dv.start('edit', el)
+    const next = makeSortedSource()
+    next.idsRef.current = ['b', 'a']
+    ctrl.update(next)
+    // Frozen: display order held while gesturing, store order already flipped.
+    expect(source.getDisplayOrder()).toEqual(['a', 'b'])
+
+    // Release: commit -> Settling. The store writes no new value at release, so
+    // only the settle-driven re-apply reconciles the frozen order.
+    dv.commit()
+    await flushMicrotasks()
+    expect(source.getDisplayOrder()).toEqual(['b', 'a'])
+  })
+
+  it('cancel (Esc) does NOT re-apply — the store round-trip owns the revert', async () => {
+    const { source, ctrl, el, dv } = mountWithDataView()
+
+    dv.start('edit', el)
+    const next = makeSortedSource()
+    next.idsRef.current = ['b', 'a'] // in-flight (pre-revert) store state
+    ctrl.update(next)
+    expect(source.getDisplayOrder()).toEqual(['a', 'b'])
+
+    dv.cancel()
+    await flushMicrotasks()
+    // No settling re-apply: order untouched until the reverted store state
+    // round-trips through a normal update().
+    expect(source.getDisplayOrder()).toEqual(['a', 'b'])
+  })
+
+  it('does not re-apply when a new gesture already started by the time the microtask runs', async () => {
+    const { source, ctrl, el, dv } = mountWithDataView()
+
+    dv.start('edit', el)
+    const next = makeSortedSource()
+    next.idsRef.current = ['b', 'a']
+    ctrl.update(next)
+
+    dv.commit()
+    dv.start('edit', el) // immediate re-grab before the microtask fires
+    await flushMicrotasks()
+    expect(source.getDisplayOrder()).toEqual(['a', 'b']) // still frozen
+
+    dv.commit()
+    await flushMicrotasks()
+    expect(source.getDisplayOrder()).toEqual(['b', 'a'])
+  })
+
+  it('unsubscribes on dispose — commit after dispose does not re-apply', async () => {
+    const { source, ctrl, el, dv } = mountWithDataView()
+
+    ctrl.dispose()
+    dv.start('edit', el)
+    dv.commit()
+    await flushMicrotasks()
+    expect(source.getDisplayOrder()).toEqual(['a', 'b'])
+  })
+})
+
 describe('bindTile.update — shape change (remount)', () => {
   it('dismounts old element and mounts new one when shapeKey changes', () => {
     const container = makeContainer()

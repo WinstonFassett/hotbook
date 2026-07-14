@@ -22,6 +22,11 @@ export function phaseOf(key: DataViewStateKey): GesturePhase {
   return key === "Gesturing" ? "gesturing" : key === "Settling" ? "settling" : "idle";
 }
 
+/** The transition that produced a state change — matchina change events carry
+ *  the event name. Lets subscribers (e.g. tile-binder's settle-driven
+ *  re-apply) distinguish `commit` from `cancel`. */
+export type DataViewEventType = "start" | "commit" | "cancel" | "settle";
+
 /** Public state — what `getState()` and the `bireactive` adapter cell expose. */
 export interface DataViewState {
   key: DataViewStateKey;
@@ -115,9 +120,13 @@ export class DataViewController {
     return toPublicState(this.machine.getState());
   }
 
-  /** Subscribe to state changes. Returns an unsubscribe function. */
-  subscribe(listener: (state: DataViewState) => void): () => void {
-    return this.machine.subscribe(() => listener(this.getState()));
+  /** Subscribe to state changes. The listener also receives the transition
+   *  that produced the change (`event`) so consumers can react to `commit`
+   *  but not `cancel`. Returns an unsubscribe function. */
+  subscribe(listener: (state: DataViewState, event: DataViewEventType) => void): () => void {
+    return this.machine.subscribe((ev: { type: string }) =>
+      listener(this.getState(), ev.type as DataViewEventType),
+    );
   }
 
   /** Tear down: clears this controller from the coordinator if active. Does
