@@ -2,6 +2,7 @@ import { effect } from "bireactive";
 import { type BiNode, portfolio } from "../lib/tree";
 import { prefersReducedMotion, settleTransition } from "../lib/transitions";
 import { numberDrag } from "../lib/number-drag";
+import { DataViewController } from "../lib/data-view-controller";
 
 const INDENT_WIDTH = 14;
 
@@ -94,7 +95,15 @@ export class MdTreetableLC extends HTMLElement {
   private valueEffectDisposers = new Map<string, () => void>();
   private columnVisibility = new Map<string, boolean>();
 
+  // Per-chart gesture/settle lifecycle (docs/adr/gesture-state-machine.md). The
+  // chart owns it: created in connectedCallback, attached as `el.dataView` so
+  // tile-binder can read it, disposed in disconnectedCallback. treetable has
+  // no autonomous transition of its own, so `refresh()` (called by
+  // `applyData` in 'settling') calls `dataView.settle()` after rendering.
+  dataView!: DataViewController;
+
   connectedCallback() {
+    this.dataView = new DataViewController();
     this.render();
   }
 
@@ -389,16 +398,17 @@ export class MdTreetableLC extends HTMLElement {
 
           this.valueEffectDisposers.set(effectKey, dispose);
 
-          // Attach numberDrag for drag-to-edit on this value cell.
-          // Host wiring lets tile-binder freeze applyData during the gesture.
+          // Attach numberDrag for drag-to-edit on this value cell. dataView
+          // freezes cross-tile applyData during the gesture and settles this
+          // chart's machine on gesture-end (number-drag has no transition of
+          // its own — see docs/adr/gesture-state-machine.md).
           numberDrag(valueCell, {
             get: () => measureValue.value,
             set: (v: number) => { measureValue.value = v; },
             pxPerUnit: 4,
-            host: this,
-            onEnd: (canceled) => {
-              this.dispatchEvent(new CustomEvent('gesturecommit', { detail: { canceled } }));
-            },
+            dataView: this.dataView,
+            intent: 'edit',
+            origin: this,
           });
         }
       }
@@ -457,9 +467,13 @@ export class MdTreetableLC extends HTMLElement {
     }
   }
 
-  /** Re-render against the current externalRoot (e.g. after rebinding it). */
+  /** Re-render against the current externalRoot (e.g. after rebinding it).
+   *  treetable has no autonomous transition of its own, so this is the
+   *  mechanism that settles the machine when applyData's 'settling' branch
+   *  calls it without a data change (ADR "settle from the view"). */
   refresh(): void {
     if (this.isConnected && this.root) this.render();
+    this.dataView?.settle();
   }
 
   // API for React wrapper

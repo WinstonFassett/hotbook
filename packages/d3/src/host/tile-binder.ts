@@ -385,6 +385,7 @@ interface ElWithRoot extends HTMLElement {
   sortBy?: 'index' | 'value'
   orientation?: 'horizontal' | 'vertical'
   measureKey?: string
+  dataView?: DataViewController
 }
 
 export interface HierSpec {
@@ -475,14 +476,16 @@ export function makeHierSource(spec: HierSpec): TileSource {
               }
             }
 
+            // The chart's connectedCallback (fired by appendChild, before this
+            // onRender listener ever runs) creates el.dataView, per ADR
+            // ownership ("chart custom element owns its DataViewController").
             disposers.push(numberDrag(cell, {
               get,
               set,
               pxPerUnit,
-              host: el,
-              onEnd: (canceled) => {
-                el.dispatchEvent(new CustomEvent('gesturecommit', { detail: { canceled } }))
-              },
+              dataView: typedEl.dataView!,
+              intent: 'edit',
+              origin: el,
             }))
           }
         })
