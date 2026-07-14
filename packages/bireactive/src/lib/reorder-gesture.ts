@@ -122,6 +122,13 @@ export function attachReorderGesture(cfg: ReorderGestureConfig): () => void {
 
     try { hitEl.setPointerCapture(pointerId); } catch { /* ignored */ }
 
+    // NB: the DragConfig deliberately has NO `dataView` — reorder must not
+    // start the machine at raw pointerdown. A press below the 5px threshold is
+    // a plain click: it must leave the machine Idle (never freezing sibling
+    // tiles for the press duration, and never leaving a Settling machine no one
+    // settles). So we call `dataView.start()` only on activation and
+    // `commit()`/`cancel()` ourselves — before the chart's `onEnd`, preserving
+    // the ADR ordering guarantee for whoever manages the lifecycle.
     dragController.begin(true, {
       snapshot: () => initialOrder.slice(),
       restore: () => {
@@ -130,15 +137,14 @@ export function attachReorderGesture(cfg: ReorderGestureConfig): () => void {
         // bookkeeping so a subsequent commit doesn't see a stale order.
         currentOrder = initialOrder.slice();
       },
-      dataView: cfg.dataView,
-      intent: cfg.intent,
-      origin: cfg.origin,
       onMove: (pe2: PointerEvent) => {
         if (!activated) {
           const dx = pe2.clientX - startX;
           const dy = pe2.clientY - startY;
           if (dx * dx + dy * dy < threshSq) return;
           activated = true;
+          // Freeze NOW (at the activation threshold), not at pointerdown.
+          cfg.dataView.start(cfg.intent, cfg.origin);
           raiseAndElevate();
           cfg.onActivate?.();
         }
@@ -150,10 +156,14 @@ export function attachReorderGesture(cfg: ReorderGestureConfig): () => void {
         const wasActivated = activated;
         activated = false;
         if (wasActivated) {
+          // commit/cancel BEFORE the chart's onEnd so it sees `Settling` and
+          // can run its transition + call `dataView.settle()` when it finishes.
+          if (canceled) cfg.dataView.cancel(); else cfg.dataView.commit();
           drop();
           cfg.onEnd(currentOrder, canceled);
         }
-        // Below threshold: not a drag — treat as click, no onEnd call.
+        // Below threshold: not a drag — treat as click. The machine was never
+        // started, so there is nothing to commit/cancel/settle: it stays Idle.
       },
     });
   };

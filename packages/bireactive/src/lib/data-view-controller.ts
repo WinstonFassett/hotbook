@@ -13,6 +13,15 @@ export type GestureIntent = "edit" | "reorder";
 
 export type DataViewStateKey = "Idle" | "Gesturing" | "Settling";
 
+/** tile-binder `applyData` phase — the lowercase projection of
+ *  `DataViewStateKey` the host binding layer switches on. */
+export type GesturePhase = "idle" | "gesturing" | "settling";
+
+/** Map a `DataViewStateKey` to the lowercase `GesturePhase`. */
+export function phaseOf(key: DataViewStateKey): GesturePhase {
+  return key === "Gesturing" ? "gesturing" : key === "Settling" ? "settling" : "idle";
+}
+
 /** Public state — what `getState()` and the `bireactive` adapter cell expose. */
 export interface DataViewState {
   key: DataViewStateKey;

@@ -14,7 +14,7 @@
 import { effect as biEffect, leavesOf, walkTree } from 'bireactive'
 import type { Cell, Num, Writable } from 'bireactive'
 import type { VizNode } from '@hotbook/core'
-import { numberDrag, type GesturePhase } from '@hotbook/bireactive'
+import { numberDrag, phaseOf, gestureCoordinator, type GesturePhase, type DataViewController } from '@hotbook/bireactive'
 import { buildBiTree } from './biTree'
 import type { BiNode } from './biTree'
 
@@ -52,10 +52,23 @@ export interface TileSource {
 
 // ─── bindTile controller ──────────────────────────────────────────────────────
 
-interface ElWithGesture extends HTMLElement { gestureActive?: boolean }
+interface ElWithDataView extends HTMLElement { dataView?: DataViewController }
 
-function getPhase(el: ElWithGesture): GesturePhase {
-  return el.gestureActive ? 'gesturing' : 'idle'
+/**
+ * Per ADR (docs/adr/gesture-state-machine.md, "applyData phase"):
+ *  - If the global coordinator has an active controller that ISN'T this tile's
+ *    own `dataView`, this tile is frozen by another tile's live gesture →
+ *    'gesturing' (hold order).
+ *  - Otherwise the phase is this tile's own DataViewController state.
+ * `bindTile` READS `el.dataView` (the chart owns/creates it); it never creates
+ * or injects one.
+ */
+function getPhase(el: ElWithDataView): GesturePhase {
+  const dv = el.dataView
+  if (!dv) return 'idle'
+  const active = gestureCoordinator.active
+  if (active && active !== dv) return 'gesturing' // frozen by another tile's gesture
+  return phaseOf(dv.getState().key)
 }
 
 export interface TileController {
@@ -64,9 +77,9 @@ export interface TileController {
 }
 
 /**
- * Mount a BR-LC custom element into container, wiring hud sync, edit-out,
- * gesturecommit handling, and reactive data apply. Returns a controller the
- * host calls on every render (update) and on unmount (dispose).
+ * Mount a BR-LC custom element into container, wiring hud sync, edit-out, and
+ * reactive data apply. Returns a controller the host calls on every render
+ * (update) and on unmount (dispose).
  *
  * @param bindHud  Host-supplied function that wires the element to its HUD
  *                 store (hover/select/drill). Returns a disposer. This is the
@@ -78,18 +91,17 @@ export function bindTile(
   source: TileSource,
   bindHud: (el: HTMLElement) => () => void,
 ): TileController {
-  // currentSourceRef is used by the gesturecommit handler so it always calls
-  // the latest applyData even after same-shapeKey updates.
+  // currentSourceRef tracks the MOUNTED source so update() syncs into the live
+  // source's closures on same-shapeKey renders (see update() below).
   const currentSourceRef = { current: source }
-  let el: ElWithGesture | null = null
+  let el: ElWithDataView | null = null
   let lastRef = new Map<string, number>()
   let unbindHud: () => void = () => {}
   let unbindEditOut: () => void = () => {}
-  let onCommit: ((e: Event) => void) | null = null
 
   function mount(src: TileSource) {
     currentSourceRef.current = src
-    const newEl = document.createElement(src.tag) as ElWithGesture
+    const newEl = document.createElement(src.tag) as ElWithDataView
     newEl.setAttribute('no-source', '')
     src.mountProps?.(newEl)
     // mountProps sets externalData/externalRoot so scene() reads it on connectedCallback.
@@ -109,57 +121,17 @@ export function bindTile(
     // Edit-out subscription — uses src's internal refs (updated via syncFrom on same-shapeKey update)
     unbindEditOut = src.bindEditOut(newEl, lastRef)
 
-    // gesturecommit: charts dispatch this on gesture end (release or Esc-cancel).
-    //
-    // Why we need a trailing re-apply here at all:
-    // The final value write of a gesture happens *during* the gesture, while
-    // el.gestureActive is still true. bindEditOut pushes it to the store, which
-    // round-trips back through update()→applyData — but that applyData runs with
-    // gestureActive:true and takes the FROZEN branch (order held, per Rule 7). When
-    // the gesture ends, onEnd() flips gestureActive→false and fires this event, but
-    // it writes NO new value — so nothing re-triggers applyData, and the frozen
-    // display order is never reconciled against the (already-correct) sorted store
-    // state. Result: a same-chart edit that should reorder leaves the mark in place.
-    // (Cross-tile edits never hit this because the receiving tile's gestureActive is
-    // always false, so its applyData always takes the commit/reorder branch.)
-    //
-    // We must NOT call applyData synchronously in this handler — for an Esc-cancel,
-    // the restore's value writes push to the store via bindEditOut's own
-    // queueMicrotask, so a synchronous read would see stale pre-restore values and
-    // clobber the restore. Deferring past that microtask lets specRef/lastRef settle
-    // to the committed store values first; applyData({ gestureActive:false }) then
-    // reindexes in fresh sort order off the settled state.
-    onCommit = (e: Event) => {
-      // Opt-in: only charts that send an explicit { canceled } detail participate in
-      // the trailing re-apply. Charts that dispatch bare gesturecommit (no detail)
-      // keep their exact prior behavior — no trailing re-apply — so this change's
-      // blast radius is limited to the charts that adopted the detail contract
-      // (currently bar/bands). Extend a chart into this path by having its onEnd
-      // dispatch `new CustomEvent('gesturecommit', { detail: { canceled } })`.
-      const detail = (e as CustomEvent).detail
-      if (!detail || typeof detail.canceled !== 'boolean') return
-      // On Esc-cancel the chart already restored the live cells and bindEditOut is
-      // pushing those restored values to the store; re-applying here would read the
-      // still-stale (pre-restore) specRef and clobber the revert. Let the store
-      // round-trip own the cancel path. Only reconcile order on a real commit.
-      if (detail.canceled) return
-      queueMicrotask(() => {
-        if (el === newEl && !newEl.gestureActive) {
-          currentSourceRef.current.applyData(newEl, { phase: 'settling', lastRef })
-        }
-      })
-    }
-    newEl.addEventListener('gesturecommit', onCommit)
-
     // Initial data push (element is connected, dataCell is live)
     src.applyData(newEl, { phase: 'idle', lastRef })
   }
 
   function dismount() {
     if (!el) return
+    // Tear down what bindTile subscribed to. The chart owns and disposes its own
+    // DataViewController in disconnectedCallback (fired by removeChild below), so
+    // bindTile does not dispose it here.
     unbindHud()
     unbindEditOut()
-    if (onCommit) { el.removeEventListener('gesturecommit', onCommit); onCommit = null }
     if (container.contains(el)) container.removeChild(el)
     el = null
     lastRef = new Map()
@@ -185,17 +157,14 @@ export function bindTile(
         // was never mounted, so its mount-time state (hier leavesRef) is empty;
         // applyData on it would no-op and external edits would never reach the
         // live tree. Flat keeps data on el.dataCell so it survived either way;
-        // hier did not. Keep currentSourceRef on the mounted source so the
-        // gesturecommit handler also applies to the populated tree.
+        // hier did not.
         const mounted = currentSourceRef.current
         mounted.syncFrom?.(nextSource)
         if (el) {
-          // Freeze only the chart being actively edited (per-element flag set by
-          // the chart's own gesture handlers). Other charts must update live —
-          // that's the bidirectional viz promise. The global controller check
-          // (0ffe125) froze ALL charts during ANY gesture, breaking cross-chart
-          // sync: edits on one visible chart never reached the chart next to it
-          // until the gesture ended and a tab switch forced a remount.
+          // getPhase freezes only the tile that owns the active gesture (or a
+          // tile frozen by ANOTHER tile's gesture, per the coordinator). Tiles
+          // with no active gesture update live — that's the bidirectional viz
+          // promise: an edit on one visible chart reaches the chart next to it.
           mounted.applyData(el, { phase: getPhase(el), lastRef })
         }
       }
@@ -211,7 +180,6 @@ export function bindTile(
 interface ElWithDataCell<D> extends HTMLElement {
   dataCell: Writable<Cell<readonly D[]>>
   externalData?: unknown
-  gestureActive?: boolean
   measureKey?: string
 }
 

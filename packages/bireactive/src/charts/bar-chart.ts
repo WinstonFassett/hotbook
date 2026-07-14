@@ -9,11 +9,12 @@ import { Anchor, cell, circle, derive, easeInOut, easeOut, effect as biEffect, l
 import { Diagram } from "../lib/diagram";
 import { scaleLinear, scaleBand } from "d3-scale";
 import { wheelController, dragController, dynamicWheelStep, realModifierDown } from "../lib/interaction";
-import { globalGestureActive } from "../lib/gesture-state";
+import { DataViewController } from "../lib/data-view-controller";
+import { globalGestureActive, createDataViewCell, type DataViewCellHandle } from "../lib/data-view-adapter";
+import { withAnimSettle } from "../lib/with-settle";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import {
-  GESTURE_ACTIVE_CLASS,
   GESTURE_SUPPRESSION_CSS,
   REORDER_ELEVATION_CSS,
   hoverTransition,
@@ -63,6 +64,27 @@ export class MdBarChartLC extends Diagram {
   `
 
   readonly dataCell = cell<readonly Bar[]>(makeData());
+
+  // Per-chart gesture/settle lifecycle (docs/adr/gesture-state-machine.md). The
+  // chart owns it: created in connectedCallback, attached as `el.dataView` so
+  // tile-binder can read it, disposed in disconnectedCallback. `#dvCell` mirrors
+  // its state into a bireactive cell (read in `scene()`) and toggles
+  // GESTURE_ACTIVE_CLASS on this host while Gesturing (drives GESTURE_SUPPRESSION_CSS).
+  dataView!: DataViewController;
+  #dvCell?: DataViewCellHandle;
+
+  connectedCallback(): void {
+    this.dataView = new DataViewController();
+    this.#dvCell = createDataViewCell(this.dataView);
+    super.connectedCallback(); // runs scene(), which reads this.dataView / #dvCell
+  }
+
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.#dvCell?.dispose();
+    this.#dvCell = undefined;
+    this.dataView?.dispose();
+  }
 
   private _orientationCell = cell<'vertical' | 'horizontal'>('vertical')
   get orientation(): 'vertical' | 'horizontal' { return this._orientationCell.value }
@@ -285,18 +307,28 @@ export class MdBarChartLC extends Diagram {
       data.value = [...data.value];
     };
 
-    const setGestureActive = (on: boolean) => { this.classList.toggle(GESTURE_ACTIVE_CLASS, on); (this as any).gestureActive = on; };
+    const dataView = this.dataView;
+    const dvState = this.#dvCell!.cell;
 
     // ─── Gesture configs (shared controllers) ─────────────────────────────
+    // No manual setGestureActive: the DataViewController adapter toggles
+    // GESTURE_ACTIVE_CLASS on this host while Gesturing (origin = this), which
+    // drives GESTURE_SUPPRESSION_CSS so live edits snap. `dataView.commit()`/
+    // `cancel()` run inside the controller `end()` BEFORE these onEnd callbacks
+    // (ADR ordering), so onEnd sees `Settling`. A value edit has no autonomous
+    // transition of its own — the bar already sits at the dragged value — so it
+    // settles immediately (number-drag pattern in the ADR).
     const wheelConfig = {
-      snapshot: (d: Bar) => { setGestureActive(true); return d.value; },
+      snapshot: (d: Bar) => d.value,
       restore: (d: Bar, v: number) => mutateDatum(d, v - d.value),
-      onEnd: (canceled: boolean) => { setGestureActive(false); hover.value = null; this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } })); },
+      dataView, intent: 'edit' as const, origin: this,
+      onEnd: (_canceled: boolean) => { hover.value = null; dataView.settle(); },
     };
     let dragPointerId = -1;
     const dragConfig = {
-      snapshot: (d: Bar) => { setGestureActive(true); return d.value; },
+      snapshot: (d: Bar) => d.value,
       restore: (d: Bar, v: number) => mutateDatum(d, v - d.value),
+      dataView, intent: 'edit' as const, origin: this,
       onMove: (pe: PointerEvent) => {
         const t = dragController.target as Bar | null;
         if (!t) return;
@@ -306,11 +338,10 @@ export class MdBarChartLC extends Diagram {
           : (valueScale.value as any).invert(x) - t.value;
         mutateDatum(t, v);
       },
-      onEnd: (canceled: boolean) => {
+      onEnd: (_canceled: boolean) => {
         if (dragPointerId >= 0 && (this as any).hasPointerCapture?.(dragPointerId)) (this as any).releasePointerCapture(dragPointerId);
         dragPointerId = -1;
-        setGestureActive(false);
-        this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } }));
+        dataView.settle();
       },
     };
 
@@ -367,7 +398,8 @@ export class MdBarChartLC extends Diagram {
       if (dist > hitTolerance) return;
       dragPointerId = pe.pointerId;
       selected.value = pt;
-      setGestureActive(true);
+      // GESTURE_ACTIVE_CLASS is set by the adapter once dragController.begin ->
+      // dataView.start() moves the machine to Gesturing (synchronous).
       (this as any).setPointerCapture(pe.pointerId);
       dragController.begin(pt, dragConfig);
       pe.preventDefault();
@@ -533,8 +565,10 @@ export class MdBarChartLC extends Diagram {
         const orderChanged = order !== seenOrder;
         const measureChanged = measureKey !== seenMeasureKey;
         seenOrient = orient; seenMeasureKey = measureKey; seenOrder = order;
-        if (this.classList.contains(GESTURE_ACTIVE_CLASS)) {
-          // This bar is being directly gestured — snap everything.
+        // Read the gesture state untracked (like the old classList.contains) so
+        // this gate reruns on geometry/target changes, not on every machine
+        // transition. While THIS chart is directly gesturing, snap everything.
+        if (untracked(() => dvState.value.key) === 'Gesturing') {
           animCancel?.(); animCancel = null;
           barX.value = xt; barY.value = yt; barW.value = wt; barH.value = ht;
           return;
@@ -749,7 +783,7 @@ export class MdBarChartLC extends Diagram {
           hitEl: cells.tileEl,
           dragEl: cells.tileEl,
           itemId: datumId,
-          host: this,
+          dataView, intent: 'reorder' as const, origin: this,
           // Yield to the value-drag when pointer is within the resize hit zone
           // at the value-end of the bar (keeps drag-end resize working).
           filter: (e) => {
@@ -827,41 +861,47 @@ export class MdBarChartLC extends Diagram {
             }
           },
           onEnd: (finalOrder, canceled) => {
+            // reorder-gesture already ran dataView.commit()/cancel() before this
+            // callback (ADR ordering), so the machine is `Settling`. The view is
+            // responsible for calling dataView.settle() when its slide finishes.
             siblingTweenCancels.forEach(fn => fn());
             siblingTweenCancels.clear();
 
             const initial = (data.peek() as Bar[]).map(x => x.id ?? x.label);
             const changed = !canceled && finalOrder.some((id, i) => id !== initial[i]);
             if (changed) {
-              // Commit. Reactive tween effect (line ~470) will fire the
-              // structural branch — sort tweens from current visual position
-              // (Rule 4 settle from where they are).
+              // Commit. The reactive gate slides bars to their new slots when
+              // the reordered order round-trips through the store (Rule 4 —
+              // settle from where they are). Settle on the Anim clock after the
+              // reorder window so the machine leaves Settling once the slide has
+              // had time to finish (withAnimSettle respects reduced motion).
               this.onReorder?.(finalOrder.slice());
-              this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled: false, reorder: true } }));
+              withAnimSettle(this.anim, dataView, tween(num(0), 1, REORDER_SEC, easeOut) as any);
               return;
             }
-            // Cancel / no-op: tween each bar back to its initial slot.
+            // Cancel / no-op: data didn't change, so tile-binder's settling
+            // re-apply is skipped — the VIEW must still settle. Tween each bar
+            // back to its initial slot and settle when those slides finish.
             const bs = bandScale.peek();
             const isV = isVert.peek();
+            const tweens: any[] = [];
             (data.peek() as Bar[]).forEach((d, i) => {
               const id = d.id ?? d.label;
               const sc = barCells.get(id);
               if (!sc) return;
               const target = bs(String(i)) ?? 0;
               const bandCell = isV ? sc.barX : sc.barY;
-              this.anim.start(tween(bandCell, target, REORDER_SEC, easeOut) as any);
-              // Return dragged bar's value-axis to its live target too.
+              tweens.push(tween(bandCell, target, REORDER_SEC, easeOut));
+              // Return dragged bar's value-axis to its live target too — data
+              // unchanged, so the reactive gate won't fire; snap it explicitly.
               if (id === datumId) {
-                const valTarget = isV ? (valueScale.peek() as any)(d.value) : (valueScale.peek() as any)(d.value);
+                const valTarget = (valueScale.peek() as any)(d.value);
                 const valCell = isV ? sc.barY : sc.barX;
-                // For value-axis: for vertical bars barY is the TOP; for
-                // horizontal barX is the LEFT. Both re-tween via the reactive
-                // effect once we release — but since data didn't change, that
-                // effect won't fire. So we snap value-axis explicitly.
                 valCell.value = isV ? valTarget : plotX.peek();
               }
             });
-            this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } }));
+            if (tweens.length) withAnimSettle(this.anim, dataView, ...tweens);
+            else dataView.settle();
           },
         });
         reorderDetachers.push(detach);

@@ -2,17 +2,21 @@
  * tile-binder.test.ts — unit tests for TileBinder.
  *
  * Uses fake HTMLElement (jsdom), fake TileSource, and fake bindHud.
- * Covers the four behaviors called out in the issue:
+ * Covers the behaviors called out in the issue:
  *  1. Echo-suppression: host writes a value → binder does not re-emit
- *  2. Gesture freeze: gestureActive=true → applyData holds order
- *  3. gesturecommit re-apply on release (non-canceled)
+ *  2. Gesture freeze: this tile's own DataViewController is Gesturing → 'gesturing'
+ *  3. Cross-tile freeze: another tile's controller is active → this tile frozen
  *  4. Reconcile-by-id when source cardinality changes (shape change → remount)
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 import { bindTile, near, vkey } from '../../src/host/tile-binder'
 import type { TileSource } from '../../src/host/tile-binder'
-import type { GesturePhase } from '@hotbook/bireactive'
+import { DataViewController, gestureCoordinator, type GesturePhase } from '@hotbook/bireactive'
+
+beforeEach(() => {
+  gestureCoordinator.setActive(null)
+})
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -35,7 +39,7 @@ interface FakeSource extends TileSource {
 /** Build a minimal fake TileSource that records calls. */
 function makeFakeSource(shapeKey = 'shape-1'): FakeSource {
   const spy = {
-    applyCalls: [] as Array<{ gestureActive: boolean; lastRef: Map<string, number> }>,
+    applyCalls: [] as Array<{ phase: GesturePhase; lastRef: Map<string, number> }>,
     bindEditOutCalls: 0,
     mountPropsCalls: 0,
     syncFromCalls: 0,
@@ -136,20 +140,76 @@ describe('bindTile.update — same shapeKey (no remount)', () => {
 })
 
 describe('bindTile.update — gesture freeze', () => {
-  it('passes phase: gesturing when element has gestureActive flag set', () => {
+  it("passes phase: gesturing when this tile's own DataViewController is Gesturing", () => {
     const container = makeContainer()
     const source = makeFakeSource('s1')
     const ctrl = bindTile(container, source, noopBindHud)
 
-    // Simulate the chart setting gestureActive on the element
+    // The chart owns and attaches its DataViewController as el.dataView.
     const el = container.querySelector('x-fake-chart') as any
-    el.gestureActive = true
+    const dv = new DataViewController()
+    el.dataView = dv
+    dv.start('edit', el) // -> Gesturing, registers as active in the coordinator
 
     ctrl.update(makeFakeSource('s1'))
 
     const calls = source.spy.applyCalls
-    const updateCall = calls[calls.length - 1]!
-    expect(updateCall.phase).toBe('gesturing')
+    expect(calls[calls.length - 1]!.phase).toBe('gesturing')
+  })
+
+  it('passes phase: idle when its own controller has settled back to Idle', () => {
+    const container = makeContainer()
+    const source = makeFakeSource('s1')
+    const ctrl = bindTile(container, source, noopBindHud)
+
+    const el = container.querySelector('x-fake-chart') as any
+    const dv = new DataViewController()
+    el.dataView = dv
+    dv.start('edit', el); dv.commit(); dv.settle() // Idle again
+
+    ctrl.update(makeFakeSource('s1'))
+
+    const calls = source.spy.applyCalls
+    expect(calls[calls.length - 1]!.phase).toBe('idle')
+  })
+})
+
+describe('bindTile.update — cross-tile freeze (WIN-300)', () => {
+  it("passes phase: gesturing when ANOTHER tile's controller is the active gesture", () => {
+    const container = makeContainer()
+    const source = makeFakeSource('s1')
+    const ctrl = bindTile(container, source, noopBindHud)
+
+    const el = container.querySelector('x-fake-chart') as any
+    el.dataView = new DataViewController() // this tile: idle
+
+    // A different tile starts a gesture -> it becomes the coordinator's active.
+    const otherDv = new DataViewController()
+    otherDv.start('reorder', {})
+
+    ctrl.update(makeFakeSource('s1'))
+
+    const calls = source.spy.applyCalls
+    expect(calls[calls.length - 1]!.phase).toBe('gesturing') // frozen by the other tile
+  })
+
+  it("does NOT freeze while the active tile is only Settling", () => {
+    const container = makeContainer()
+    const source = makeFakeSource('s1')
+    const ctrl = bindTile(container, source, noopBindHud)
+
+    const el = container.querySelector('x-fake-chart') as any
+    el.dataView = new DataViewController()
+
+    // Other tile commits -> Settling, and the coordinator is cleared on commit,
+    // so other tiles must NOT stay frozen through the settle.
+    const otherDv = new DataViewController()
+    otherDv.start('reorder', {}); otherDv.commit()
+
+    ctrl.update(makeFakeSource('s1'))
+
+    const calls = source.spy.applyCalls
+    expect(calls[calls.length - 1]!.phase).toBe('idle')
   })
 })
 
@@ -192,69 +252,6 @@ describe('bindTile.update — shape change (remount)', () => {
 
     // new element should be present for source2
     expect(source2.spy.applyCalls.length).toBe(1)
-  })
-})
-
-describe('gesturecommit re-apply', () => {
-  it('re-applies data after a non-canceled gesturecommit', async () => {
-    const container = makeContainer()
-    const source = makeFakeSource('s1')
-    bindTile(container, source, noopBindHud)
-
-    const el = container.querySelector('x-fake-chart')!
-    // Ensure not gesture-active when the commit fires
-    ;(el as any).gestureActive = false
-
-    const beforeCount = source.spy.applyCalls.length
-
-    // Fire gesturecommit with canceled:false (the "real commit" path)
-    const event = new CustomEvent('gesturecommit', { detail: { canceled: false } })
-    el.dispatchEvent(event)
-
-    // The re-apply is deferred via queueMicrotask
-    await new Promise(resolve => queueMicrotask(resolve))
-
-    expect(source.spy.applyCalls.length).toBeGreaterThan(beforeCount)
-    const lastCall = source.spy.applyCalls[source.spy.applyCalls.length - 1]!
-    expect(lastCall.phase).toBe('settling')
-  })
-
-  it('does NOT re-apply after a canceled gesturecommit (Esc)', async () => {
-    const container = makeContainer()
-    const source = makeFakeSource('s1')
-    bindTile(container, source, noopBindHud)
-
-    const el = container.querySelector('x-fake-chart')!
-    ;(el as any).gestureActive = false
-
-    const beforeCount = source.spy.applyCalls.length
-
-    // Fire gesturecommit with canceled:true (Esc-cancel path)
-    const event = new CustomEvent('gesturecommit', { detail: { canceled: true } })
-    el.dispatchEvent(event)
-
-    await new Promise(resolve => queueMicrotask(resolve))
-
-    // No additional applyData call
-    expect(source.spy.applyCalls.length).toBe(beforeCount)
-  })
-
-  it('does NOT re-apply for bare gesturecommit (no detail) — legacy charts', async () => {
-    const container = makeContainer()
-    const source = makeFakeSource('s1')
-    bindTile(container, source, noopBindHud)
-
-    const el = container.querySelector('x-fake-chart')!
-    ;(el as any).gestureActive = false
-
-    const beforeCount = source.spy.applyCalls.length
-
-    // Bare gesturecommit — no detail property
-    el.dispatchEvent(new CustomEvent('gesturecommit'))
-
-    await new Promise(resolve => queueMicrotask(resolve))
-
-    expect(source.spy.applyCalls.length).toBe(beforeCount)
   })
 })
 

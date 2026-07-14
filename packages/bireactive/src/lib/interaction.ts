@@ -415,11 +415,15 @@ export interface DragConfig<T> {
    *  gesture-start snapshot — so callers that need a start reference read it from
    *  the controller (which owns the frame) instead of stashing loose start vars. */
   onMove: (e: PointerEvent, snapshot: any) => void;
-  /** This gesture's `DataViewController`. `begin()` calls `dataView.start()`;
-   *  `end()` calls `dataView.commit()`/`cancel()` before `onEnd`. */
-  dataView: DataViewController;
-  intent: GestureIntent;
-  origin: unknown;
+  /** This gesture's `DataViewController`. When supplied, `begin()` calls
+   *  `dataView.start()` and `end()` calls `dataView.commit()`/`cancel()` before
+   *  `onEnd`. OPTIONAL: a caller that must not start the machine at raw
+   *  pointerdown — e.g. `reorder-gesture`, which only counts as a gesture past
+   *  a 5px activation threshold — omits it and drives `start`/`commit`/`cancel`
+   *  itself (keeping the same commit/cancel-before-onEnd ordering). */
+  dataView?: DataViewController;
+  intent?: GestureIntent;
+  origin?: unknown;
   /** Runs on any end. `canceled` = reverted via Esc. */
   onEnd?: (canceled: boolean) => void;
 }
@@ -473,7 +477,7 @@ function makeDragController(): DragController {
       target = t;
       cfg = config;
       snap = config.snapshot(t);
-      config.dataView.start(config.intent, config.origin);
+      if (config.dataView) config.dataView.start(config.intent!, config.origin);
       const onPointerMove = (e: Event) => config.onMove(e as PointerEvent, snap);
       const onPointerUp = () => commit();
       const onBlur = () => commit();
