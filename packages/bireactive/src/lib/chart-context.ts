@@ -16,7 +16,7 @@
 import { cell, derive, easeOut, effect as biEffect, isCell, num, tween, untracked, type Cell } from "bireactive";
 import { extent } from "d3-array";
 import { scaleLinear, scaleTime, type ScaleLinear, type ScaleTime } from "d3-scale";
-import { GESTURE_ACTIVE_CLASS } from "./transitions";
+import type { DataViewController } from "./data-view-controller";
 
 export type Accessor<TData> = ((d: TData) => any) | keyof TData & string;
 
@@ -39,9 +39,12 @@ export interface ChartContextOpts<TData> {
   /** Identity function for per-datum tween cell keying. Required when x/y
    *  are reactive Cells (tween layer active). */
   idOf?: (d: TData) => string;
-  /** Host element — checked for GESTURE_ACTIVE_CLASS to suppress tweens
-   *  during gestures (Principle 7: derived reorders defer to commit). */
+  /** Host element — kept for backward compat; the class check is now driven by
+   *  `dataView` state. */
   host?: HTMLElement;
+  /** Per-chart DataViewController. Checked for `Gesturing` to suppress tweens
+   *  during gestures (Principle 7: derived reorders defer to commit). */
+  dataView?: DataViewController;
   /** Animation controller — `this.anim` from a Diagram. Required for tween. */
   anim?: { start: (...anims: any[]) => () => void };
   /** Tween duration in seconds (default 0.35). */
@@ -139,7 +142,8 @@ export function chartContext<TData>(opts: ChartContextOpts<TData>): ChartContext
   // Only tween an axis if:
   //   1. The accessor is reactive (Cell) — static accessors never change
   //   2. The value is a number — num() can't tween Dates (line/area x = date)
-  const canTween = !!(opts.idOf && opts.host && opts.anim);
+  const dataView = opts.dataView;
+  const canTween = !!(opts.idOf && opts.anim && dataView);
   const xIsReactive = isCell(opts.x);
   const yIsReactive = isCell(opts.y);
   const data0 = data.peek() as TData[];
@@ -153,7 +157,6 @@ export function chartContext<TData>(opts: ChartContextOpts<TData>): ChartContext
 
   if (tweenX || tweenY) {
     const idOf = opts.idOf!;
-    const host = opts.host!;
     const anim = opts.anim!;
     for (const d of data0) {
       const pid = idOf(d);
@@ -185,7 +188,8 @@ export function chartContext<TData>(opts: ChartContextOpts<TData>): ChartContext
         }
         const structural = (tweenX && xa !== seenXAcc) || (tweenY && ya !== seenYAcc);
         seenXAcc = xa; seenYAcc = ya;
-        if (structural && !host.classList.contains(GESTURE_ACTIVE_CLASS)) {
+        const gesturing = untracked(() => dataView?.getState().key === 'Gesturing');
+        if (structural && !gesturing) {
           cancel?.();
           const anims: any[] = [];
           if (xc) anims.push(tween(xc, xt, tweenSec, easeOut));

@@ -7,7 +7,7 @@ import { bisector } from "d3-array";
 import { effect as biEffect } from "bireactive";
 import type { Cell, Writable } from "bireactive";
 import { makeBridge, type ElementWithBridge } from "./hud-bridge";
-import { GESTURE_ACTIVE_CLASS } from "./transitions";
+import type { DataViewController } from "./data-view-controller";
 
 export interface CartesianGestureState<TData> {
   hover: Writable<Cell<TData | null>>;
@@ -17,6 +17,9 @@ export interface CartesianGestureState<TData> {
 export interface CartesianGestureOpts<TData> {
   ctx: ChartContext<TData>;
   state: CartesianGestureState<TData>;
+  /** This chart's DataViewController — wheel/drag gestures start/commit/settle
+   *  through it. */
+  dataView: DataViewController;
   /** Returns the datum closest to pixel x. */
   findAtPixel: (px: number) => TData | null;
   /** Returns the y pixel for a datum (for drag hit detection). */
@@ -43,7 +46,7 @@ export function attachCartesianGestures<TData>(
   svgEl: SVGSVGElement,
   opts: CartesianGestureOpts<TData>,
 ): () => void {
-  const { ctx, state, findAtPixel, yPixel, mutateDatum, order, elements, focusDatum } = opts;
+  const { ctx, state, dataView, findAtPixel, yPixel, mutateDatum, order, elements, focusDatum } = opts;
   const canEdit = opts.canEdit ?? (() => true);
 
   const localPoint = (e: PointerEvent): { x: number; y: number } => {
@@ -59,8 +62,6 @@ export function attachCartesianGestures<TData>(
   // (Bridge identity is by datum id now, so a shifted order can't mis-resolve.)
   let gestureOrder: TData[] | null = null;
 
-  const setGestureActive = (on: boolean) => { host.classList.toggle(GESTURE_ACTIVE_CLASS, on); (host as any).gestureActive = on; };
-
   // Captured at wheel gesture start for scale-aware delta computation.
   let wheelStartScale: any = null;
 
@@ -68,17 +69,18 @@ export function attachCartesianGestures<TData>(
   // wide singletons; one pointer → one live gesture).
   const wheelConfig = {
     snapshot: (d: TData) => {
-      setGestureActive(true);
       wheelStartScale = ctx.yScale.value;
       return ctx.yAcc(d) as number;
     },
     restore: (d: TData, v: number) => mutateDatum(d, v - (ctx.yAcc(d) as number)),
+    dataView,
+    intent: 'edit' as const,
+    origin: host,
     onEnd: (canceled: boolean) => {
-      setGestureActive(false);
       state.hover.value = null;
       gestureOrder = null;
       wheelStartScale = null;
-      host.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } }));
+      dataView.settle();
     },
   };
 
@@ -107,6 +109,9 @@ export function attachCartesianGestures<TData>(
     }),
     restore: (d: TData, snap: { origValue: number }) => mutateDatum(d, snap.origValue - (ctx.yAcc(d) as number)),
     onMove: onDragMove,
+    dataView,
+    intent: 'edit' as const,
+    origin: host,
     onEnd: () => {
       if (dragPointerId >= 0 && (host as any).hasPointerCapture?.(dragPointerId)) {
         (host as any).releasePointerCapture(dragPointerId);
@@ -116,8 +121,7 @@ export function attachCartesianGestures<TData>(
       dragStartScale = null;
       gestureOrder = null;
       host.style.cursor = "";
-      setGestureActive(false);
-      host.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled: false } }));
+      dataView.settle();
     },
   };
 
@@ -206,7 +210,6 @@ export function attachCartesianGestures<TData>(
     dragStartScale = ctx.yScale.value;
     state.selected.value = pt;
     host.style.cursor = "ns-resize";
-    setGestureActive(true);
     (host as any).setPointerCapture(pe.pointerId);
     dragController.begin(pt, dragConfig); // controller owns move/up/Esc from here
     pe.preventDefault();

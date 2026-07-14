@@ -22,6 +22,7 @@ import { scaleSequential } from "d3-scale";
 import { interpolateCool } from "d3-scale-chromatic";
 import { wheelController, dynamicWheelStep, realModifierDown } from "./interaction";
 import { dragCancelable } from "./esc-contract";
+import type { DataViewController } from "./data-view-controller";
 import {
   buildTopology,
   computeLayout,
@@ -137,6 +138,8 @@ export interface SankeySceneOptions {
   sortByCell?: ReturnType<typeof cell<'index' | 'value'>>;
   // Custom step size fn — defaults to 1 (shift=5). Use e.g. v => v * 0.1 for proportional.
   stepFn?: (currentVal: number, shift: boolean) => number;
+  /** Per-chart DataViewController — wheel/drag gestures start/commit/settle through it. */
+  dataView: DataViewController;
 }
 
 export const LINK_MIN = 0.5; // floor so a flow never collapses to an ungrabbable sliver
@@ -181,6 +184,7 @@ export function sankeyScene(
     nodeWidth = 12, nodePadding = 6,
     interp = interpolateCool, labelSize = 10,
   } = opts;
+  const dataView = opts.dataView;
   const stepFn = opts.stepFn ?? ((v: number, shift: boolean) => dynamicWheelStep(v, shift));
 
   const nodeColorProp = opts.nodeColorProp ?? cell<NodeColorProp>("layer");
@@ -284,7 +288,6 @@ export function sankeyScene(
   // tween the offset back to 0.
   let sortInited = false;
   let lastSortBy = untracked(() => sortByCell.value);
-  const GESTURE_ACTIVE_CLASS = "gesture-active";
   biEffect(() => {
     const _layout = layout.value; // track layout changes
     const sortBy = sortByCell.value; // track sort key
@@ -304,7 +307,7 @@ export function sankeyScene(
     const sortChanged = sortBy !== lastSortBy;
     lastSortBy = sortBy;
 
-    if (sortChanged && !host.classList.contains(GESTURE_ACTIVE_CLASS)) {
+    if (sortChanged && dataView.getState().key !== 'Gesturing') {
       // Sort changed: nodes moved to new positions. Set offset to old position
       // minus new position, then tween offset back to 0.
       for (let i = 0; i < nodeIds.length; i++) {
@@ -355,7 +358,10 @@ export function sankeyScene(
     restore: (_idx: number, snap: number[]) => {
       batch(() => { linkValues.forEach((lv, i) => { lv.value.value = snap[i]!; }); });
     },
-    onEnd: () => { wheelLocked.value = null; hovered.value = null; tooltipVis.value = false; },
+    dataView,
+    intent: 'edit' as const,
+    origin: host,
+    onEnd: (canceled: boolean) => { wheelLocked.value = null; hovered.value = null; tooltipVis.value = false; dataView.settle(); },
   };
 
   const hitTestRibbon = (clientX: number, clientY: number): number | null => {
@@ -384,7 +390,10 @@ export function sankeyScene(
     restore: (_nodeIdx: number, snap: number[]) => {
       batch(() => { linkValues.forEach((lv, i) => { lv.value.value = snap[i]!; }); });
     },
-    onEnd: () => { wheelLocked.value = null; tooltipVis.value = false; tooltipNodeIdx.value = null; },
+    dataView,
+    intent: 'edit' as const,
+    origin: host,
+    onEnd: (canceled: boolean) => { wheelLocked.value = null; tooltipVis.value = false; tooltipNodeIdx.value = null; dataView.settle(); },
   };
 
   host.addEventListener("wheel", ((e: WheelEvent) => {
@@ -711,6 +720,9 @@ export function sankeyScene(
       groupNodeEls.set(grip.el, n);
       if (grip.el.firstElementChild) groupNodeEls.set(grip.el.firstElementChild, n);
       dragCancelable(grip, lens, allCells, {
+        dataView,
+        intent: 'edit' as const,
+        origin: host,
         onStart: () => {
           nodeActive.value = true;
           tooltipNodeIdx.value = n; tooltipVis.value = true;
@@ -719,7 +731,7 @@ export function sankeyScene(
           startVals = allCells.map((c) => c.value);
           startTot = groupLinks.reduce((a, li) => a + startVals[li]!, 0);
         },
-        onEnd: () => { nodeActive.value = false; },
+        onEnd: () => { nodeActive.value = false; dataView.settle(); },
       });
     }
 
@@ -815,8 +827,11 @@ export function sankeyScene(
       grip.el.addEventListener("pointermove", (e) => { tooltipAt.value = toSVG(e as PointerEvent); });
       grip.el.addEventListener("pointerleave", () => { active.value = false; if (hovered.value === li) hovered.value = null; tooltipVis.value = false; tooltipLinkIdx.value = null; });
       dragCancelable(grip, lens, allCells, {
+        dataView,
+        intent: 'edit' as const,
+        origin: host,
         onStart: () => { active.value = true; focused.value = li; tooltipLinkIdx.value = li; tooltipVis.value = true; startAllVals = allCells.map((c) => c.value); },
-        onEnd: () => { active.value = false; },
+        onEnd: () => { active.value = false; dataView.settle(); },
       });
     }
   }
@@ -901,8 +916,11 @@ export function sankeyScene(
       grip.el.addEventListener("pointermove", (e) => { tooltipAt.value = toSVG(e as PointerEvent); });
       grip.el.addEventListener("pointerleave", () => { active.value = false; if (hovered.value === li) hovered.value = null; tooltipVis.value = false; tooltipLinkIdx.value = null; });
       dragCancelable(grip, lens, allCells, {
+        dataView,
+        intent: 'edit' as const,
+        origin: host,
         onStart: () => { active.value = true; focused.value = li; tooltipLinkIdx.value = li; tooltipVis.value = true; startAllVals = allCells.map((c) => c.value); },
-        onEnd: () => { active.value = false; },
+        onEnd: () => { active.value = false; dataView.settle(); },
       });
     }
   }

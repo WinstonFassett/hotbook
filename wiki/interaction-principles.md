@@ -58,8 +58,8 @@ When transitioning between visualization modes, the primary visual object for ea
 ### 14. Touch and mouse are equivalent gesture surfaces
 Direct manipulation must work on touch as well as mouse. Same gestures, same feedback, same mechanics. Where platform differences require adaptation (no hover on touch, different hit target sizes), adapt — but don't drop capabilities.
 
-### 15. Scale/bounds updates defer to commit, not gesture
-When a gesture changes a value that affects the overall scale or bounds of the visualization (e.g. making the largest bar shorter shifts the chart's max), the scale must not update live during the gesture — that shifts the coordinate system under the user (violates Rule 2). Scale re-evaluates at commit (release). During the gesture, scale is frozen at its gesture-start value.
+### 15. Value edits scale live; order is frozen during gesture
+When a gesture changes a value, the scale and bounds of the visualization update live so the mark stays under the pointer and the value remains readable. Only the displayed **order** is frozen while the gesture is active — the data store may change, but the layout does not reorder until `commit`. The per-chart `DataViewController` distinguishes `Gesturing` (live edits, frozen order) from `Settling` (autonomous transitions run) and `Idle`. `settle()` is called by the mechanism that knows the transition duration (CSS `transitionend`, `Anim` completion, or immediately for no transition).
 
 **Radial exception:** resizing a slice inherently rebalances all other slices' angles — 360° is fixed total. This is acceptable because the proportion *is* the coordinate and the other slices moving is the expected feedback. Required: other slices reposition smoothly, not by jumping.
 
@@ -129,8 +129,8 @@ Gap: color snaps at morph end (`.attr('fill')`) instead of being tweened.
 ### Rule 14 — Touch parity
 **Partial.** Touch drag fixed this branch. Resize handle hit targets may be undersized for touch. Hover-reveal has no touch equivalent — handle discoverability on touch not audited.
 
-### Rule 15 — Scale defers to commit
-**❌ Gap.** Bands resize: scale re-derives on every preview `onUpdate` — shifts live during drag. Fix: snapshot scale domain at drag start, hold through gesture, re-derive at commit. Radial rebalancing is the acceptable exception per rule.
+### Rule 15 — Value edits scale live; order freezes during gesture
+**✅ Implemented.** Scale updates live during value edits (Rule 2 keeps the mark under the pointer). `DataViewController` freezes only the displayed order during `Gesturing`; `settle()` is driven by the view's transition mechanism. Radial rebalancing remains the acceptable exception per rule.
 
 ### Rule 16 — Zoom-to-fit
 **❌ Not implemented.** Layout fills SVG container statically. No animated bounds adjustment on commit.

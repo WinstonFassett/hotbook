@@ -15,6 +15,7 @@
 import type { AnyShape, Cell, Vec, Writable } from "bireactive";
 import { batch } from "bireactive";
 import { dragController } from "./interaction";
+import type { DataViewController, GestureIntent } from "./data-view-controller";
 
 function ownTouchGesture(shape: AnyShape): void {
   shape.el.style.touchAction = "none";
@@ -32,11 +33,20 @@ export interface DragCancelableOpts {
   dragging?: Writable<Cell<boolean>>;
   /** Extra work on pointerdown. */
   onStart?: () => void;
-  /** Extra work on end. `canceled` = reverted via Esc. */
+  /** Extra work on end. `canceled` = reverted via Esc. The caller is responsible
+   *  for calling `dataView.settle()` here if the gesture has no autonomous
+   *  transition of its own. */
   onEnd?: (canceled: boolean) => void;
   /** Host element — accepted for call-site convenience; unused (the shared drag
    *  controller listens on window, not the host). */
   host?: unknown;
+  /** This gesture's `DataViewController`. `start()` is called on pointerdown;
+   *  `commit()`/`cancel()` run before `onEnd`. */
+  dataView?: DataViewController;
+  /** Gesture intent passed to `DataViewController.start()`. */
+  intent?: GestureIntent;
+  /** Gesture origin passed to `DataViewController.start()`. */
+  origin?: unknown;
 }
 
 /**
@@ -91,6 +101,9 @@ export function dragCancelable(
         batch(() => { sources.forEach((c, i) => { c.value = snap[i]!; }); });
       },
       onMove,
+      dataView: opts.dataView,
+      intent: opts.intent,
+      origin: opts.origin,
       onEnd: (canceled) => {
         try { shape.el.releasePointerCapture(pointerId); } catch { /* ok */ }
         pointerId = -1;

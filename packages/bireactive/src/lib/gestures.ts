@@ -9,7 +9,7 @@ import { walkTree, effect as biEffect, batch } from "bireactive";
 import type { BiNode } from "./tree";
 import type { Writable, Cell } from "bireactive";
 import { makeBridge, type ElementWithBridge } from "./hud-bridge";
-import { GESTURE_ACTIVE_CLASS } from "./transitions";
+import type { DataViewController } from "./data-view-controller";
 
 export interface SelectionState {
   focused: Writable<Cell<BiNode | null>>;
@@ -32,19 +32,20 @@ export interface ChartGestureSetup {
    *  always additive (per WIN-38 spec); drag mode lives on the per-handle
    *  callsite. Alt held during arrow keys forces additive regardless. */
   scalingMode?: ScalingMode;
+  /** This chart's DataViewController — wheel gestures start/commit/settle
+   *  through it. */
+  dataView: DataViewController;
 }
 
 export function attachChartGestures(host: HTMLElement | SVGElement, setup: ChartGestureSetup): () => void {
-  const { root, parentOf, state } = setup;
+  const { root, parentOf, state, dataView } = setup;
   const defaultMode: ScalingMode = setup.scalingMode ?? "proportional-siblings";
 
   // applyDelta redistributes a node's change across its siblings, so a revert
   // must restore the target AND every sibling — snapshot all their totals.
   // Per-gesture value-mapping handed to the SHARED wheel controller.
-  const setGestureActive = (on: boolean) => (host as HTMLElement).classList?.toggle(GESTURE_ACTIVE_CLASS, on);
   const wheelConfig = {
     snapshot: (node: BiNode) => {
-      setGestureActive(true);
       const parent = parentOf(node);
       const group = parent ? (parent.children as BiNode[]) : [node];
       return group.map((n) => ({ node: n, value: n.value.total.value }));
@@ -52,7 +53,10 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
     restore: (_node: BiNode, snap: Array<{ node: BiNode; value: number }>) => {
       batch(() => { for (const s of snap) s.node.value.total.value = s.value; });
     },
-    onEnd: () => { setGestureActive(false); state.wheelLocked.current = null; },
+    dataView,
+    intent: 'edit' as const,
+    origin: host,
+    onEnd: (canceled: boolean) => { state.wheelLocked.current = null; dataView.settle(); },
   };
 
   const onWheel = (e: WheelEvent) => {
