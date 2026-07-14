@@ -29,6 +29,15 @@ function sortedIds(leaves: VizNode[]): string {
   return [...leafIds(leaves)].sort().join(',')
 }
 
+function sortLeaves(leaves: VizNode[], measureKey: string, sortBy: 'index' | 'value', orderDir: 'asc' | 'desc'): VizNode[] {
+  if (sortBy === 'index') {
+    const sorted = [...leaves].sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
+    return orderDir === 'desc' ? sorted.reverse() : sorted
+  }
+  const sorted = [...leaves].sort((a, b) => (a.measures[measureKey] ?? 0) - (b.measures[measureKey] ?? 0))
+  return orderDir === 'desc' ? sorted.reverse() : sorted
+}
+
 // ─── Bar ──────────────────────────────────────────────────────────────────────
 
 export interface BarSourceSpec {
@@ -40,15 +49,19 @@ export interface BarSourceSpec {
   labelMode?: 'axis' | 'inside' | 'both'
   valueMode?: 'inside' | 'outside' | 'none'
   minBandSize?: number
+  sortBy?: 'index' | 'value'
+  orderDir?: 'asc' | 'desc'
   onUpdate?: (nodeId: string, measures: VizNode['measures']) => void
 }
 
 export function makeBarSource({
   nodes, measureKey, maxItems,
   orientation = 'vertical', colorMode = 'single', labelMode = 'axis',
-  valueMode = 'none', minBandSize = 0, onUpdate,
+  valueMode = 'none', minBandSize = 0, sortBy = 'index', orderDir, onUpdate,
 }: BarSourceSpec): TileSource {
-  const leaves = leavesOfNodes(nodes)
+  const dir = orderDir ?? (sortBy === 'value' ? 'desc' : 'asc')
+  let leaves = leavesOfNodes(nodes)
+  leaves = sortLeaves(leaves, measureKey, sortBy, dir)
   const ids = leafIds(leaves)
   const displayKey = `${orientation}|${colorMode}|${labelMode}|${valueMode}|${minBandSize}|${maxItems ?? 0}`
   const maxProp = orientation === 'horizontal' ? 'maxBands' : 'maxBars'
@@ -74,12 +87,16 @@ export function makeBarSource({
 export interface PieSourceSpec {
   nodes: VizNode[]
   measureKey: string
+  sortBy?: 'index' | 'value'
+  orderDir?: 'asc' | 'desc'
   onUpdate?: (nodeId: string, measures: VizNode['measures']) => void
   onUpdateMany?: (updates: Array<{ id: string; measures: VizNode['measures'] }>) => void
 }
 
-export function makePieSource({ nodes, measureKey, onUpdate, onUpdateMany }: PieSourceSpec): TileSource {
-  const leaves = leavesOfNodes(nodes)
+export function makePieSource({ nodes, measureKey, sortBy = 'index', orderDir, onUpdate, onUpdateMany }: PieSourceSpec): TileSource {
+  const dir = orderDir ?? (sortBy === 'value' ? 'desc' : 'asc')
+  let leaves = leavesOfNodes(nodes)
+  leaves = sortLeaves(leaves, measureKey, sortBy, dir)
   const ids = leafIds(leaves)
   const shapeKey = `${measureKey}|${sortedIds(leaves)}|${nameSortKey(leaves)}`
   return makeFlatSource<{ id: string; label: string; value: Writable<Num> }>({
@@ -97,11 +114,15 @@ export function makePieSource({ nodes, measureKey, onUpdate, onUpdateMany }: Pie
 export interface RadarSourceSpec {
   nodes: VizNode[]
   measureKey: string
+  sortBy?: 'index' | 'value'
+  orderDir?: 'asc' | 'desc'
   onUpdate?: (nodeId: string, measures: VizNode['measures']) => void
 }
 
-export function makeRadarSource({ nodes, measureKey, onUpdate }: RadarSourceSpec): TileSource {
-  const leaves = leavesOfNodes(nodes)
+export function makeRadarSource({ nodes, measureKey, sortBy = 'index', orderDir, onUpdate }: RadarSourceSpec): TileSource {
+  const dir = orderDir ?? (sortBy === 'value' ? 'desc' : 'asc')
+  let leaves = leavesOfNodes(nodes)
+  leaves = sortLeaves(leaves, measureKey, sortBy, dir)
   const ids = leafIds(leaves)
   const shapeKey = `${measureKey}|${sortedIds(leaves)}|${nameSortKey(leaves)}`
   return makeFlatSource<{ id: string; name: string; value: number }>({
@@ -120,13 +141,17 @@ export interface ConcentricArcSourceSpec {
   nodes: VizNode[]
   measureKey: string
   maxItems?: number
+  sortBy?: 'index' | 'value'
+  orderDir?: 'asc' | 'desc'
   onUpdate?: (nodeId: string, measures: VizNode['measures']) => void
 }
 
 const CONCENTRIC_PALETTE = ['#e05c5c', '#f0a742', '#4cba6e', '#5b8def', '#b76de0', '#44c4c4']
 
-export function makeConcentricArcSource({ nodes, measureKey, maxItems, onUpdate }: ConcentricArcSourceSpec): TileSource {
-  const leaves = leavesOfNodes(nodes)
+export function makeConcentricArcSource({ nodes, measureKey, maxItems, sortBy = 'index', orderDir, onUpdate }: ConcentricArcSourceSpec): TileSource {
+  const dir = orderDir ?? (sortBy === 'value' ? 'desc' : 'asc')
+  let leaves = leavesOfNodes(nodes)
+  leaves = sortLeaves(leaves, measureKey, sortBy, dir)
   const ids = leafIds(leaves)
   const shapeKey = `${measureKey}|${maxItems ?? ''}|${sortedIds(leaves)}|${nameSortKey(leaves)}`
   return makeFlatSource<{ id: string; label: string; color: string; value: number }>({

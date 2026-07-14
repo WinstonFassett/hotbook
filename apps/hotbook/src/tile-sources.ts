@@ -207,7 +207,12 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
       })
     }
 
-    const leaves = leavesOfNodes(sorted)
+    let leaves = leavesOfNodes(sorted)
+    if (orderBinding !== 'index' && orderBinding !== '_index') {
+      const key = orderBinding === 'value' || orderBinding === '_value' ? valueBinding : orderBinding
+      leaves = [...leaves].sort((a, b) => (a.measures[key] ?? 0) - (b.measures[key] ?? 0))
+      if (orderDir === 'desc') leaves.reverse()
+    }
     const xKey = kind === 'scatter' ? (xBinding ?? '_index') : undefined
     const yKey = kind === 'scatter' ? (yBinding ?? valueBinding) : valueBinding
     const primaryValue = kind === 'scatter' ? yKey : valueBinding
