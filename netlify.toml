@@ -8,8 +8,8 @@
 
 # SPA fallback for docs root
 [[redirects]]
-  from   = "/hotbook/*"
-  to     = "/hotbook/:splat"
+  from   = "/fiddleviz/*"
+  to     = "/fiddleviz/:splat"
   status = 200
 
 [[redirects]]

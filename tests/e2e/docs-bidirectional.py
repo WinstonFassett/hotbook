@@ -39,7 +39,7 @@ with sync_playwright() as p:
 
     # ── homepage ────────────────────────────────────────────────────────────
     page.goto(BASE, wait_until="networkidle")
-    check("homepage title", "hotbook" in page.title(), page.title())
+    check("homepage title", "fiddleviz" in page.title(), page.title())
 
     # ── demos page renders all three elements ───────────────────────────────
     page.goto(f"{BASE}/demos/bidirectional", wait_until="networkidle")

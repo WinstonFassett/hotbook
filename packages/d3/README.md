@@ -1,6 +1,6 @@
-# @hotbook/d3
+# @fiddleviz/d3
 
-Pure D3 + TypeScript rendering engine for proportional and hierarchical visualizations. It has no framework dependencies and renders to SVG inside a container. It is used directly by `@hotbook/bireactive` and the host apps for lower-level rendering and reactive tile binding.
+Pure D3 + TypeScript rendering engine for proportional and hierarchical visualizations. It has no framework dependencies and renders to SVG inside a container. It is used directly by `@fiddleviz/bireactive` and the host apps for lower-level rendering and reactive tile binding.
 
 ## Overview
 
@@ -49,7 +49,7 @@ flowchart LR
 - **Flat rendering** uses `VizRenderer` to compute geometry and morph shapes between the three modes. It supports drag-to-edit and drag-to-reorder.
 - **Hierarchical rendering** uses `d3-hierarchy` to compute layout and returns a mounted object with `destroy()`.
 - **Host binding** converts `VizNode` arrays into `bireactive` `BiNode` trees with `biTree`, wraps them in a `TileSource`, and then `bindTile` mounts the `bireactive` element and wires hover/select/edit back to the store.
-- `colors.ts` and `types.ts` re-export the shared palette and domain types from `@hotbook/core`.
+- `colors.ts` and `types.ts` re-export the shared palette and domain types from `@fiddleviz/core`.
 
 ## How to use it
 
@@ -62,7 +62,7 @@ flowchart LR
 
 ```sh
 npm install
-npm run build      # vite build — dist/hotbook-d3.js, .umd.cjs, index.d.ts
+npm run build      # vite build — dist/fiddleviz-d3.js, .umd.cjs, index.d.ts
 npm run watch      # vite build --watch
 npm run test       # vitest run
 npm run test:watch # vitest

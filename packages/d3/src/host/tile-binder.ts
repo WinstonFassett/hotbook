@@ -2,10 +2,10 @@
  * tile-binder.ts — framework-agnostic binding layer between a reactive store
  * and BR-LC custom elements.
  *
- * Extracted from apps/hotbook/src/viz/br/bindTile.ts.
- * No React imports. No hotbook-specific imports.
+ * Extracted from apps/fiddleviz/src/viz/br/bindTile.ts.
+ * No React imports. No fiddleviz-specific imports.
  *
- * The host (e.g. hotbook's BrLcTile.tsx) calls:
+ * The host (e.g. fiddleviz's BrLcTile.tsx) calls:
  *   bindTile(container, source, bindHud)
  * where `bindHud` is a host-supplied function that wires the element's
  * hover/select/drill to whatever HUD store the host uses.
@@ -13,8 +13,8 @@
 
 import { effect as biEffect, leavesOf, walkTree } from 'bireactive'
 import type { Cell, Num, Writable } from 'bireactive'
-import type { VizNode } from '@hotbook/core'
-import { numberDrag } from '@hotbook/bireactive'
+import type { VizNode } from '@fiddleviz/core'
+import { numberDrag } from '@fiddleviz/bireactive'
 import { buildBiTree } from './biTree'
 import type { BiNode } from './biTree'
 
@@ -66,7 +66,7 @@ export interface TileController {
  *
  * @param bindHud  Host-supplied function that wires the element to its HUD
  *                 store (hover/select/drill). Returns a disposer. This is the
- *                 only host-specific seam: hotbook passes its `bindHudSync`;
+ *                 only host-specific seam: fiddleviz passes its `bindHudSync`;
  *                 other hosts supply their own or pass `() => () => {}`.
  */
 export function bindTile(

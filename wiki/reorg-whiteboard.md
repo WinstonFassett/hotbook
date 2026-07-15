@@ -1,6 +1,6 @@
 # reorg-whiteboard
 
-Architecture whiteboard for the `hotbook` reorg. Outline / bullets / diagrams only. This is a living doc for iteration.
+Architecture whiteboard for the `fiddleviz` reorg. Outline / bullets / diagrams only. This is a living doc for iteration.
 
 ---
 
@@ -13,21 +13,21 @@ flowchart TB
     end
 
     subgraph Surfaces
-      hotbook["apps/hotbook"]
+      fiddleviz["apps/fiddleviz"]
       docs["apps/docs"]
       apitable["apps/apitable"]
     end
 
     subgraph Presentation
-      charts["@hotbook/bireactive"]
-      d3["@hotbook/d3"]
-      dock["@hotbook/dock (future)"]
-      layout["@hotbook/layout"]
-      layercharts["@hotbook/layercharts (future)"]
+      charts["@fiddleviz/bireactive"]
+      d3["@fiddleviz/d3"]
+      dock["@fiddleviz/dock (future)"]
+      layout["@fiddleviz/layout"]
+      layercharts["@fiddleviz/layercharts (future)"]
     end
 
     subgraph Kernel
-      core["@hotbook/core"]
+      core["@fiddleviz/core"]
       kernel["kernel / store (TBD)"]
     end
 
@@ -53,23 +53,23 @@ Dependency rule: **down only**. Surfaces depend on presentation packages. Presen
 
 ```mermaid
 flowchart LR
-    subgraph hotbook-app
-      hotbook["apps/hotbook"]
+    subgraph fiddleviz-app
+      fiddleviz["apps/fiddleviz"]
     end
 
     subgraph packages
-      core["@hotbook/core"]
-      bireactive["@hotbook/bireactive"]
-      d3["@hotbook/d3"]
-      reactd3["@hotbook/react-d3"]
-      layout["@hotbook/layout"]
-      apitable["@hotbook/apitable"]
+      core["@fiddleviz/core"]
+      bireactive["@fiddleviz/bireactive"]
+      d3["@fiddleviz/d3"]
+      reactd3["@fiddleviz/react-d3"]
+      layout["@fiddleviz/layout"]
+      apitable["@fiddleviz/apitable"]
     end
 
-    hotbook --> core
-    hotbook --> bireactive
-    hotbook --> d3
-    hotbook --> layout
+    fiddleviz --> core
+    fiddleviz --> bireactive
+    fiddleviz --> d3
+    fiddleviz --> layout
     d3 --> core
     d3 --> bireactive
     bireactive --> core
@@ -80,8 +80,8 @@ flowchart LR
 ```
 
 Notes:
-- `@hotbook/d3` depends on `@hotbook/bireactive` because the tile-binder uses `bireactive` primitives.
-- `@hotbook/react-d3` may be dead (zero consumers) — needs verification.
+- `@fiddleviz/d3` depends on `@fiddleviz/bireactive` because the tile-binder uses `bireactive` primitives.
+- `@fiddleviz/react-d3` may be dead (zero consumers) — needs verification.
 
 ---
 
@@ -260,23 +260,23 @@ Do we want the kernel to own the `ValueStore` instance, or does the surface pass
 Two competing frames:
 
 ### A. Active plan (`reorg-2026-07.md`)
-- Keep coordination inside `@hotbook/bireactive` for now.
+- Keep coordination inside `@fiddleviz/bireactive` for now.
 - Extract a named kernel package only when a second surface (e.g. graph layout, dock) needs the interface.
 - Path: lift existing code, not greenfield.
 
 ### B. Flexblox / matchina frame
-- Build `@hotbook/core` as a substrate-agnostic kernel with `ValueStore` / `Patch` interfaces.
-- Wire `@hotbook/bireactive` and `@hotbook/d3` as `ValueStore` strategies.
+- Build `@fiddleviz/core` as a substrate-agnostic kernel with `ValueStore` / `Patch` interfaces.
+- Wire `@fiddleviz/bireactive` and `@fiddleviz/d3` as `ValueStore` strategies.
 - Path: design then conform.
 
 ```mermaid
 flowchart TB
     subgraph active
-      a1["@hotbook/bireactive charts"] -->|owns coordination| a2["@hotbook/core<br/>types only"]
+      a1["@fiddleviz/bireactive charts"] -->|owns coordination| a2["@fiddleviz/core<br/>types only"]
     end
 
     subgraph strategy
-      f1["@hotbook/core<br/>ValueStore + Patch"] --> f2["BireactiveValueStore"]
+      f1["@fiddleviz/core<br/>ValueStore + Patch"] --> f2["BireactiveValueStore"]
       f1 --> f3["PlainValueStore"]
       f2 --> f4["chart elements"]
       f3 --> f4
@@ -293,7 +293,7 @@ Decision needed: which frame? A first, then B later? Or B now with `ValueStore` 
 flowchart TD
     D1["1. Substrate strategy"] --> D2["2. Kernel boundary / extraction timing"]
     D2 --> D3["3. Dock strategy"]
-    D2 --> D4["4. @hotbook/core scope"]
+    D2 --> D4["4. @fiddleviz/core scope"]
     D3 --> D5["5. Package list"]
     D4 --> D5
     D5 --> D6["6. Tile spec vocabulary"]
@@ -301,21 +301,21 @@ flowchart TD
     D5 --> D8["8. APITable fate"]
     D6 --> T1["tile-sources refactor"]
     D6 --> T2["DockView picker refactor"]
-    D7 --> T3["@hotbook/layercharts"]
-    D8 --> T4["@hotbook/apitable"]
+    D7 --> T3["@fiddleviz/layercharts"]
+    D8 --> T4["@fiddleviz/apitable"]
 ```
 
 ### Top decisions
 
 1. **Substrate strategy** — `BireactiveValueStore` first, `PlainValueStore` as first-class, or mixed? Is `ValueStore` the right abstraction?
-2. **Kernel boundary** — keep coordination in `@hotbook/bireactive` or extract a `ValueStore`/`Patch` kernel to `@hotbook/core` now?
+2. **Kernel boundary** — keep coordination in `@fiddleviz/bireactive` or extract a `ValueStore`/`Patch` kernel to `@fiddleviz/core` now?
 3. **Dock strategy** — adopt `dockview-core` or build fresh? Single-page or stacked pages?
 4. **Core scope** — types/colors only, or `ValueStore` + `Patch` + conservation transformer?
-5. **Package list** — which `@hotbook/*` packages exist? Do we need `@hotbook/dock`, `@hotbook/ui`, `@hotbook/layercharts`, `@hotbook/observable-runtime`?
+5. **Package list** — which `@fiddleviz/*` packages exist? Do we need `@fiddleviz/dock`, `@fiddleviz/ui`, `@fiddleviz/layercharts`, `@fiddleviz/observable-runtime`?
 6. **Tile spec vocabulary** — `measureKey`/`sortBy`/`xKey`/`yKey` vs `xField`/`valueField`/`sortDir`?
 7. **Svelte/LayerChart fate** — keep alias, promote to package, or remove?
 8. **APITable fate** — keep or drop?
-9. **Package scope** — `@hotbook/*` vs `@hotbook/*` vs `@winstonfassett/*`?
+9. **Package scope** — `@fiddleviz/*` vs `@fiddleviz/*` vs `@winstonfassett/*`?
 10. **Test infrastructure** — Vitest for kernel/charts, Playwright for gestures? When?
 
 ---
@@ -364,7 +364,7 @@ This DAG is draft only. It depends on the substrate/kernel decision.
 
 ## 7. Data views / query layer
 
-Long-term, a `hotbook` is a **workbook** of modules / pages / sections. The top-level view is an ordered list. A workspace declares **data sources** and **data views**. The viewer renders `views` and binds each to a data source.
+Long-term, a `fiddleviz` is a **workbook** of modules / pages / sections. The top-level view is an ordered list. A workspace declares **data sources** and **data views**. The viewer renders `views` and binds each to a data source.
 
 ### Core types
 
@@ -686,8 +686,8 @@ The recursive bit: the `sourceId` of an `UpdatableViewQuery` can point to a base
 
 ## 8. Notes / scratch
 
-- `@hotbook/d3` currently depends on `@hotbook/bireactive` because the tile-binder uses `bireactive` primitives. If we want a pure D3-direct substrate, the `PlainValueStore` + `D3Chart` consumer pattern removes the need for `bireactive` in the D3 path.
-- `apps/hotbook` has `persistence/` and `store/` — these are host-level, not kernel-level. The kernel should be ephemeral.
+- `@fiddleviz/d3` currently depends on `@fiddleviz/bireactive` because the tile-binder uses `bireactive` primitives. If we want a pure D3-direct substrate, the `PlainValueStore` + `D3Chart` consumer pattern removes the need for `bireactive` in the D3 path.
+- `apps/fiddleviz` has `persistence/` and `store/` — these are host-level, not kernel-level. The kernel should be ephemeral.
 - `matchina` is a typed state-machine library. It is not installed yet. It is a lifecycle utility, not a `ValueStore` strategy.
 - The `bireactive` version in `package.json` is `^0.3.5` in root but `^0.3.4` in packages. Align.
 - **TanStack DB** (beta) is a close conceptual match: `Collection` = `UpdatableDataSource`, `LiveQuery` result = `UpdatableView`, `LiveQuery` definition = `UpdatableViewQuery`, `queryOnce` = one-shot, `optimistic mutations`/`transaction` = `PatchContext` (`updatePending`/`updateNow`/`rejected`), `$synced`/`$origin` = `phase`/`origin`. It has `where`, `select`, `join`, `groupBy`, `aggregate`, `orderBy`, `limit`, `offset` in the query builder, and `d2ts` for incremental live updates. This may be a viable default substrate for the app layer.

@@ -8,19 +8,19 @@
 
 Today a chart does not declare what it accepts. Two symptoms:
 
-1. **The config-UI story is off-chart.** `apps/hotbook/src/tile-config-schemas.ts`
+1. **The config-UI story is off-chart.** `apps/fiddleviz/src/tile-config-schemas.ts`
    holds a hand-maintained map from `TileKind` to a bag of boolean pickers
    (`measure`, `sort`, `depth`, `orientation`, `xKey`, `yKey`, `groupBy`).
    `DockView.ts` (~L599–715) reads that bag and builds `<select>` elements
    inline. Adding a new picker means editing three files that don't know each
-   other: the chart, the type in `@hotbook/core`, and the DockView renderer.
+   other: the chart, the type in `@fiddleviz/core`, and the DockView renderer.
 2. **The data-shape story is nowhere.** Nothing declares "this chart needs a
    flat rowset with one numeric measure" vs. "this chart needs a
    `containmentForest` with N measures rolled up sum." The knowledge exists in
    the chart's constructor + how the caller wires `externalRoot`, `measureKey`,
    etc. — it can't be introspected, validated, or driven by an editor.
 
-Consequence: the demos page and hotbook each re-implement "how do I feed this
+Consequence: the demos page and fiddleviz each re-implement "how do I feed this
 chart" in prose. Extensions (APITable) have no shared surface to build config
 UI against. The migration to a framework (Svelte, later maybe React) will
 either duplicate that prose again or block on this refactor.
@@ -54,7 +54,7 @@ orientation: 'vertical' | 'horizontal'
 Two different shapes (`BiNode` tree vs. `Bar[]`), two different key names for
 "the measure," no shared vocabulary. The consumer has to know this per chart.
 
-### 2b. What `@hotbook/core` exports today
+### 2b. What `@fiddleviz/core` exports today
 
 `packages/core/src/types.ts` L108–124 defines `VizConfigSchema`:
 
@@ -79,7 +79,7 @@ hard-coded in `DockView._buildTileHeader`.
 
 ### 2c. Where it's consumed
 
-Exactly one consumer: `apps/hotbook/src/DockView.ts` L599–715. Same file
+Exactly one consumer: `apps/fiddleviz/src/DockView.ts` L599–715. Same file
 hand-builds each `<select>`, hard-codes the options list, and wires the
 change handler to a `tileRec.on*Change` callback. `TileRecord` (the state
 adapter) is another hand-maintained shim between the tile persistence model
@@ -107,7 +107,7 @@ where it lands.
    and its configuration schema. Nothing about "which pickers, with what
    options" lives in a downstream registry.
 2. **One schema type, two audiences.** The same schema drives both (a) the
-   config-editing UI in hotbook/DockView and eventually apitable, and (b)
+   config-editing UI in fiddleviz/DockView and eventually apitable, and (b)
    runtime validation of the config object saved in a dashboard.
 3. **Framework-agnostic core.** The schemas + validators live in a package
    with no DOM dependency, so a Svelte or React tile shell can consume them
@@ -174,7 +174,7 @@ Both are considered. Recommendation and rationale:
 | Ecosystem breadth            | Huge       | Small but growing |
 | Downstream package weight    | Charged once at the boundary | Basically free in extensions |
 
-Recommendation: **Zod for the core schemas, at the `@hotbook/core` layer.**
+Recommendation: **Zod for the core schemas, at the `@fiddleviz/core` layer.**
 Reasoning: (1) we already carry non-trivial JS in the bundle; the extra ~12KB
 buys us the mature `zod-to-json-schema` + `@rjsf/*` pipeline, which is what
 turns "chart declares config" into "APITable renders a form" without us
@@ -183,7 +183,7 @@ hand-writing widgets; (2) the introspection story is production-tested; (3) a
 pay the size in extension bundles unless the extension itself wants runtime
 validation.
 
-The *escape hatch*: if the bundle cost bites on `@hotbook/apitable` (embedded
+The *escape hatch*: if the bundle cost bites on `@fiddleviz/apitable` (embedded
 in APITable, size-sensitive), we can dual-publish the introspected JSON
 Schema alongside the Zod schema at build time. Extensions consume the JSON
 Schema + a tiny runtime; the workspace consumes the Zod object. This keeps
@@ -191,11 +191,11 @@ the door open to Valibot in extensions later without re-authoring.
 
 If Winston prefers Valibot for footprint reasons and is willing to spend
 adapter-writing time, the design is intentionally isomorphic — swap the
-validator import in `@hotbook/core` and the propagation model is identical.
+validator import in `@fiddleviz/core` and the propagation model is identical.
 
 ### 4.3 Where schemas live
 
-New package: `@hotbook/schemas` (or fold into `@hotbook/core` — see §11).
+New package: `@fiddleviz/schemas` (or fold into `@fiddleviz/core` — see §11).
 
 ```
 packages/schemas/src/
@@ -211,12 +211,12 @@ packages/schemas/src/
   registry.ts          # Map<kind, ChartSchema> + register/lookup
 ```
 
-The chart *implementation* (in `@hotbook/bireactive`) imports its schema
-from `@hotbook/schemas` and re-exports it alongside the class:
+The chart *implementation* (in `@fiddleviz/bireactive`) imports its schema
+from `@fiddleviz/schemas` and re-exports it alongside the class:
 
 ```ts
 // packages/bireactive/src/charts/bar-chart.ts
-import { BarChartSchema } from '@hotbook/schemas/charts/bar'
+import { BarChartSchema } from '@fiddleviz/schemas/charts/bar'
 export { BarChartSchema }
 export class MdBarChartLC extends Diagram { … }
 ```
@@ -287,7 +287,7 @@ tile is bound to, not on the chart. Two approaches:
   handing to rjsf. Better for pure JSON-Schema pipelines (APITable), where
   we materialize the schema into JSON and want the options embedded.
 
-Ship (A) for hotbook (fast); reuse the *same widget hint* under (B) when
+Ship (A) for fiddleviz (fast); reuse the *same widget hint* under (B) when
 APITable is built. Both use `Dataset.measureDefs` as source of truth.
 
 ### 4.6 Data-shape schemas
@@ -347,26 +347,26 @@ call. Retired kinds fall through to a null-object render (same as today's
 
 ```
 ┌────────────────────────┐
-│ @hotbook/schemas       │  Zod schemas + ChartSchema type + registry
+│ @fiddleviz/schemas       │  Zod schemas + ChartSchema type + registry
 │  – no DOM, no d3       │  Tiny; safe for extensions
 └──────────┬─────────────┘
            │ depended on by
            ▼
 ┌────────────────────────┐  ┌────────────────────────┐  ┌────────────────────────┐
-│ @hotbook/bireactive    │  │ @hotbook/core          │  │ @hotbook/apitable      │
+│ @fiddleviz/bireactive    │  │ @fiddleviz/core          │  │ @fiddleviz/apitable      │
 │  charts import their   │  │  Dataset + MeasureDef  │  │  builds config UI      │
 │  own schemas & register│  │  reference primitives  │  │  from schema JSON      │
 └──────────┬─────────────┘  └───────┬────────────────┘  └───────────┬────────────┘
            │                        │                                │
            ▼                        ▼                                ▼
 ┌───────────────────────────────────────────────────────────────────────────────┐
-│ apps/hotbook (DockView) & apps/demos (demo page)                              │
+│ apps/fiddleviz (DockView) & apps/demos (demo page)                              │
 │  Look up chartRegistry.get(kind) → build header widgets from ChartSchema.ui  │
 │  Same code path for both apps.                                                │
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
 
-`@hotbook/schemas` sits *below* `@hotbook/core` (in the dependency arrow
+`@fiddleviz/schemas` sits *below* `@fiddleviz/core` (in the dependency arrow
 above, `core` references primitives; charts reference both). If `core` also
 depends on `schemas`, dependencies stay a DAG.
 
@@ -378,7 +378,7 @@ everywhere. Winston's call — see §11.
 
 The APITable extension config panel:
 
-1. Import `@hotbook/schemas` at build time.
+1. Import `@fiddleviz/schemas` at build time.
 2. `chartRegistry.get('bar').config` → `zodToJsonSchema(...)` at build → ship
    a JSON blob into the extension bundle. No Zod runtime in the extension.
 3. At runtime, extension asks APITable for the field mapping (which
@@ -401,14 +401,14 @@ Because `ChartSchema` is data:
   templates natively). The header pickers are the only place the framework
   changes — and they're now schema-driven, so we author picker components
   once per framework, not per chart.
-- A React shell (hotbook today) does the same. The existing React header in
-  `apps/hotbook` becomes a thin generic renderer.
+- A React shell (fiddleviz today) does the same. The existing React header in
+  `apps/fiddleviz` becomes a thin generic renderer.
 - The *charts* stay bireactive custom elements. Reframing to Svelte later
   is orthogonal to this ticket — see WIN-255 item 1 discussion.
 
 ## 5. Contract at each package boundary
 
-### 5a. `@hotbook/schemas` public API
+### 5a. `@fiddleviz/schemas` public API
 
 ```ts
 // exports
@@ -426,13 +426,13 @@ export { BarChartSchema } from './charts/bar'
 // …one per chart
 ```
 
-### 5b. `@hotbook/bireactive` charts contract
+### 5b. `@fiddleviz/bireactive` charts contract
 
 Each chart module `export`s **both** the element class and its schema:
 
 ```ts
 export { MdBarChartLC } from './bar-chart'
-export { BarChartSchema } from '@hotbook/schemas/charts/bar'  // re-exported
+export { BarChartSchema } from '@fiddleviz/schemas/charts/bar'  // re-exported
 ```
 
 Chart classes gain no new required constructor args. Optionally, we add a
@@ -487,13 +487,13 @@ via PR, live-tested in the Netlify preview. Testing for this refactor:
   make schema drift visible.
 - **Integration**: DockView renders header from schema, tile round-trips
   config through persistence, dashboards from the old schema still open.
-- **Manual on preview** (mandatory per repo rules): open hotbook preview,
+- **Manual on preview** (mandatory per repo rules): open fiddleviz preview,
   change every picker on every chart type, verify visual + persistence.
 
 ## 8. Open questions (need Winston's answer before Stage 2)
 
 1. **Zod vs Valibot** — recommendation is Zod (§4.2); confirm or override.
-2. **`@hotbook/schemas` vs. fold into `@hotbook/core`** — recommendation is
+2. **`@fiddleviz/schemas` vs. fold into `@fiddleviz/core`** — recommendation is
    its own package for staged rollout, but consolidation is defensible.
 3. **Old `VizConfigSchema` — retire in Stage 4 or leave as a legacy adapter
    permanently?** Retiring gives us one truth; leaving costs almost nothing.
@@ -525,7 +525,7 @@ via PR, live-tested in the Netlify preview. Testing for this refactor:
 Every stage lands as a merged PR. Stages are ordered so intermediate states
 are shippable; no big-bang.
 
-### Stage 1 — Introduce `@hotbook/schemas` (no consumer change)
+### Stage 1 — Introduce `@fiddleviz/schemas` (no consumer change)
 
 - Create `packages/schemas` with `types.ts`, `primitives.ts`, `registry.ts`,
   data-shape schemas, and Zod schemas for `MeasureDef`/`DimDef`.
@@ -542,7 +542,7 @@ are shippable; no big-bang.
 
 ### Stage 3 — Schema-driven DockView (bar + sunburst only)
 
-- `renderSchemaForm` helper in `apps/hotbook`.
+- `renderSchemaForm` helper in `apps/fiddleviz`.
 - DockView: `if (chartRegistry.has(kind)) renderSchemaForm(...) else oldPath`.
 - **Behavior identical** — parity gate. Live-test on preview.
 
@@ -562,13 +562,13 @@ are shippable; no big-bang.
 
 ### Stage 6 — Framework-agnostic renderer (deferred, tracked separately)
 
-- Extract `renderSchemaForm` from `apps/hotbook` to
+- Extract `renderSchemaForm` from `apps/fiddleviz` to
   `packages/schema-form-vanilla` (no framework). Sets the Svelte port up.
 - Explicitly out of scope for WIN-258; documented so the door isn't shut.
 
 ## 11. Recommendation summary (TL;DR)
 
-- One new package `@hotbook/schemas`, Zod-based, no DOM.
+- One new package `@fiddleviz/schemas`, Zod-based, no DOM.
 - Each chart owns its schema, re-exported next to the class; charts
   self-register into a shared registry.
 - DockView (and later APITable / a Svelte shell) is a generic renderer over

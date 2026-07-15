@@ -26,7 +26,7 @@ import {
 } from './dock'
 import type { DockEdge } from './dock'
 import type { Tile, Dataset } from './persistence'
-import { getChartSchema } from '@hotbook/core'
+import { getChartSchema } from '@fiddleviz/core'
 import { bindTile } from './viz/br/bindTile'
 import type { TileController, TileSource } from './viz/br/bindTile'
 import { hudStore } from './store'

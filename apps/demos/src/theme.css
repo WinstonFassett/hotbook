@@ -1,5 +1,5 @@
 /* Bireactive needs these CSS variables defined or strokes/labels are
- * invisible. Defaults match the rest of hotbook's surface (the index.html
+ * invisible. Defaults match the rest of fiddleviz's surface (the index.html
  * --fg/--bg/--accent already define the lab chrome). */
 :root {
   --text-color: var(--fg);

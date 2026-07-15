@@ -1,7 +1,7 @@
 import type { Workspace, Dataset, Dashboard, Tile, TileKind } from './schema/v11'
-import type { VizNode } from '@hotbook/core'
+import type { VizNode } from '@fiddleviz/core'
 import { removeTileFromDock } from '../dock'
-import { applyView, drillPath } from '@hotbook/core'
+import { applyView, drillPath } from '@fiddleviz/core'
 
 function genId(): string {
   return Math.random().toString(36).slice(2, 10)
@@ -134,12 +134,12 @@ export function dashboardsForDataset(ws: Workspace, dsId: string): Dashboard[] {
   return ws.dashboards.filter(d => d.datasetId === dsId)
 }
 
-// ─── GroupBy helper (re-exported from @hotbook/core) ──────────
+// ─── GroupBy helper (re-exported from @fiddleviz/core) ──────────
 
 // For backwards compatibility, re-export applyView as applyGroupBy
 export function applyGroupBy(nodes: VizNode[], dimKey: string): VizNode[] {
   return applyView(nodes, dimKey)
 }
 
-// ─── Drill helpers (re-exported from @hotbook/core) ────────────
+// ─── Drill helpers (re-exported from @fiddleviz/core) ────────────
 export { drillPath }

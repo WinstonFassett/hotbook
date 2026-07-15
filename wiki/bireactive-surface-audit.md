@@ -1,6 +1,6 @@
 # Bireactive surface audit
 
-Read of `inspo/bireactive/src/` to ground hotbook's diagram-kit plans in
+Read of `inspo/bireactive/src/` to ground fiddleviz's diagram-kit plans in
 prior art before designing further. Without this audit I'd been sketching
 packages (`bireactive-coll`, `bireactive-tree`, etc.) that already exist
 in bireactive itself.
@@ -117,13 +117,13 @@ in bireactive itself.
 ### Tex (`src/tex/`)
 - LaTeX-style equation rendering
 
-## What's actually new in hotbook's spike code
+## What's actually new in fiddleviz's spike code
 
 Mapping `apps/bireactive-spike/`, `apps/bireactive-viz/`,
 `apps/layerchart-direct-spike/` against the above. Truly new is much
 narrower than I'd been planning:
 
-### Genuinely new to hotbook
+### Genuinely new to fiddleviz
 
 - **d3-hierarchy adapters under bireactive cells**: `derive(() =>
   d3.treemap()(snapshot(tree)))`-style backends for treemap, sunburst,
@@ -191,7 +191,7 @@ The kit is much smaller than I'd been framing:
                 └──────────────────────┬────────────────────────────┘
                                        │ build ON TOP of:
                                        ▼
-        ┌─ hotbook-diagram kit ─────────────────────────────────────┐
+        ┌─ fiddleviz-diagram kit ─────────────────────────────────────┐
         │  chart-context (focus, project, drill, breadcrumbs)       │
         │  gesture vocabulary (drag-resize, scrub, marquee, multi,  │
         │    ghost, undo/redo, update policies)                     │
@@ -247,19 +247,19 @@ the spike's hand-rolled `leaves()`/`parentOf()` walkers.
 
 ## Open questions raised by the audit
 
-1. Should `hotbook-diagram` (or whatever it's named) live in the same
+1. Should `fiddleviz-diagram` (or whatever it's named) live in the same
    monorepo as bireactive, separately, or as a published consumer? Given
    how tightly it'll integrate, separate-package-in-this-monorepo is
    probably right.
 2. Where do d3 adapters live — `bireactive-d3` as a peer to bireactive, or
-   `hotbook-diagram/backends/d3` as an internal? Lean toward peer
+   `fiddleviz-diagram/backends/d3` as an internal? Lean toward peer
    package, since "d3 layouts under bireactive cells" is a generally
-   useful pattern beyond hotbook.
+   useful pattern beyond fiddleviz.
 3. Should we engage with the bireactive author about contributing the
    extensions we'd otherwise build in `bireactive-native` (port
    attachment, orthogonal routing, hierarchy) back upstream?
 4. The `cross-view.ts` morph between hierarchical viz types is one of
-   the most evocative things in the spike. It's hotbook-original but
+   the most evocative things in the spike. It's fiddleviz-original but
    uses bireactive primitives end-to-end. Worth understanding whether
    bireactive's `transitions` module already provides a more idiomatic
    way to express it.

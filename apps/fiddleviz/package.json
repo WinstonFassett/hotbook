@@ -1,17 +1,17 @@
 {
-  "name": "hotbook",
+  "name": "fiddleviz",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "portless hotbook vite",
+    "dev": "portless fiddleviz vite",
     "build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {
-    "@hotbook/bireactive": "*",
-    "@hotbook/core": "*",
-    "@hotbook/d3": "*",
+    "@fiddleviz/bireactive": "*",
+    "@fiddleviz/core": "*",
+    "@fiddleviz/d3": "*",
     "bireactive": "^0.3.4",
     "react": "^18.0.0",
     "react-dom": "^18.0.0"

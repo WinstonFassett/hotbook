@@ -1,6 +1,6 @@
 // Viewer demo custom element - demonstrates pan/zoom/show API
 import { Diagram } from '../../../packages/bireactive/src/lib/diagram';
-import { Viewer, type Bounds } from '@hotbook/bireactive';
+import { Viewer, type Bounds } from '@fiddleviz/bireactive';
 import type { Mount } from 'bireactive';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';

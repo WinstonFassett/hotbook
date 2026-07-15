@@ -1,16 +1,16 @@
 {
-  "name": "hotbook-demos",
+  "name": "fiddleviz-demos",
   "version": "0.0.1",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "portless hotbook-demos vite",
+    "dev": "portless fiddleviz-demos vite",
     "build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {
-    "@hotbook/bireactive": "*",
-    "@hotbook/layout": "*",
+    "@fiddleviz/bireactive": "*",
+    "@fiddleviz/layout": "*",
     "bireactive": "^0.3.4"
   },
   "devDependencies": {

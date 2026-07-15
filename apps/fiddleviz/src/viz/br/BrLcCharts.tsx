@@ -24,7 +24,7 @@ import {
   MdPack, MdTreemapLC, MdTreetableLC, MdIcicleLC, MdSunburstLC,
   MdSankeySimple, MdSankeyFlow, MdTreeChart, MdGanttChartLC,
   type GanttTask,
-} from '@hotbook/bireactive'
+} from '@fiddleviz/bireactive'
 
 // Register custom elements once
 const TAGS = [

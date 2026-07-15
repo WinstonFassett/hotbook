@@ -6,7 +6,7 @@
 
 **Use CSS transitions on the rendered SVG element.** Reach for a bireactive tween cell only for the narrow set of effects CSS cannot express (stagger, multi-property choreography, easing on non-CSS-animatable values).
 
-Timing tokens, easing, the reduced-motion check, and the gesture-suppression class all live in one place: `packages/hotbook-charts/src/lib/transitions.ts`. Per Interaction Principle 10, every duration is a multiplier of `TRANSITION_BASE_MS` (100ms) — there is no hardcoded ms scattered through gesture handlers.
+Timing tokens, easing, the reduced-motion check, and the gesture-suppression class all live in one place: `packages/fiddleviz-charts/src/lib/transitions.ts`. Per Interaction Principle 10, every duration is a multiplier of `TRANSITION_BASE_MS` (100ms) — there is no hardcoded ms scattered through gesture handlers.
 
 ## Spike summary
 
@@ -41,7 +41,7 @@ The bireactive package surface (`bireactive` 0.3.4) exposes `cell`, `derive`, `e
 
 **Cons:**
 - Significant net-new infrastructure (tween cell, scheduler, teardown, interruption semantics, reduced-motion plumbing) when the platform already gives you most of it for free.
-- Doubles the cell graph for every animated property — one raw cell, one tween cell — which interacts subtly with the reactive flush in embeddings (hotbook). The existing `applyDelta` batching is carefully tuned to fire ONE flush per gesture step; tween cells would fire ~16 flushes/sec for the duration of every settle.
+- Doubles the cell graph for every animated property — one raw cell, one tween cell — which interacts subtly with the reactive flush in embeddings (fiddleviz). The existing `applyDelta` batching is carefully tuned to fire ONE flush per gesture step; tween cells would fire ~16 flushes/sec for the duration of every settle.
 - Mid-gesture interruption (Principle 11) requires explicit "read current animated value, restart from there" handling at every call site. CSS transitions do this automatically.
 
 ### Why CSS wins for this codebase
@@ -72,8 +72,8 @@ So during a drag or ctrl+wheel every descendant temporarily has no transition �
 
 ## What landed in this PR
 
-- `packages/hotbook-charts/src/lib/transitions.ts` — timing tokens, easing, `settleTransition()` / `hoverTransition()`, `prefersReducedMotion()`, `GESTURE_ACTIVE_CLASS`, `GESTURE_SUPPRESSION_CSS`.
-- `packages/hotbook-charts/src/demos/bar-chart.ts` — gesture-suppression CSS in `static styles`; `setGestureActive` wired into both wheel and drag configs (both orientations); settle transition on bar rect `y` / `height` / `fill` (vertical) and `width` / `fill` (horizontal); existing inline `opacity 0.1s` routed through `hoverTransition()`.
+- `packages/fiddleviz-charts/src/lib/transitions.ts` — timing tokens, easing, `settleTransition()` / `hoverTransition()`, `prefersReducedMotion()`, `GESTURE_ACTIVE_CLASS`, `GESTURE_SUPPRESSION_CSS`.
+- `packages/fiddleviz-charts/src/demos/bar-chart.ts` — gesture-suppression CSS in `static styles`; `setGestureActive` wired into both wheel and drag configs (both orientations); settle transition on bar rect `y` / `height` / `fill` (vertical) and `width` / `fill` (horizontal); existing inline `opacity 0.1s` routed through `hoverTransition()`.
 - This decision doc.
 
 ## What's NOT in this PR (split as sub-issues)

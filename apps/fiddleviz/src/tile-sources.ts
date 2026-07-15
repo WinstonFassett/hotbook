@@ -10,8 +10,8 @@ import { makeFlatSource, makeHierSource, makeHierRootFlatSource, hierShapeKey, h
 import type { TileSource } from './viz/br/bindTile'
 import { hudStore } from './store'
 import { applyGroupBy } from './persistence'
-import { colorFor, leavesOf, getChartSchema } from '@hotbook/core'
-import type { DataShape, FlatRow, ChartContext, MountContext } from '@hotbook/core'
+import { colorFor, leavesOf, getChartSchema } from '@fiddleviz/core'
+import type { DataShape, FlatRow, ChartContext, MountContext } from '@fiddleviz/core'
 
 import {
   MdBarChartLC,
@@ -32,7 +32,7 @@ import {
   MdSankeyFlow,
   MdTreeChart,
   MdGanttChartLC,
-} from '@hotbook/bireactive'
+} from '@fiddleviz/bireactive'
 
 // Register custom elements once and build kind→tag mapping
 const TAGS = [

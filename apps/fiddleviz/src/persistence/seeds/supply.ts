@@ -1,5 +1,5 @@
 import type { Dataset } from '../schema/v11'
-import type { PEdge } from '@hotbook/core'
+import type { PEdge } from '@fiddleviz/core'
 
 const NOW = '2026-05-13T12:00:00.000Z'
 

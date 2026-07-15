@@ -1,4 +1,4 @@
-import { group, leaf, type BiNode } from "@hotbook/bireactive";
+import { group, leaf, type BiNode } from "@fiddleviz/bireactive";
 
 export function portfolio(): BiNode {
   return group("portfolio", "Portfolio", "#222", [

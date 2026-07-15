@@ -1,4 +1,4 @@
-import type { VizNode, PNode, PEdge, ScalingMode } from '@hotbook/core'
+import type { VizNode, PNode, PEdge, ScalingMode } from '@fiddleviz/core'
 
 export type { VizNode, PNode, PEdge }
 

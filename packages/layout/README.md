@@ -1,4 +1,4 @@
-# @hotbook/layout
+# @fiddleviz/layout
 
 Bireactive 2D graph layout primitives for nested, layered diagrams such as state machines and flow charts. It is experimental and used by the `demos` app.
 

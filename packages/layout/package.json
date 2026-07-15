@@ -1,11 +1,11 @@
 {
-  "name": "@hotbook/layout",
+  "name": "@fiddleviz/layout",
   "version": "0.0.1",
-  "description": "hotbook layout — bireactive 2D graph layout (state machines, flow diagrams).",
+  "description": "fiddleviz layout — bireactive 2D graph layout (state machines, flow diagrams).",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/WinstonFassett/hotbook.git",
+    "url": "https://github.com/WinstonFassett/fiddleviz.git",
     "directory": "packages/layout"
   },
   "type": "module",

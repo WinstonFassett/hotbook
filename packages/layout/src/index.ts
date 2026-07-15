@@ -1,5 +1,5 @@
 /**
- * @hotbook/layout — graph/network layout engine.
+ * @fiddleviz/layout — graph/network layout engine.
  *
  * Exports the nested-layered chart and supporting utilities.
  */

@@ -7,7 +7,7 @@
 
 import type { VizNode } from '../../../persistence'
 import { makeHierSource, hierShapeKey, hierValueKey } from '../bindTile'
-import { numberDrag } from '@hotbook/bireactive'
+import { numberDrag } from '@fiddleviz/bireactive'
 import type { TileSource } from '../bindTile'
 
 export interface HierSourceProps {

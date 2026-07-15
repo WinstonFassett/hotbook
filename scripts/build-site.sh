@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Build the full docs site with the consolidated /demos/ page + hotbook app.
+# Build the full docs site with the consolidated /demos/ page + fiddleviz app.
 # Output: apps/docs/dist (the Netlify publish directory)
 #
 # Layout:
@@ -10,7 +10,7 @@ set -euo pipefail
 #                  every chart, gantt, treetable, layout demo lives here as a
 #                  hash-anchored section (#gantt, #treetable, #layout-nested, ...)
 #   /demos/bidirectional/  bidirectional-binding demos (Astro page)
-#   /hotbook/      hotbook hotbook app (vite build)
+#   /fiddleviz/      fiddleviz fiddleviz app (vite build)
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -25,14 +25,14 @@ npm run build -w apps/docs
 echo "==> Building demos (single consolidated page)..."
 (cd apps/demos && npx vite build --base /demos/)
 
-echo "==> Building hotbook app..."
-(cd apps/hotbook && npx vite build --base /hotbook/)
+echo "==> Building fiddleviz app..."
+(cd apps/fiddleviz && npx vite build --base /fiddleviz/)
 
 echo "==> Assembling site..."
 # The demos page is /demos/ — copy over the top of any Astro-emitted /demos/
 # stubs (bidirectional/ stays because it lives at /demos/bidirectional/).
 mkdir -p apps/docs/dist/demos
 cp -r apps/demos/dist/. apps/docs/dist/demos/
-cp -r apps/hotbook/dist apps/docs/dist/hotbook
+cp -r apps/fiddleviz/dist apps/docs/dist/fiddleviz
 
 echo "==> Site built at apps/docs/dist"

@@ -3,7 +3,7 @@ import { effect as biEffect, batch } from "bireactive";
 import { leaves, type BiNode } from "./tree";
 
 /** Per-call scaling mode for {@link applyDelta}. Mirrors the public
- *  `ScalingMode` in @hotbook/core; kept structural so this
+ *  `ScalingMode` in @fiddleviz/core; kept structural so this
  *  package stays leaf-side and doesn't import core. `proportional-selected`
  *  is reserved for the future multiselect work (WIN-38 follow-up) and
  *  currently falls back to `additive`. */
@@ -84,7 +84,7 @@ export function applyDelta(
   // batch so the edit fires a single reactive flush. Every sibling is written
   // exactly once from pre-computed sums (poolSum / sibSum / shares captured
   // before any write), so deferred backward writes coalescing inside the batch
-  // is safe. The single flush matters in embeddings (e.g. hotbook) where
+  // is safe. The single flush matters in embeddings (e.g. fiddleviz) where
   // each separate flush would round-trip through an external store and
   // interleave, snapping the tree back between writes; standalone it's just
   // one tidy update.

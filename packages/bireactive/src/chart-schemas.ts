@@ -17,7 +17,7 @@ import {
   depthSchema,
   xKeySchema,
   yKeySchema,
-} from '@hotbook/core'
+} from '@fiddleviz/core'
 import { LINK_MIN } from './lib/sankey'
 
 // ─── Config Schemas ───────────────────────────────────────────────────────────

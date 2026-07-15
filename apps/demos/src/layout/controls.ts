@@ -4,9 +4,9 @@
 // together — the same intent (add/reparent/remove) lands as a different
 // layout on each tab.
 
-import { descendantsOf, makeEdge, makeRow, leafIds, containerIds, flatGraph } from "@hotbook/layout";
+import { descendantsOf, makeEdge, makeRow, leafIds, containerIds, flatGraph } from "@fiddleviz/layout";
 import { sharedEdges, sharedRows, items, removeRow, removeEdge } from "./demo-data";
-import { direction, edgeStyle, type Direction, type EdgeStyle } from "@hotbook/layout";
+import { direction, edgeStyle, type Direction, type EdgeStyle } from "@fiddleviz/layout";
 
 let counter = 100; // start above the seed ids so we don't collide
 

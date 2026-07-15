@@ -61,7 +61,7 @@ flexblox wires the everything-else. That's the product.
 
 ```
 surfaces (peers, not packages)
-  hotbook · docs site · apitable · nextjs demo
+  fiddleviz · docs site · apitable · nextjs demo
   each is a host that mounts blocks + owns layout
         │
         ▼
@@ -624,7 +624,7 @@ Contract guarantees:
 The kernel must be proven across multiple surface shapes, not just charts:
 
 1. **Charts** — direct manipulation, cross-tile sync, conservation propagation.
-   (Current hotbook use case.)
+   (Current fiddleviz use case.)
 2. **Dock** — layout coordination, keep-alive across tab switches, spring
    transitions on resize/split. (WIN-111 scope.)
 3. **Page/block layout** — document-shaped surfaces. Block-level editing, nested
@@ -643,7 +643,7 @@ library with ideas above its station.
 
 ---
 
-## 13. What gets ported vs rewritten (from current hotbook)
+## 13. What gets ported vs rewritten (from current fiddleviz)
 
 **Port (knowledge, not code):**
 - `docs/interaction-principles.md` — the 17 rules. The product's behavioral spec.
@@ -715,8 +715,8 @@ library with ideas above its station.
    deep element contract. Then breadth.
 5. **`flexblox-dock`** — layout engine, events at boundary, spring transitions.
 6. **`flexblox-matchina` adapter** — premium lifecycle backend.
-7. **hotbook** — integration test harness. Dock + charts + persistence.
+7. **fiddleviz** — integration test harness. Dock + charts + persistence.
 8. **Other backends** (Solid, Preact, nanostores) — on demand.
 
-The order matters: kernel before charts, charts before dock, dock before hotbook.
+The order matters: kernel before charts, charts before dock, dock before fiddleviz.
 Each layer proves the one below it.

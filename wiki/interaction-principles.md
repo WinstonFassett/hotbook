@@ -1,4 +1,4 @@
-# hotbook Interaction Principles
+# fiddleviz Interaction Principles
 
 Design rules for gesture-based data visualization. Priority-ordered — higher rules win when they conflict with lower ones.
 
@@ -24,7 +24,7 @@ A gesture has a clear beginning and end. While a gesture is active, the system i
 ### 6. Gestures are speculative until committed
 Live preview during a gesture is not a mutation — it's a preview. The entire gesture is a "what if." Escape at any point cancels cleanly, reverting to the exact state at gesture start. Commit happens on release (or equivalent explicit action). The system must snapshot state at gesture start to support this.
 
-> Implementation note: `onUpdate` calls during a gesture are preview updates. Currently hotbook writes them to state immediately. Works in practice (escape reverts), but the speculative contract isn't formally exposed to consumers.
+> Implementation note: `onUpdate` calls during a gesture are preview updates. Currently fiddleviz writes them to state immediately. Works in practice (escape reverts), but the speculative contract isn't formally exposed to consumers.
 
 ### 7. Derived reorders defer to commit
 Sort order holds for the duration of a gesture. If the sort is derived (e.g. sorted by value), mid-gesture value changes do not trigger reorders — that would disorient the user and violate Rule 2. Reorder re-evaluation happens at commit (release), not during. If the gesture is canceled, no reorder occurs. The user sees any reorder as a single deliberate animation after they let go.

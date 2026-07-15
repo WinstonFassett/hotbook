@@ -1,4 +1,4 @@
-# Plan — extract `@hotbook/charts` (Foundation only)
+# Plan — extract `@fiddleviz/charts` (Foundation only)
 
 > Handoff for an autonomous agent. **Execute steps in order. Do not ask
 > questions — every decision is made here.** Scope is deliberately narrow:
@@ -8,47 +8,47 @@
 
 Lift the bireactive charts out of the spike app
 `apps/demos/src` into a real publishable package
-`packages/hotbook-charts`, and make both consumers (hotbook, the spike app)
+`packages/fiddleviz-charts`, and make both consumers (fiddleviz, the spike app)
 import from the package instead of the `@br-lc` source alias. Charts must render
 and behave **identically** afterward.
 
 ## Scope guardrails (DO / DO NOT)
 
 - **DO NOT** touch chart visuals, gestures, or logic. This is a move + repackage.
-- **DO NOT** move sort/group/identity logic out of hotbook. `sortedNodes` /
+- **DO NOT** move sort/group/identity logic out of fiddleviz. `sortedNodes` /
   `applyGroupBy` / `colorByGroup` stay in `App.tsx`. (That lift is a *later* plan.)
-- **DO NOT** de-React hotbook. The `BrLcCharts.tsx` React wrappers stay.
-- **DO NOT** touch `@hotbook/core` contents — it already holds the shared types
+- **DO NOT** de-React fiddleviz. The `BrLcCharts.tsx` React wrappers stay.
+- **DO NOT** touch `@fiddleviz/core` contents — it already holds the shared types
   and colors. Charts don't import it; leave it alone.
 - **DO NOT** move `@svelte-lc` (the Svelte charts) — leave that app and its alias
   untouched. Deferred.
 - **DO NOT** ship demo/seed data: `lib/portfolio.ts` is fixture data — it stays in
   the spike app, not in the package's public exports.
 - **Keep the npm scope `@winstonfassett/`** (matches existing packages). The
-  `@hotbook/*` names in `docs/dependencies.md` are aspirational; renaming the
+  `@fiddleviz/*` names in `docs/dependencies.md` are aspirational; renaming the
   scope is out of scope here.
 - **Stash, never reset** (per CLAUDE.md). Work on a branch.
 
 ## Facts already verified (don't re-investigate)
 
-- hotbook imports `@br-lc` from **one file only**: `apps/hotbook/src/viz/br/BrLcCharts.tsx`,
+- fiddleviz imports `@br-lc` from **one file only**: `apps/fiddleviz/src/viz/br/BrLcCharts.tsx`,
   14 imports, all `@br-lc/demos/*` (no `@br-lc/lib/*`).
 - The chart code is self-contained: only imports `bireactive` + `d3-array`,
-  `d3-hierarchy`, `d3-scale`, `d3-shape`, and relative `./`. No `hotbook-core`,
+  `d3-hierarchy`, `d3-scale`, `d3-shape`, and relative `./`. No `fiddleviz-core`,
   no cross-app imports.
 - `d3-sankey` appears **only in comments** (`lib/sankey.ts`, `lib/sankey-layout.ts`)
   — it is NOT imported. Do not add it as a dependency.
-- Template for the no-build `node` export condition: `packages/hotbook-d3/package.json`.
-- hotbook vite resolve uses `conditions: ['browser','node']` + `dedupe` — see
-  `apps/hotbook/vite.config.ts`.
+- Template for the no-build `node` export condition: `packages/fiddleviz-d3/package.json`.
+- fiddleviz vite resolve uses `conditions: ['browser','node']` + `dedupe` — see
+  `apps/fiddleviz/vite.config.ts`.
 
 ## Steps
 
 ### 1. Create the package skeleton
-- New dir `packages/hotbook-charts/`.
+- New dir `packages/fiddleviz-charts/`.
 - `git mv` the reusable source from the spike app into it:
-  - `apps/demos/src/demos/`  → `packages/hotbook-charts/src/demos/`
-  - `apps/demos/src/lib/`    → `packages/hotbook-charts/src/lib/`
+  - `apps/demos/src/demos/`  → `packages/fiddleviz-charts/src/demos/`
+  - `apps/demos/src/lib/`    → `packages/fiddleviz-charts/src/lib/`
   - **Leave behind** in the spike app: `main.ts`, `index.html`, `style.css`,
     `vite.config.ts`, `tsconfig.json`, `package.json`.
   - **EXCEPTION:** `lib/portfolio.ts` is fixture data — `git mv` it back into the
@@ -56,7 +56,7 @@ and behave **identically** afterward.
     and fix the demo importers' relative paths. (It must not be a package export.)
 
 ### 2. Package `index.ts`
-Create `packages/hotbook-charts/src/index.ts` that re-exports every chart class
+Create `packages/fiddleviz-charts/src/index.ts` that re-exports every chart class
 (so consumers import from the package root, not `demos/*`):
 ```ts
 export { MdBarChartLC } from './demos/bar-chart'
@@ -80,66 +80,66 @@ export type { BiNode } from './lib/tree'
 (Adjust the type re-exports to whatever actually compiles — keep classes complete.)
 
 ### 3. Package `package.json`
-Mirror `packages/hotbook-d3/package.json` exactly for `type`, `exports`
+Mirror `packages/fiddleviz-d3/package.json` exactly for `type`, `exports`
 (the `node` → `./src/index.ts` condition is REQUIRED for no-build HMR),
 `publishConfig`, `files`, `scripts`, `license: MIT`. Set:
-- `"name": "@hotbook/charts"`, `"version": "0.1.0"`.
+- `"name": "@fiddleviz/charts"`, `"version": "0.1.0"`.
 - `dependencies`: `bireactive` `^0.3.4`, `d3-array` `^3.2.4`, `d3-hierarchy`
   `^3.1.2`, `d3-scale` `^4.0.2`, `d3-shape` `^3.2.0`.
 - `devDependencies`: matching `@types/d3-*`, `typescript`, `vite`, `vite-plugin-dts`.
 - Add a `vite.config.ts` + `tsconfig.json` mirroring vanilla-d3's (lib build).
 
-### 4. Repoint hotbook
-- `apps/hotbook/src/viz/br/BrLcCharts.tsx`: replace the 14 `@br-lc/demos/*`
-  imports with named imports from `@hotbook/charts`. The tag
+### 4. Repoint fiddleviz
+- `apps/fiddleviz/src/viz/br/BrLcCharts.tsx`: replace the 14 `@br-lc/demos/*`
+  imports with named imports from `@fiddleviz/charts`. The tag
   registry/`useBrElement`/dispatch code stays unchanged.
-- `apps/hotbook/package.json`: add `"@hotbook/charts": "*"` to
+- `apps/fiddleviz/package.json`: add `"@fiddleviz/charts": "*"` to
   dependencies.
-- `apps/hotbook/vite.config.ts`:
+- `apps/fiddleviz/vite.config.ts`:
   - Remove the `'@br-lc'` alias (now a real package). **Keep `'@svelte-lc'`.**
   - Add `'bireactive'` to `dedupe` (alongside react/react-dom) so the
-    source-resolved package and hotbook share ONE bireactive runtime.
+    source-resolved package and fiddleviz share ONE bireactive runtime.
 
 ### 5. Repoint the spike app (keep it as a demo harness on the package)
 - `apps/demos/src/main.ts`: change the
-  `./demos/*` class imports to `@hotbook/charts`. The registration
+  `./demos/*` class imports to `@fiddleviz/charts`. The registration
   loop, repro-hash harness, and `experiments[]` list stay.
 - `apps/demos/package.json`: add
-  `"@hotbook/charts": "*"`.
+  `"@fiddleviz/charts": "*"`.
 - Its `vite.config.ts` needs the same `conditions: ['browser','node']` so it
-  resolves the package to source for live dev (copy from hotbook).
+  resolves the package to source for live dev (copy from fiddleviz).
 
 ### 6. Install + verify (all must pass; do not skip)
 ```bash
 npm install                                   # relink workspaces
-npx vite build packages/hotbook-charts        # package builds (dist + d.ts)
+npx vite build packages/fiddleviz-charts        # package builds (dist + d.ts)
 npx vite build apps/demos   # demo app builds
-npx vite build apps/hotbook                # main app builds
+npx vite build apps/fiddleviz                # main app builds
 ```
 Then a behavior smoke (per repo memory — real Playwright, not synthetic events):
-- Start hotbook dev; confirm BR-LC tiles render (charts in shadow DOM —
+- Start fiddleviz dev; confirm BR-LC tiles render (charts in shadow DOM —
   pierce `el.shadowRoot`).
 - Verify one flat chart (bar) and one hier chart (icicle): hover highlights,
   wheel-edit changes a value, drag-resize works, Esc reverts. No console errors.
 - Confirm cross-tile hover/select still syncs.
 
 ## Done when
-- All four builds pass; hotbook + spike app render identically to before.
+- All four builds pass; fiddleviz + spike app render identically to before.
 - `git grep '@br-lc'` returns **nothing** (alias fully removed).
-- `packages/hotbook-charts` has a clean `index.ts`, MIT license, `node` export
+- `packages/fiddleviz-charts` has a clean `index.ts`, MIT license, `node` export
   condition, and depends only on bireactive + granular d3-*.
-- hotbook, the spike app, and the package each depend on
-  `@hotbook/charts` via `*`.
+- fiddleviz, the spike app, and the package each depend on
+  `@fiddleviz/charts` via `*`.
 
 ## Out of scope (explicitly deferred — do not start)
-- Lifting `applyView`/sort/group into `@hotbook/core`.
-- **De-Reacting hotbook / removing `selfSig`/dedupe machinery — this is the
+- Lifting `applyView`/sort/group into `@fiddleviz/core`.
+- **De-Reacting fiddleviz / removing `selfSig`/dedupe machinery — this is the
   IMMEDIATE NEXT plan (Winston wants it very soon). Do not start it here, but
   keep this extraction's diff a clean pure-move so the de-React lands on a stable
   packaged target.** Target end state: `BrLcCharts.tsx`'s two mega-hooks +
   echo-suppression + `shapeKey`/`commitTick`/`gestureActive` membrane collapse to
   one framework-agnostic `bindTile(el, source)`.
 - Moving the Svelte charts (`@svelte-lc`) into the package.
-- npm-scope rename to `@hotbook/*`.
+- npm-scope rename to `@fiddleviz/*`.
 - apitable peer surface.
 - Renaming the package's internal `demos/` dir to `charts/`.

@@ -14,8 +14,8 @@ pointerenter to make them visible, then read their SVG geometry.
 import os, sys, math
 from playwright.sync_api import sync_playwright
 
-BASE = os.environ.get("BASE_URL", "http://hotbook.localhost:1355")
-URL = f"{BASE}/hotbook/"
+BASE = os.environ.get("BASE_URL", "http://fiddleviz.localhost:1355")
+URL = f"{BASE}/fiddleviz/"
 TOL = 3.0  # px tolerance in SVG coords
 
 

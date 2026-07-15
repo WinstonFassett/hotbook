@@ -1,5 +1,5 @@
 {
-  "name": "hotbook",
+  "name": "fiddleviz",
   "private": true,
   "workspaces": [
     "packages/*",
@@ -7,11 +7,11 @@
   ],
   "scripts": {
     "build": "bash scripts/build-site.sh",
-    "build:hotbook": "npm run build -w packages/d3 && npm run build -w apps/hotbook",
+    "build:fiddleviz": "npm run build -w packages/d3 && npm run build -w apps/fiddleviz",
     "dev:docs": "npm run dev -w apps/docs",
-    "dev:hotbook": "npm run dev -w apps/hotbook",
+    "dev:fiddleviz": "npm run dev -w apps/fiddleviz",
     "dev:demos": "npm run dev -w apps/demos",
-    "dev": "concurrently -n hotbook,demos \"npm run dev -w apps/hotbook\" \"npm run dev -w apps/demos\"",
+    "dev": "concurrently -n fiddleviz,demos \"npm run dev -w apps/fiddleviz\" \"npm run dev -w apps/demos\"",
     "postinstall": "patch-package && node scripts/patch-bireactive-package-json.js",
     "knip": "knip"
   },

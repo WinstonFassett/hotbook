@@ -1,4 +1,4 @@
-import { colorFor } from '@hotbook/core'
+import { colorFor } from '@fiddleviz/core'
 import type { VizNode, Rollup } from '../types'
 
 export interface TreeDatum {
