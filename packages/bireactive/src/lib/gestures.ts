@@ -28,9 +28,9 @@ export interface ChartGestureSetup {
   root: BiNode;
   parentOf: (n: BiNode) => BiNode | undefined;
   state: SelectionState;
-  /** Default scaling mode for keyboard/arrow edits on this chart. Wheel is
-   *  always additive (per WIN-38 spec); drag mode lives on the per-handle
-   *  callsite. Alt held during arrow keys forces additive regardless. */
+  /** Scaling mode for keyboard/arrow edits when Alt is held (Alt opts into the
+   *  chart's proportional mode; default is additive). Wheel is always additive
+   *  (per WIN-38 spec); drag mode lives on the per-handle callsite. */
   scalingMode?: ScalingMode;
   /** This chart's DataViewController — wheel gestures start/commit/settle
    *  through it. */
@@ -89,9 +89,10 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
     const f = state.focused.value;
     if (!f || f === root) return;
     const step = e.shiftKey ? 5 : 1;
-    // Alt forces additive override (only target moves) regardless of the
-    // chart's configured scalingMode.
-    const mode: ScalingMode = e.altKey ? "additive" : defaultMode;
+    // Default additive (only the target moves). Alt switches to the chart's
+    // configured scalingMode (proportional-neighbor / proportional-siblings)
+    // so the parent total is preserved when desired.
+    const mode: ScalingMode = e.altKey ? defaultMode : "additive";
     if (e.key === "ArrowUp" || e.key === "ArrowRight") {
       applyDelta(f, parentOf(f), +step, { mode });
       e.preventDefault();

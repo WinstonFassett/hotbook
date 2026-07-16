@@ -18,7 +18,7 @@ Vocabulary: `UBIQUITOUS_LANGUAGE.md` and `wiki/gesture-architecture.md`. The old
 - **Same five surfaces, same intents, same per-surface value-mappings as icicle §3/§4.** Geometry differences only:
   - **Boundary knob** sits on the shared **angular** boundary between two adjacent sibling arcs and is oriented **tangent to the arc** (perpendicular to the radial line), vs the icicle's axis-aligned knob on a rectilinear boundary. Value-mapping: two-sibling reapportion (sum preserved) — same as icicle.
   - **Reorder** uses **angular** slot computation (pointer → angle → slot), vs the icicle's linear sibling-axis. `intent: reorder` — same as icicle.
-  - Wheel (additive), keyboard (chart-default scaling, Alt → additive), cross-tile (source-defined) — identical to icicle.
+  - Wheel (additive), keyboard (additive by default, Alt → proportional-neighbor), cross-tile (source-defined) — identical to icicle.
 
 ### §5 Effects
 - **`draft` / `commit` / `cancel` / `updated`**: identical to icicle §5. Same per-surface value-mappings; same enter/exit lifecycle on every rendered-set change; same "no settling; post-commit transition chart-owned" rule. Substitute "arc"/"angular span" for "tile"/"sibling-axis span" throughout.

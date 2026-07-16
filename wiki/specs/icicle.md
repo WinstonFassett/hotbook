@@ -37,7 +37,7 @@ Yes. Control surfaces that produce `draft` events. All produce `intent: edit` or
 
 - **Drag handle — boundary knob.** For each pair of adjacent siblings within a parent, a draggable knob sits on their shared boundary along the sibling axis. Dragging **reapportions the two siblings' values with their sum preserved** (two-sibling reapportion — neither additive nor proportional; only the two adjacent siblings change, by the drag fraction). `intent: edit`.
 - **Wheel — tile.** Cmd/Ctrl+wheel over a leaf tile scales that leaf's value. **Additive** — only the target leaf changes; the step is dynamic (∝ current value, Shift = fine). The parent total is *not* preserved by wheel; it grows/shrinks the whole. `intent: edit`.
-- **Keyboard — focused tile.** Arrow / numeric entry on the focused tile edits its value. **Proportional-neighbor** (the chart's default scaling) — the immediate neighbor absorbs the delta so the parent total is preserved; Alt forces additive. `intent: edit`.
+- **Keyboard — focused tile.** Arrow / numeric entry on the focused tile edits its value. **Additive** by default — only the target changes; parent total not preserved. **Alt → proportional-neighbor** (the chart's configured scaling) — the immediate neighbor absorbs the delta so the parent total is preserved. `intent: edit`.
 - **Drag mark — reorder.** When `canReorder` is enabled and `sort === 'index'`, dragging a tile reorders it among its siblings within the same parent. No value change — reorders only. `intent: reorder`.
 - **Programmatic — cross-tile.** A livebound `Table` sharing the `DataView` publishes `draft` events when a cell is edited; the icicle renders the draft preview (interaction-principles "Cross-tile"). The value-mapping is whatever the source chart's edit produced. `intent: edit`.
 
@@ -47,7 +47,7 @@ Drag-to-reorder and value-edit drags are mutually exclusive on the same tile; th
 
 - Boundary knob drag → `edit` (value-mapping: two-sibling reapportion, sum preserved).
 - Wheel on tile → `edit` (value-mapping: additive, parent total not preserved).
-- Keyboard on focused tile → `edit` (value-mapping: proportional-neighbor, parent total preserved; Alt → additive).
+- Keyboard on focused tile → `edit` (value-mapping: additive by default, parent total not preserved; Alt → proportional-neighbor, parent total preserved).
 - Programmatic / cross-tile → `edit` (value-mapping: source-defined).
 - Drag mark reorder → `reorder` (no value change).
 
@@ -60,7 +60,7 @@ Per the Hierarchical family effect contract (`gesture-architecture.md` §"Hierar
 - **`draft` (`edit`):** the edited node reflects its new value live; sibling positions are frozen at their pre-gesture state; no relayout *transition* runs until `commit` (rule 8). Per-surface, using the value-mappings from §3:
   - *Boundary knob (two-sibling reapportion):* the two adjacent siblings' spans update live along the sibling axis; their sum and the parent bounds are fixed, so the layout is patched in place. Other siblings and all other levels are frozen.
   - *Wheel (additive):* only the edited leaf's span scales (the layout re-derives; sibling repositioning suppressed while `Drafting`). Parent total grows/shrinks; siblings frozen.
-  - *Keyboard (proportional-neighbor):* the edited leaf's span scales; the immediate neighbor absorbs the delta so the parent total is preserved. Other siblings frozen. (Alt-additive behaves like wheel.)
+  - *Keyboard (additive by default; Alt → proportional-neighbor):* by default only the edited leaf's span scales (parent total grows/shrinks, siblings frozen). With Alt, the immediate neighbor absorbs the delta so the parent total is preserved. Other siblings frozen throughout.
   - *Cross-tile `draft`:* the edited node scales inside its parent bounds per the source's value-mapping, siblings frozen.
 - **`draft` (`reorder`):** the dragged tile follows the pointer along the sibling axis; siblings slide to their provisional slots with a short reactive tween, their spans recomputed from the provisional order against the saved parent span. No full partition recompute; ordering is the only thing that changes. Sibling spans stay proportional to value throughout.
 - **`commit`:** recompute the affected subtree (re-run the partition for the edited parent, or apply the new sibling order), then `transition` nodes to their new slots. For `reorder`, the committed order is written back through the `DataView` and the chart animates the slide to the final layout. The post-commit transition is an autonomous, interruptible, disposable effect owned by the chart (rule 13); the `Editor` is `Idle` the moment `commit` fires, and the chart manages the animation's lifecycle itself. No "settling" state is observed or needed — no chart gates on whether another chart's post-commit animation is still running.
