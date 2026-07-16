@@ -15,7 +15,7 @@ Spec for the icicle `Chart`, written in the vocabulary of `UBIQUITOUS_LANGUAGE.m
 
 ## 2. What `DataView` query does it subscribe?
 
-The icicle subscribes a `DataView` keyed by `(datasetId, canonical config)`. The `Dataset`'s `dataShape` is `hierarchical`. A livebound `Table` (or any other hierarchical chart) on the same `(datasetId, canonical config)` key shares this `DataView`.
+The icicle subscribes a `DataView` keyed by canonical config. `datasetId` is one field in the config (naming the `Dataset`, whose `dataShape` is `hierarchical`); the other fields are below. A livebound `Table` (or any other hierarchical chart) on the same canonical config shares this `DataView`; a difference in any field — including `datasetId` — means they do not share.
 
 Config dimensions:
 

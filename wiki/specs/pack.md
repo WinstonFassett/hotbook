@@ -1,71 +1,35 @@
 # Spec — Pack (Circle Pack)
 
-Spec for the circle pack `Chart`. The pack is in the Hierarchical family. Like the treemap, it uses the **scale-against-frozen-siblings** `draft` strategy (interaction-principles §"Hierarchical marks", second bullet), not the icicle/sunburst subtree-patch. Like the icicle/sunburst, it uses an **affine viewport zoom** for drill. This spec calls out where pack diverges from `wiki/specs/icicle.md` and `wiki/specs/treemap.md`; everything not mentioned is identical to their model-level claims.
+Delta spec for the circle pack `Chart`. Pack combines the treemap's `draft` mechanism with the icicle/sunburst's drill geometry, plus one value-mapping difference. This document lists **only the divergences**; for anything not mentioned, read `wiki/specs/icicle.md` and `wiki/specs/treemap.md`. The Hierarchical family contract is `wiki/gesture-architecture.md` §"Hierarchical".
 
 Vocabulary: `UBIQUITOUS_LANGUAGE.md` and `wiki/gesture-architecture.md`. The old `MdPack` code was read once for behavior and then set aside.
 
-## 1. What kind of `Chart` is this?
+## Divergences from icicle
 
-- **Family:** `Hierarchical`.
-- **Geometry:** **circle pack**. Each node is a circle; sibling circles pack inside the parent circle's bounds with fixed-pixel padding, radii proportional to √value. Circles **must stay circular** — a non-uniform scale would make them overlap, so the viewport uses a uniform `min(Wc/spanW, Hc/spanH)` scale.
-- **No orientation** config dimension.
-- **Editable:** yes. Creates an `Editor`, registers with `Kernel.Drafts`.
-- **Multi-level:** yes — nested circles show multiple depth levels simultaneously (rule 17). `depth` caps how many levels below the focus node are visible.
+### §1 Geometry
+- **Circle pack.** Marks are **circles**; sibling circles pack inside the parent circle's bounds with fixed-pixel padding, radii ∝ √value. Circles **must stay circular** — a non-uniform scale would make them overlap, so the viewport uses a uniform `min(Wc/spanW, Hc/spanH)` scale (consequence for drill, §5).
+- **No `orientation` config dimension** (same as sunburst/treemap).
 
-## 2. What `DataView` query does it subscribe?
+### §2 DataView query
+- Same key shape as sunburst/treemap: `datasetId` + `measure` + `sort` + `depth`. `Dataset.dataShape` is `hierarchical`.
+- **Windowing:** focus node's subtree (plus the focus node as a context circle when drilled). Does not retain off-screen ancestors — the affine viewport zoom (§5) handles drill by remapping, and the pack layout is computed once over the full tree (not re-rooted on drill the way treemap re-roots).
 
-Same key shape as sunburst/treemap — `(datasetId, canonical config)`, no `orientation`. The `Dataset`'s `dataShape` is `hierarchical`; a livebound `Table` or any other hierarchical chart on the same key shares this `DataView`.
+### §3 / §4 Control surfaces and intent
+- **No boundary knob, no reorder** — same capability shape as treemap. See treemap §3/§4 for the rationale.
+- **Drag mark — resize** (WIN-260). Dragging horizontally on a circle (`ew-resize` cursor) scrubs its value. **Additive** — only the dragged circle's value changes. Same as treemap's drag-mark. `intent: edit`.
+- **Wheel — circle.** Additive (only the target changes; dynamic step). Same as every chart's wheel.
+- **Keyboard — focused circle.** **`proportional-siblings`** (pack's configured default — the delta is redistributed across all siblings, not absorbed by one neighbor; Alt → additive). **This differs from icicle/sunburst/treemap**, whose keyboard uses `proportional-neighbor`. `intent: edit`.
+- **Cross-tile.** Source-defined value-mapping. Same as icicle.
+- All `edit`; no `reorder` intent on this chart.
 
-- `measure` — value binding driving circle areas (radii ∝ √value).
-- `sort` — `index` or `value`; drives sibling ordering within every parent.
-- `depth` — maximum number of levels rendered below the focus node.
+### §5 Effects
+- **`draft` (`edit`): scale-against-frozen-siblings — same mechanism and invariant as treemap §5.** The edited circle's radius rescales live; sibling circles hold pre-gesture positions/radii (frozen); no relayout *transition* until `commit` (rule 8). The pack layout re-derives reactively as the value writes through, but the chart suppresses sibling repositioning while `Drafting`. Children of the edited circle may be faded or hidden. Per-surface value-mappings: drag-mark and wheel are additive; keyboard is proportional-siblings (the one difference from treemap). See icicle §5 for `commit`/`cancel`/`updated` (identical, including enter/exit on every rendered-set change and no settling).
+- **Drill — affine viewport zoom, same as icicle/sunburst (NOT treemap's per-tile tweens).** The viewport is a layout-space bounding box `[vx0, vy0, vx1, vy1]`; on drill it tweens to the union bounding box of the focus node's descendants. A **uniform** `min(Wc/spanW, Hc/spanH)` scale maps layout-space to canvas — required because circles must stay circular. Otherwise the drill model is the same as icicle: an `updated`, rendered as an autonomous `transition`, interruptible/disposable (rule 13), enter/exit lifecycle, no continuous drill, no preview.
+- `sort` toggle, `measure` swap, `depth` change are `updated` events rendered as `transition`s — circles slide to new pack positions/radii; enter/exit runs if the rendered set changes.
 
-Windowing: focus node's subtree (plus the focus node as a context circle when drilled). Does not retain off-screen ancestors — the affine viewport zoom (§5) handles drill by remapping, and the pack layout is computed once over the full tree (not re-rooted on drill the way treemap re-roots).
-
-## 3. Does it create an `Editor`?
-
-Yes. Control surfaces that produce `draft` events. All produce `intent: edit`; each has its own value-mapping:
-
-- **Drag mark — number scrub.** Dragging horizontally on a circle scrubs its value (right = +, left = −; Shift = coarse, Alt = fine). **Additive** — only the dragged circle's value changes; no sibling redistribution. Pack's primary edit surface — **no boundary knobs**. `intent: edit`.
-- **Wheel — circle.** Cmd/Ctrl+wheel over a circle scales its value. **Additive** — only the target changes; dynamic step (∝ value, Shift = fine). (Wheel is additive on every chart, regardless of the chart's configured scaling mode.) `intent: edit`.
-- **Keyboard — focused circle.** Arrow / numeric entry on the focused circle edits its value. **Proportional-siblings** (pack's configured default — the delta is redistributed across all siblings rather than absorbed by one neighbor; Alt → additive). This differs from icicle/sunburst/treemap, whose keyboard uses `proportional-neighbor`. `intent: edit`.
-- **Programmatic — cross-tile.** A livebound `Table` sharing the `DataView` publishes `draft` events; the pack renders the draft preview. Source-defined value-mapping. `intent: edit`.
-
-**No reorder gesture, no boundary knobs.** Same capability shape as treemap.
-
-## 4. What `intent` does each control surface produce?
-
-All control surfaces produce `edit`, each with its own value-mapping (drag-mark = additive, wheel = additive, keyboard = proportional-siblings, cross-tile = source-defined). The pack has no `reorder` intent.
-
-## 5. What `render` / `transition` effects are attached to each `Editor` event?
-
-Per the Hierarchical family effect contract — with the pack's `draft` geometry (scale-against-frozen-siblings):
-
-- **`draft` (`edit`):** the edited circle reflects its new value live (radius rescales); sibling circles **hold their pre-gesture positions/radii** (frozen); no relayout *transition* runs during the gesture (rule 8). Per-surface, using the value-mappings from §3: drag-mark and wheel are additive (only the edited circle's radius scales; siblings frozen; parent total grows/shrinks); keyboard is proportional-siblings (the edited circle scales, all siblings absorb the delta proportionally, parent total preserved). Same mechanism and invariant as treemap — the pack layout re-derives reactively as the value writes through, but the chart suppresses sibling repositioning while `Drafting`. Children of the edited circle may be faded or hidden (chart-specific option). This is the **scale-against-frozen-siblings** strategy, the same family-contract finding as treemap (§6).
-- **`commit`:** recompute the full pack layout with the committed values, then `transition` all circles to their new positions/radii. Post-commit transition is chart-owned, interruptible, disposable (rule 13); the `Editor` is `Idle` at `commit`. No settling state.
-- **`cancel`:** `transition` back to the snapshot layout. Circles tween to their pre-gesture positions/radii.
-- **`updated`:** `transition` to the new committed state, with **enter/exit lifecycle on every rendered-set change** (entering circles fade in at target geometry; exiting circles fade out in place with geometry frozen; surviving circles transition). Covers external data change (including structural: node/level added or removed), drill, sort/measure/`depth` toggle. While `Drafting`, transitions the committed data underneath the draft overlay; the overlay stays until `commit` or `cancel`.
-
-### Drill
-
-Drill is an `updated`, rendered as an autonomous `transition` (no continuous drill, no preview). Geometry — pack uses the **affine viewport zoom** like icicle/sunburst, **not** the per-tile screen-rect tweens treemap uses:
-
-- The viewport is a layout-space bounding box `[vx0, vy0, vx1, vy1]`; on drill it tweens to the union bounding box of the focus node's descendants. A uniform `min(Wc/spanW, Hc/spanH)` scale maps layout-space to canvas, keeping circles circular.
-- Drill-in: the focus node's subtree expands to fill the canvas; ancestor and off-focus circles exit (fade out in place, geometry frozen so they don't ghost through the viewport tween). Drill-out: the reverse.
-- Interruptible and disposable (rule 13): a new drill or resize during the tween cancels the in-flight viewport tween and starts from the current viewport position.
-
-`sort` toggle, `measure` swap, and `depth` change are `updated` events rendered as `transition`s — circles slide to their new pack positions/radii. The only `render` (no transition) is the live `Drafting` preview.
-
-## 6. What does this chart do that the family contract does not cover?
-
-**Same finding as treemap — the Hierarchical family `draft` contract is too narrow.**
-
-The family contract's `draft` line ("scale the edited node inside the saved parent bounds; freeze sibling ordering; do not recompute the full layout") describes the icicle/sunburst subtree-patch strategy. The pack, like the treemap, uses scale-against-frozen-siblings: the full pack layout *is* recomputed on every value write, but sibling repositioning is *not applied* while `Drafting`. The "do not recompute the full layout" and "freeze sibling ordering" clauses are both wrong for pack (no reorder gesture; siblings frozen by position, not order; layout is recomputed).
-
-The proposed fix is the same one documented in `wiki/specs/treemap.md` §6: broaden the Hierarchical family `draft` line to state the observable invariant (edited mark reflects the new value live; siblings hold pre-gesture positions; relayout transition deferred to `commit`) and name the two mechanism variants (subtree-patch for icicle/sunburst; scale-against-frozen-siblings for treemap/pack).
-
-No other gaps. Pack's `commit`/`cancel`/`updated`/drill behavior is identical to the icicle's at the model level (affine viewport drill like icicle/sunburst; `draft` mechanism like treemap). The scaling-mode difference (default `proportional-siblings` vs `proportional-neighbor`) is a value-mapping detail inside the `edit` intent, not a model concept.
+### §6 Family-contract gaps
+**Same one as treemap** — the Hierarchical family `draft` contract was too narrow (described only subtree-patch; pack uses scale-against-frozen-siblings). **Fixed** in `wiki/gesture-architecture.md` §"Hierarchical". No remaining gaps.
 
 ## Summary
 
-The pack is the third Hierarchical geometry. It combines the treemap's `draft` strategy (scale-against-frozen-siblings — exposing the same family-contract finding) with the icicle/sunburst's drill geometry (affine viewport zoom — circles must stay circular, so a uniform scale is required). No reorder, no boundary knobs — number scrub + wheel + keyboard + cross-tile only; keyboard uses `proportional-siblings` (vs `proportional-neighbor` in the other three), wheel and drag-mark are additive. The model fix proposed in `wiki/specs/treemap.md` covers pack as well.
+Pack = treemap's `draft` mechanism (scale-against-frozen-siblings) + icicle/sunburst's drill geometry (affine viewport zoom — circles must stay circular, so uniform scale) + one value-mapping difference (keyboard = `proportional-siblings`, not `proportional-neighbor`). Same capability shape as treemap: no boundary knob, no reorder — drag-mark-resize (additive) + wheel (additive) + keyboard (proportional-siblings) + cross-tile. The family-contract gap it exposed (same as treemap) is fixed in the model.

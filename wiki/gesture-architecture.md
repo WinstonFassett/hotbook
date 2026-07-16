@@ -9,7 +9,7 @@ This document is design only — no code, no file names, no current implementati
 - A `Chart` is a surface with an API. It renders data and exposes gestures, config, and effects.
 - The app may provide a `Chart` with a `Kernel`.
 - A `Chart` may create and subscribe to a `DataView` and may create an `Editor` if it is editable.
-- A `DataView` is keyed by `(datasetId(s), canonical config)` — the `Dataset`(s) it reads plus a canonical key derived from the chart's config. The app registers `Dataset`s with the `Kernel`; a `DataView` query names its `Dataset`(s) by id. A chart may read one or several `Dataset`s. Two charts share a `DataView` iff their full key matches; two charts on different `Dataset`s never share.
+- A `DataView` is keyed by canonical config. The config includes `datasetId`(s) alongside the other dimensions (`measure`, `sortBy`, `depth`, `orientation`, …) — `datasetId` is a config field, not a separate axis. The app registers `Dataset`s with the `Kernel`; a chart's config names the `Dataset`(s) it reads by id, and a chart may read one or several. Two charts share a `DataView` iff their canonical config matches; a difference in *any* field — including `datasetId` — means they do not share.
 - `Editor` is a per-Chart state machine for `draft` / `commit` / `cancel` / `updated`.
 - `Kernel.Drafts` tracks active `Editor`s and reports the global `Idle` / `Drafting` state.
 - The `Chart` attaches `render` and `transition` effects to `Editor` events; the `Editor` does not decide rendering strategy.
@@ -19,8 +19,8 @@ This document is design only — no code, no file names, no current implementati
 
 ## Chart configuration and schema
 
-- A `Chart` is a component with a configuration schema. The schema declares which properties the chart accepts and how they affect the `DataView` query. The full `DataView` query key is `(datasetId(s), canonical config)` — the `Dataset`(s) named by the chart plus a canonical key derived from its config dimensions.
-- Common config dimensions: `measure`, `sortBy`, `depth`, `orientation`. Each chart family exposes the subset it supports. The `Dataset`(s) are the first axis of the key; the config dimensions are the rest.
+- A `Chart` is a component with a configuration schema. The schema declares which properties the chart accepts and how they affect the `DataView` query. The `DataView` query key is the canonical config; `datasetId` is one field in it.
+- Common config dimensions: `measure`, `sortBy`, `depth`, `orientation`, `datasetId`. Each chart family exposes the subset it supports. `datasetId` names the `Dataset`(s) the chart reads.
 - Config changes are applied to the `DataView` query. The `DataView` publishes an `updated` event. The `Chart` `transition`s to the new state. `transition` is the default response to `updated`; snapping is the exception, reserved for cases where transition is impossible or the chart explicitly chooses it.
 - `updated` covers **any** non-gesture change to the chart's data or config — external data change, drill, sort toggle, orientation toggle, measure swap, `depth` change. There is no split between "external data change" and "config change"; both are `updated`, both `transition`.
 - If an `Editor` is `Drafting`, an `updated` does not change the `Editor` state. The committed data `transition`s underneath the draft overlay; the draft overlay remains where the user last put it until `commit` or `cancel`.
@@ -35,6 +35,8 @@ Every editing input is normalized into a `draft` event. A `draft` carries:
 - `intent`: `value-change` or `reorder`.
 
 The `Editor` is the same machine regardless of `source`. The `Chart` receives the `draft` and decides how to render it, based on its family and geometry.
+
+**Value-mapping is overridable.** Each control surface has a default *value-mapping* — how the proposed `value` is derived from the input (e.g. wheel = additive, keyboard = chart-default scaling, boundary knob = two-sibling reapportion). The default is chart-configured, but the chart, host, or caller may override what a given surface does. A host could make wheel do something completely different; the model does not decree per-surface value-mapping. The `intent` is uniform (`edit`); the value-mapping is carried in the `draft`'s `value` and is a per-surface, overridable policy.
 
 ## State machines
 
@@ -174,4 +176,5 @@ The `Editor` is the same for every family. Each family attaches effects that kno
 ## Open questions
 
 - **`depth` naming.** The config dimension `depth` caps how many levels below the focus node are visible. The name matches the schema field (`depth: v.optional(depthSchema)`) but is ambiguous — it is not the tree's total depth, nor the focus node's depth, but a *max visible levels* window. Candidate rename: `maxVisibleLevels`. Open; not blocking. Specs use `depth` to match the schema until renamed.
-- **Per-surface value-mapping vocabulary.** Each `edit` control surface has its own value-mapping (`additive`, `proportional-neighbor`, `proportional-siblings`, two-sibling reapportion). These are currently chart-internal details encoded in the `draft`'s `value`, not model vocabulary. If a future chart or cross-tile consumer needs to reason about value-mapping at the model level (e.g. to render a different preview for additive vs proportional), promote them to `UBIQUITOUS_LANGUAGE.md`. Open; not blocking — the four hierarchical specs characterize each surface's value-mapping explicitly without needing the terms in the model.
+- **Keyboard value-mapping default.** Current code: keyboard uses the chart's configured scaling mode (`proportional-neighbor` for icicle/sunburst/treemap, `proportional-siblings` for pack), Alt forces additive. Proposed: flip it — keyboard default = additive, Alt = proportional. This is a *code behavior change*, not a model change; the model now states value-mapping is overridable, so either default is model-legal. Open; specs describe current code behavior until the change lands.
+- **Per-surface value-mapping vocabulary.** Each `edit` control surface has its own value-mapping (`additive`, `proportional-neighbor`, `proportional-siblings`, two-sibling reapportion). The override statement (above) makes them per-surface policy, not model vocabulary. If a future cross-tile consumer needs to reason about value-mapping at the model level, promote them to `UBIQUITOUS_LANGUAGE.md`. Open; not blocking.
