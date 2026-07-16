@@ -15,7 +15,7 @@ Vocabulary: `UBIQUITOUS_LANGUAGE.md` and `wiki/gesture-architecture.md`. The old
 
 ## 2. What `DataView` query does it subscribe?
 
-Same as sunburst (no orientation):
+Same key shape as sunburst — `(datasetId, canonical config)`, no `orientation`. The `Dataset`'s `dataShape` is `hierarchical`; a livebound `Table` or any other hierarchical chart on the same key shares this `DataView`.
 
 - `measure` — value binding driving rectangle areas.
 - `sort` — `index` or `value`; drives sibling ordering within every parent.
@@ -25,27 +25,27 @@ Windowing: like sunburst, the treemap's window is the focus node's subtree (plus
 
 ## 3. Does it create an `Editor`?
 
-Yes. Control surfaces that produce `draft` events:
+Yes. Control surfaces that produce `draft` events. All produce `intent: edit`; each has its own value-mapping:
 
-- **Drag mark — number scrub.** Dragging horizontally on a tile scrubs its value (right = +, left = −; Shift = coarse, Alt = fine). This is the treemap's primary edit surface — there are **no boundary knobs**. `intent: edit`.
-- **Wheel — tile.** Cmd/Ctrl+wheel over a tile scales its value; a neighbor absorbs the delta (proportional-neighbor scaling). `intent: edit`.
-- **Keyboard — focused tile.** Arrow / numeric entry on the focused tile edits its value. Same scaling mode. `intent: edit`.
-- **Programmatic — cross-tile.** A livebound `Table` sharing the `DataView` publishes `draft` events; the treemap renders the draft preview. `intent: edit`.
+- **Drag mark — number scrub.** Dragging horizontally on a tile scrubs its value (right = +, left = −; Shift = coarse, Alt = fine). **Additive** — only the dragged tile's value changes; no sibling redistribution. This is the treemap's primary edit surface — there are **no boundary knobs**. `intent: edit`.
+- **Wheel — tile.** Cmd/Ctrl+wheel over a tile scales its value. **Additive** — only the target changes; dynamic step (∝ value, Shift = fine). `intent: edit`.
+- **Keyboard — focused tile.** Arrow / numeric entry on the focused tile edits its value. **Proportional-neighbor** (the chart's configured default; Alt → additive). `intent: edit`.
+- **Programmatic — cross-tile.** A livebound `Table` sharing the `DataView` publishes `draft` events; the treemap renders the draft preview. Source-defined value-mapping. `intent: edit`.
 
-**No reorder gesture.** The treemap does not expose drag-to-reorder — squarify positions are derived from value, not from caller order, so reordering caller-supplied order would have no observable effect (when `sort === 'index'` the order feeds the squarify traversal, but the chart doesn't surface a reorder control). This is a capability difference from the icicle, not a model difference.
+**No reorder gesture, no boundary knobs.** The treemap does not expose drag-to-reorder — squarify positions are derived from value, not from caller order, so reordering caller-supplied order would have no observable effect (when `sort === 'index'` the order feeds the squarify traversal, but the chart doesn't surface a reorder control). This is a capability difference from the icicle, not a model difference.
 
 ## 4. What `intent` does each control surface produce?
 
-All control surfaces produce `edit`. The treemap has no `reorder` intent.
+All control surfaces produce `edit`, each with its own value-mapping (drag-mark = additive, wheel = additive, keyboard = proportional-neighbor, cross-tile = source-defined). The treemap has no `reorder` intent.
 
 ## 5. What `render` / `transition` effects are attached to each `Editor` event?
 
 Per the Hierarchical family effect contract — with the treemap's `draft` geometry (scale-against-frozen-siblings, not subtree-patch):
 
-- **`draft` (`edit`):** the edited tile reflects its new value live; sibling tiles **hold their pre-gesture positions** (frozen); no relayout transition runs during the gesture. The mechanism: the squarify layout re-derives reactively as the value writes through, but the chart suppresses sibling repositioning while `Drafting` (siblings stay at their gesture-start positions; only the edited mark moves). Children of the edited tile may be faded or hidden — a chart-specific option (interaction-principles §"Hierarchical marks"). This is the **scale-against-frozen-siblings** strategy, distinct from the icicle/sunburst **subtree-patch** strategy; the observable invariant is the same — edited mark moves, siblings don't, relayout deferred to `commit`.
+- **`draft` (`edit`):** the edited tile reflects its new value live; sibling tiles **hold their pre-gesture positions** (frozen); no relayout *transition* runs during the gesture (rule 8). Per-surface, using the value-mappings from §3: drag-mark and wheel are additive (only the edited tile's area scales; siblings frozen; parent total grows/shrinks); keyboard is proportional-neighbor (the edited tile scales, the immediate neighbor absorbs the delta, parent total preserved). The mechanism: the squarify layout re-derives reactively as the value writes through, but the chart suppresses sibling repositioning while `Drafting` (siblings stay at their gesture-start positions; only the edited mark moves). Children of the edited tile may be faded or hidden — a chart-specific option (interaction-principles §"Hierarchical marks"). This is the **scale-against-frozen-siblings** strategy, distinct from the icicle/sunburst **subtree-patch** strategy; the observable invariant is the same — edited mark moves, siblings don't, relayout deferred to `commit`.
 - **`commit`:** recompute the full squarify layout with the committed values, then `transition` all tiles to their new positions/areas. Post-commit transition is chart-owned, interruptible, disposable (rule 13); the `Editor` is `Idle` at `commit`. No settling state.
 - **`cancel`:** `transition` back to the snapshot layout. Tiles tween to their pre-gesture positions/areas.
-- **`updated`:** `transition` to the new committed state. Covers external data change, drill, sort/measure/`depth` toggle. While `Drafting`, transitions the committed data underneath the draft overlay; the overlay stays until `commit` or `cancel`.
+- **`updated`:** `transition` to the new committed state, with **enter/exit lifecycle on every rendered-set change** (entering tiles fade in at target geometry; exiting tiles fade out in place with geometry frozen; surviving tiles transition). Covers external data change (including structural: node/level added or removed), drill, sort/measure/`depth` toggle. While `Drafting`, transitions the committed data underneath the draft overlay; the overlay stays until `commit` or `cancel`.
 
 ### Drill
 

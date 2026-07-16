@@ -14,7 +14,7 @@ Vocabulary: `UBIQUITOUS_LANGUAGE.md` and `wiki/gesture-architecture.md`. The old
 
 ## 2. What `DataView` query does it subscribe?
 
-Same as sunburst/treemap (no orientation):
+Same key shape as sunburst/treemap — `(datasetId, canonical config)`, no `orientation`. The `Dataset`'s `dataShape` is `hierarchical`; a livebound `Table` or any other hierarchical chart on the same key shares this `DataView`.
 
 - `measure` — value binding driving circle areas (radii ∝ √value).
 - `sort` — `index` or `value`; drives sibling ordering within every parent.
@@ -24,27 +24,27 @@ Windowing: focus node's subtree (plus the focus node as a context circle when dr
 
 ## 3. Does it create an `Editor`?
 
-Yes. Control surfaces that produce `draft` events:
+Yes. Control surfaces that produce `draft` events. All produce `intent: edit`; each has its own value-mapping:
 
-- **Drag mark — number scrub.** Dragging horizontally on a circle scrubs its value (right = +, left = −; Shift = coarse, Alt = fine). Pack's primary edit surface — **no boundary knobs**. `intent: edit`.
-- **Wheel — circle.** Cmd/Ctrl+wheel over a circle scales its value. Pack uses the **default** scaling mode (`proportional-siblings`), not `proportional-neighbor` — the pack layout redistributes the delta across siblings rather than absorbing it into a single neighbor. `intent: edit`.
-- **Keyboard — focused circle.** Arrow / numeric entry on the focused circle edits its value. Same scaling mode. `intent: edit`.
-- **Programmatic — cross-tile.** A livebound `Table` sharing the `DataView` publishes `draft` events; the pack renders the draft preview. `intent: edit`.
+- **Drag mark — number scrub.** Dragging horizontally on a circle scrubs its value (right = +, left = −; Shift = coarse, Alt = fine). **Additive** — only the dragged circle's value changes; no sibling redistribution. Pack's primary edit surface — **no boundary knobs**. `intent: edit`.
+- **Wheel — circle.** Cmd/Ctrl+wheel over a circle scales its value. **Additive** — only the target changes; dynamic step (∝ value, Shift = fine). (Wheel is additive on every chart, regardless of the chart's configured scaling mode.) `intent: edit`.
+- **Keyboard — focused circle.** Arrow / numeric entry on the focused circle edits its value. **Proportional-siblings** (pack's configured default — the delta is redistributed across all siblings rather than absorbed by one neighbor; Alt → additive). This differs from icicle/sunburst/treemap, whose keyboard uses `proportional-neighbor`. `intent: edit`.
+- **Programmatic — cross-tile.** A livebound `Table` sharing the `DataView` publishes `draft` events; the pack renders the draft preview. Source-defined value-mapping. `intent: edit`.
 
 **No reorder gesture, no boundary knobs.** Same capability shape as treemap.
 
 ## 4. What `intent` does each control surface produce?
 
-All control surfaces produce `edit`. The pack has no `reorder` intent.
+All control surfaces produce `edit`, each with its own value-mapping (drag-mark = additive, wheel = additive, keyboard = proportional-siblings, cross-tile = source-defined). The pack has no `reorder` intent.
 
 ## 5. What `render` / `transition` effects are attached to each `Editor` event?
 
 Per the Hierarchical family effect contract — with the pack's `draft` geometry (scale-against-frozen-siblings):
 
-- **`draft` (`edit`):** the edited circle reflects its new value live (radius rescales); sibling circles **hold their pre-gesture positions/radii** (frozen); no relayout transition runs during the gesture. Same mechanism and invariant as treemap — the pack layout re-derives reactively as the value writes through, but the chart suppresses sibling repositioning while `Drafting`. Children of the edited circle may be faded or hidden (chart-specific option). This is the **scale-against-frozen-siblings** strategy, the same family-contract finding as treemap (§6).
+- **`draft` (`edit`):** the edited circle reflects its new value live (radius rescales); sibling circles **hold their pre-gesture positions/radii** (frozen); no relayout *transition* runs during the gesture (rule 8). Per-surface, using the value-mappings from §3: drag-mark and wheel are additive (only the edited circle's radius scales; siblings frozen; parent total grows/shrinks); keyboard is proportional-siblings (the edited circle scales, all siblings absorb the delta proportionally, parent total preserved). Same mechanism and invariant as treemap — the pack layout re-derives reactively as the value writes through, but the chart suppresses sibling repositioning while `Drafting`. Children of the edited circle may be faded or hidden (chart-specific option). This is the **scale-against-frozen-siblings** strategy, the same family-contract finding as treemap (§6).
 - **`commit`:** recompute the full pack layout with the committed values, then `transition` all circles to their new positions/radii. Post-commit transition is chart-owned, interruptible, disposable (rule 13); the `Editor` is `Idle` at `commit`. No settling state.
 - **`cancel`:** `transition` back to the snapshot layout. Circles tween to their pre-gesture positions/radii.
-- **`updated`:** `transition` to the new committed state. Covers external data change, drill, sort/measure/`depth` toggle. While `Drafting`, transitions the committed data underneath the draft overlay; the overlay stays until `commit` or `cancel`.
+- **`updated`:** `transition` to the new committed state, with **enter/exit lifecycle on every rendered-set change** (entering circles fade in at target geometry; exiting circles fade out in place with geometry frozen; surviving circles transition). Covers external data change (including structural: node/level added or removed), drill, sort/measure/`depth` toggle. While `Drafting`, transitions the committed data underneath the draft overlay; the overlay stays until `commit` or `cancel`.
 
 ### Drill
 
@@ -68,4 +68,4 @@ No other gaps. Pack's `commit`/`cancel`/`updated`/drill behavior is identical to
 
 ## Summary
 
-The pack is the third Hierarchical geometry. It combines the treemap's `draft` strategy (scale-against-frozen-siblings — exposing the same family-contract finding) with the icicle/sunburst's drill geometry (affine viewport zoom — circles must stay circular, so a uniform scale is required). No reorder, no boundary knobs — number scrub + wheel + keyboard + cross-tile only; default `proportional-siblings` scaling for value edits. The model fix proposed in `wiki/specs/treemap.md` covers pack as well.
+The pack is the third Hierarchical geometry. It combines the treemap's `draft` strategy (scale-against-frozen-siblings — exposing the same family-contract finding) with the icicle/sunburst's drill geometry (affine viewport zoom — circles must stay circular, so a uniform scale is required). No reorder, no boundary knobs — number scrub + wheel + keyboard + cross-tile only; keyboard uses `proportional-siblings` (vs `proportional-neighbor` in the other three), wheel and drag-mark are additive. The model fix proposed in `wiki/specs/treemap.md` covers pack as well.

@@ -14,7 +14,7 @@ Vocabulary: `UBIQUITOUS_LANGUAGE.md` and `wiki/gesture-architecture.md`. The old
 
 ## 2. What `DataView` query does it subscribe?
 
-Same as icicle, minus `orientation`:
+Same key shape as icicle — `(datasetId, canonical config)` — minus `orientation`. The `Dataset`'s `dataShape` is `hierarchical`; a livebound `Table` or any other hierarchical chart on the same key shares this `DataView`.
 
 - `measure` — value binding driving arc angular spans.
 - `sort` — `index` or `value`; drives sibling ordering within every parent.
@@ -24,27 +24,27 @@ Windowing differs from icicle purely as a geometry consequence: the sunburst's w
 
 ## 3. Does it create an `Editor`?
 
-Yes — same five control surfaces as the icicle:
+Yes — same five control surfaces and the same per-surface value-mappings as the icicle (see `wiki/specs/icicle.md` §3). Geometry differences only:
 
-- **Drag handle — boundary knob.** A draggable knob on the shared angular boundary between two adjacent sibling arcs. Dragging reapportions the two siblings' values (sum preserved). The knob is oriented **tangent to the arc** (perpendicular to the radial line at the boundary), whereas the icicle's knob is axis-aligned. `intent: edit`.
-- **Wheel — arc.** Cmd/Ctrl+wheel over a leaf arc scales that leaf's value; a neighbor absorbs the delta (proportional-neighbor). `intent: edit`.
-- **Keyboard — focused arc.** Arrow / numeric entry on the focused arc edits its value. Same scaling mode. `intent: edit`.
-- **Drag mark — reorder.** When `canReorder` is enabled and `sort === 'index'`, dragging an arc reorders it among its siblings within the same parent. Slot computation is **angular** (pointer → angle → slot), not linear. `intent: reorder`.
-- **Programmatic — cross-tile.** A livebound `Table` sharing the `DataView` publishes `draft` events; the sunburst renders the draft preview. `intent: edit`.
+- **Drag handle — boundary knob.** Knob on the shared angular boundary between two adjacent sibling arcs; **tangent to the arc** (perpendicular to the radial line), vs the icicle's axis-aligned knob. Two-sibling reapportion, sum preserved. `intent: edit`.
+- **Wheel — arc.** Additive (only the target leaf changes; dynamic step). `intent: edit`.
+- **Keyboard — focused arc.** Proportional-neighbor (chart default; Alt → additive). `intent: edit`.
+- **Drag mark — reorder.** Angular slot computation (pointer → angle → slot), vs the icicle's linear sibling-axis. `intent: reorder`.
+- **Programmatic — cross-tile.** Source-defined value-mapping. `intent: edit`.
 
 ## 4. What `intent` does each control surface produce?
 
-Identical to icicle: boundary knob / wheel / keyboard / cross-tile → `edit`; drag mark reorder → `reorder`.
+Identical to icicle: boundary knob / wheel / keyboard / cross-tile → `edit` (each with its own value-mapping, identical to the icicle's); drag mark reorder → `reorder`.
 
 ## 5. What `render` / `transition` effects are attached to each `Editor` event?
 
-Per the Hierarchical family effect contract — same as icicle, with "arc" substituted for "tile" and "angular" for "sibling-axis":
+Per the Hierarchical family effect contract — same as icicle, with "arc" substituted for "tile" and "angular span" for "sibling-axis span":
 
-- **`draft` (`edit`):** scale the edited arc inside the saved parent's angular bounds; freeze sibling ordering; do not recompute the full partition. Boundary-knob drag patches the two adjacent arcs' angular spans in place (sum and parent angular span fixed). Wheel/keyboard on a leaf scales the leaf's angular span; the neighbor absorbs the delta; parent total preserved. Cross-tile `draft`: same. Siblings frozen throughout.
+- **`draft` (`edit`):** the edited arc reflects its new value live; sibling positions frozen; no relayout *transition* until `commit`. Per-surface, same value-mappings as icicle §5: boundary knob patches the two adjacent arcs' angular spans in place (sum and parent angular span fixed); wheel scales only the edited leaf (additive); keyboard scales the leaf with the neighbor absorbing the delta (proportional-neighbor); cross-tile per the source. Siblings frozen throughout.
 - **`draft` (`reorder`):** the dragged arc follows the pointer's angular position; siblings slide to their provisional angular slots with a short reactive tween, their spans recomputed from the provisional order against the saved parent angular span. No full partition recompute. Sibling spans stay proportional to value.
 - **`commit`:** recompute the affected subtree, then `transition` arcs to their new angular/radial positions. For `reorder`, the committed order is written back through the `DataView` and the chart animates the slide. Post-commit transition is chart-owned, interruptible, disposable (rule 13); the `Editor` is `Idle` at `commit`. No settling state.
 - **`cancel`:** `transition` back to the snapshot layout. Arcs tween to their committed angular/radial slots.
-- **`updated`:** `transition` to the new committed state. Covers external data change, drill, sort/measure/`depth` toggle (no orientation toggle — see §1). While `Drafting`, transitions the committed data underneath the draft overlay; the overlay stays until `commit` or `cancel`.
+- **`updated`:** `transition` to the new committed state, with **enter/exit lifecycle on every rendered-set change** (entering arcs fade in; exiting arcs fade out in place, geometry frozen; surviving arcs transition). Covers external data change (including structural: node/level added or removed), drill, sort/measure/`depth` toggle (no orientation). While `Drafting`, transitions the committed data underneath the draft overlay; the overlay stays until `commit` or `cancel`.
 
 ### Drill
 
@@ -59,8 +59,8 @@ Same model as icicle — drill is an `updated`, rendered as an autonomous `trans
 
 ## 6. What does this chart do that the family contract does not cover?
 
-Nothing — same answer as the icicle. The sunburst is the icicle with radial geometry; the Hierarchical family contract ("scale the edited node inside saved parent bounds; freeze sibling ordering; do not recompute the full layout") describes it exactly once "node" is read as "arc" and "parent bounds" as "parent's angular span." Drill is an `updated` rendered as a `transition` per the broadened `updated` definition. The model holds; no gaps.
+Nothing — same answer as the icicle. The sunburst is the icicle with radial geometry; the broadened Hierarchical family `draft` contract (edited mark moves live; sibling positions frozen; relayout transition deferred to `commit`) describes it exactly once "mark" is read as "arc" and "parent bounds" as "parent's angular span." The sunburst uses the subtree-patch mechanism variant, same as the icicle. Drill is an `updated` rendered as a `transition` with enter/exit lifecycle. The model holds; no gaps.
 
 ## Summary
 
-The sunburst is a radial variation of the icicle. Every model-level claim in `wiki/specs/icicle.md` carries over unchanged: `draft` patches in place inside saved parent bounds with siblings frozen; `commit` / `cancel` / `updated` (including drill and config toggles) `transition`; snapping is the exception; the post-commit transition lifecycle is chart-owned with no observable settling state. The only deltas are geometry (arcs not rects; radial/angular axes not depth/sibling axes), the absence of an `orientation` config dimension, the tangent-orientation of boundary knobs, angular slot computation for reorder, and the drill window discarding ancestors rather than retaining them. None of these are model-level; all are family-geometry details covered by the existing Hierarchical contract.
+The sunburst is a radial variation of the icicle. Every model-level claim in `wiki/specs/icicle.md` carries over unchanged: the `DataView` key is `(datasetId, canonical config)` over a `hierarchical` `Dataset`; `draft` patches in place with siblings frozen (subtree-patch variant); per-surface value-mappings are identical (boundary knob = two-sibling reapportion, wheel = additive, keyboard = proportional-neighbor); `commit` / `cancel` / `updated` (including drill and config toggles) `transition` with enter/exit lifecycle on every rendered-set change; snapping is the exception; the post-commit transition lifecycle is chart-owned with no observable settling state. The only deltas are geometry (arcs not rects; radial/angular axes not depth/sibling axes), the absence of an `orientation` config dimension, the tangent-orientation of boundary knobs, angular slot computation for reorder, and the drill window discarding ancestors rather than retaining them. None of these are model-level; all are family-geometry details covered by the existing Hierarchical contract.

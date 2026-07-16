@@ -13,8 +13,9 @@ Vocabulary for the vizform/hotbook gesture and data-flow architecture.
 | Term | Definition |
 | --- | --- |
 | **Chart** | The visual component that renders data. The app provides it a `Kernel`. It connects itself to a `DataView` and `Kernel.Drafts` and may create an `Editor` if it supports interactive editing. |
-| **Kernel** | The central data service, often typed as `DataKernel` or `UpdatableDataKernel`. The app subscribes data sources to it and provides it to `Chart`s. It publishes data updates, brokers `DataView`s, and tracks active `Editor`s via `Kernel.Drafts`. |
-| **DataView** | The chart's query-keyed subscription into the `Kernel`, similar to TanStack Query. It attaches on mount, detaches on dismount, and routes relevant `Kernel` events to the `Chart`. |
+| **Kernel** | The central data service, often typed as `DataKernel` or `UpdatableDataKernel`. The app registers `Dataset`s with it and provides it to `Chart`s. It owns the canonical `Dataset`s by id, publishes data updates, brokers `DataView`s keyed by `(datasetId(s), canonical config)`, and tracks active `Editor`s via `Kernel.Drafts`. |
+| **Dataset** | An identified, addressable data source the `Kernel` owns. Has an `id` and a `dataShape` (`flat` / `hierarchical` / `graph`). The app registers `Dataset`s with the `Kernel`. A `DataView` query names the `Dataset`(s) it reads by id; a chart may read one or several (e.g. a sankey reads nodes and edges). A chart's `ChartSchema.dataShape` must match each `Dataset` it queries. |
+| **DataView** | The chart's subscription into the `Kernel`, similar to TanStack Query. **Keyed by `(datasetId(s), canonical config)`** — the `Dataset`(s) it reads plus a canonical key derived from the chart's config dimensions (`measure`, `sortBy`, `depth`, `orientation`, etc.). Attaches on mount, detaches on dismount, routes relevant `Kernel` events to the `Chart`. Two charts with the same key share a `DataView` (e.g. a livebound `Table` and an icicle); two charts on different `Dataset`s never share, even with identical config. |
 | **Editor** | Per-chart state machine for `draft`/`commit`/`cancel`/`updated`. Only editable charts have one. |
 | **Kernel.Drafts** | The part of `Kernel` that tracks active `Editor`s and reports the global drafting state. |
 | **BaseChart** | Base class for interactive charts. It may create an `Editor`. Subclasses — `BaseCartesianChart`, `BaseRadialChart`, `BaseHierarchicalChart`, `BaseNetworkChart`, `BaseTableChart` — wire common editor effects. See `docs/adr/gesture-state-machine.md` for the family effect contracts. |
@@ -65,7 +66,7 @@ Editor
 - A `Chart` is a first-class consumer of `Kernel` data and controls its own rendering.
 - A `Chart` connects itself to a `DataView` and may create an `Editor` if it supports interactive editing.
 - A `Chart` that creates an `Editor` registers it with `Kernel.Drafts`.
-- A `Kernel` is subscribed to data sources by the app and publishes data updates.
+- A `Kernel` owns registered `Dataset`s (by id) and publishes data updates. The app registers `Dataset`s with the `Kernel` and provides the `Kernel` to `Chart`s.
 - `Kernel.Drafts` tracks active `Editor`s and reports a global `Idle`/`Drafting` state.
 - `commit` and `cancel` are the only transitions out of `Drafting`.
 - `updated` does not change `Editor` state.

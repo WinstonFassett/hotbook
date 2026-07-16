@@ -9,6 +9,7 @@ This document is design only — no code, no file names, no current implementati
 - A `Chart` is a surface with an API. It renders data and exposes gestures, config, and effects.
 - The app may provide a `Chart` with a `Kernel`.
 - A `Chart` may create and subscribe to a `DataView` and may create an `Editor` if it is editable.
+- A `DataView` is keyed by `(datasetId(s), canonical config)` — the `Dataset`(s) it reads plus a canonical key derived from the chart's config. The app registers `Dataset`s with the `Kernel`; a `DataView` query names its `Dataset`(s) by id. A chart may read one or several `Dataset`s. Two charts share a `DataView` iff their full key matches; two charts on different `Dataset`s never share.
 - `Editor` is a per-Chart state machine for `draft` / `commit` / `cancel` / `updated`.
 - `Kernel.Drafts` tracks active `Editor`s and reports the global `Idle` / `Drafting` state.
 - The `Chart` attaches `render` and `transition` effects to `Editor` events; the `Editor` does not decide rendering strategy.
@@ -18,8 +19,8 @@ This document is design only — no code, no file names, no current implementati
 
 ## Chart configuration and schema
 
-- A `Chart` is a component with a configuration schema. The schema declares which properties the chart accepts and how they affect the `DataView` query.
-- Common config dimensions: `measure`, `sortBy`, `depth`, `orientation`. Each chart family exposes the subset it supports.
+- A `Chart` is a component with a configuration schema. The schema declares which properties the chart accepts and how they affect the `DataView` query. The full `DataView` query key is `(datasetId(s), canonical config)` — the `Dataset`(s) named by the chart plus a canonical key derived from its config dimensions.
+- Common config dimensions: `measure`, `sortBy`, `depth`, `orientation`. Each chart family exposes the subset it supports. The `Dataset`(s) are the first axis of the key; the config dimensions are the rest.
 - Config changes are applied to the `DataView` query. The `DataView` publishes an `updated` event. The `Chart` `transition`s to the new state. `transition` is the default response to `updated`; snapping is the exception, reserved for cases where transition is impossible or the chart explicitly chooses it.
 - `updated` covers **any** non-gesture change to the chart's data or config — external data change, drill, sort toggle, orientation toggle, measure swap, `depth` change. There is no split between "external data change" and "config change"; both are `updated`, both `transition`.
 - If an `Editor` is `Drafting`, an `updated` does not change the `Editor` state. The committed data `transition`s underneath the draft overlay; the draft overlay remains where the user last put it until `commit` or `cancel`.
@@ -172,4 +173,5 @@ The `Editor` is the same for every family. Each family attaches effects that kno
 
 ## Open questions
 
-None.
+- **`depth` naming.** The config dimension `depth` caps how many levels below the focus node are visible. The name matches the schema field (`depth: v.optional(depthSchema)`) but is ambiguous — it is not the tree's total depth, nor the focus node's depth, but a *max visible levels* window. Candidate rename: `maxVisibleLevels`. Open; not blocking. Specs use `depth` to match the schema until renamed.
+- **Per-surface value-mapping vocabulary.** Each `edit` control surface has its own value-mapping (`additive`, `proportional-neighbor`, `proportional-siblings`, two-sibling reapportion). These are currently chart-internal details encoded in the `draft`'s `value`, not model vocabulary. If a future chart or cross-tile consumer needs to reason about value-mapping at the model level (e.g. to render a different preview for additive vs proportional), promote them to `UBIQUITOUS_LANGUAGE.md`. Open; not blocking — the four hierarchical specs characterize each surface's value-mapping explicitly without needing the terms in the model.
