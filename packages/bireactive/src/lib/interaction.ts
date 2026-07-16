@@ -25,10 +25,21 @@ export interface ApplyDeltaOptions {
 
 /** Dynamic wheel step — proportional to current value so the gesture feels the
  *  same at value 5 and value 5000. Shift = fine grain. Always at least 1 so the
- *  edit is observable on small values. */
+ *  edit is observable on small values. Integer-rounded (wheel is integer by
+ *  convention). */
 export function dynamicWheelStep(cur: number, shift: boolean): number {
   const pct = shift ? 0.01 : 0.10;
   return Math.max(1, Math.round(Math.abs(cur) * pct));
+}
+
+/** Fractional dynamic step — same scaling as `dynamicWheelStep` but NOT rounded
+ *  and NOT min-clamped to 1. Used by keyboard (and any surface whose write a
+ *  chart snap policy may snap). Lets a chart with snap-off edit a continuous
+ *  dataset fractionally, and lets a chart with snap-on round at the write site
+ *  rather than the step site. */
+export function dynamicStep(cur: number, shift: boolean): number {
+  const pct = shift ? 0.01 : 0.10;
+  return Math.abs(cur) * pct;
 }
 
 export function applyDelta(

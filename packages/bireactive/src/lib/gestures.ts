@@ -1,6 +1,7 @@
 import {
   applyDelta,
   dynamicWheelStep,
+  dynamicStep,
   wheelController,
   realModifierDown,
   type ScalingMode,
@@ -41,18 +42,24 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
   const { root, parentOf, state, dataView } = setup;
   const defaultMode: ScalingMode = setup.scalingMode ?? "proportional-siblings";
 
-  // applyDelta redistributes a node's change across its siblings, so a revert
-  // must restore the target AND every sibling — snapshot all their totals.
+  // Snapshot target + siblings so Esc-revert is correct for ANY value-mapping,
+  // including proportional overrides (wheel is additive by default but the
+  // chart/host/caller can override that — see gesture-architecture "Value-mapping
+  // is overridable"). applyDelta only mutates what the mode dictates; restoring
+  // untouched siblings to their snapshotted value is a harmless no-op.
+  const snapshotGroup = (node: BiNode) => {
+    const parent = parentOf(node);
+    const group = parent ? (parent.children as BiNode[]) : [node];
+    return group.map((n) => ({ node: n, value: n.value.total.value }));
+  };
+  const restoreGroup = (_node: BiNode, snap: Array<{ node: BiNode; value: number }>) => {
+    batch(() => { for (const s of snap) s.node.value.total.value = s.value; });
+  };
+
   // Per-gesture value-mapping handed to the SHARED wheel controller.
   const wheelConfig = {
-    snapshot: (node: BiNode) => {
-      const parent = parentOf(node);
-      const group = parent ? (parent.children as BiNode[]) : [node];
-      return group.map((n) => ({ node: n, value: n.value.total.value }));
-    },
-    restore: (_node: BiNode, snap: Array<{ node: BiNode; value: number }>) => {
-      batch(() => { for (const s of snap) s.node.value.total.value = s.value; });
-    },
+    snapshot: snapshotGroup,
+    restore: restoreGroup,
     dataView,
     intent: 'edit' as const,
     origin: host,
@@ -80,25 +87,71 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
     applyDelta(target, parentOf(target), e.deltaY < 0 ? +step : -step, { mode: "additive" });
   };
 
+  // Keyboard arrows are a first-class edit gesture: dataView.start() on the
+  // first arrow of a sequence, applyDelta per keydown (with key-repeat), Esc
+  // reverts the whole sequence to the gesture-start snapshot, keyup commits
+  // and settles. Previously keyboard called applyDelta directly with no state
+  // machine — no Drafting transition, no Esc revert. Now it mirrors wheel and
+  // drag without overloading the shared wheel controller (whose commit trigger
+  // is Meta/Ctrl keyup, which arrow presses never fire).
+  let kbSnapshot: Array<{ node: BiNode; value: number }> | null = null;
+  let kbTarget: BiNode | null = null;
+  let kbArrowsHeld = 0;
+
   const onKeydown = (e: KeyboardEvent) => {
     if (e.key === "Escape") {
-      // Drag-Esc is owned by the gesture (dragCancelable). Here: clear focus.
+      // Esc during an arrow sequence: revert to gesture-start snapshot.
+      if (kbSnapshot && kbTarget) {
+        restoreGroup(kbTarget, kbSnapshot);
+        dataView.cancel();
+        dataView.settle();
+        kbSnapshot = null;
+        kbTarget = null;
+        kbArrowsHeld = 0;
+        e.preventDefault();
+        return;
+      }
+      // No live arrow gesture: clear focus (drag-Esc is owned by the gesture).
       if (state.focused.value != null) { state.focused.value = null; e.preventDefault(); }
       return;
     }
     const f = state.focused.value;
     if (!f || f === root) return;
-    const step = e.shiftKey ? 5 : 1;
+    const dir = e.key === "ArrowUp" || e.key === "ArrowRight" ? +1
+      : e.key === "ArrowDown" || e.key === "ArrowLeft" ? -1
+      : 0;
+    if (dir === 0) return;
+    e.preventDefault();
+    // Begin a gesture on first arrow (or when the previous sequence settled).
+    // If a wheel/drag gesture is live, the gestureCoordinator's one-gesture
+    // invariant keeps us out — dataView.start() is idempotent on Gesturing.
+    if (!kbSnapshot) {
+      kbTarget = f;
+      kbSnapshot = snapshotGroup(f);
+      dataView.start('edit', host);
+    }
+    // Dynamic step (fractional, same scaling as wheel) so a tick feels the same
+    // at value 5 and value 5000. Shift = fine grain. Fractional so a chart snap
+    // policy (if any) can round at the write site rather than the step site.
+    const step = dynamicStep(f.value.total.value, e.shiftKey);
     // Default additive (only the target moves). Alt switches to the chart's
     // configured scalingMode (proportional-neighbor / proportional-siblings)
     // so the parent total is preserved when desired.
     const mode: ScalingMode = e.altKey ? defaultMode : "additive";
-    if (e.key === "ArrowUp" || e.key === "ArrowRight") {
-      applyDelta(f, parentOf(f), +step, { mode });
-      e.preventDefault();
-    } else if (e.key === "ArrowDown" || e.key === "ArrowLeft") {
-      applyDelta(f, parentOf(f), -step, { mode });
-      e.preventDefault();
+    applyDelta(f, parentOf(f), dir * step, { mode });
+    kbArrowsHeld++;
+  };
+
+  const onKeyup = (e: KeyboardEvent) => {
+    if (e.key !== "ArrowUp" && e.key !== "ArrowRight" && e.key !== "ArrowDown" && e.key !== "ArrowLeft") return;
+    if (kbArrowsHeld > 0) kbArrowsHeld--;
+    if (kbArrowsHeld === 0 && kbSnapshot) {
+      // Last arrow released: commit and settle. The chart's commit transition
+      // (if any) runs; dataView goes Settling -> Idle.
+      dataView.commit();
+      dataView.settle();
+      kbSnapshot = null;
+      kbTarget = null;
     }
   };
 
@@ -111,6 +164,7 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
 
   host.addEventListener("wheel", onWheel as EventListener, { passive: false });
   host.addEventListener("keydown", onKeydown as EventListener);
+  host.addEventListener("keyup", onKeyup as EventListener);
 
   // ── Cross-tile sync bridge ──────────────────────────────────────────────
   // Index nodes by PNode id so external ids resolve to BiNodes.
@@ -170,8 +224,19 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
 
   return () => {
     if (hostStyle) hostStyle.touchAction = prevTouchAction;
+    // If an arrow-key gesture is live on teardown, revert it so we don't leave
+    // the dataView stuck in Gesturing with a dangling snapshot.
+    if (kbSnapshot && kbTarget) {
+      restoreGroup(kbTarget, kbSnapshot);
+      dataView.cancel();
+      dataView.settle();
+      kbSnapshot = null;
+      kbTarget = null;
+      kbArrowsHeld = 0;
+    }
     host.removeEventListener("wheel", onWheel as EventListener);
     host.removeEventListener("keydown", onKeydown as EventListener);
+    host.removeEventListener("keyup", onKeyup as EventListener);
     host.removeEventListener("dblclick", onDblClick);
     focusDispose();
     state.emitHover = undefined;

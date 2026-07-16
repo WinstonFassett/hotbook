@@ -38,6 +38,15 @@ The `Editor` is the same machine regardless of `source`. The `Chart` receives th
 
 **Value-mapping is overridable.** Each control surface has a default *value-mapping* — how the proposed `value` is derived from the input (e.g. wheel = additive, keyboard = chart-default scaling, boundary knob = two-sibling reapportion). The default is chart-configured, but the chart, host, or caller may override what a given surface does. A host could make wheel do something completely different; the model does not decree per-surface value-mapping. The `intent` is uniform (`edit`); the value-mapping is carried in the `draft`'s `value` and is a per-surface, overridable policy.
 
+## Edits and policies
+
+Gestures propose fractional `value` changes. The chart applies its own policies to the write before it reaches the `Kernel`; the `Kernel` stores whatever it receives. Two policies, both chart-owned:
+
+- **Conservation** (opt-in per chart): the chart's *own* gesture edits preserve a rendered-layout invariant (e.g. `sum(siblings) = parent.total` for an icicle with conservation on). Conservation lives on the chart because the invariant is a property of how the chart renders, not of the data — a `Dataset` doesn't know it's "an icicle." **External edits are not corrected.** A `Table` cell edit or another chart's edit can leave the data in a state that violates this chart's conservation; the chart renders it anyway (partition layouts normalize for display). No correction loop. If you want conservation, edit through a chart that enforces it.
+- **Snapping** (per chart + per `Dataset` schema): a chart may snap its own writes to integers; a `Dataset` schema may declare a field integer-valued. The chart's setting governs only its own writes — it does not snap the rest of the `Dataset`. Gestures propose fractional deltas; the chart snaps the write if its policy says to; the `Kernel` stores the result.
+
+The `Kernel` and `Dataset` enforce **no** conservation or snapping policy themselves. They store values; charts and tables project them. Both are projections — neither corrects the other.
+
 ## State machines
 
 ### Editor (per Chart)

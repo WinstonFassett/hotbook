@@ -21,7 +21,7 @@ Vocabulary: `UBIQUITOUS_LANGUAGE.md` and `wiki/gesture-architecture.md`. The old
 - **Drag mark — resize** (WIN-260 "drag-to-resize"). Dragging horizontally on a tile (`ew-resize` cursor) scrubs its value (right = +, left = −; Shift = coarse, Alt = fine). **Additive** — only the dragged tile's value changes; no sibling redistribution. This is the treemap's primary edit surface. `intent: edit`.
 - **Wheel — tile.** Additive (only the target changes; dynamic step). Same as icicle's wheel.
 - **Keyboard — focused tile.** Additive by default; Alt → `proportional-neighbor` (treemap's configured scaling). Same as icicle's keyboard.
-- **Cross-tile.** Source-defined value-mapping. Same as icicle.
+- **Cross-tile.** Source-defined value-mapping. Conservation not enforced on external edits — same as icicle §3.
 - All `edit`; no `reorder` intent on this chart.
 
 ### §5 Effects

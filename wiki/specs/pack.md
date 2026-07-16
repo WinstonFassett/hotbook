@@ -19,7 +19,7 @@ Vocabulary: `UBIQUITOUS_LANGUAGE.md` and `wiki/gesture-architecture.md`. The old
 - **Drag mark — resize** (WIN-260). Dragging horizontally on a circle (`ew-resize` cursor) scrubs its value. **Additive** — only the dragged circle's value changes. Same as treemap's drag-mark. `intent: edit`.
 - **Wheel — circle.** Additive (only the target changes; dynamic step). Same as every chart's wheel.
 - **Keyboard — focused circle.** **Additive** by default; **Alt → `proportional-siblings`** (pack's configured scaling — the delta is redistributed across all siblings, not absorbed by one neighbor). The Alt behavior differs from icicle/sunburst/treemap, whose Alt → `proportional-neighbor`; the default (additive) is the same across all four. `intent: edit`.
-- **Cross-tile.** Source-defined value-mapping. Same as icicle.
+- **Cross-tile.** Source-defined value-mapping. Conservation not enforced on external edits — same as icicle §3.
 - All `edit`; no `reorder` intent on this chart.
 
 ### §5 Effects
