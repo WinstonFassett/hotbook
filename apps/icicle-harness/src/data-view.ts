@@ -31,6 +31,7 @@ function buildWindow(
   config: ChartConfig,
   drillId: string | null,
   frozenOrder?: Map<string, string[]>, // Optional frozen order for gestures
+  draftValues?: Map<string, number>, // Optional draft values to apply during gestures
 ): RenderNode[] {
   const result: RenderNode[] = [];
   const depthCap = config.depth;
@@ -50,7 +51,7 @@ function buildWindow(
     }
     for (const a of ancestors) {
       const d = getDepth(root, a.id);
-      result.push(toRenderNode(a, d, root, config));
+      result.push(toRenderNode(a, d, root, config, draftValues));
     }
   }
 
@@ -58,13 +59,13 @@ function buildWindow(
   // For root view (no drill), include parent nodes so edge handles can be rendered
   if (!focusNode) {
     // Include parent nodes (depth 0 and 1) for edge handle rendering
-    result.push(toRenderNode(startNode, 0, root, config)); // root
+    result.push(toRenderNode(startNode, 0, root, config, draftValues)); // root
     for (const child of startNode.children) {
-      result.push(toRenderNode(child, 1, root, config)); // parents
-      walk(child, 2, root, config, depthCap, result, frozenOrder); // children and deeper
+      result.push(toRenderNode(child, 1, root, config, draftValues)); // parents
+      walk(child, 2, root, config, depthCap, result, frozenOrder, draftValues); // children and deeper
     }
   } else {
-    walk(startNode, baseDepth, root, config, depthCap, result, frozenOrder);
+    walk(startNode, baseDepth, root, config, depthCap, result, frozenOrder, draftValues);
   }
   return result;
 }
@@ -77,6 +78,7 @@ function walk(
   depthCap: number | undefined,
   out: RenderNode[],
   frozenOrder?: Map<string, string[]>, // Optional frozen order for gestures
+  draftValues?: Map<string, number>, // Optional draft values to apply during gestures
 ): void {
   const children = node.children;
   
@@ -99,13 +101,13 @@ function walk(
     if (depthCap !== undefined && childDepth > depthCap) {
       // Still walk to compute sums, but don't add to window
       if (child.children.length > 0) {
-        walk(child, childDepth, root, config, depthCap, out, frozenOrder);
+        walk(child, childDepth, root, config, depthCap, out, frozenOrder, draftValues);
       }
       continue;
     }
-    out.push(toRenderNode(child, childDepth, root, config));
+    out.push(toRenderNode(child, childDepth, root, config, draftValues));
     if (child.children.length > 0) {
-      walk(child, childDepth, root, config, depthCap, out, frozenOrder);
+      walk(child, childDepth, root, config, depthCap, out, frozenOrder, draftValues);
     }
   }
 }
@@ -126,21 +128,24 @@ function getDepth(root: DataNode, id: string): number {
   return walk(root, 0) ?? 0;
 }
 
-function toRenderNode(node: DataNode, depth: number, root: DataNode, _config: ChartConfig): RenderNode {
+function toRenderNode(node: DataNode, depth: number, root: DataNode, _config: ChartConfig, draftValues?: Map<string, number>): RenderNode {
   const parent = findParent(root, node.id);
   const sortedChildren = _config.sort === "value"
     ? node.children.slice().sort((a, b) => b.value - a.value)
     : node.children;
 
+  // Use draft value if available, otherwise use node value
+  const value = draftValues?.get(node.id) ?? node.value;
+
   return {
     id: node.id,
     label: node.label,
     color: node.color ?? defaultColor(depth),
-    value: node.value,
+    value,
     depth,
     parentId: parent?.id ?? null,
     isLeaf: node.children.length === 0,
-    children: sortedChildren.map((c) => toRenderNode(c, depth + 1, root, _config)),
+    children: sortedChildren.map((c) => toRenderNode(c, depth + 1, root, _config, draftValues)),
   };
 }
 
@@ -241,10 +246,10 @@ export class DataView {
   }
 
   /** Get the current rendered window. */
-  getWindow(frozenOrder?: Map<string, string[]>): RenderNode[] {
+  getWindow(frozenOrder?: Map<string, string[]>, draftValues?: Map<string, number>): RenderNode[] {
     const ds = this.kernel.getDataset(this.config.datasetId);
     if (!ds) return [];
-    return buildWindow(ds.root, this.config, this._drillId, frozenOrder);
+    return buildWindow(ds.root, this.config, this._drillId, frozenOrder, draftValues);
   }
 
   /** Capture current sibling order for freezing during gestures (when sort !== 'index'). */

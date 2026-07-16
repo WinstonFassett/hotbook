@@ -112,6 +112,9 @@ export class IcicleChart extends HTMLElement {
   // Order freezing for gestures (when sort !== 'index')
   private _frozenOrder: Map<string, string[]> = new Map();
 
+  // Draft values for gestures (applied during rendering but not committed to dataset)
+  private _draftValues: Map<string, number> = new Map();
+
   // Viewport (drill tween)
   private _vx0 = cell(0);
   private _vy0 = cell(0);
@@ -187,23 +190,31 @@ export class IcicleChart extends HTMLElement {
       this._layout.value = computeLayout(event.window, this._config!, W, H);
       this._renderTiles();
     } else if (event.type === "draft" && event.draft) {
-      // Capture order on first draft if sort !== 'index'
+      // Capture order and clear draft values on first draft
       if (this._frozenOrder.size === 0 && this._config?.sort !== 'index') {
         this._frozenOrder = this._dataView!.captureOrder();
+        this._draftValues.clear();
       }
-      // Full re-render with frozen order (transitions disabled in _renderTiles)
-      const win = this._dataView!.getWindow(this._frozenOrder);
+      // Update draft values
+      this._draftValues.set(event.draft.nodeId, event.draft.value);
+      if (event.draft.secondaryNodeId && event.draft.secondaryValue !== undefined) {
+        this._draftValues.set(event.draft.secondaryNodeId, event.draft.secondaryValue);
+      }
+      // Full re-render with frozen order and draft values (transitions disabled in _renderTiles)
+      const win = this._dataView!.getWindow(this._frozenOrder, this._draftValues);
       this._window.value = win;
       this._layout.value = computeLayout(win, this._config!, W, H);
       this._renderTiles();
     } else if (event.type === "commit") {
-      // Clear frozen order
+      // Clear frozen order and draft values
       this._frozenOrder.clear();
+      this._draftValues.clear();
       // The commit effect writes to Kernel, which triggers updated event
       // The updated event will re-render with transitions enabled
     } else if (event.type === "cancel") {
-      // Clear frozen order
+      // Clear frozen order and draft values
       this._frozenOrder.clear();
+      this._draftValues.clear();
       // Revert to committed layout (transitions enabled in _renderTiles)
       const win = this._dataView!.getWindow();
       this._window.value = win;
