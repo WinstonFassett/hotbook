@@ -231,11 +231,11 @@ export class DataView {
 
   /** Update an in-progress draft. */
   updateDraft(event: DraftEvent): void {
-    this.editor.draft(event); // draft while Drafting = update
+    this.editor.updateDraft(event);
   }
 
-  /** Commit the current draft. The chart should write the value to the
-   *  Kernel in its commit effect. */
+  /** Commit the current draft. The chart writes the value to the Kernel in
+   *  its `commit` event handler. */
   commit(): void {
     this.editor.commit();
   }
@@ -272,10 +272,6 @@ export class DataView {
     return order;
   }
 
-  updateDraft(event: DraftEvent): void {
-    this.editor.updateDraft(event);
-  }
-
   subscribe(fn: DataViewListener): () => void {
     this._listeners.add(fn);
     return () => {
@@ -296,7 +292,7 @@ export class DataView {
     if (this._disposed) return;
     const win = this.getWindow();
     for (const fn of this._listeners) {
-      fn({ type: "updated", window: win, isActive: true });
+      fn({ type: "updated", window: win, isActive: false });
     }
   }
 

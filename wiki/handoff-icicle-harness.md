@@ -16,9 +16,9 @@ Building the icicle chart from specs (not from old code) in a clean new app to v
 | File | What |
 |---|---|
 | `src/types.ts` | Domain model: DataNode, Dataset, ChartConfig, DraftEvent, RenderNode, LayoutRect |
-| `src/editor.ts` | Editor (Idle/Drafting state machine) + Drafts (global pubsub for Idle/Drafting) |
+| `src/editor.ts` | Editor (Idle/Drafting state machine); used by `DataView` |
 | `src/kernel.ts` | Kernel: owns Datasets, publishes updates (pubsub), recomputes sums, broadcasts drafts cross-tile |
-| `src/data-view.ts` | DataView: query-keyed subscription, routes Kernel events to Chart, owns Editor, broadcasts draft/commit/cancel |
+| `src/data-view.ts` | DataView: query-keyed subscription; owns Editor, routes Kernel events and Editor transitions to Chart, broadcasts draft/commit/cancel via Kernel |
 | `src/icicle-chart.ts` | Icicle: custom element, subscribes DataView, renders D3 partition, wheel+keyboard edit surfaces, drill on dblclick |
 | `src/side-table.ts` | Side table: custom element, subscribes same DataView, editable value cells via pointer drag, expand/collapse |
 | `src/main.ts` | Wires Kernel + config to both components, global Esc handler, status display |

@@ -19,9 +19,9 @@ A clean icicle chart + a side table, sharing a `DataView` on the same canonical 
 1. **Icicle chart** — rectilinear partition, hierarchical data, multi-level display, drill.
    - Config dimensions: `measure`, `sort` (index/value), `depth`, `orientation` (horizontal/vertical).
    - Edit surfaces (per `wiki/specs/icicle.md` §3): boundary knob (two-sibling reapportion), wheel (additive), keyboard (additive default, Alt → proportional-neighbor), drag-to-reorder (when `canReorder` + `sort === 'index'`).
-   - Effects (per §5): `draft` (subtree-patch, siblings frozen), `commit` (recompute + transition), `cancel` (transition to snapshot), `updated` (transition + enter/exit on rendered-set change).
+   - Effects (per §5): `draft` (write-through to reactive tree with sibling ordering frozen), `commit` (recompute + transition), `cancel` (transition to snapshot), `updated` (transition + enter/exit on rendered-set change).
    - Conservation: opt-in, governs own edits only. External edits not corrected.
-   - Keyboard goes through the state machine: `start`/`commit`/`cancel`/`settle`, Esc-revert, fractional dynamic step.
+   - Keyboard goes through the state machine: `start` (`draft`) / `commit` / `cancel` only (no `settle` state); Esc reverts to the snapshot; fractional dynamic step.
 2. **Side table** — flat table on the same `DataView`, editable cells (absolute-set type + number-drag).
 3. **Cross-tile** — editing in the icicle publishes `draft` to the table; editing in the table publishes `draft` to the icicle. Both render the preview. Esc reverts both.
 
