@@ -54,8 +54,8 @@ export class SideTable extends HTMLElement {
     if (event.type === "updated" && event.window) {
       this._render();
     } else if (event.type === "draft" && event.draft) {
-      // Highlight the drafted cell
-      this._highlightDraftCell(event.draft.nodeId, event.isActive);
+      // Highlight the drafted cell and update text
+      this._highlightDraftCell(event.draft.nodeId, event.isActive, event.draft.value);
     } else if (event.type === "commit") {
       this._clearDraftHighlight();
       // The Kernel publish from commit triggers an updated → re-render
@@ -158,6 +158,7 @@ export class SideTable extends HTMLElement {
     // Value cell (editable)
     const valCell = document.createElement("div");
     valCell.dataset.id = node.id;
+    valCell.className = "value";
     valCell.style.cssText =
       "width:80px;text-align:right;color:oklch(0.7 0 0);font-variant-numeric:tabular-nums;cursor:ew-resize;touch-action:none;user-select:none;";
     valCell.textContent = fmtNum(node.value);
@@ -218,17 +219,25 @@ export class SideTable extends HTMLElement {
     cell.addEventListener("pointerdown", onDown);
   }
 
-  private _highlightDraftCell(nodeId: string, isActive: boolean): void {
+  private _highlightDraftCell(nodeId: string, isActive: boolean, draftValue?: number): void {
     this._clearDraftHighlight();
-    const cell = this._container?.querySelector(`[data-id="${nodeId}"]`) as HTMLDivElement | null;
+    const cell = this._container?.querySelector(`.value[data-id="${nodeId}"]`) as HTMLDivElement | null;
     if (cell) {
       cell.style.background = isActive ? "oklch(0.28 0 0.1 240)" : "oklch(0.22 0 0)";
+      // Update cell text to show draft value
+      if (draftValue !== undefined) {
+        cell.textContent = fmtNum(draftValue);
+      }
     }
   }
 
   private _clearDraftHighlight(): void {
-    const cells = this._container?.querySelectorAll("[data-id]");
-    cells?.forEach((c) => ((c as HTMLElement).style.background = ""));
+    const cells = this._container?.querySelectorAll(".value");
+    cells?.forEach((c) => {
+      (c as HTMLElement).style.background = "";
+    });
+    // Re-render to show committed values
+    this._render();
   }
 }
 

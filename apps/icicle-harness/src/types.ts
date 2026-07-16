@@ -27,6 +27,7 @@ export interface ChartConfig {
   sort: "index" | "value";
   depth?: number;
   orientation: "horizontal" | "vertical";
+  canReorder?: boolean;
 }
 
 /** A draft event produced by a control surface. */
@@ -36,9 +37,14 @@ export interface DraftEvent {
   /** The proposed new value. */
   value: number;
   /** Which control surface produced this draft. */
-  source: "boundary-knob" | "wheel" | "keyboard" | "table-cell" | "reorder";
+  source: "divider-handle" | "wheel" | "keyboard" | "table-cell" | "reorder";
   /** What kind of edit: value change or reorder. */
   intent: "edit" | "reorder";
+  /** For two-sibling reapportion (boundary knob): the neighbor node that
+   *  absorbs the complementary delta so the pair's sum is preserved. */
+  secondaryNodeId?: string;
+  /** The proposed new value of the secondary node (reapportion). */
+  secondaryValue?: number;
   /** For reorder: the new sibling order within the parent. */
   reorderOrder?: string[];
   /** For reorder: the parent node id. */

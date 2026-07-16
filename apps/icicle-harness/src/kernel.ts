@@ -75,6 +75,20 @@ export class Kernel {
     this._publish(datasetId);
   }
 
+  /** Write multiple node values atomically (e.g. two-sibling reapportion:
+   *  both siblings change, parent sum preserved). Recomputes sums once and
+   *  publishes a single update. */
+  writeValues(datasetId: string, writes: Array<{ nodeId: string; value: number }>): void {
+    const ds = this._datasets.get(datasetId);
+    if (!ds) return;
+    for (const w of writes) {
+      const node = findNode(ds.root, w.nodeId);
+      if (node) node.value = w.value;
+    }
+    recomputeSums(ds.root);
+    this._publish(datasetId);
+  }
+
   /** Write a reorder: new children order for a parent. */
   writeReorder(datasetId: string, parentId: string, orderedIds: string[]): void {
     const ds = this._datasets.get(datasetId);
@@ -110,5 +124,18 @@ export class Kernel {
 
   private _publish(datasetId: string): void {
     for (const fn of this._listeners) fn(datasetId);
+  }
+
+  /** Test-only: force publish without recomputing sums (to break conservation) */
+  forcePublish(datasetId: string): void {
+    this._publish(datasetId);
+  }
+
+  /** Test-only: set node value without recomputing sums (breaks conservation) */
+  setNodeValueNoRecompute(datasetId: string, nodeId: string, value: number): void {
+    const ds = this._datasets.get(datasetId);
+    if (!ds) return;
+    const node = findNode(ds.root, nodeId);
+    if (node) node.value = value;
   }
 }

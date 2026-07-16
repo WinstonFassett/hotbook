@@ -71,6 +71,7 @@ const config: ChartConfig = {
   sort: "index",
   depth: 3,
   orientation: "vertical",
+  canReorder: false,
 };
 
 // ─── Wire up ───────────────────────────────────────────────────────────────
@@ -85,6 +86,28 @@ icicle.kernel = kernel;
 icicle.config = config;
 table.kernel = kernel;
 table.config = config;
+
+// Config bar: push config changes to both components (recreates DataView → animated transition).
+function updateConfig(key: keyof ChartConfig, value: any) {
+  (config as any)[key] = value;
+  icicle.config = config;
+  table.config = config;
+}
+
+document.querySelectorAll("#config-bar button").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const cfg = btn.getAttribute("data-cfg") as keyof ChartConfig;
+    const val = btn.getAttribute("data-val");
+    // Toggle active state within the group
+    const group = btn.parentElement!;
+    group.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    // Parse value
+    if (cfg === "depth") updateConfig(cfg, parseInt(val!));
+    else if (cfg === "canReorder") updateConfig(cfg, val === "true");
+    else updateConfig(cfg, val);
+  });
+});
 
 // Global Esc handler — cancel any active draft.
 // Per-component Esc is handled inside each chart/table (they check editor
@@ -119,5 +142,8 @@ kernel.drafts.subscribe((isDrafting, activeEditor) => {
     tableStatus.classList.remove("drafting");
   }
 });
+
+// Expose kernel globally for testing
+(window as any).__kernel = kernel;
 
 console.log("icicle harness ready", { kernel, config });

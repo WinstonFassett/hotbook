@@ -64,11 +64,69 @@
         width: 100%;
         height: 100%;
       }
+      #config-bar {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        margin-bottom: 12px;
+        font-size: 11px;
+      }
+      #config-bar label {
+        color: var(--muted);
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        font-size: 10px;
+      }
+      #config-bar button {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        color: var(--ink);
+        padding: 3px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 11px;
+        font-family: inherit;
+      }
+      #config-bar button.active {
+        background: var(--accent);
+        color: oklch(0.14 0 0);
+        border-color: var(--accent);
+      }
+      #config-bar button:hover { border-color: var(--accent); }
+      #config-bar .group { display: flex; gap: 4px; align-items: center; }
     </style>
   </head>
   <body>
     <h1>icicle harness</h1>
     <p class="sub">kernel · dataview · editor · cross-tile · one chart + one table on the same data</p>
+    <div id="config-bar">
+      <div class="group">
+        <label>orientation</label>
+        <button data-cfg="orientation" data-val="vertical" class="active" id="btn-vert">vertical</button>
+        <button data-cfg="orientation" data-val="horizontal" id="btn-horiz">horizontal</button>
+      </div>
+      <div class="group">
+        <label>sort</label>
+        <button data-cfg="sort" data-val="index" class="active" id="btn-index">index</button>
+        <button data-cfg="sort" data-val="value" id="btn-value">value</button>
+      </div>
+      <div class="group">
+        <label>depth</label>
+        <button data-cfg="depth" data-val="1" id="btn-depth-1">1</button>
+        <button data-cfg="depth" data-val="2" id="btn-depth-2">2</button>
+        <button data-cfg="depth" data-val="3" class="active" id="btn-depth-3">3</button>
+        <button data-cfg="depth" data-val="4" id="btn-depth-4">4</button>
+      </div>
+      <div class="group">
+        <label>measure</label>
+        <button data-cfg="measure" data-val="value" class="active" id="btn-measure-value">value</button>
+      </div>
+      <div class="group">
+        <label>reorder</label>
+        <button data-cfg="canReorder" data-val="true" id="btn-reorder">enable</button>
+      </div>
+    </div>
     <div id="app">
       <div class="tile" id="icicle-tile">
         <span class="tile-label">icicle</span>
