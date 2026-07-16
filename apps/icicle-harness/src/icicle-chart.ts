@@ -191,7 +191,7 @@ export class IcicleChart extends HTMLElement {
       if (this._frozenOrder.size === 0 && this._config?.sort !== 'index') {
         this._frozenOrder = this._dataView!.captureOrder();
       }
-      // Full re-render with frozen order
+      // Full re-render with frozen order (transitions disabled in _renderTiles)
       const win = this._dataView!.getWindow(this._frozenOrder);
       this._window.value = win;
       this._layout.value = computeLayout(win, this._config!, W, H);
@@ -200,10 +200,11 @@ export class IcicleChart extends HTMLElement {
       // Clear frozen order
       this._frozenOrder.clear();
       // The commit effect writes to Kernel, which triggers updated event
+      // The updated event will re-render with transitions enabled
     } else if (event.type === "cancel") {
       // Clear frozen order
       this._frozenOrder.clear();
-      // Revert to committed layout
+      // Revert to committed layout (transitions enabled in _renderTiles)
       const win = this._dataView!.getWindow();
       this._window.value = win;
       this._layout.value = computeLayout(win, this._config!, W, H);
@@ -224,6 +225,7 @@ export class IcicleChart extends HTMLElement {
     const win = this._window.value;
     const layout = this._layout.value;
     const isHoriz = this._config?.orientation === "horizontal";
+    const isDrafting = this._dataView?.editor.state === "Drafting";
 
     // Keyed update: keep existing tiles, add new, remove gone
     const existing = new Map<string, SVGRectElement>();
@@ -240,25 +242,36 @@ export class IcicleChart extends HTMLElement {
 
       let tile = existing.get(node.id);
       if (!tile) {
-        // Enter: create new tile with enter animation
+        // Enter: create new tile
         tile = document.createElementNS("http://www.w3.org/2000/svg", "rect");
         tile.setAttribute("data-id", node.id);
         tile.setAttribute("rx", "2");
-        tile.style.transition = `all ${TRANSITION_MS}ms cubic-bezier(0.4, 0, 0.2, 1)`;
+        // Only enable transitions when not drafting
+        tile.style.transition = isDrafting ? 'none' : `all ${TRANSITION_MS}ms cubic-bezier(0.4, 0, 0.2, 1)`;
         tile.style.cursor = "pointer";
         this._tileLayer.appendChild(tile);
-        // Enter animation: fade in from opacity 0
-        tile.style.opacity = "0";
-        // Set initial position for enter animation
-        tile.setAttribute("x", String(rect.x));
-        tile.setAttribute("y", String(rect.y));
-        tile.setAttribute("width", String(rect.width));
-        tile.setAttribute("height", String(rect.height));
-        tile.setAttribute("fill", node.color);
-        // Trigger enter animation
-        requestAnimationFrame(() => {
-          if (tile) tile.style.opacity = "1";
-        });
+        // Enter animation: fade in from opacity 0 (only when not drafting)
+        if (!isDrafting) {
+          tile.style.opacity = "0";
+          // Set initial position for enter animation
+          tile.setAttribute("x", String(rect.x));
+          tile.setAttribute("y", String(rect.y));
+          tile.setAttribute("width", String(rect.width));
+          tile.setAttribute("height", String(rect.height));
+          tile.setAttribute("fill", node.color);
+          // Trigger enter animation
+          requestAnimationFrame(() => {
+            if (tile) tile.style.opacity = "1";
+          });
+        } else {
+          // During draft, set position immediately without animation
+          tile.setAttribute("x", String(rect.x));
+          tile.setAttribute("y", String(rect.y));
+          tile.setAttribute("width", String(rect.width));
+          tile.setAttribute("height", String(rect.height));
+          tile.setAttribute("fill", node.color);
+          tile.style.opacity = "1";
+        }
         // Click to focus + drill. Focus the host so keyboard edits land here.
         tile.addEventListener("click", () => {
           this._focused = node.id;
@@ -293,12 +306,17 @@ export class IcicleChart extends HTMLElement {
       tile.setAttribute("stroke-width", this._focused === node.id ? "2" : "1");
     }
 
-    // Remove gone tiles (exit animation)
+    // Remove gone tiles (exit animation only when not drafting)
     for (const [id, el] of existing) {
       if (!seen.has(id)) {
-        // Exit animation: fade out in place
-        el.style.opacity = "0";
-        setTimeout(() => el.remove(), TRANSITION_MS);
+        if (isDrafting) {
+          // During draft, remove immediately
+          el.remove();
+        } else {
+          // Exit animation: fade out in place
+          el.style.opacity = "0";
+          setTimeout(() => el.remove(), TRANSITION_MS);
+        }
       }
     }
 
