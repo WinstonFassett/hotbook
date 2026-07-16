@@ -26,6 +26,7 @@ import { mountDrillBreadcrumb } from "../lib/drill-breadcrumb";
 import { dragCancelable } from "../lib/esc-contract";
 import { attachReorderGesture } from "../lib/reorder-gesture";
 import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, settleTransition, REORDER_ELEVATION_CSS } from "../lib/transitions";
+import { DataViewController } from "../lib/editor";
 import { withExitDelay, membershipCell } from "../lib/mark-lifecycle";
 import type { ElementWithBridge } from "../lib/hud-bridge";
 
@@ -117,6 +118,13 @@ export class MdIcicleLC extends Diagram {
     this.tabIndex = -1;
     this.style.outline = "none";
 
+    // Per-chart DataViewController: owns the gesture state machine and wires
+    // to the global GestureCoordinator. Replaces the GESTURE_ACTIVE_CLASS hack.
+    // Created per scene (reconnect rebuilds); disposed on scene teardown.
+    const dataView = new DataViewController();
+    (this as HTMLElement & { dataView?: DataViewController }).dataView = dataView;
+    this._trackScene(() => { dataView.dispose(); });
+
     const svgEl = (this as any).svg as SVGSVGElement;
     const localPoint = (e: PointerEvent) => {
       const r = svgEl.getBoundingClientRect();
@@ -170,7 +178,7 @@ export class MdIcicleLC extends Diagram {
     this._trackScene(biEffect(() => {
       const root = rootCell.value;
       gestureDispose?.();
-      gestureDispose = attachChartGestures(this, { root, parentOf, state, scalingMode: "proportional-neighbor" });
+      gestureDispose = attachChartGestures(this, { root, parentOf, state, scalingMode: "proportional-neighbor", dataView });
     }));
     this._trackScene(() => { gestureDispose?.(); gestureDispose = null; });
     const hoverCell = cell<BiNode | null>(null);
@@ -426,7 +434,7 @@ export class MdIcicleLC extends Diagram {
         seenOrientation = orientation;
         seenMaxDepth = maxDepth;
         seenReorderTick = reorderTick;
-        if ((reordered || measureSwapped || orientationChanged || depthChanged || reorderCommitted) && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
+        if ((reordered || measureSwapped || orientationChanged || depthChanged || reorderCommitted) && dataView.phase !== 'gesturing') {
           lcancel?.();
           lcancel = this.anim.start(
             tween(lx0, t.x0, SORT_SEC, easeOut),
@@ -606,6 +614,7 @@ export class MdIcicleLC extends Diagram {
             return scored.findIndex(s => s.id === node.value.id);
           },
           onActivate: () => {
+            dataView.start('reorder', node.value.id);
             const lmap = layout.peek();
             const h = isHoriz.peek();
             const pln = lmap.get(parent);
@@ -675,6 +684,7 @@ export class MdIcicleLC extends Diagram {
                 this._reorderTickCell.value = this._reorderTickCell.value + 1;
                 this.onReorder?.(parent.value.id ?? null, finalOrder.slice());
               }
+              dataView.commit();
               this.dispatchEvent(new CustomEvent('gesturecommit', { detail: { canceled: false, reorder: true } }));
               return;
             }
@@ -691,6 +701,7 @@ export class MdIcicleLC extends Diagram {
               this.anim.start(tween(sib0, sib0Target, SORT_SEC, easeOut) as any);
               this.anim.start(tween(sib1, sib1Target, SORT_SEC, easeOut) as any);
             }
+            dataView.cancel();
             this.dispatchEvent(new CustomEvent('gesturecommit', { detail: { canceled } }));
           },
         });
@@ -820,8 +831,8 @@ export class MdIcicleLC extends Diagram {
         });
         const dispose = dragCancelable(handle, knob, [a, b], {
           host: this,
-          onStart: () => { active.value = true; handle.el.style.cursor = "grabbing"; },
-          onEnd: () => { active.value = false; handle.el.style.cursor = "grab"; },
+          onStart: () => { active.value = true; handle.el.style.cursor = "grabbing"; dataView.start('pre-edit', `${aNode.value.id}:${bNode.value.id}`); },
+          onEnd: (canceled) => { active.value = false; handle.el.style.cursor = "grab"; if (canceled) dataView.cancel(); else dataView.commit(); },
         });
         handle.track(dispose);
         biEffect(() => { handle.el.style.cursor = isHoriz.value ? "ns-resize" : "ew-resize"; });
