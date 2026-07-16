@@ -6,8 +6,9 @@ This document is design only — no code, no file names, no current implementati
 
 ## Core idea
 
-- The app gives each `Chart` a `Kernel`.
-- A `Chart` subscribes to a `DataView` and, if it is editable, creates an `Editor`.
+- A `Chart` is a surface with an API. It renders data and exposes gestures, config, and effects.
+- The app may provide a `Chart` with a `Kernel`.
+- A `Chart` may create and subscribe to a `DataView` and may create an `Editor` if it is editable.
 - `Editor` is a per-Chart state machine for `draft` / `commit` / `cancel` / `updated`.
 - `Kernel.Drafts` tracks active `Editor`s and reports the global `Idle` / `Drafting` state.
 - The `Chart` attaches `render` and `transition` effects to `Editor` events; the `Editor` does not decide rendering strategy.
@@ -156,12 +157,16 @@ The `Editor` is the same for every family. Each family attaches effects that kno
 6. After the hierarchical family is proven, extend to Cartesian, Radial, Network/Flow, and Table.
 7. Update the acceptance test checklist per family as it is migrated.
 
+## Resolved
+
+- `Editor` is per-`Chart`; `DataView` and `Editor` are optional. A livebound `Table` and `Chart` are two `Chart` surfaces; they may share a `DataView` or each use their own.
+- `Table` is a `Chart` family.
+- If external `updated` changes the same value being drafted, the draft overlay stays. UBIQUITOUS already answers this.
+- `Kernel.Drafts` exposes a **list of active `Editor`s**. No boolean. Derived values (`Idle`/`Drafting`, count, etc.) are computed from the list — we solve derivation later, it is not the hard part. No information hiding: the list is the truth, derived flags are projections.
+- Config schema is already baked: a `ChartSchema` descriptor with a valibot runtime `config` schema, `ui.fields` picker descriptors, `dataShape`, `capabilities`, and `mount`/`mountProps`/`toChart`. See `packages/bireactive/src/chart-schemas.ts`. Not a new design problem.
+- `intent`: `edit` is the common case — anything mutated (value, config, data, "shit changed"). `reorder` is the special intent singled out because it freezes displayed order during the gesture. Future intents with different freeze/transition semantics get added when they exist, not now. Matches `GestureIntent = "edit" | "reorder"` in the code.
+- One draft at a time. No multi-value / simultaneous drafts. `gestureCoordinator.setActive` already enforces one active gesture globally. No observed need for more; do not expand scope.
+
 ## Open questions
 
-- Is `Editor` per-`Chart` or per-`DataView`? UBIQUITOUS says per-`Chart`. A livebound `Table` and `Chart` can share a `DataView`; we need to decide whether the `Editor` belongs to the `DataView` or to the surface that started the gesture.
-- If external `updated` changes the same value being drafted, should the draft overlay change or stay? UBIQUITOUS says the draft overlay stays.
-- Should `Kernel.Drafts` expose a global `Idle`/`Drafting` boolean, a list of active `Editor`s, or both?
-- Is the table a `Chart` family, or a separate consumer with its own `DataView` and a lightweight `Editor`?
-- How is the chart config schema declared and consumed? Is it a runtime type, a generated descriptor, or a component property contract?
-- Is `intent` limited to `value-change` and `reorder`, or are there more (filter, mode change, drill)?
-- Should the `Editor` support multiple simultaneous drafts for multi-value gestures, or stick to "usually one pre-edit"?
+None.
