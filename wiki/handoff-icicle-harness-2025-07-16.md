@@ -50,9 +50,56 @@ Building the icicle chart from specs (not from old code) in a clean new app to v
 - **Drill animation:** Already working via existing `transition: all 300ms` on tiles. The snap impression was test artifact (using two separate clicks instead of dblclick). Real drill animates via CSS transitions, verified via `transitionend` events.
 - **Terminology:** "boundary knob" → **divider handle**. Drag the divider, neighbor absorbs. Source field in DraftEvent: `"divider-handle"`.
 
+## Implementation Checklist
+
+Based on spec (wiki/specs/icicle.md) and current implementation:
+
+### ✅ Done and Perfect
+
+| Behavior | Status | Notes |
+|---|---|---|
+| DataView query (measure, sort, depth, orientation) | ✅ Perfect | All config dimensions working |
+| Boundary knob (divider handle) - two-sibling reapportion | ✅ Perfect | Sum preserved, atomic commit, siblings frozen |
+| Wheel - additive | ✅ Perfect | Additive scaling, parent total not preserved |
+| Keyboard - additive (default) | ✅ Perfect | Arrow keys, additive, commit on keyup |
+| Keyboard - Alt → proportional-neighbor | ✅ Perfect | Alt key preserves parent total |
+| Cross-tile (programmatic) | ✅ Perfect | Table → icicle, icicle → table, conservation not enforced |
+| Drag-to-reorder | ✅ Perfect | When canReorder + sort='index', provisional order |
+| Draft (edit) - full re-render with order freezing | ✅ Perfect | Recursive order freezing, full re-render |
+| Draft (reorder) - provisional order | ✅ Perfect | Tile follows pointer, siblings slide |
+| Commit - transition | ✅ Perfect | Post-commit animation, autonomous |
+| Cancel - transition back | ✅ Perfect | Revert to snapshot, tiles tween |
+| Updated - transition | ✅ Perfect | External data, drill, config toggles |
+| Drill - animated transition | ✅ Perfect | Viewport tween, enter/exit fade |
+| Orientation toggle | ✅ Perfect | Vertical ↔ horizontal, animated |
+| Sort toggle | ✅ Perfect | Index ↔ value, animated |
+| Depth change | ✅ Perfect | Level cap, enter/exit on change |
+| Measure swap | ✅ Perfect | Button present, works |
+| Order freezing (when sort !== 'index') | ✅ Perfect | Recursive snapshot, frozen during gesture |
+
+### ⚠️ Done but Needs Manual Verification
+
+| Behavior | Status | Notes |
+|---|---|---|
+| Full re-render visual quality during gestures | ⚠️ Needs visual test | Tests pass, but manual verification needed for smoothness |
+| Transition smoothness (all transitions) | ⚠️ Needs visual test | CSS transitions work, but visual polish needed |
+| Enter/exit animations quality | ⚠️ Needs visual test | Fade in/out works, but visual polish needed |
+
+### ❌ Not Done / Not Started
+
+| Behavior | Status | Notes |
+|---|---|---|
+| None | - | All spec behaviors implemented |
+
+### 🐛 Known Issues / TODO
+
+| Issue | Status | Notes |
+|---|---|---|
+| None | - | All tests passing |
+
 ## What's NOT done yet
 
-None. All 14 scenarios from the handoff doc are now implemented and tested.
+None. All spec behaviors are implemented and tested. Manual visual verification recommended for transition polish.
 
 ## Dev server
 
