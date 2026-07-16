@@ -481,12 +481,13 @@ export function makeHierSource(spec: HierSpec): TileSource {
       // now; overwriting them from the store would snap values back.
       if (gestureActive) return
       const typedEl = el as ElWithRoot
-      // Sync measureKey and orientation BEFORE leaf value writes — the chart's
+      // Sync measureKey, sortBy, and orientation BEFORE leaf value writes — the chart's
       // two-lane gate reads these cells (untracked) to decide animate-vs-snap.
       // The layout effect fires when leaf cells are written (tracked via ltarget);
       // by that point these must already be updated so the gate classifies the
       // change as structural (animate), not value edit (snap).
       typedEl.measureKey = measureKeyRef.current
+      typedEl.sortBy = sortByRef.current
       delete (typedEl as any).orientation;
       if (orientationRef.current !== undefined) typedEl.orientation = orientationRef.current
       // Use peek() to avoid registering Num cells as deps of whichever bireactive

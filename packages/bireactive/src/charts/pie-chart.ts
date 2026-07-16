@@ -147,7 +147,9 @@ export class MdPieChartLC extends Diagram {
       const d = slices0[i]!;
       const color = PALETTE[i % PALETTE.length]!;
 
-      const arcDatum = derive(() => arcs.value[i]);
+      // Find the arc for this datum by matching the data object, not by index.
+      // When data reorders, arcs reorder too, so index-based access breaks.
+      const arcDatum = derive(() => arcs.value.find(arc => arc.data === d));
       const a0Target = derive(() => arcDatum.value?.startAngle ?? 0);
       const a1Target = derive(() => arcDatum.value?.endAngle ?? 0);
 
