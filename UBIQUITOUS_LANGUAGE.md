@@ -27,7 +27,7 @@ Vocabulary for the vizform/hotbook gesture and data-flow architecture.
 | **committed** | The stored, non-speculative data value. |
 | **commit** | Finalize the current `draft` and move it to `committed`. |
 | **cancel** | Discard the current `draft` and revert to the committed baseline. |
-| **updated** | External data changed while the `Editor` is `Idle` or `Drafting`. |
+| **updated** | Any non-gesture change to the chart's data or config while the `Editor` is `Idle` or `Drafting` — external data change, drill, sort/orientation/measure/depth toggle, etc. The `Chart` `transition`s to the new state; snapping is the exception. |
 
 ## Effects
 
@@ -56,7 +56,7 @@ Editor
 
 - `draft` starts or updates a draft.
 - `commit` and `cancel` return to `Idle`.
-- `updated` is an external data change; it does not change `Editor` state.
+- `updated` is any non-gesture data or config change (external data change, drill, sort/orientation/measure/depth toggle, etc.); it does not change `Editor` state. The `Chart` `transition`s to the new state by default; snapping is the exception.
 - The `Chart` attaches `transition`/`render` effects to these events.
 
 ## Relationships
@@ -83,4 +83,4 @@ Editor
 >
 > **Dev:** "What if the data changes in the file system while the user is still dragging?"
 >
-> **Designer:** "The `Kernel` publishes an `updated` event through the `DataView`. The `Editor` stays `Drafting` and the `Chart` re-renders the committed data, but it does **not** reapply the draft. The draft overlay stays as the user last set it until they `commit` or `cancel`."
+> **Designer:** "The `Kernel` publishes an `updated` event through the `DataView`. The `Editor` stays `Drafting` and the `Chart` `transition`s the committed data to its new state underneath the draft, but it does **not** reapply the draft. The draft overlay stays as the user last set it until they `commit` or `cancel`."

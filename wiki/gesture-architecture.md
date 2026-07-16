@@ -20,8 +20,9 @@ This document is design only — no code, no file names, no current implementati
 
 - A `Chart` is a component with a configuration schema. The schema declares which properties the chart accepts and how they affect the `DataView` query.
 - Common config dimensions: `measure`, `sortBy`, `depth`, `orientation`. Each chart family exposes the subset it supports.
-- Config changes are applied to the `DataView` query. The `DataView` publishes an `updated` event. The `Chart` re-renders.
-- If an `Editor` is `Drafting`, config changes do not change the `Editor` state. The committed data re-renders underneath the draft overlay; the draft overlay remains.
+- Config changes are applied to the `DataView` query. The `DataView` publishes an `updated` event. The `Chart` `transition`s to the new state. `transition` is the default response to `updated`; snapping is the exception, reserved for cases where transition is impossible or the chart explicitly chooses it.
+- `updated` covers **any** non-gesture change to the chart's data or config — external data change, drill, sort toggle, orientation toggle, measure swap, `depth` change. There is no split between "external data change" and "config change"; both are `updated`, both `transition`.
+- If an `Editor` is `Drafting`, an `updated` does not change the `Editor` state. The committed data `transition`s underneath the draft overlay; the draft overlay remains where the user last put it until `commit` or `cancel`.
 
 ## Universal input model
 
@@ -53,7 +54,7 @@ Drafting:
 - `draft` starts or updates a speculative change.
 - `commit` finalizes it.
 - `cancel` discards it and reverts to the committed snapshot.
-- `updated` is an external data change while the `Editor` is `Idle` or `Drafting`. It does **not** change the `Editor` state. The `Chart` re-renders the committed data, but the draft overlay stays as the user left it until `commit` or `cancel`.
+- `updated` is any non-gesture change to the chart's data or config while the `Editor` is `Idle` or `Drafting` — external data change, drill, sort/orientation/measure/depth toggle, etc. It does **not** change the `Editor` state. The `Chart` `transition`s to the new committed state; while `Drafting`, the transition runs underneath the draft overlay, which stays as the user left it until `commit` or `cancel`.
 
 ### Kernel.Drafts (global)
 
@@ -98,8 +99,8 @@ The gesture contract is the same for all geometries. Only the handle shape and c
 
 - **During `Drafting`:** render the preview immediately. Do not reorder, relayout, or animate to a new sorted position. Scale the edited mark and the relevant axis or domain if possible.
 - **On `commit`:** re-evaluate sort, scale, and domain. Animate or snap to the new layout. Reorder, relayout, and enter/exit transitions happen here.
-- **On `cancel`:** revert to the snapshot. No reorder, no relayout, no transition.
-- **External `updated` during `Drafting`:** re-render the committed data underneath the draft overlay, but do not reapply the draft.
+- **On `cancel`:** `transition` back to the snapshot. No reorder, no relayout beyond the revert; the transition undoes the live preview.
+- **`updated` during `Drafting`:** `transition` the committed data to its new state underneath the draft overlay, but do not reapply the draft. (`updated` outside `Drafting` is the normal case below — `transition` to the new state.)
 - **All autonomous transitions are interruptible and disposable.** When interrupted, the mark stays at its current visual position and the new transition starts from there.
 - **Reduced motion:** reactive motion (direct manipulation feedback) stays on; autonomous motion (post-commit transitions, reorder, mode-change morphs) is suppressible.
 - **Post-commit:** layout should contain all data — no overflow, no persistent empty space.
@@ -114,29 +115,29 @@ The `Editor` is the same for every family. Each family attaches effects that kno
 
 - `draft`: resize the edited mark and scale the matching axis/domain to fit the preview value; keep siblings frozen.
 - `commit`: recompute sort, then animate or snap bars/points to new positions.
-- `cancel`: revert to the snapshot.
-- `updated`: re-render committed data; keep the draft overlay.
+- `cancel`: `transition` back to the snapshot.
+- `updated`: `transition` committed data to the new state; keep the draft overlay if `Drafting`.
 
 ### Radial
 
 - `draft`: rebalance the edited arc and its siblings; the total is fixed.
 - `commit`: recompute sort, then animate arcs to new angular positions.
-- `cancel`: revert.
-- `updated`: re-render committed data.
+- `cancel`: `transition` back to the snapshot.
+- `updated`: `transition` committed data.
 
 ### Hierarchical
 
 - `draft`: scale the edited node inside the saved parent bounds; freeze sibling ordering; do not recompute the full layout.
 - `commit`: recompute the subtree, then transition nodes. Animate drill/level changes if needed.
-- `cancel`: revert to the snapshot layout.
-- `updated`: re-render committed data.
+- `cancel`: `transition` back to the snapshot layout.
+- `updated`: `transition` committed data. Drill and config toggles are `updated` and `transition`.
 
 ### Network/Flow
 
 - `draft`: update node or link values while preserving flow constraints where possible.
 - `commit`: recompute the layout, then transition.
-- `cancel`: revert.
-- `updated`: re-render committed data.
+- `cancel`: `transition` back to the snapshot.
+- `updated`: `transition` committed data.
 
 ### Table
 
