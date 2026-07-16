@@ -16,6 +16,7 @@ const W = 720;
 const H = 480;
 const DRILL_MS = 600;
 const SETTLE_MS = 300;
+const TRANSITION_MS = 300;
 
 /** Compute partition layout for the window. Returns map of node id -> rect. */
 function computeLayout(
@@ -227,14 +228,22 @@ export class IcicleChart extends HTMLElement {
 
       let tile = existing.get(node.id);
       if (!tile) {
+        // Enter: create new tile with enter animation
         tile = document.createElementNS("http://www.w3.org/2000/svg", "rect");
         tile.setAttribute("data-id", node.id);
         tile.setAttribute("rx", "2");
-        tile.style.transition = `all ${SETTLE_MS}ms cubic-bezier(0.4, 0, 0.2, 1)`;
+        tile.style.transition = `all ${TRANSITION_MS}ms cubic-bezier(0.4, 0, 0.2, 1)`;
         tile.style.cursor = "pointer";
         this._tileLayer.appendChild(tile);
-        // Enter animation
+        // Enter animation: fade in from opacity 0
         tile.style.opacity = "0";
+        // Set initial position for enter animation
+        tile.setAttribute("x", String(rect.x));
+        tile.setAttribute("y", String(rect.y));
+        tile.setAttribute("width", String(rect.width));
+        tile.setAttribute("height", String(rect.height));
+        tile.setAttribute("fill", node.color);
+        // Trigger enter animation
         requestAnimationFrame(() => {
           if (tile) tile.style.opacity = "1";
         });
@@ -275,8 +284,9 @@ export class IcicleChart extends HTMLElement {
     // Remove gone tiles (exit animation)
     for (const [id, el] of existing) {
       if (!seen.has(id)) {
+        // Exit animation: fade out in place
         el.style.opacity = "0";
-        setTimeout(() => el.remove(), SETTLE_MS);
+        setTimeout(() => el.remove(), TRANSITION_MS);
       }
     }
 
