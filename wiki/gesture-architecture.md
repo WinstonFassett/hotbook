@@ -127,8 +127,10 @@ The `Editor` is the same for every family. Each family attaches effects that kno
 
 ### Hierarchical
 
-- `draft`: scale the edited node inside the saved parent bounds; freeze sibling ordering; do not recompute the full layout.
-- `commit`: recompute the subtree, then transition nodes. Animate drill/level changes if needed.
+- `draft`: the edited node reflects its new value live; **sibling positions are frozen** at their pre-gesture state; no relayout *transition* runs until `commit` (rule 8). The layout may be recomputed internally — what's deferred is *applying* sibling repositioning, not the computation itself. Two mechanism variants, both satisfying this invariant (interaction-principles §"Hierarchical marks"):
+  - *Subtree-patch* (icicle, sunburst): patch the edited node's span inside the saved parent bounds; do not relayout siblings.
+  - *Scale-against-frozen-siblings* (treemap, pack): the full layout re-derives reactively as the value writes through, but sibling repositioning is suppressed while `Drafting`; only the edited mark moves. Children of the edited node may be faded or hidden (chart-specific option).
+- `commit`: recompute the subtree (or the full layout for treemap/pack), then `transition` nodes to their new positions. Animate drill/level changes if needed.
 - `cancel`: `transition` back to the snapshot layout.
 - `updated`: `transition` committed data. Drill and config toggles are `updated` and `transition`.
 
