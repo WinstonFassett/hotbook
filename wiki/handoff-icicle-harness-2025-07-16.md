@@ -15,11 +15,11 @@ Building the icicle chart from specs (not from old code) in a clean new app to v
 
 | File | What |
 |---|---|
-| `src/types.ts` | Domain model: DataNode, Dataset, ChartConfig, DraftEvent (now with `secondaryNodeId`/`secondaryValue` for divider-handle reapportion), RenderNode, LayoutRect |
-| `src/editor.ts` | Editor (Idle/Drafting state machine) + Drafts (global pubsub for Idle/Drafting) |
+| `src/types.ts` | Domain model: DataNode, Dataset, ChartConfig, DraftEvent (with `secondaryNodeId`/`secondaryValue` for divider-handle reapportion, `frozenOrder` for order freezing during gestures), RenderNode, LayoutRect |
+| `src/editor.ts` | Editor (Idle/Drafting state machine) + Drafts (global pubsub for Idle/Drafting). Added `updateDraft()` for gesture updates. |
 | `src/kernel.ts` | Kernel: owns Datasets, publishes updates (pubsub), recomputes sums, broadcasts drafts cross-tile. Added `writeValues()` for atomic two-node commit (divider-handle) |
-| `src/data-view.ts` | DataView: query-keyed subscription, routes Kernel events to Chart, owns Editor, broadcasts draft/commit/cancel |
-| `src/icicle-chart.ts` | Icicle: custom element, subscribes DataView, renders D3 partition, wheel+keyboard edit surfaces, divider handles (edge handles between siblings), drill on dblclick. Draft overlays now support two-node reapportion. |
+| `src/data-view.ts` | DataView: query-keyed subscription, routes Kernel events to Chart, owns Editor, broadcasts draft/commit/cancel. Added `captureOrder()` for recursive order snapshot, `getWindow(frozenOrder)` for order-aware rendering. |
+| `src/icicle-chart.ts` | Icicle: custom element, subscribes DataView, renders D3 partition, wheel+keyboard edit surfaces, divider handles (edge handles between siblings), drill on dblclick. Full re-render during gestures with order freezing (no ghost overlays). |
 | `src/side-table.ts` | Side table: custom element, subscribes same DataView, editable value cells via pointer drag, expand/collapse |
 | `src/main.ts` | Wires Kernel + config to both components, global Esc handler, config bar (orientation/sort/depth/measure toggles) |
 | `index.html` | Two-panel layout: icicle (left) + side table (right), dark theme, config bar with toggle buttons |
@@ -43,7 +43,9 @@ Building the icicle chart from specs (not from old code) in a clean new app to v
 ## Key technical learnings
 
 - **d3 hierarchy.sum double-counting bug:** `d3.hierarchy.sum(accessor)` sets `node.value = accessor(node) + sum(children)`. Since Kernel pre-computes parent sums, calling `.sum(d => d.value)` on every node double-counts parents (parent's own precomputed sum + re-rolled children), shrinking grandchildren to ~50%. Fix: only leaves contribute (`d.children.length > 0 ? 0 : d.value`), so d3 re-rolls parent sums to match Kernel's.
-- **Divider-handle (edge handle) architecture:** Two-sibling reapportion requires atomic two-node commit. Extended `DraftEvent` with `secondaryNodeId`/`secondaryValue`. Added `Kernel.writeValues()` for atomic multi-node write. Draft preview renders two overlays (one per sibling). Commit writes both via `writeValues`.
+- **Divider-handle (edge handle) architecture:** Two-sibling reapportion requires atomic two-node commit. Extended `DraftEvent` with `secondaryNodeId`/`secondaryValue`. Added `Kernel.writeValues()` for atomic multi-node write.
+- **Order freezing for gestures:** When sort !== 'index', icicle/sunburst freeze sibling order during gestures. Added `frozenOrder` to `DraftEvent`, `captureOrder()` to DataView for recursive order snapshot, `getWindow(frozenOrder)` for order-aware rendering. Full re-render during gestures instead of ghost overlays.
+- **Full re-render vs ghost overlays:** Icicle/sunburst use full re-render with order freezing during gestures (correct per spec). Ghost overlays are for circle pack/treemap. Removed ghost overlay code from icicle.
 - **Edge handles vs drafts:** Edge handles are disabled (`pointer-events: none`) while drafting to prevent starting a new reapportion mid-gesture. Re-enabled on commit/cancel via `_renderEdgeHandles`.
 - **Drill animation:** Already working via existing `transition: all 300ms` on tiles. The snap impression was test artifact (using two separate clicks instead of dblclick). Real drill animates via CSS transitions, verified via `transitionend` events.
 - **Terminology:** "boundary knob" → **divider handle**. Drag the divider, neighbor absorbs. Source field in DraftEvent: `"divider-handle"`.

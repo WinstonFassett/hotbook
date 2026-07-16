@@ -21,6 +21,7 @@ Vocabulary for the vizform/hotbook gesture and data-flow architecture.
 | **BaseChart** | Base class for interactive charts. It may create an `Editor`. Subclasses — `BaseCartesianContinuousChart`, `BaseCartesianDiscreteChart`, `BaseRadialChart`, `BaseHierarchicalChart`, `BaseNetworkChart`, `BaseTableChart` — wire common editor effects. See `docs/adr/gesture-state-machine.md` for the family effect contracts. |
 | **Conservation** | A per-chart setting (opt-in) that governs the chart's *own* gesture edits: when on, the chart's gestures preserve an invariant of the rendered layout (e.g. icicle/sunburst boundary knob preserves `sum(siblings) = parent.total`; pack Alt+keyboard redistributes across all siblings). Conservation lives on the chart, not the `Dataset` or `Kernel` — the invariant is a property of how a chart renders, not of the data. External edits (a `Table` cell, another chart) are **not corrected** by a chart with conservation on; the chart renders whatever values it receives (partition layouts normalize for display, so a broken sum still renders). If you want conservation, edit *through* a chart that enforces it. |
 | **Snapping** | Whether edited values round to integers. Two homes, both legitimate: (1) a `Dataset`'s schema may declare a field integer-valued (a property of the data); (2) a chart may have a snap-on-edit setting (a property of the editing surface). The chart's setting governs only the chart's *own* writes — it snaps the value it is writing; it does **not** reach back and snap the rest of the `Dataset`. They compose: chart snap-on + integer dataset → snaps; chart snap-off + continuous dataset → fractional; chart snap-on + continuous dataset → snaps only what that chart writes (the dataset stays mixed). Gestures propose fractional deltas; the chart applies its snap policy to the write; the `Kernel` stores whatever it receives. |
+| **Order freezing** | For hierarchical charts (icicle, sunburst) when sort !== 'index': during a gesture, the chart snapshots the current sibling order at every level and uses that frozen order for rendering instead of the config's sort policy. This prevents reordering during value edits. The frozen order is cleared on commit/cancel. Icicle/sunburst use full re-render with order freezing; circle pack/treemap use ghost overlays. |
 
 ## Draft lifecycle
 
@@ -78,7 +79,7 @@ Editor
 
 > **Dev:** "When the user drags a bar, the `Chart` calls `editor.draft(info)`?"
 >
-> **Designer:** "Yes, if the `Chart` is interactive. The app has provided a `Kernel`, and the `Chart` has connected itself to a `DataView` and `Kernel.Drafts`. If the `Editor` is `Idle`, it transitions to `Drafting`. If it's already `Drafting`, it just updates the draft. The `Chart` attaches a `render` effect to render the draft preview without reordering."
+> **Designer:** "Yes, if the `Chart` is interactive. The app has provided a `Kernel`, and the `Chart` has connected itself to a `DataView` and `Kernel.Drafts`. If the `Editor` is `Idle`, it transitions to `Drafting`. If it's already `Drafting`, it just updates the draft. The `Chart` attaches a `render` effect to render the draft preview."
 >
 > **Dev:** "And when the user releases?"
 >
@@ -87,3 +88,7 @@ Editor
 > **Dev:** "What if the data changes in the file system while the user is still dragging?"
 >
 > **Designer:** "The `Kernel` publishes an `updated` event through the `DataView`. The `Editor` stays `Drafting` and the `Chart` `transition`s the committed data to its new state underneath the draft, but it does **not** reapply the draft. The draft overlay stays as the user last set it until they `commit` or `cancel`."
+>
+> **Dev:** "For hierarchical charts like icicle, how do we prevent reordering during gestures when sorted by value?"
+>
+> **Designer:** "The chart captures the current sibling order at every level when the gesture starts (order freezing). During the gesture, it uses this frozen order for rendering instead of the config's sort policy. The frozen order is cleared on commit/cancel. Icicle/sunburst do full re-render with order freezing; circle pack/treemap use ghost overlays."
