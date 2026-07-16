@@ -172,6 +172,7 @@ export class IcicleChart extends HTMLElement {
     this._svg.appendChild(this._tileLayer);
     this._svg.appendChild(this._handleLayer);
     this.appendChild(this._svg);
+    console.log('[buildSvg] handleLayer created:', this._handleLayer);
     // Focusable so keyboard events land on the chart host.
     this.tabIndex = 0;
     this.style.outline = "none";

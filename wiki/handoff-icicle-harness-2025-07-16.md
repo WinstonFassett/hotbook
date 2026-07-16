@@ -107,6 +107,58 @@ Based on spec (wiki/specs/icicle.md) and current implementation:
 | Video quality | ⚠️ Needs improvement | Videos are hard to see, may need better capture settings |
 | Missing videos | ⚠️ Needs capture | Many scenarios have tests but no video evidence |
 
+## HANDOFF - CRITICAL BUGS
+
+**Status:** BROKEN - Needs immediate fix, do not use current implementation as reference
+
+### Current Broken Behavior:
+
+1. **Draft state stuck in "Drafting"** - Never clears, constant re-rendering loop (2400+ console lines)
+2. **Only works on leaf level** - Upper levels don't respond to drag
+3. **Sluggish and unresponsive** - Laggy during drag
+4. **Shoots past cursor** - Visual doesn't track pointer position accurately
+5. **Stuck in hand mode** - After letting go, can't drag anything else
+6. **Tests wrong level** - Tests leaves instead of interior levels where real issues are
+
+### Architecture is Correct - Implementation is Wrong
+
+The "full re-render with order freezing + draft values" approach IS the right architecture. The spec is correct. I'm implementing it wrong.
+
+### What I Did Wrong:
+
+1. **Draft values applied to RenderNodes instead of dataset** - I'm patching RenderNodes but the layout computation expects actual data
+2. **State machine not clearing properly** - Draft state gets stuck, never transitions back to Idle
+3. **Layout computation confused by draft values** - Parent sums don't match children when draft values are applied
+4. **Constant re-rendering loop** - Every draft update triggers full re-render which is too expensive
+5. **Not tracking actual pointer position** - The drag math is wrong, causing visual to shoot past cursor
+
+### What Needs to Be Fixed:
+
+1. **Fix the draft state machine** - Draft must clear properly on commit/cancel
+2. **Fix the layout computation** - Layout must handle draft values correctly without breaking hierarchy invariants
+3. **Fix the drag math** - Pointer position tracking must be accurate
+4. **Optimize re-rendering** - Don't re-render entire tree on every drag update
+5. **Test at interior levels** - Tests must cover upper levels, not just leaves
+6. **Fix upper level drag** - Edge handles at upper levels must work
+
+### Technical Details:
+
+- `draftValues` is being passed through `getWindow()`, `buildWindow()`, `walk()`, `toRenderNode()`
+- This breaks the hierarchy because parent sums don't match children with draft values
+- The state machine calls `commit()` but the draft state never clears
+- Console shows "drafting: true" constantly, never clears to false
+- The drag is starting (onDown fires) but the visual update is wrong
+
+### Files to Focus On:
+
+- `src/icicle-chart.ts` - State machine, drag math, re-rendering logic
+- `src/data-view.ts` - Draft values application to hierarchy
+- `src/editor.ts` - State machine transitions
+
+### Spec is Correct:
+
+The spec says "re-renders with updated values live; sibling ordering is frozen". This is the right approach. I just need to implement it correctly without breaking the data model invariants.
+
 ## What's NOT done yet
 
 None. All spec behaviors are implemented and tested. Manual visual verification recommended for transition polish. Video capture needs improvement for better evidence.
