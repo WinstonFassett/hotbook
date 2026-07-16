@@ -180,9 +180,28 @@ To avoid a 900-line file, split by concern:
 
 Sunburst/treemap/pack/tree reuse `tree`, `window`, `gestures`, `render`; swap `layout.ts` and the mark renderer.
 
-## Open questions
+## Implementation notes
 
-- Should we use `bireactive` `dragModel`/`d` for gestures, or write D3-style manual behavior factories? `dragModel`/`d` is public and designed for this.
-- Does `bireactive` `forEach` support exit delay, or do we need a custom keyed-list wrapper?
-- How exactly does `total()`/`lens()` express the difference between two-sibling reapportion, additive, and proportional-neighbor policies?
-- What is the drill transition mechanics? Viewport tween or mark tween?
+These are the current choices for the harness; they can be revisited as the library matures.
+
+### Gesture behaviors
+
+Use `bireactive`'s public `draggable` / `drag` / `dragModel` / `d` APIs when they fit the geometry; fall back to D3-style manual listeners only when the built-ins cannot express the input mapping (e.g. wheel, keyboard). The behavior factory still returns `attach(element, callbacks)` → `detach()`. Chart stores `detach` and calls it on dispose.
+
+### Keyed shape list and exit delay
+
+Use `bireactive` `forEach` with a `key` function for stable mark identity across reorders. `forEach` removes shapes immediately when an item leaves; for exit fades, wrap `forEach` in `src/hierarchy/render.ts` so exiting marks keep their cleanup alive until a CSS transition finishes.
+
+### Parent/child value propagation
+
+- Leaf values are `num()` cells.
+- Parent totals are a writable lens derived from children. For most cases `total(parts)` works: parent = sum(children), and writing the parent scales the parts proportionally.
+- For custom behavior, use `Num.lens(children, get, put)` or the generic `lens()` free function.
+- Value-mapping policies:
+  - **Additive** (wheel, keyboard default): write only the target leaf cell.
+  - **Proportional-neighbor** (Alt keyboard): write the target leaf and the adjacent neighbor so their sum is unchanged.
+  - **Two-sibling reapportion** (boundary knob): write the two adjacent siblings so their sum is unchanged; the parent `total` lens stays constant because the sum of its parts is unchanged.
+
+### Drill transition
+
+Drill is an `updated` event, not a gesture. Animate it as a viewport tween along the depth axis plus fades: exiting tiles fade out in place (geometry frozen), entering tiles fade in at target geometry. If the viewport tween is too hard to get right in the first pass, a mark-level tween (all tiles slide to new slots) is acceptable; the spec is viewport tween.

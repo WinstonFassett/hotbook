@@ -32,7 +32,7 @@ Every editing input is normalized into a `draft` event. A `draft` carries:
 - `target`: the mark or value being edited.
 - `value`: the proposed value.
 - `source`: which control surface produced it (handle, mark, wheel, keyboard, table, etc.).
-- `intent`: `value-change` or `reorder`.
+- `intent`: `edit` or `reorder`.
 - `frozenOrder` (optional): snapshot of sibling order to freeze during gestures when sort !== 'index'. Used by hierarchical charts (icicle, sunburst) to prevent reordering during value edits.
 
 The `Editor` is the same machine regardless of `source`. The `Chart` receives the `draft` and decides how to render it, based on its family and geometry.
