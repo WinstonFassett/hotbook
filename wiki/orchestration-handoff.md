@@ -1,6 +1,8 @@
 # Handoff: Unified gesture/transition state machine for vizform
 
-**Date:** 2026-07-13  
+**Date:** 2026-07-13
+
+> **Historical note (2026-08):** The `packages/bireactive/` fork referenced throughout this handoff has been removed from the repo. The file paths are historical — they describe the deleted fork's structure, not the current codebase. The handoff's *plan and ordering* are still relevant; the *file paths* are not.
 **From:** design session with Dude  
 **To:** Fable (planning / implementation)  
 **Status:** ADR ready; moving to delivery plan.

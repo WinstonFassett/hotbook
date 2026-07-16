@@ -1,5 +1,7 @@
 # Cross-file maintainability audit (WIN-288)
 
+> **Historical note (2026-08):** The `packages/bireactive/` fork referenced throughout this doc has been removed from the repo. The file paths below are historical — they describe the deleted fork's structure, not the current codebase. The audit's *observations* about duplication and convergence are still relevant; the *file paths* are not. Going forward, gesture/transition code integrates with bireactive via its public exports (or a patch package if needed), not a vendored fork.
+
 ## Summary
 
 `packages/bireactive/src/charts` and `packages/d3/src` are converging on the same interaction vocabulary, but the code is still implemented chart-by-chart. The biggest, most mechanical duplication is timing constants; the second is the "snap-vs-tween two-lane gate" that decides whether a value change is a structural change or a value edit; the third is the lifecycle of hierarchical marks (window, render, exit, drill, handles). The D3 `VizRenderer` and `hviz` hierarchical charts have their own token set that is not yet aligned with the bireactive `transitions.ts` token set.

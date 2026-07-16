@@ -123,19 +123,42 @@ The gesture contract is the same for all geometries. Only the handle shape and c
 
 The `Editor` is the same for every family. Each family attaches effects that know the geometry.
 
-### Cartesian
+### Cartesian-continuous
 
-- `draft`: resize the edited mark and scale the matching axis/domain to fit the preview value; keep siblings frozen.
-- `commit`: recompute sort, then animate or snap bars/points to new positions.
-- `cancel`: `transition` back to the snapshot.
-- `updated`: `transition` committed data to the new state; keep the draft overlay if `Drafting`.
+Two continuous axes (x, y). Marks are points or paths positioned by both.
+Charts: scatter, line, area.
+
+- `draft`: resize the edited mark and scale the matching axis/domain to fit the preview value; keep siblings frozen. The axis domain is **dynamic** — it grows/shrinks to contain the preview so the mark never overflows (interaction-principles "No overflow"). Sibling marks hold their positions; only the edited mark and its axis move.
+- `commit`: recompute sort if applicable, then `transition` marks to new positions. The axis/domain settles to fit the committed values.
+- `cancel`: `transition` back to the snapshot (mark positions + axis domain).
+- `updated`: `transition` committed data to the new state; keep the draft overlay if `Drafting`. Enter/exit lifecycle on every rendered-set change (data add/remove, filter, config toggle that changes the rendered set).
+
+### Cartesian-discrete
+
+One continuous axis (value) + one discrete axis (category/time). Marks are bars or spans positioned by category on the discrete axis and sized by value on the continuous axis.
+Charts: bar, gantt.
+
+- `draft`: resize the edited mark along the continuous (value) axis and scale that axis/domain to fit the preview value. The **discrete axis is fixed** — categories are slots, not a scalable domain; they don't grow or shrink to fit a preview. Sibling marks hold their slot positions; only the edited mark's height/width and the continuous axis change. **Exception:** charts with a space-conservation constraint (gantt) may **push** siblings during `draft` when the edited mark would overlap them; the push is reactive and reversible (drag back → neighbors return). This is a geometric necessity (tasks can't overlap), not a sibling-freeze violation.
+- `commit`: recompute sort (which may reorder the discrete slots), then `transition` marks to new positions. The discrete axis re-orders if sort changed; the continuous axis settles to fit committed values.
+- `cancel`: `transition` back to the snapshot (mark sizes + slot order + continuous axis).
+- `updated`: `transition` committed data to the new state; keep the draft overlay if `Drafting`. Enter/exit lifecycle on every rendered-set change (category add/remove, filter, time-range change in gantt). Sort toggle re-orders the discrete axis with a `transition`.
+- **Reorder** (opt-in per chart, via `canReorder` when `sortBy === 'index'`): drag a mark along the discrete axis to reorder it among siblings. `intent: reorder`; no value change. The universal `reorder` intent (see "Universal input model") covers it; the contract notes it here because it's a capability addition specific to Cartesian-discrete.
 
 ### Radial
 
-- `draft`: rebalance the edited arc and its siblings; the total is fixed.
-- `commit`: recompute sort, then animate arcs to new angular positions.
+Two sub-patterns, both radial geometry:
+
+**Fixed-total** (pie, donut): arcs tile a shared 360°; conservation is **inherent by geometry** (not the opt-in `Conservation` setting from `UBIQUITOUS_LANGUAGE.md`).
+- `draft`: rebalance the edited arc and its siblings; the total is fixed. Sibling angular positions adjust because the partition normalizes (inherent to the coordinate, not a sibling-freeze violation).
+- `commit`: recompute sort, then `transition` arcs to new angular positions.
 - `cancel`: `transition` back to the snapshot.
-- `updated`: `transition` committed data.
+- `updated`: `transition` committed data. Enter/exit on rendered-set change (slice add/remove).
+
+**Independent-track** (concentric-arc, gauge, gauge-segmented, radar): each arc/point is an independent value on its own track/spoke; **no inherent conservation**, no sibling relationship.
+- `draft`: the edited arc/point reflects its new value live; siblings are **frozen** (independent — no shared total). The radial domain (gauge/radar max) may scale to contain the preview (no overflow), like a continuous axis but radial.
+- `commit`: `transition` the edited arc/point to its committed position; siblings stay.
+- `cancel`: `transition` back to the snapshot.
+- `updated`: `transition` committed data. Enter/exit on rendered-set change (ring/category add/remove).
 
 ### Hierarchical
 
@@ -148,19 +171,19 @@ The `Editor` is the same for every family. Each family attaches effects that kno
 
 ### Network/Flow
 
-- `draft`: update node or link values while preserving flow constraints where possible.
-- `commit`: recompute the layout, then transition.
-- `cancel`: `transition` back to the snapshot.
-- `updated`: `transition` committed data.
+- `draft`: update node or link values; **enforce flow conservation (in=out at every node) by propagation on every edit** — scale the unbalanced side to match the changed side, cascade to neighbors, terminating at sources and sinks. The propagation is visible to the user (the cascade ripples through the graph as they drag). Not "where possible" — always enforced. The propagation is not a value-mapping (it's conservation enforcement); value-mapping is overridable, propagation is not.
+- `commit`: recompute the layout, then `transition` links and nodes to final positions/widths. Snapshot is graph-wide (propagation touches many links).
+- `cancel`: `transition` back to the snapshot (all link values + node heights).
+- `updated`: `transition` committed data. Enter/exit on rendered-set change (link/node add/remove via filter).
 
 ### Table
 
 - The `Table` is a `Chart` family. It can be livebound alongside any other chart by sharing the same `DataView` and `Kernel`.
-- `draft`: update the cell value and publish it through the `DataView` so linked `Chart`s (e.g., an icicle) render the draft preview.
-- `commit`: finalize the value through the `DataView`. The `Editor` returns to `Idle`; linked `Chart`s run their `transition` effect.
+- `draft`: update the cell value and publish it through the `DataView` so linked `Chart`s (e.g., an icicle) render the draft preview. **Value-mapping: absolute-set** (the typed value is the target, not a delta) — distinct from the delta-based mappings (additive, proportional) of spatial charts. Number-drag on a cell is additive.
+- `commit`: finalize the value through the `DataView`. The `Editor` returns to `Idle`; linked `Chart`s run their `transition` effect. The table's own `commit` has **no spatial `transition`** (a cell is a text value, not a moving mark) — the `transition` happens on linked charts, not the table. This is the one family where `commit` is a data event, not a visual transition.
 - `cancel`: revert the cell.
-- `updated`: reflect external changes while preserving any draft overlay.
-- The table supports tree rows with expand/collapse. It is a separate view of the same hierarchical data; it does not need its own layout geometry beyond row rendering.
+- `updated`: reflect external changes while preserving any draft overlay. Enter/exit on row add/remove (fade in/out).
+- The table supports tree rows with expand/collapse (treetable). It is a separate view of the same hierarchical data; it does not need its own layout geometry beyond row rendering.
 
 ## Plan
 
@@ -169,7 +192,7 @@ The `Editor` is the same for every family. Each family attaches effects that kno
 3. Implement the `Editor` and `Kernel.Drafts` as a shared, decoupled service.
 4. Validate with a temporary hierarchical harness, starting with the icicle chart.
 5. Once icicle is solid, extend to the other three interactive hierarchical charts: sunburst, treemap, and pack.
-6. After the hierarchical family is proven, extend to Cartesian, Radial, Network/Flow, and Table.
+6. After the hierarchical family is proven, extend to Cartesian-continuous, Cartesian-discrete, Radial, Network/Flow, and Table.
 7. Update the acceptance test checklist per family as it is migrated.
 
 ## Resolved
@@ -178,8 +201,8 @@ The `Editor` is the same for every family. Each family attaches effects that kno
 - `Table` is a `Chart` family.
 - If external `updated` changes the same value being drafted, the draft overlay stays. UBIQUITOUS already answers this.
 - `Kernel.Drafts` exposes a **list of active `Editor`s**. No boolean. Derived values (`Idle`/`Drafting`, count, etc.) are computed from the list — we solve derivation later, it is not the hard part. No information hiding: the list is the truth, derived flags are projections.
-- Config schema is already baked: a `ChartSchema` descriptor with a valibot runtime `config` schema, `ui.fields` picker descriptors, `dataShape`, `capabilities`, and `mount`/`mountProps`/`toChart`. See `packages/bireactive/src/chart-schemas.ts`. Not a new design problem.
-- `intent`: `edit` is the common case — anything mutated (value, config, data, "shit changed"). `reorder` is the special intent singled out because it freezes displayed order during the gesture. Future intents with different freeze/transition semantics get added when they exist, not now. Matches `GestureIntent = "edit" | "reorder"` in the code.
+- Config schema: a `ChartSchema` descriptor with a valibot runtime `config` schema, `ui.fields` picker descriptors, `dataShape`, `capabilities`, and `mount`/`mountProps`/`toChart`. Not a new design problem — the schema descriptor pattern is settled; where it lives (bireactive public export, local, or patch) is TBD.
+- `intent`: `edit` is the common case — anything mutated (value, config, data, "shit changed"). `reorder` is the special intent singled out because it freezes displayed order during the gesture. Future intents with different freeze/transition semantics get added when they exist, not now.
 - One draft at a time. No multi-value / simultaneous drafts. `gestureCoordinator.setActive` already enforces one active gesture globally. No observed need for more; do not expand scope.
 
 ## Open questions

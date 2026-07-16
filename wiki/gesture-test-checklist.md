@@ -56,7 +56,7 @@ For each chart + table pair we will record:
 ## Excluded (per user request)
 
 - `npx tsc --noEmit` (lint/static)
-- `npm test -- --run` in `packages/bireactive` or `packages/d3` (unit tests, not browser behavior)
+- `npm test -- --run` in the relevant package (unit tests, not browser behavior)
 - `Editor` state-machine unit tests (implementation detail)
 
 These are only run once the end-to-end behavior is correct.
