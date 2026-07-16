@@ -492,12 +492,16 @@ export class IcicleChart extends HTMLElement {
       const layout = this._layout.value;
       const isHoriz = this._config?.orientation === "horizontal";
 
-      // Primary node overlay: scale its span by value ratio.
-      this._addDraftOverlay(draft.nodeId, draft.value, layout, isHoriz, isActive);
-
-      // Two-sibling reapportion: the secondary node absorbs the complement.
+      // Two-sibling reapportion: render both with proper anchoring
       if (draft.secondaryNodeId !== undefined && draft.secondaryValue !== undefined) {
-        this._addDraftOverlay(draft.secondaryNodeId, draft.secondaryValue, layout, isHoriz, isActive);
+        this._addReapportionOverlay(
+          draft.nodeId, draft.value,
+          draft.secondaryNodeId, draft.secondaryValue,
+          layout, isHoriz, isActive
+        );
+      } else {
+        // Single node additive edit
+        this._addDraftOverlay(draft.nodeId, draft.value, layout, isHoriz, isActive);
       }
     } else if (draft.intent === "reorder" && draft.reorderOrder && draft.parentId) {
       // Reorder: render provisional layout with new sibling order
@@ -589,6 +593,103 @@ export class IcicleChart extends HTMLElement {
     overlay.setAttribute("fill-opacity", "0.8");
     this._handleLayer?.appendChild(overlay);
     this._draftOverlays.push(overlay);
+  }
+
+  private _addReapportionOverlay(
+    id1: string,
+    value1: number,
+    id2: string,
+    value2: number,
+    layout: Map<string, LayoutRect>,
+    isHoriz: boolean,
+    isActive: boolean,
+  ): void {
+    const rect1 = layout.get(id1);
+    const rect2 = layout.get(id2);
+    if (!rect1 || !rect2) return;
+
+    const node1 = this._window.value.find((n) => n.id === id1);
+    const node2 = this._window.value.find((n) => n.id === id2);
+    if (!node1 || !node2) return;
+
+    // Determine which is "left" (top/start) vs "right" (bottom/end) based on position
+    const isFirstLeft = isHoriz ? rect1.y < rect2.y : rect1.x < rect2.x;
+    const leftId = isFirstLeft ? id1 : id2;
+    const rightId = isFirstLeft ? id2 : id1;
+    const leftValue = isFirstLeft ? value1 : value2;
+    const rightValue = isFirstLeft ? value2 : value1;
+    const leftRect = isFirstLeft ? rect1 : rect2;
+    const rightRect = isFirstLeft ? rect2 : rect1;
+    const leftNode = isFirstLeft ? node1 : node2;
+    const rightNode = isFirstLeft ? node2 : node1;
+
+    // Calculate new spans based on value ratios
+    const leftRatio = leftNode.value > 0 ? leftValue / leftNode.value : 1;
+    const rightRatio = rightNode.value > 0 ? rightValue / rightNode.value : 1;
+
+    // Left overlay: left-anchored (grows from left/top edge)
+    const leftOverlay = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    leftOverlay.setAttribute("data-draft", "true");
+    leftOverlay.setAttribute("data-draft-id", leftId);
+    leftOverlay.setAttribute("x", String(leftRect.x));
+    leftOverlay.setAttribute("y", String(leftRect.y));
+    
+    if (isHoriz) {
+      // horizontal: siblings along y (top to bottom)
+      // Left sibling is top, should be top-anchored
+      const newLeftH = leftRect.height * leftRatio;
+      leftOverlay.setAttribute("width", String(leftRect.width));
+      leftOverlay.setAttribute("height", String(newLeftH));
+    } else {
+      // vertical: siblings along x (left to right)
+      // Left sibling is left, should be left-anchored
+      const newLeftW = leftRect.width * leftRatio;
+      leftOverlay.setAttribute("width", String(newLeftW));
+      leftOverlay.setAttribute("height", String(leftRect.height));
+    }
+    
+    leftOverlay.setAttribute("fill", leftNode.color);
+    leftOverlay.setAttribute("rx", "2");
+    leftOverlay.setAttribute("stroke", isActive ? "#4a9eff" : "#888");
+    leftOverlay.setAttribute("stroke-width", "2");
+    leftOverlay.setAttribute("fill-opacity", "0.8");
+    this._handleLayer?.appendChild(leftOverlay);
+    this._draftOverlays.push(leftOverlay);
+
+    // Right overlay: right-anchored (grows from right/bottom edge)
+    const rightOverlay = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    rightOverlay.setAttribute("data-draft", "true");
+    rightOverlay.setAttribute("data-draft-id", rightId);
+    
+    if (isHoriz) {
+      // horizontal: siblings along y (top to bottom)
+      // Right sibling is bottom, should be bottom-anchored
+      const newRightH = rightRect.height * rightRatio;
+      // Bottom-anchored: y + height stays at original bottom
+      const newY = rightRect.y + rightRect.height - newRightH;
+      rightOverlay.setAttribute("x", String(rightRect.x));
+      rightOverlay.setAttribute("y", String(newY));
+      rightOverlay.setAttribute("width", String(rightRect.width));
+      rightOverlay.setAttribute("height", String(newRightH));
+    } else {
+      // vertical: siblings along x (left to right)
+      // Right sibling is right, should be right-anchored
+      const newRightW = rightRect.width * rightRatio;
+      // Right-anchored: x + width stays at original right
+      const newX = rightRect.x + rightRect.width - newRightW;
+      rightOverlay.setAttribute("x", String(newX));
+      rightOverlay.setAttribute("y", String(rightRect.y));
+      rightOverlay.setAttribute("width", String(newRightW));
+      rightOverlay.setAttribute("height", String(rightRect.height));
+    }
+    
+    rightOverlay.setAttribute("fill", rightNode.color);
+    rightOverlay.setAttribute("rx", "2");
+    rightOverlay.setAttribute("stroke", isActive ? "#4a9eff" : "#888");
+    rightOverlay.setAttribute("stroke-width", "2");
+    rightOverlay.setAttribute("fill-opacity", "0.8");
+    this._handleLayer?.appendChild(rightOverlay);
+    this._draftOverlays.push(rightOverlay);
   }
 
   private _clearDraftOverlay(): void {
