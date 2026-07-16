@@ -1,77 +1,104 @@
 # Handoff — icicle-harness clean rewrite
 
-**Date:** 2026-07-16
-**Branch:** feat/gesture-transition-contract
+**Date:** 2026-07-17  
+**Branch:** feat/gesture-transition-contract  
+**Status:** design remediated; implementation pending
 
 ## What we're doing
 
-Building the icicle chart from specs (not from old code) in a clean new app to validate the gesture/transition architecture before scaling to all 16 chart types. No patching, no cargo-culting the old `bireactive` fork or `BiNode` tree.
+Rebuild the icicle harness from `wiki/chart-architecture.md` and `wiki/specs/icicle.md` to validate the gesture/transition architecture. This replaces the broken monolithic `icicle-chart.ts` and `side-table.ts`; it is not a patch job.
 
-## Where it lives
+## Reference docs
 
-`apps/icicle-harness/` — standalone vite app, depends on `bireactive` (primitives only: cell/derive/effect) and `d3-hierarchy` (partition layout). No old chart infra.
+- `wiki/chart-architecture.md`
+- `wiki/specs/icicle.md`
+- `wiki/gesture-architecture.md`
+- `wiki/interaction-principles.md`
+- `wiki/transitions-decision.md`
 
-## What's built
+## What to keep
 
-| File | What |
-|---|---|
-| `src/types.ts` | Domain model: DataNode, Dataset, ChartConfig, DraftEvent, RenderNode, LayoutRect |
-| `src/editor.ts` | Editor (Idle/Drafting state machine); used by `DataView` |
-| `src/kernel.ts` | Kernel: owns Datasets, publishes updates (pubsub), recomputes sums, broadcasts drafts cross-tile |
-| `src/data-view.ts` | DataView: query-keyed subscription; owns Editor, routes Kernel events and Editor transitions to Chart, broadcasts draft/commit/cancel via Kernel |
-| `src/icicle-chart.ts` | Icicle: custom element, subscribes DataView, renders D3 partition, wheel+keyboard edit surfaces, drill on dblclick |
-| `src/side-table.ts` | Side table: custom element, subscribes same DataView, editable value cells via pointer drag, expand/collapse |
-| `src/main.ts` | Wires Kernel + config to both components, global Esc handler, status display |
-| `index.html` | Two-panel layout: icicle (left) + side table (right), dark theme |
+- `src/types.ts` — domain model.
+- `src/editor.ts` — `Idle`/`Drafting` state machine.
+- `src/kernel.ts` — data service.
+- `src/data-view.ts` — `DataView` class; `Editor`/`Kernel` wiring is correct after recent fixes.
+- `src/main.ts` — app wiring.
+- `index.html` — two-panel layout.
 
-## What's tested and passing
+## What to throw away
 
-`scripts/smoke-cross-tile.mjs` — uses Playwright `page.mouse` (no synthetic events needed):
+- `src/icicle-chart.ts` — full rewrite. Violates architecture (no reactive tree, no keyed list, wrong coordinate math, wrong commit ordering, handle recreation, inline gestures).
+- `src/side-table.ts` — full rewrite. Same violations.
 
-1. **Cross-tile drag edit:** drag rent value in table → status "drafting", icicle shows draft overlay, value updates live, siblings frozen (positions don't move during gesture), commit writes to Kernel, status back to "idle", draft overlay cleared.
-2. **Esc revert:** start drag, press Esc → value reverts to committed, status "idle".
+## Target module split
 
-`scripts/capture.mjs` — saves screenshot + video to `captures.local/latest.png` and `captures.local/latest.webm`.
-
-`scripts/inspect.mjs` — dumps all icicle rect positions and table rows for verification.
-
-## Key testing learnings
-
-- Playwright `page.mouse` fires `pointerdown`/`pointermove`/`pointerup` with `pointerId=1` — works fine.
-- DON'T use `setPointerCapture` — doesn't work with Playwright's mouse. Use document-level listeners instead (already done in side-table.ts).
-- Gesture doesn't start on `pointerdown` — it starts on first `pointermove`. Tests must move before checking drafting state.
-- Video recording is built into Playwright (`recordVideo` option) — no extra deps.
-- `*.local/` is already gitignored by global config — don't add to .gitignore.
-
-## Esc architecture
-
-Two layers:
-1. **Per-component:** table's `onUp` checks `if (editor.state !== "Drafting") return` — no commit if already cancelled. Table re-renders on cancel to revert cell text.
-2. **Global fallback** (main.ts): document Esc listener finds active editor via `kernel.drafts.activeEditor`, calls `cancel()` on the owning DataView.
-
-## What's NOT done yet
-
-1. **Icicle edit surfaces not wired/tested:** wheel handler exists in icicle-chart.ts but the event listener isn't attached to the SVG. Keyboard handler exists but focus management is incomplete. main.ts tries to delegate `_onWheel`/`_onKeyDown`/`_onKeyUp` but these are private methods on the chart class — needs proper public API or internal listeners.
-2. **Boundary knob:** not implemented (two-sibling reapportion drag handle).
-3. **Drag-to-reorder:** not implemented.
-4. **Drill transition:** dblclick triggers `dataView.setDrill()` which re-windows and re-renders, but no animated transition — it snaps.
-5. **Siblings-frozen invariant for icicle's own edits:** tested for table→icicle cross-tile, but not for icicle→icicle (wheel/keyboard on icicle).
-6. **Config toggles:** orientation, sort, depth, measure — no UI controls, not tested.
-7. **14 scenarios from handoff-icicle-impl.md:** only scenario 7 (cross-tile table→icicle) and 9 (cross-tile Esc) are tested.
-
-## Dev server
-
-```bash
-cd apps/icicle-harness && npx vite --port 8765
+```
+apps/icicle-harness/src/
+├── types.ts
+├── editor.ts
+├── kernel.ts
+├── data-view.ts
+├── main.ts
+├── hierarchy/
+│   ├── tree.ts          # build reactive ChartNode tree from Dataset
+│   ├── window.ts        # derive RenderNode[] from tree + config + drill + frozenOrder
+│   ├── layout.ts        # pure fn: tree + config → Map<id, LayoutRect>
+│   ├── gestures.ts      # divider-drag, wheel, keyboard, reorder behavior factories
+│   └── render.ts        # keyed shape list with forEach, enter/exit fade
+└── icicle/
+    ├── layout.ts        # d3 partition, orientation-symmetric
+    └── chart.ts         # custom element wiring
 ```
 
-Or it may already be running. Check with `curl -s http://localhost:8765/ | head -5`.
+`side-table.ts` stays at top level.
 
-## Next steps (in order)
+## Per-chart state
 
-1. Wire icicle's wheel + keyboard edit surfaces properly (attach listeners inside the chart, not via main.ts delegation). Test icicle→icicle editing with siblings-frozen check.
-2. Implement boundary knob (two-sibling reapportion).
-3. Implement animated drill transition (viewport tween, enter/exit).
-4. Add config toggle UI (orientation, sort) and test as `updated` transitions.
-5. Run all 14 scenarios from the handoff doc.
-6. Once icicle is complete, the architecture is proven — scale to other chart families.
+- `DataView` owns one `Editor`.
+- Chart owns:
+  - reactive `ChartNode` tree,
+  - `frozenOrder` snapshot,
+  - gesture-start value snapshot,
+  - `.gesture-active` CSS class on the host,
+  - behavior `detach` functions.
+- Behavior callbacks write the chart's reactive tree and call `dataView.draft` / `updateDraft` / `commit` / `cancel`.
+- The chart's `commit` event handler writes final leaf values to `Kernel`.
+
+## Value propagation
+
+- Leaf values: `num()` cells.
+- Parent totals: `total(parts)` lens over child `num()` cells.
+- **Additive** (wheel, keyboard default): write target leaf only.
+- **Proportional-neighbor** (Alt keyboard) / **two-sibling reapportion** (boundary knob): write target and adjacent sibling so their sum is unchanged; the `total()` parent stays constant.
+
+## Gesture behaviors
+
+All are factory functions returning `attach(element, callbacks)` → `detach()`.
+
+- **Divider drag:** map pointer in SVG viewBox to sibling-axis fraction; write the two adjacent sibling `num()` cells.
+- **Wheel:** Cmd/Ctrl+wheel on a tile. Step = 1% of current value; Shift = 0.1%.
+- **Keyboard:** arrow keys on focused tile. Alt toggles proportional-neighbor. Track held keys; release of the last held arrow commits; Esc cancels.
+- **Reorder:** drag tile along sibling axis. Provisional order from pointer; commit calls `kernel.writeReorder`.
+
+## Rendering
+
+- Use `bireactive` `forEach` over `window`, keyed by node id.
+- Each mark is a `group` containing a `rect` and a `label`.
+- CSS transitions on marks; `.gesture-active` class on the chart host suppresses them during local drafts.
+- Exit marks fade out in place (geometry frozen). If `forEach` cannot delay removal, wrap it in `render.ts`.
+
+## Implementation order
+
+1. `hierarchy/tree.ts`
+2. `hierarchy/window.ts`
+3. `icicle/layout.ts`
+4. `hierarchy/render.ts`
+5. `hierarchy/gestures.ts`
+6. `icicle/chart.ts`
+7. `side-table.ts`
+8. Playwright smoke tests
+
+## Open questions for implementation
+
+- Does `bireactive` `forEach` support exit-delay? If not, implement a wrapper in `render.ts`.
+- Use `bireactive` `draggable` or manual document listeners? `draggable` uses `setPointerCapture`; verify Playwright support or fall back.
