@@ -26,6 +26,12 @@ export class Editor {
     this._emit({ from, to: "Drafting", type: "draft", draft: event });
   }
 
+  updateDraft(event: DraftEvent): void {
+    if (this._state !== "Drafting") return;
+    this._currentDraft = event;
+    this._emit({ from: "Drafting", to: "Drafting", type: "draft", draft: event });
+  }
+
   commit(): void {
     if (this._state !== "Drafting") return;
     const from = this._state;

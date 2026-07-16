@@ -109,6 +109,9 @@ export class IcicleChart extends HTMLElement {
   private _layout = cell<Map<string, LayoutRect>>(new Map());
   private _window = cell<RenderNode[]>([]);
 
+  // Order freezing for gestures (when sort !== 'index')
+  private _frozenOrder: Map<string, string[]> = new Map();
+
   // Viewport (drill tween)
   private _vx0 = cell(0);
   private _vy0 = cell(0);
@@ -184,18 +187,27 @@ export class IcicleChart extends HTMLElement {
       this._layout.value = computeLayout(event.window, this._config!, W, H);
       this._renderTiles();
     } else if (event.type === "draft" && event.draft) {
-      // Render the draft preview — patch the edited node in place
-      this._renderDraft(event.draft, event.isActive);
+      // Capture order on first draft if sort !== 'index'
+      if (this._frozenOrder.size === 0 && this._config?.sort !== 'index') {
+        this._frozenOrder = this._dataView!.captureOrder();
+      }
+      // Full re-render with frozen order
+      const win = this._dataView!.getWindow(this._frozenOrder);
+      this._window.value = win;
+      this._layout.value = computeLayout(win, this._config!, W, H);
+      this._renderTiles();
     } else if (event.type === "commit") {
-      // The commit effect (in the chart that initiated the edit) writes to
-      // the Kernel, which triggers an updated event. We just need to stop
-      // showing the draft overlay and restore edge handles.
-      this._clearDraftOverlay();
-      this._renderEdgeHandles(this._window.value, this._layout.value, this._config?.orientation === "horizontal");
+      // Clear frozen order
+      this._frozenOrder.clear();
+      // The commit effect writes to Kernel, which triggers updated event
     } else if (event.type === "cancel") {
+      // Clear frozen order
+      this._frozenOrder.clear();
       // Revert to committed layout
-      this._clearDraftOverlay();
-      this._renderEdgeHandles(this._window.value, this._layout.value, this._config?.orientation === "horizontal");
+      const win = this._dataView!.getWindow();
+      this._window.value = win;
+      this._layout.value = computeLayout(win, this._config!, W, H);
+      this._renderTiles();
     }
   }
 
@@ -455,7 +467,7 @@ export class IcicleChart extends HTMLElement {
       if (this._dataView.editor.state === "Idle") {
         this._dataView.draft(ev);
       } else {
-        this._dataView.updateDraft(ev);
+        this._dataView.editor.updateDraft(ev);
       }
     };
 
@@ -487,24 +499,9 @@ export class IcicleChart extends HTMLElement {
   private _draftOverlays: SVGRectElement[] = [];
 
   private _renderDraft(draft: DraftEvent, isActive: boolean): void {
-    if (draft.intent === "edit") {
-      this._clearDraftOverlay();
-      const layout = this._layout.value;
-      const isHoriz = this._config?.orientation === "horizontal";
-
-      // Two-sibling reapportion: render both with proper anchoring
-      if (draft.secondaryNodeId !== undefined && draft.secondaryValue !== undefined) {
-        this._addReapportionOverlay(
-          draft.nodeId, draft.value,
-          draft.secondaryNodeId, draft.secondaryValue,
-          layout, isHoriz, isActive
-        );
-      } else {
-        // Single node additive edit
-        this._addDraftOverlay(draft.nodeId, draft.value, layout, isHoriz, isActive);
-      }
-    } else if (draft.intent === "reorder" && draft.reorderOrder && draft.parentId) {
-      // Reorder: render provisional layout with new sibling order
+    // Draft rendering is now handled by full re-render in _onEvent
+    // This method is kept for reorder draft rendering if needed
+    if (draft.intent === "reorder" && draft.reorderOrder && draft.parentId) {
       this._renderReorderDraft(draft, isActive);
     }
   }
@@ -692,12 +689,9 @@ export class IcicleChart extends HTMLElement {
     this._draftOverlays.push(rightOverlay);
   }
 
-  private _clearDraftOverlay(): void {
-    for (const o of this._draftOverlays) o.remove();
-    this._draftOverlays = [];
-  }
-
   // ─── Gesture surfaces ───────────────────────────────────────────────────
+
+  /** Draft overlay methods removed - using full re-render with order freezing instead */
 
   /** Drag-to-reorder: when canReorder + sort === 'index', drag tile to reorder among siblings. */
   private _attachReorderDrag(tile: SVGRectElement, node: RenderNode): void {
@@ -778,7 +772,7 @@ export class IcicleChart extends HTMLElement {
       provisionalOrder.splice(newIndex, 0, node.id);
 
       // Update draft with new order
-      this._dataView.updateDraft({
+      this._dataView.editor.updateDraft({
         nodeId: node.id,
         value: 0,
         source: "reorder",
@@ -829,7 +823,7 @@ export class IcicleChart extends HTMLElement {
     if (this._dataView.editor.state === "Idle") {
       this._dataView.draft({ nodeId, value: newValue, source: "wheel", intent: "edit" });
     } else {
-      this._dataView.updateDraft({ nodeId, value: newValue, source: "wheel", intent: "edit" });
+      this._dataView.editor.updateDraft({ nodeId, value: newValue, source: "wheel", intent: "edit" });
     }
   };
 
@@ -880,7 +874,7 @@ export class IcicleChart extends HTMLElement {
         secondaryValue,
       });
     } else {
-      this._dataView.updateDraft({
+      this._dataView.editor.updateDraft({
         nodeId: this._focused,
         value: newValue,
         source: "keyboard",

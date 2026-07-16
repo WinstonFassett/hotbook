@@ -49,6 +49,8 @@ export interface DraftEvent {
   reorderOrder?: string[];
   /** For reorder: the parent node id. */
   parentId?: string;
+  /** Snapshot of sibling order to freeze during gesture (when sort !== 'index'). */
+  frozenOrder?: Map<string, string[]>;
 }
 
 /** Editor states. */

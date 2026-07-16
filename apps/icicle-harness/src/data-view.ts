@@ -30,6 +30,7 @@ function buildWindow(
   root: DataNode,
   config: ChartConfig,
   drillId: string | null,
+  frozenOrder?: Map<string, string[]>, // Optional frozen order for gestures
 ): RenderNode[] {
   const result: RenderNode[] = [];
   const depthCap = config.depth;
@@ -60,10 +61,10 @@ function buildWindow(
     result.push(toRenderNode(startNode, 0, root, config)); // root
     for (const child of startNode.children) {
       result.push(toRenderNode(child, 1, root, config)); // parents
-      walk(child, 2, root, config, depthCap, result); // children and deeper
+      walk(child, 2, root, config, depthCap, result, frozenOrder); // children and deeper
     }
   } else {
-    walk(startNode, baseDepth, root, config, depthCap, result);
+    walk(startNode, baseDepth, root, config, depthCap, result, frozenOrder);
   }
   return result;
 }
@@ -75,11 +76,21 @@ function walk(
   config: ChartConfig,
   depthCap: number | undefined,
   out: RenderNode[],
+  frozenOrder?: Map<string, string[]>, // Optional frozen order for gestures
 ): void {
   const children = node.children;
-  const sorted = config.sort === "value"
-    ? children.slice().sort((a, b) => b.value - a.value)
-    : children;
+  
+  // Use frozen order if provided and this node is in it, otherwise use config sort
+  let sorted: DataNode[];
+  if (frozenOrder && frozenOrder.has(node.id)) {
+    const order = frozenOrder.get(node.id)!;
+    const byId = new Map(children.map(c => [c.id, c]));
+    sorted = order.map(id => byId.get(id)).filter(Boolean) as DataNode[];
+  } else {
+    sorted = config.sort === "value"
+      ? children.slice().sort((a, b) => b.value - a.value)
+      : children;
+  }
 
   for (const child of sorted) {
     const childDepth = depth + 1;
@@ -88,13 +99,13 @@ function walk(
     if (depthCap !== undefined && childDepth > depthCap) {
       // Still walk to compute sums, but don't add to window
       if (child.children.length > 0) {
-        walk(child, childDepth, root, config, depthCap, out);
+        walk(child, childDepth, root, config, depthCap, out, frozenOrder);
       }
       continue;
     }
     out.push(toRenderNode(child, childDepth, root, config));
     if (child.children.length > 0) {
-      walk(child, childDepth, root, config, depthCap, out);
+      walk(child, childDepth, root, config, depthCap, out, frozenOrder);
     }
   }
 }
@@ -230,10 +241,34 @@ export class DataView {
   }
 
   /** Get the current rendered window. */
-  getWindow(): RenderNode[] {
+  getWindow(frozenOrder?: Map<string, string[]>): RenderNode[] {
     const ds = this.kernel.getDataset(this.config.datasetId);
     if (!ds) return [];
-    return buildWindow(ds.root, this.config, this._drillId);
+    return buildWindow(ds.root, this.config, this._drillId, frozenOrder);
+  }
+
+  /** Capture current sibling order for freezing during gestures (when sort !== 'index'). */
+  captureOrder(): Map<string, string[]> {
+    const dataset = this.kernel.getDataset(this.config.datasetId);
+    if (!dataset) return new Map();
+    
+    const order = new Map<string, string[]>();
+    
+    function capture(node: DataNode): void {
+      if (node.children.length > 0) {
+        order.set(node.id, node.children.map(c => c.id));
+        for (const child of node.children) {
+          capture(child);
+        }
+      }
+    }
+    
+    capture(dataset.root);
+    return order;
+  }
+
+  updateDraft(event: DraftEvent): void {
+    this.editor.updateDraft(event);
   }
 
   subscribe(fn: DataViewListener): () => void {
