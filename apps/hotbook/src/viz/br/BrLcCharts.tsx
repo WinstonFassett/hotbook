@@ -81,8 +81,6 @@ interface FlatProps {
   nodes: VizNode[]
   measureKey: string
   maxItems?: number
-  sortBy?: 'index' | 'value'
-  orderDir?: 'asc' | 'desc'
   onUpdate?: (nodeId: string, measures: VizNode['measures']) => void
   onUpdateMany?: (updates: Array<{ id: string; measures: VizNode['measures'] }>) => void
 }
@@ -101,16 +99,16 @@ export function BrLcBar(props: BarProps) {
   return <BrLcTile source={makeBarSource(props)} />
 }
 
-export function BrLcPie({ nodes, measureKey, sortBy, orderDir, onUpdate, onUpdateMany }: FlatProps) {
-  return <BrLcTile source={makePieSource({ nodes, measureKey, sortBy, orderDir, onUpdate, onUpdateMany })} />
+export function BrLcPie({ nodes, measureKey, onUpdate, onUpdateMany }: FlatProps) {
+  return <BrLcTile source={makePieSource({ nodes, measureKey, onUpdate, onUpdateMany })} />
 }
 
-export function BrLcRadar({ nodes, measureKey, sortBy, orderDir, onUpdate }: FlatProps) {
-  return <BrLcTile source={makeRadarSource({ nodes, measureKey, sortBy, orderDir, onUpdate })} />
+export function BrLcRadar({ nodes, measureKey, onUpdate }: FlatProps) {
+  return <BrLcTile source={makeRadarSource({ nodes, measureKey, onUpdate })} />
 }
 
-export function BrLcConcentricArc({ nodes, measureKey, maxItems, sortBy, orderDir, onUpdate }: FlatProps) {
-  return <BrLcTile source={makeConcentricArcSource({ nodes, measureKey, maxItems, sortBy, orderDir, onUpdate })} />
+export function BrLcConcentricArc({ nodes, measureKey, maxItems, onUpdate }: FlatProps) {
+  return <BrLcTile source={makeConcentricArcSource({ nodes, measureKey, maxItems, onUpdate })} />
 }
 
 interface ScatterProps { nodes: VizNode[]; xKey: string; yKey: string; onUpdate?: (nodeId: string, measures: VizNode['measures']) => void }

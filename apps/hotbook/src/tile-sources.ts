@@ -207,12 +207,7 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
       })
     }
 
-    let leaves = leavesOfNodes(sorted)
-    if (orderBinding !== 'index' && orderBinding !== '_index') {
-      const key = orderBinding === 'value' || orderBinding === '_value' ? valueBinding : orderBinding
-      leaves = [...leaves].sort((a, b) => (a.measures[key] ?? 0) - (b.measures[key] ?? 0))
-      if (orderDir === 'desc') leaves.reverse()
-    }
+    const leaves = leavesOfNodes(sorted)
     const xKey = kind === 'scatter' ? (xBinding ?? '_index') : undefined
     const yKey = kind === 'scatter' ? (yBinding ?? valueBinding) : valueBinding
     const primaryValue = kind === 'scatter' ? yKey : valueBinding
@@ -275,7 +270,6 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
       : undefined
     const sortKey = orderBinding === 'value' || orderBinding === '_value' ? valueBinding : orderBinding
     const hierSortBy: 'index' | 'value' = sortKey === valueBinding && orderDir === 'desc' ? 'value' : 'index'
-
     const shapeKey = hierShapeKey(tag, sortedWithIndex, valueBinding, depth)
     const valueKey = hierValueKey(sortedWithIndex, valueBinding)
     const enableNumberDrag = tag === 'v-br-treetable'
