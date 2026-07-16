@@ -441,7 +441,7 @@ export class MdIcicleLC extends Diagram {
         seenOrientation = orientation;
         seenMaxDepth = maxDepth;
         seenReorderTick = reorderTick;
-        if ((reordered || measureSwapped || orientationChanged || depthChanged || reorderCommitted) && dataView.phase !== 'gesturing') {
+        if ((reordered || measureSwapped || orientationChanged || depthChanged || reorderCommitted) && dataView.phase === 'idle') {
           lcancel?.();
           lcancel = this.anim.start(
             tween(lx0, t.x0, SORT_SEC, easeOut),
