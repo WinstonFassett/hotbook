@@ -15,6 +15,13 @@ This document is design only — no code, no file names, no current implementati
 - Geometry and presentation logic are separate from the `Chart` consumer. The `Chart` coordinates effects; geometry/presentation modules map coordinates, handle shapes, and rendering.
 - Input is decoupled from output: drag handle, drag mark, wheel, keyboard, table cell drag, and programmatic edits are all control surfaces that produce the same value-change intent.
 
+## Chart configuration and schema
+
+- A `Chart` is a component with a configuration schema. The schema declares which properties the chart accepts and how they affect the `DataView` query.
+- Common config dimensions: `measure`, `sortBy`, `depth`, `orientation`. Each chart family exposes the subset it supports.
+- Config changes are applied to the `DataView` query. The `DataView` publishes an `updated` event. The `Chart` re-renders.
+- If an `Editor` is `Drafting`, config changes do not change the `Editor` state. The committed data re-renders underneath the draft overlay; the draft overlay remains.
+
 ## Universal input model
 
 Every editing input is normalized into a `draft` event. A `draft` carries:
@@ -132,10 +139,12 @@ The `Editor` is the same for every family. Each family attaches effects that kno
 
 ### Table
 
-- `draft`: update the cell value and publish it to the `Kernel` so linked `Chart`s see it.
-- `commit`: finalize the value.
-- `cancel`: revert.
-- `updated`: reflect external changes.
+- The `Table` is a `Chart` family. It can be livebound alongside any other chart by sharing the same `DataView` and `Kernel`.
+- `draft`: update the cell value and publish it through the `DataView` so linked `Chart`s (e.g., an icicle) render the draft preview.
+- `commit`: finalize the value through the `DataView`. The `Editor` returns to `Idle`; linked `Chart`s run their `transition` effect.
+- `cancel`: revert the cell.
+- `updated`: reflect external changes while preserving any draft overlay.
+- The table supports tree rows with expand/collapse. It is a separate view of the same hierarchical data; it does not need its own layout geometry beyond row rendering.
 
 ## Plan
 
@@ -149,9 +158,10 @@ The `Editor` is the same for every family. Each family attaches effects that kno
 
 ## Open questions
 
-- Is `Editor` per-`Chart` or per-`DataView`? UBIQUITOUS says per-`Chart`.
+- Is `Editor` per-`Chart` or per-`DataView`? UBIQUITOUS says per-`Chart`. A livebound `Table` and `Chart` can share a `DataView`; we need to decide whether the `Editor` belongs to the `DataView` or to the surface that started the gesture.
 - If external `updated` changes the same value being drafted, should the draft overlay change or stay? UBIQUITOUS says the draft overlay stays.
 - Should `Kernel.Drafts` expose a global `Idle`/`Drafting` boolean, a list of active `Editor`s, or both?
 - Is the table a `Chart` family, or a separate consumer with its own `DataView` and a lightweight `Editor`?
+- How is the chart config schema declared and consumed? Is it a runtime type, a generated descriptor, or a component property contract?
 - Is `intent` limited to `value-change` and `reorder`, or are there more (filter, mode change, drill)?
 - Should the `Editor` support multiple simultaneous drafts for multi-value gestures, or stick to "usually one pre-edit"?
