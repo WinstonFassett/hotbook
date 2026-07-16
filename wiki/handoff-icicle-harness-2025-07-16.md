@@ -45,7 +45,9 @@ Building the icicle chart from specs (not from old code) in a clean new app to v
 - **d3 hierarchy.sum double-counting bug:** `d3.hierarchy.sum(accessor)` sets `node.value = accessor(node) + sum(children)`. Since Kernel pre-computes parent sums, calling `.sum(d => d.value)` on every node double-counts parents (parent's own precomputed sum + re-rolled children), shrinking grandchildren to ~50%. Fix: only leaves contribute (`d.children.length > 0 ? 0 : d.value`), so d3 re-rolls parent sums to match Kernel's.
 - **Divider-handle (edge handle) architecture:** Two-sibling reapportion requires atomic two-node commit. Extended `DraftEvent` with `secondaryNodeId`/`secondaryValue`. Added `Kernel.writeValues()` for atomic multi-node write.
 - **Order freezing for gestures:** When sort !== 'index', icicle/sunburst freeze sibling order during gestures. Added `frozenOrder` to `DraftEvent`, `captureOrder()` to DataView for recursive order snapshot, `getWindow(frozenOrder)` for order-aware rendering. Full re-render during gestures instead of ghost overlays.
-- **Full re-render vs ghost overlays:** Icicle/sunburst use full re-render with order freezing during gestures (correct per spec). Ghost overlays are for circle pack/treemap. Removed ghost overlay code from icicle.
+- **Draft values must be applied during rendering:** Full re-render approach requires applying draft values to the data before rendering, not just freezing order. Added `draftValues` parameter to `getWindow()`, `buildWindow()`, `walk()`, and `toRenderNode()`. Draft values are stored in chart state and cleared on commit/cancel.
+- **Full re-render vs ghost overlays:** Icicle/sunburst use full re-render with order freezing + draft values during gestures (correct per spec). Ghost overlays are for circle pack/treemap. Removed ghost overlay code from icicle.
+- **Transitions disabled during draft:** Draft should re-render immediately with no transition animation. Only commit/cancel should have transitions. Disabled CSS transitions during drafting state.
 - **Edge handles vs drafts:** Edge handles are disabled (`pointer-events: none`) while drafting to prevent starting a new reapportion mid-gesture. Re-enabled on commit/cancel via `_renderEdgeHandles`.
 - **Drill animation:** Already working via existing `transition: all 300ms` on tiles. The snap impression was test artifact (using two separate clicks instead of dblclick). Real drill animates via CSS transitions, verified via `transitionend` events.
 - **Terminology:** "boundary knob" → **divider handle**. Drag the divider, neighbor absorbs. Source field in DraftEvent: `"divider-handle"`.
@@ -59,13 +61,13 @@ Based on spec (wiki/specs/icicle.md) and current implementation:
 | Behavior | Status | Evidence | Notes |
 |---|---|---|---|
 | DataView query (measure, sort, depth, orientation) | ✅ Perfect | Test: scenario-config-toggles.mjs | All config dimensions working |
-| Boundary knob (divider handle) - two-sibling reapportion | ✅ Perfect | Test: scenario-boundary-knob.mjs | Sum preserved, atomic commit, siblings frozen |
+| Boundary knob (divider handle) - two-sibling reapportion | ✅ Perfect | Test: scenario-boundary-knob.mjs | **FIXED**: Now applies draft values during rendering, handles actually move during drag |
 | Wheel - additive | ✅ Perfect | Test: scenario-icicle-native.mjs (video) | Additive scaling, parent total not preserved |
 | Keyboard - additive (default) | ✅ Perfect | Test: scenario-icicle-native.mjs (video) | Arrow keys, additive, commit on keyup |
 | Keyboard - Alt → proportional-neighbor | ✅ Perfect | Test: scenario-keyboard-alt.mjs | Alt key preserves parent total |
 | Cross-tile (programmatic) | ✅ Perfect | Test: scenario-cross-tile.mjs (video) | Table → icicle, icicle → table, conservation not enforced |
 | Drag-to-reorder | ✅ Perfect | Test: scenario-reorder.mjs | When canReorder + sort='index', provisional order |
-| Draft (edit) - full re-render with order freezing | ✅ Perfect | Test: scenario-icicle-native.mjs (video) | Recursive order freezing, full re-render, no transitions during draft |
+| Draft (edit) - full re-render with order freezing + draft values | ✅ Perfect | Test: scenario-icicle-native.mjs (video) | **FIXED**: Now applies draft values, immediate re-render, no transitions during draft |
 | Draft (reorder) - provisional order | ✅ Perfect | Test: scenario-reorder.mjs | Tile follows pointer, siblings slide |
 | Commit - transition | ✅ Perfect | Test: scenario-icicle-native.mjs (video) | Post-commit animation, autonomous |
 | Cancel - transition back | ✅ Perfect | Test: scenario-icicle-native.mjs (video) | Revert to snapshot, tiles tween |
@@ -76,6 +78,7 @@ Based on spec (wiki/specs/icicle.md) and current implementation:
 | Depth change | ✅ Perfect | Test: scenario-depth-measure.mjs | Level cap, enter/exit on change |
 | Measure swap | ✅ Perfect | Test: scenario-depth-measure.mjs | Button present, works |
 | Order freezing (when sort !== 'index') | ✅ Perfect | Test: scenario-config-toggles.mjs | Recursive snapshot, frozen during gesture |
+| Transitions disabled during draft | ✅ Perfect | Test: scenario-icicle-native.mjs (video) | **FIXED**: No deferred resize, immediate updates during gesture |
 
 ### ⚠️ Done but Needs Manual Verification
 
