@@ -49,6 +49,16 @@ function eqRect(a, b, tol = 0.5) {
 // === Test 1: drag rent|utilities edge toward utilities (rent grows, utilities shrinks) ===
 console.log('=== Test 1: boundary knob drag (rent|utilities) ===');
 
+// Check if edge handles are rendered
+const edgeHandles = await page.locator('v-icicle [data-edge]').count();
+console.log(`  edge handles rendered: ${edgeHandles}`);
+
+if (edgeHandles === 0) {
+  console.log('  ERROR: no edge handles rendered - cannot test');
+  await browser.close();
+  process.exit(1);
+}
+
 // Edge handle is at x ≈ rent.x + rent.w - 4 (HIT/2). Compute screen coords.
 const svgBox = await page.locator('v-icicle svg').boundingBox();
 const scale = svgBox.width / 720;

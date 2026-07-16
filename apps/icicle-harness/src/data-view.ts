@@ -54,7 +54,17 @@ function buildWindow(
   }
 
   // Walk the subtree from startNode
-  walk(startNode, baseDepth, root, config, depthCap, result);
+  // For root view (no drill), include parent nodes so edge handles can be rendered
+  if (!focusNode) {
+    // Include parent nodes (depth 0 and 1) for edge handle rendering
+    result.push(toRenderNode(startNode, 0, root, config)); // root
+    for (const child of startNode.children) {
+      result.push(toRenderNode(child, 1, root, config)); // parents
+      walk(child, 2, root, config, depthCap, result); // children and deeper
+    }
+  } else {
+    walk(startNode, baseDepth, root, config, depthCap, result);
+  }
   return result;
 }
 
@@ -73,7 +83,9 @@ function walk(
 
   for (const child of sorted) {
     const childDepth = depth + 1;
-    if (depthCap !== undefined && childDepth > baseDepthOf(root, config) + depthCap) {
+    // Skip root node (depth 0) - start from depth 1
+    if (childDepth === 0) continue;
+    if (depthCap !== undefined && childDepth > depthCap) {
       // Still walk to compute sums, but don't add to window
       if (child.children.length > 0) {
         walk(child, childDepth, root, config, depthCap, out);

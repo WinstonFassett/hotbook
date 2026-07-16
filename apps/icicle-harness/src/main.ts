@@ -109,6 +109,20 @@ document.querySelectorAll("#config-bar button").forEach((btn) => {
   });
 });
 
+// Initialize reorder button active state based on config
+const initReorderButtons = () => {
+  const enableBtn = document.getElementById("btn-reorder-enable");
+  const disableBtn = document.getElementById("btn-reorder-disable");
+  if (config.canReorder) {
+    enableBtn?.classList.add("active");
+    disableBtn?.classList.remove("active");
+  } else {
+    enableBtn?.classList.remove("active");
+    disableBtn?.classList.add("active");
+  }
+};
+initReorderButtons();
+
 // Global Esc handler — cancel any active draft.
 // Per-component Esc is handled inside each chart/table (they check editor
 // state on their own keyup/cancel paths); this is the fallback for the case

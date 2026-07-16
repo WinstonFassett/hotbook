@@ -50,6 +50,7 @@ function computeLayout(
     .sort((a, b) => (config.sort === "value" ? (b.value ?? 0) - (a.value ?? 0) : 0));
 
   const isHoriz = config.orientation === "horizontal";
+  // Always use full canvas size - partition will distribute appropriately
   const size: [number, number] = isHoriz ? [height, width] : [width, height];
   partition<any>().size(size)(h);
 
@@ -309,7 +310,16 @@ export class IcicleChart extends HTMLElement {
       else byParent.set(n.parentId, [n]);
     }
 
-    for (const [, siblings] of byParent) {
+    // If no parents found (root view with root not in window), don't render edge handles
+    // Divider handles are for reapportioning within a parent, not at root level
+    if (byParent.size === 0) {
+      console.log('[edge handles] no parents found, skipping');
+      return;
+    }
+
+    for (const [parentId, siblings] of byParent) {
+      // For virtual parent (root view), still render edge handles between top-level siblings
+      // They're siblings within the virtual root, so reapportion makes sense
       // Sort siblings by their position along the sibling axis (matches layout order).
       const sorted = siblings.slice().sort((a, b) => {
         const ra = layout.get(a.id), rb = layout.get(b.id);
@@ -537,16 +547,31 @@ export class IcicleChart extends HTMLElement {
     const node = this._window.value.find((n) => n.id === nodeId);
     if (!node) return;
 
+    // For additive edits, the overlay should show the new span proportionally
+    // But we need to account for the parent's total changing too
+    // For now, just scale the node's own span by the value ratio
     const ratio = node.value > 0 ? newValue / node.value : 1;
     const overlay = document.createElementNS("http://www.w3.org/2000/svg", "rect");
     overlay.setAttribute("data-draft", "true");
     overlay.setAttribute("data-draft-id", nodeId);
     overlay.setAttribute("x", String(rect.x));
     overlay.setAttribute("y", String(rect.y));
-    const newW = isHoriz ? rect.width : rect.width * ratio;
-    const newH = isHoriz ? rect.height * ratio : rect.height;
-    overlay.setAttribute("width", String(newW));
-    overlay.setAttribute("height", String(newH));
+    
+    // For additive edits, scale along the sibling axis only
+    if (isHoriz) {
+      // horizontal: siblings along y, depth along x
+      // Scale height (sibling axis), keep width (depth axis)
+      const newH = rect.height * ratio;
+      overlay.setAttribute("width", String(rect.width));
+      overlay.setAttribute("height", String(newH));
+    } else {
+      // vertical: siblings along x, depth along y
+      // Scale width (sibling axis), keep height (depth axis)
+      const newW = rect.width * ratio;
+      overlay.setAttribute("width", String(newW));
+      overlay.setAttribute("height", String(rect.height));
+    }
+    
     overlay.setAttribute("fill", node.color);
     overlay.setAttribute("rx", "2");
     overlay.setAttribute("stroke", isActive ? "#4a9eff" : "#888");

@@ -177,7 +177,8 @@ export class SideTable extends HTMLElement {
     const onMove = (e: PointerEvent) => {
       if (!dragging || !this._dataView) return;
       const dy = startY - e.clientY;
-      const newVal = Math.max(0, Math.round(startVal + dy * 2));
+      // Reduce sensitivity for smoother drag
+      const newVal = Math.max(0, Math.round(startVal + dy * 0.5));
       cell.textContent = fmtNum(newVal);
 
       if (this._dataView.editor.state === "Idle") {
