@@ -17,7 +17,7 @@ Vocabulary for the vizform/hotbook gesture and data-flow architecture.
 | **DataView** | The chart's query-keyed subscription into the `Kernel`, similar to TanStack Query. It attaches on mount, detaches on dismount, and routes relevant `Kernel` events to the `Chart`. |
 | **Editor** | Per-chart state machine for `draft`/`commit`/`cancel`/`updated`. Only editable charts have one. |
 | **Kernel.Drafts** | The part of `Kernel` that tracks active `Editor`s and reports the global drafting state. |
-| **BaseChart** | Base class for interactive charts. It may create an `Editor`. Subclasses like `BaseCartesianChart` and `BaseHierarchicalChart` wire common editor effects. |
+| **BaseChart** | Base class for interactive charts. It may create an `Editor`. Subclasses — `BaseCartesianChart`, `BaseRadialChart`, `BaseHierarchicalChart`, `BaseNetworkChart`, `BaseTableChart` — wire common editor effects. See `docs/adr/gesture-state-machine.md` for the family effect contracts. |
 
 ## Draft lifecycle
 

@@ -1,178 +1,257 @@
-# ADR: DataViewController and Global Gesture Coordinator
+# ADR: Chart Editor, DataView, and Base Chart Family Effect Contract
 
 **Status:** Proposed  
-**Amends:** `wiki/interaction-principles.md` Rule 15 (scale updates during value-editing gestures).  
-**Covers:** `WIN-315`, `WIN-288` family, `WIN-300`, `WIN-310` gesture/transition/sort regressions.
+**Amends:** `wiki/interaction-principles.md` (pre-edit preview, deferred reorder/relayout, consumer-driven reactive subscription).  
+**Grounded in:** `UBIQUITOUS_LANGUAGE.md`
 
 ## Context
 
-The codebase has no single contract for how gestures, transitions, and live data updates interleave. The result is per-chart duplication and several contradictions:
+There is no single contract for how gestures, pre-edits, transitions, and live data updates interleave. This ADR defines that contract from `UBIQUITOUS_LANGUAGE.md`: a `Chart` is a first-class consumer, it owns an `Editor` state machine, it subscribes to a `DataView`, and it implements a small set of conditional render/transition effects.
 
-- `gesture-state.ts` is a timer-based cell (`idle` → `gesturing` → `settling` → `idle` with `setTimeout`). The `settle` event is approximated by a timer, not a signal from the view.
-- `tile-binder.ts` `getPhase()` reads `el.gestureActive` (per-element), so a table drag does not freeze a neighboring chart.
-- `bar-chart.ts` checks `this.classList.contains(GESTURE_ACTIVE_CLASS)` to decide snap vs tween. This is a CSS class, not a state machine.
-- `bar-chart`, `pie-chart`, `radar-chart`, `gauge`, etc. each duplicate `setGestureActive` and `gesturecommit` dispatch.
-- `bar-chart` and `tile-binder` use a `gesturecommit` custom event + `queueMicrotask` `applyData({ phase: 'settling' })` workaround because the state machine does not drive the view.
-- `wiki/interaction-principles.md` Rule 15 says scale/bounds updates defer to commit. In practice that makes value editing feel broken: the bar must scale live so it stays under the pointer and the value stays readable.
-- `wiki/transitions-decision.md` says flat charts (bar, area, pie, radar, etc.) should use CSS transitions for settle/reorder. `bar-chart` currently uses `bireactive` `Anim` tweens for reorders.
+## Core model
 
-## Layered view
+The app gives a `Chart` a `Kernel`. The `Chart` connects itself to a `DataView` and, if it is editable, an `Editor`.
 
-From host to kernel:
+- **`Kernel`** — the central data service. It publishes committed data updates and pre-edit events.
+- **`DataView`** — the chart's query-keyed subscription into the `Kernel`, similar to TanStack Query. It routes relevant `Kernel` events to the `Chart`.
+- **`Editor`** — per-chart state machine. Two states: `Idle` and `Drafting`. Events: `draft`, `commit`, `cancel`, `updated`.
+- **`Kernel.Drafts`** — the part of `Kernel` that tracks active `Editor`s and reports a global `Idle`/`Drafting` state.
+- **`Chart`** — the visual element. It attaches effects to `Editor` events and decides how to render.
+- **`BaseChart`** — abstract base for interactive charts. Its family subclasses (`BaseCartesianChart`, `BaseRadialChart`, `BaseHierarchicalChart`, `BaseNetworkChart`, `BaseTableChart`) provide common effect-hook implementations.
 
-- **Host app (`hotbook`)** — React. Owns workspace state, `TileRecord`, persistence. Renders `Tile` components. On each render it calls `tileController.update(source)`.
-- **`tile-binder` (`packages/d3`)** — mounts the chart custom element, wires `bindEditOut`, `bindHudSync`, and calls `source.applyData(el, { phase, lastRef })`. It creates a per-chart `DataViewController` and registers it with the global `GestureCoordinator`. It is `bireactive`-agnostic except for `biEffect` inside `bindEditOut`.
-- **`TileSource` (`buildTileSource` / `makeFlatSource` / `makeHierSource`)** — builds the chart's `dataCell`/`BiNode` tree from a `TileRecord`. One `TileSource` per tile today.
-- **Chart custom element (`bar-chart`, `treetable`, etc.)** — uses `bireactive` `biEffect` and `Anim` to build the scene. It reads the chart's `DataViewController` to decide snap vs tween and calls `settle()` when its transition is complete.
-- **External `bireactive` runtime** — `cell`, `derive`, `effect`, `batch`. Not imported by `DataViewController` core.
-- **External `matchina`** — the state machine library used by `DataViewController`.
+The architecture is consumer-driven reactive subscription: the `Kernel` publishes; the `Chart` subscribes and decides what to render.
 
-When a tab is hidden, `bindTile` disposes its `bireactive` effects, `DataViewController`, and any per-chart `TileSource` state. Hidden tiles are not kept alive.
+## Editor state machine
 
-## Decision
+`Editor` has two states:
 
-### Name and scope
+- `Idle`
+- `Drafting`
 
-`GestureController` is a misnomer. Each chart has a **per-chart `DataViewController`**: it owns that chart's direct-manipulation lifecycle and the transition lifecycle for live data / config changes. A small, separate **`GestureCoordinator`** tracks the currently active `DataViewController` and exposes a `globalGestureActive` signal.
+Transitions:
 
-### `matchina` shape
+| type | from → to | purpose |
+|---|---|---|
+| `draft` | `Idle` → `Drafting` | A pre-edit has started. |
+| `draft` | `Drafting` → `Drafting` | A pre-edit value has changed. |
+| `commit` | `Drafting` → `Idle` | The pre-edit is finalized. |
+| `cancel` | `Drafting` → `Idle` | The pre-edit is discarded. |
+| `updated` | `Idle` → `Idle` | Committed data changed while `Idle`. |
+| `updated` | `Drafting` → `Drafting` | Committed data changed while a draft is active. |
 
-The machine is built with `matchina` states and transitions. `intent` and `origin` are state `data` (payload). `origin` is `unknown` so the core machine stays view-agnostic.
+`draft` carries `intent` (`'pre-edit'` | `'reorder'`) and `origin` (the data key). `updated` does not change `Editor` state.
+
+`updated` while `Drafting` updates the committed-data layer but **does not reapply the draft**. The draft overlay stays as the user last set it until `commit` or `cancel`.
+
+## Effects are conditional
+
+`Editor` events are not commands. The `Chart` decides whether to run an effect, which effect to run, and whether it is a render or a transition. The decision can depend on:
+
+- the `Editor` state and transition type,
+- the `DataView` event (committed data vs. pre-edit),
+- whether the order/structure changed,
+- `prefers-reduced-motion`,
+- and chart-family-specific conditions.
+
+The `BaseChart` event handler dispatches to the family-specific hooks below.
+
+## Effect hooks
+
+`BaseChart` defines the lifecycle hooks. Each family overrides them to implement its own rendering strategy.
+
+- `snapshot()` — capture the committed data and the current computed layout at the start of a draft.
+- `applyPreview()` — render a draft preview on top of the committed snapshot.
+- `computeLayout()` — run the layout algorithm (`d3`/`partition`/`pack`/`treemap`/bandscales) and produce a new layout.
+- `applyLayout()` — immediately set mark positions.
+- `transitionLayout()` — animate marks to a new layout. Interruptible and disposable.
+- `revertLayout()` — restore the committed data and apply the saved committed layout.
+- `applySort()` — write the new sorted order to the data source before recomputing layout.
+
+`applyLayout` and `transitionLayout` are mutually exclusive for the same update. The chart chooses which one to run.
+
+## Public contract
 
 ```ts
-const states = defineStates({
-  Idle: undefined,
-  Gesturing: (intent: 'edit' | 'reorder', origin: unknown) => ({ intent, origin }),
-  Settling: (intent: 'edit' | 'reorder', origin: unknown) => ({ intent, origin }),
-});
-
-const dataView = matchina(
-  states,
-  {
-    Idle: {
-      start: (intent, origin) => () => states.Gesturing(intent, origin),
-    },
-    Gesturing: {
-      commit: () => (ev) => states.Settling(ev.from.data.intent, ev.from.data.origin),
-      cancel: () => (ev) => states.Settling(ev.from.data.intent, ev.from.data.origin),
-      start: (intent, origin) => () => states.Gesturing(intent, origin),
-    },
-    Settling: {
-      settle: () => () => states.Idle(),
-      start: (intent, origin) => () => states.Gesturing(intent, origin),
-    },
-  },
-  'Idle'
-);
-```
-
-### Public state
-
-The public state is derived from `matchina`'s `getState()` (key + data). It is what consumers subscribe to.
-
-```ts
-interface DataViewState {
-  key: 'Idle' | 'Gesturing' | 'Settling';
-  transitioning: boolean; // derived: key === 'Settling'
-  intent: 'edit' | 'reorder' | null;
-  origin: unknown;
-  frozen: { order: boolean }; // derived: key === 'Gesturing'
+interface EditorState {
+  key: 'Idle' | 'Drafting';
+  intent: 'pre-edit' | 'reorder' | null;
+  origin: unknown | null;
 }
 
-// Returned by DataViewController.getState() and the bireactive adapter cell.
+interface Editor {
+  getState(): EditorState;
+  draft(intent: 'pre-edit' | 'reorder', origin: unknown): void;
+  updated(): void;
+  commit(): void;
+  cancel(): void;
+  subscribe(
+    fn: (transition: {
+      from: 'Idle' | 'Drafting';
+      to: 'Idle' | 'Drafting';
+      type: 'draft' | 'updated' | 'commit' | 'cancel';
+      origin: unknown;
+    }) => void,
+  ): () => void;
+  dispose(): void;
+}
+
+interface Drafts {
+  register(editor: Editor): () => void;
+  isDrafting(): boolean;
+  subscribe(fn: (isDrafting: boolean) => void): () => void;
+}
 ```
 
-`frozen.order` means the chart's displayed order is frozen; the data store may change order but the layout does not reorder until `commit`. Scale is **not** frozen by default; value edits scale live. This amends `wiki/interaction-principles.md` Rule 15.
+`Editor` core does not import the reactive runtime.
 
-The `DataViewController` core follows the `matchina` contract: `getState()`, `subscribe()`, and `send()`. The `bireactive` adapter (`data-view-adapter.ts`) creates a `Writable<DataViewState>` cell from `getState()` and `subscribe()`. The `DataViewController` core does not import `bireactive`.
-
-### Ownership and lifecycle
-
-The **chart custom element owns its `DataViewController`**. It creates it in `connectedCallback`, attaches it to `el.dataView` so `tile-binder` can read it, and disposes it in `disconnectedCallback`. `bindTile` does not create or inject it. `DataViewController` dispose unsubscribes the `bireactive` cell, removes DOM-effect hooks, and clears the `GestureCoordinator` active reference if it is this controller.
-
-### Global gesture coordinator
-
-- One `GestureCoordinator` singleton.
-- `DataViewController` `start()` calls `coordinator.setActive(this)`.
-- `DataViewController` `commit()` / `cancel()` / `settle()` calls `coordinator.setActive(null)` if it is the active controller.
-- `globalGestureActive` is `coordinator.active !== null`.
-
-### `applyData` phase
-
-`tile-binder` `getPhase(el)` becomes:
+## BaseChart integration
 
 ```ts
-const dv = el.dataView; // per-chart, owned by the chart
-const active = gestureCoordinator.active;
-if (active && active !== dv) return 'gesturing'; // frozen by another tile's gesture
-return dv.getState().key; // 'idle' | 'gesturing' | 'settling'
+abstract class BaseChart extends HTMLElement {
+  kernel: Kernel;
+  dataView: DataView;
+  editor: Editor | null = null;
+  snapshot: LayoutSnapshot | null = null;
+
+  connectedCallback() {
+    this.dataView = this.kernel.query(this.queryKey);
+    this.dataView.subscribe((event) => this.onDataView(event));
+
+    if (this.editable) {
+      this.editor = new Editor();
+      this.kernel.drafts.register(this.editor);
+      this.editor.subscribe((transition) => this.onEditorTransition(transition));
+    }
+  }
+
+  disconnectedCallback() {
+    this.editor?.dispose();
+    this.dataView?.unsubscribe();
+  }
+
+  onEditorTransition(t: EditorTransition) {
+    switch (t.type) {
+      case 'draft':
+        this.snapshot();
+        this.applyPreview();
+        break;
+      case 'commit':
+        this.commit();
+        break;
+      case 'cancel':
+        this.cancel();
+        break;
+      case 'updated':
+        this.updated();
+        break;
+    }
+  }
+
+  abstract snapshot(): void;
+  abstract applyPreview(): void;
+  abstract commit(): void;
+  abstract cancel(): void;
+  abstract updated(): void;
+}
 ```
 
-If a tile is the origin of the gesture, it uses its own `DataViewController` state. If another tile is the origin, this tile is `gesturing` (frozen order). When the origin tile is `Settling`, all other tiles are `idle` and can animate their own autonomous transitions.
+The host provides the `Kernel` and `queryKey`; the `Chart` creates and owns the `DataView` and `Editor`.
 
-### `settle` from the view
+## Pre-edit semantics
 
-- `settle()` is called by the view when its transition finishes.
-- `tile-binder` does not call `settle`.
-- `applyData` in the `settling` branch writes `dataCell.value` only if the data actually changed (order, values, or length). If there is no data change, the view is still in `Settling` and must call `dataView.settle()` when its transition completes, or immediately if it has no transition.
-- `settle()` is always called by the mechanism that knows the transition duration:
-  - `withSettle` for CSS transitions (listens to `transitionend` on a container).
-  - `withAnimSettle` for `bireactive` `Anim` completion.
-  - The chart's `refresh` method for charts with no autonomous transition (e.g. `treetable` today).
-  - `numberDrag` `onEnd` for no-transition value edits.
-  - `biEffect` sets target values but does not call `settle()` directly for CSS charts; it lets `withSettle` handle it.
-- Both helpers respect `prefers-reduced-motion` by calling `settle()` immediately when autonomous motion is suppressed. The `DataViewController` core does not import `withSettle`.
+A chart drafts at most one live value at a time. The preview updates the affected mark(s) and any dependent scale or domain so the value stays under the pointer and readable.
 
-### `bar-chart` / `bands` transitions
+- **Linear marks** resize the edited mark and scale the matching axis/domain to fit the pre-edit value. This is the default for bar, area, scatter, and similar Cartesian marks.
+- **Fixed-total marks** rebalance the edited mark and its siblings. The coordinate is a fixed total (360° for a full pie, or a parent value for a sunburst ring), so previewing a change inherently moves others.
+- **Hierarchical marks** can preview by scaling the edited node around its center, optionally rendering it as a puzzle-piece "atop" the original layout, and optionally fading out or relayouting children. The chart should not re-sort siblings or run a global layout during the gesture.
 
-`bar-chart` and `bands` are the same custom element (`v-br-bar`), so both use the same implementation. They should use CSS transitions for settle/reorder, matching `transitions-decision.md`. The `Anim` usage is a deviation and should be migrated. `bireactive` `Anim` remains available for effects CSS cannot express (stagger, path `d` in Firefox, etc.) through `withAnimSettle`, but `bar-chart` does not use it.
+A chart may expose settings to tweak preview behavior (e.g. whether children are relaid out, whether the preview is overlaid or in-place).
 
-For a reorder cancel/no-op, `dataCell.value` does not change, so `applyData` `settling` is skipped. The `bar-chart` `onEnd` must set `barX`/`barY` targets with CSS `transition` and call `dataView.settle()` on `transitionend` (via `withSettle` on the container).
+The shared rule: reorder and full layout recomputes that move sibling marks are deferred until `commit`.
 
-### `GESTURE_ACTIVE_CLASS`
+## Cross-tile synchronization
 
-The DOM adapter sets `GESTURE_ACTIVE_CLASS` on `origin` while `dataView.getState().key === 'Gesturing'`. The `setGestureActive` duplication in charts is removed. `bar-chart` stops reading `this.classList.contains(...)` and reads `this.dataView.state.value.key` (via the `bireactive` adapter cell).
+The `Kernel` publishes pre-edit events to every `DataView` subscribed to the same data. A chart that receives a pre-edit event while it is not the active drafter (per `kernel.drafts`) should still update the underlying values/scale, but it must defer reorder and full layout relayout until the active `Editor` commits or cancels.
 
-### `DragConfig` / `WheelConfig`
+## Family effect contracts
 
-Add `intent` and `origin` fields. `interaction.ts` calls `dataView.start(intent, origin)` on `begin`, `dataView.commit()` on `end`, `dataView.cancel()` on cancel.
+Each family overrides the same hooks. The event handlers are the public contract; the implementation is family-specific.
 
-### Cross-layer integration
+### `BaseCartesianChart`
 
-The ADR presumes several changes in other layers. These must be explicit:
+Uses `chartContext` (x/y scales, tween layer). Gestures attach via `attachCartesianGestures`.
 
-- **`interaction.ts` `end` ordering.** `dragController`/`wheelController` `end` must call `dataView.commit()`/`cancel()` **before** `config.onEnd`. `onEnd` then sees `Settling` (the view is still in transition) and can start `tween`/transition and call `dataView.settle()` when it finishes. `dataView` only becomes `Idle` after `settle()` is called. This is the key lifecycle change: `Gesturing` → `commit/cancel` → `Settling` → `onEnd` + view transition → `settle()` → `Idle`.
-- **`numberDrag` (`packages/bireactive/src/lib/number-drag.ts`).** Remove `setHostActive`/`GESTURE_ACTIVE_CLASS`. Add `dataView`, `intent`, and `origin` to `NumberDragOpts`. `onEnd` calls `dataView.settle()` if no transition.
-- **`reorder-gesture` (`packages/bireactive/src/lib/reorder-gesture.ts`).** Remove `setGestureActive`/`GESTURE_ACTIVE_CLASS` calls. Add `dataView`, `intent`, and `origin` to `ReorderGestureConfig`. The chart's `onEnd` callback is responsible for `dataView.settle()` after any tween.
-- **`bar-chart` (`packages/bireactive/src/charts/bar-chart.ts`).** Create `DataViewController` in `connectedCallback` and dispose in `disconnectedCallback`. Remove `GESTURE_ACTIVE_CLASS` checks in `biEffect`, `pointermove`, and `click`; read `dataView.state.value` and `globalGestureActive.value` instead. Remove `gesturecommit` dispatch and `setGestureActive` in `dragConfig`/`wheelConfig`/`snapshot`. The `dragConfig`, `wheelConfig`, and `attachReorderGesture` calls use `dataView`/`intent`/`origin`. `onEnd` uses `withSettle` and calls `dataView.settle()` after its transition. `biEffect` `Settling` branch sets CSS targets but does not call `settle()` directly.
-- **Other charts.** `pie-chart`, `radar-chart`, `concentric-arc`, `gauge`, `gantt`, `sankey`, and hierarchical charts (`sunburst`, `icicle`, `pack`, `treemap`) have the same `setGestureActive`/`gesturecommit`/`GESTURE_ACTIVE_CLASS` duplication and must be updated the same way.
-- **`treetable` (`packages/bireactive/src/charts/treetable.ts`).** Create `DataViewController` in `connectedCallback`. Its `refresh` method (called by `applyData` in `settling`) must call `dataView.settle()`. `makeHierSource` passes `dataView`/`intent`/`origin` into `numberDrag`.
-- **`transitions.ts` helpers.** Add `withSettle(el, dataView, transition)` for CSS `transitionend` and `withAnimSettle(anim, ...tweens, dataView)` for `bireactive` `Anim` completion. Both respect `prefers-reduced-motion` by calling `settle()` immediately.
-- **`bireactive` adapter (`data-view-adapter.ts`).** Expose `createDataViewCell(dataView)` returning `Writable<DataViewState>`, a DOM effect that toggles `GESTURE_ACTIVE_CLASS` on `origin`, and `globalGestureActive` as a reactive cell.
-- **`tile-binder` (`packages/d3/src/host/tile-binder.ts`).** `bindTile` reads `el.dataView` from the chart; it does not create or inject it. Remove the `onCommit` `gesturecommit` handler. `getPhase` uses `GestureCoordinator` and `dataView.getState()`. `applyData` `settling` writes `dataCell.value` only if the data changed and calls `el.refresh?.()` if the chart defines it.
-- **`hotbook` `Tile` component.** Ensure `tileController.dispose()` is called on unmount; it already is, but `dispose` now also tears down the `DataViewController`.
-- **`packages/bireactive/package.json`.** Add `matchina` dependency (or rely on workspace `matchina` if already wired).
-- **`wiki/interaction-principles.md`.** Update Rule 15 text, not just the ADR reference.
-- **Standalone charts (`demos`/`docs`).** Charts used outside `tile-binder` need a `DataViewController` either supplied by the harness or created lazily in `connectedCallback`.
+- `applyPreview`: resize the edited mark and scale the matching axis/domain to fit the pre-edit value.
+- `commit`: `applySort` + `computeLayout` + `transitionLayout` (reorder/slide).
+- `cancel`: restore committed `snapshot`, `applyLayout`.
+- `updated`: `computeLayout`; use `transitionLayout` if order/structure changed, else `applyLayout`.
 
-## Rejected: `Settled` state
+Charts: `BarChart`, `Bands`, `LineChart`, `AreaChart`, `ScatterChart`, `Gantt`.
 
-A `Settled` state (committed but still revertable) was considered. It was rejected because:
+### `BaseRadialChart`
 
-- `Esc` today cancels a *live* gesture, not a persisted state.
-- Reverting after commit would require undoing a workspace persistence step, which is not a current requirement.
-- If it becomes needed later, it can be added as an additional state without breaking the existing `Idle`/`Gesturing`/`Settling` graph.
+Angle/radius coordinates. Fixed total (360° or parent value).
+
+- `applyPreview`: rebalance the edited mark and its siblings around the new value.
+- `commit`: `applySort` + `computeLayout` + `transitionLayout`.
+- `cancel`: restore committed `snapshot`, `applyLayout`.
+- `updated`: `computeLayout`; use `transitionLayout` if order/structure changed, else `applyLayout`.
+- Gestures are wheel/drag on the mark/handle.
+
+Charts: `PieChart`, `RadarChart`, `ConcentricArc`, `Gauge`, `GaugeSegmented`.
+
+### `BaseHierarchicalChart`
+
+Uses `BiNode` tree, `buildParentIndex`, portfolio, `walkTree`. Gestures attach via `attachChartGestures` + `attachReorderGesture`.
+
+- `applyPreview`: scale the edited node around its center, freeze sibling order, optionally overlay children.
+- `commit`: `applySort` + recompute `d3` layout (`partition`/`pack`/`treemap`) + `transitionLayout`.
+- `cancel`: revert `snapshot` + `applyLayout`.
+- `updated`: `computeLayout` + `applyLayout` or `transitionLayout`.
+- Drill-in/out is a separate transition with its own duration role.
+
+Charts: `Sunburst`, `Icicle`, `Treemap`, `Pack`, `TreeChart`, `BudgetTree`.
+
+### `BaseNetworkChart`
+
+Node/link layout.
+
+- `applyPreview`: adjust the edited node/link value locally, possibly re-scaling flows.
+- `commit`: recompute sankey-layout + `transitionLayout`.
+- `cancel`: revert `snapshot` + `applyLayout`.
+- `updated`: `computeLayout` + `applyLayout` or `transitionLayout`.
+
+Charts: `SankeySimple`, `SankeyComplex`, `SankeyFlow`.
+
+### `BaseTableChart`
+
+Treetable is HTML, not SVG. Row/cell gesture layer.
+
+- `applyPreview`: update cell value or row position preview.
+- `commit`: apply row order + transition (CSS row slide) or render.
+- `cancel`: revert.
+- `updated`: re-render rows with transition if order changed.
+
+Chart: `Treetable`.
+
+## Input handling
+
+`DragConfig`, `WheelConfig`, and keyboard configs carry `intent` and `origin`. Input handlers call:
+
+- `editor.draft(intent, origin)` on gesture start,
+- `editor.draft(intent, origin)` on each pre-edit value change,
+- `editor.commit()` on end,
+- `editor.cancel()` on abort.
+
+For continuous pre-edits (drag, wheel, held arrow keys), `editor.draft()` is called on each delta. For discrete pre-edits (single arrow key press, step button), `editor.draft()` starts, each key press calls `editor.draft()`, and a debounce timer calls `editor.commit()`. `Escape` calls `editor.cancel()`. There is no implicit commit.
+
+Config changes are not continuous gestures, so they are applied as committed data updates.
 
 ## Consequences
 
-- `gesture-state.ts` is replaced by per-chart `DataViewController` + `GestureCoordinator`.
-- `gesturecommit` and `tile-binder` `onCommit` queueMicrotask are removed.
-- `setGestureActive` duplication in charts is removed.
-- `bar-chart` (and others) read `this.dataView.state.value` instead of `GESTURE_ACTIVE_CLASS`; each chart creates and owns its `DataViewController`.
-- `tile-binder` `applyData` `settling` branch always writes `dataCell.value`.
-- `matchina` is added as a dependency of `packages/bireactive` (or used from local `matchina` if workspace is wired).
-- `wiki/interaction-principles.md` Rule 15 is amended: value edits scale live; deferred scale is a future exception only.
-
-## Deferred
-
-- **Shared `BiNode` / `dataCell` tree across tiles.** Each tile builds its own `TileSource` today. A shared reactive tree for the same dataset is a future optimization, not in this change.
+- The `Chart` is the owner of the `Editor` and `DataView`. The host supplies the `Kernel` and `queryKey`.
+- Effects are chart-owned and conditional. The `Editor` only notifies; the `Chart` decides.
+- Families consolidate gesture/transition logic into a single set of effect hooks.
+- Cross-tile freeze is a global `Kernel.Drafts` signal combined with `DataView` pre-edit events.
+- Hierarchical charts stop recomputing `d3` layout on every pointer move; `applyPreview` runs until `commit`/`cancel`.
+- All transitions are interruptible and disposable. Transition completion is an internal chart concern.
