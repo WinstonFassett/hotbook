@@ -13,6 +13,10 @@ Consider principles of good component architecture. But this is NOT a React-styl
 Prefer decoupling through interfaces to heavy handed spaghetti code 
 Prefer consumer ie pubsub event oriented architecture over imperative control.
 
+## Wiki documents are not canonical
+
+The `wiki/` directory contains working notes, old handoffs, and outdated architecture drafts. Many are stale or were written before the current `Editor`/`DataView`/`Kernel.Drafts` design. Do not treat a wiki doc as source of truth without checking its last-edit date and comparing it to newer docs (e.g. `wiki/gesture-architecture.md`, `wiki/interaction-principles.md`, `wiki/transitions-decision.md`). When in conflict, prefer the newer doc and ask if unclear.
+
 ## bireactive `rect()` overload gotcha
 
 `rect(x, y, w, h, opts)` is corner-based (top-left). `rect(Vec, w, h, opts)` is **center-based** — the Vec is the center point, not the corner. Always pass x and y as separate values for corner positioning.
