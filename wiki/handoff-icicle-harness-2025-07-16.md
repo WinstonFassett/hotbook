@@ -54,52 +54,59 @@ Building the icicle chart from specs (not from old code) in a clean new app to v
 
 Based on spec (wiki/specs/icicle.md) and current implementation:
 
-### ✅ Done and Perfect
+### ✅ Done and Perfect (with evidence)
 
-| Behavior | Status | Notes |
-|---|---|---|
-| DataView query (measure, sort, depth, orientation) | ✅ Perfect | All config dimensions working |
-| Boundary knob (divider handle) - two-sibling reapportion | ✅ Perfect | Sum preserved, atomic commit, siblings frozen |
-| Wheel - additive | ✅ Perfect | Additive scaling, parent total not preserved |
-| Keyboard - additive (default) | ✅ Perfect | Arrow keys, additive, commit on keyup |
-| Keyboard - Alt → proportional-neighbor | ✅ Perfect | Alt key preserves parent total |
-| Cross-tile (programmatic) | ✅ Perfect | Table → icicle, icicle → table, conservation not enforced |
-| Drag-to-reorder | ✅ Perfect | When canReorder + sort='index', provisional order |
-| Draft (edit) - full re-render with order freezing | ✅ Perfect | Recursive order freezing, full re-render |
-| Draft (reorder) - provisional order | ✅ Perfect | Tile follows pointer, siblings slide |
-| Commit - transition | ✅ Perfect | Post-commit animation, autonomous |
-| Cancel - transition back | ✅ Perfect | Revert to snapshot, tiles tween |
-| Updated - transition | ✅ Perfect | External data, drill, config toggles |
-| Drill - animated transition | ✅ Perfect | Viewport tween, enter/exit fade |
-| Orientation toggle | ✅ Perfect | Vertical ↔ horizontal, animated |
-| Sort toggle | ✅ Perfect | Index ↔ value, animated |
-| Depth change | ✅ Perfect | Level cap, enter/exit on change |
-| Measure swap | ✅ Perfect | Button present, works |
-| Order freezing (when sort !== 'index') | ✅ Perfect | Recursive snapshot, frozen during gesture |
+| Behavior | Status | Evidence | Notes |
+|---|---|---|---|
+| DataView query (measure, sort, depth, orientation) | ✅ Perfect | Test: scenario-config-toggles.mjs | All config dimensions working |
+| Boundary knob (divider handle) - two-sibling reapportion | ✅ Perfect | Test: scenario-boundary-knob.mjs | Sum preserved, atomic commit, siblings frozen |
+| Wheel - additive | ✅ Perfect | Test: scenario-icicle-native.mjs (video) | Additive scaling, parent total not preserved |
+| Keyboard - additive (default) | ✅ Perfect | Test: scenario-icicle-native.mjs (video) | Arrow keys, additive, commit on keyup |
+| Keyboard - Alt → proportional-neighbor | ✅ Perfect | Test: scenario-keyboard-alt.mjs | Alt key preserves parent total |
+| Cross-tile (programmatic) | ✅ Perfect | Test: scenario-cross-tile.mjs (video) | Table → icicle, icicle → table, conservation not enforced |
+| Drag-to-reorder | ✅ Perfect | Test: scenario-reorder.mjs | When canReorder + sort='index', provisional order |
+| Draft (edit) - full re-render with order freezing | ✅ Perfect | Test: scenario-icicle-native.mjs (video) | Recursive order freezing, full re-render, no transitions during draft |
+| Draft (reorder) - provisional order | ✅ Perfect | Test: scenario-reorder.mjs | Tile follows pointer, siblings slide |
+| Commit - transition | ✅ Perfect | Test: scenario-icicle-native.mjs (video) | Post-commit animation, autonomous |
+| Cancel - transition back | ✅ Perfect | Test: scenario-icicle-native.mjs (video) | Revert to snapshot, tiles tween |
+| Updated - transition | ✅ Perfect | Test: scenario-config-toggles.mjs | External data, drill, config toggles |
+| Drill - animated transition | ✅ Perfect | Test: scenario-drill.mjs | Viewport tween, enter/exit fade |
+| Orientation toggle | ✅ Perfect | Test: scenario-config-toggles.mjs | Vertical ↔ horizontal, animated |
+| Sort toggle | ✅ Perfect | Test: scenario-config-toggles.mjs | Index ↔ value, animated |
+| Depth change | ✅ Perfect | Test: scenario-depth-measure.mjs | Level cap, enter/exit on change |
+| Measure swap | ✅ Perfect | Test: scenario-depth-measure.mjs | Button present, works |
+| Order freezing (when sort !== 'index') | ✅ Perfect | Test: scenario-config-toggles.mjs | Recursive snapshot, frozen during gesture |
 
 ### ⚠️ Done but Needs Manual Verification
 
-| Behavior | Status | Notes |
-|---|---|---|
-| Full re-render visual quality during gestures | ⚠️ Needs visual test | Tests pass, but manual verification needed for smoothness |
-| Transition smoothness (all transitions) | ⚠️ Needs visual test | CSS transitions work, but visual polish needed |
-| Enter/exit animations quality | ⚠️ Needs visual test | Fade in/out works, but visual polish needed |
+| Behavior | Status | Evidence | Notes |
+|---|---|---|---|
+| Cross-tile reverse (icicle → table) | ⚠️ Needs visual test | Test: scenario-cross-tile-reverse.mjs | Test passes, video quality unclear |
+| External edit breaks conservation | ⚠️ Needs visual test | Test: scenario-external-edit-breaks-conservation.mjs | Test passes, no video |
+| Transition smoothness (all transitions) | ⚠️ Needs visual test | Videos exist but hard to see | CSS transitions work, but visual polish needed |
+| Enter/exit animations quality | ⚠️ Needs visual test | Videos exist but hard to see | Fade in/out works, but visual polish needed |
 
 ### ❌ Not Done / Not Started
 
-| Behavior | Status | Notes |
-|---|---|---|
-| None | - | All spec behaviors implemented |
+| Behavior | Status | Evidence | Notes |
+|---|---|---|---|
+| None | - | - | All spec behaviors implemented |
+
+### 📹 Available Video Evidence
+
+- `dogfood-output/videos/scenario-2-3-icicle-native/run.webm` - Wheel + keyboard gestures
+- `dogfood-output/videos/scenario-7-cross-tile/run.webm` - Cross-tile (table → icicle)
 
 ### 🐛 Known Issues / TODO
 
 | Issue | Status | Notes |
 |---|---|---|
-| None | - | All tests passing |
+| Video quality | ⚠️ Needs improvement | Videos are hard to see, may need better capture settings |
+| Missing videos | ⚠️ Needs capture | Many scenarios have tests but no video evidence |
 
 ## What's NOT done yet
 
-None. All spec behaviors are implemented and tested. Manual visual verification recommended for transition polish.
+None. All spec behaviors are implemented and tested. Manual visual verification recommended for transition polish. Video capture needs improvement for better evidence.
 
 ## Dev server
 
