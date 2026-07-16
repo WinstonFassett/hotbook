@@ -1,0 +1,123 @@
+// main.ts — wire up the harness.
+// Create a Kernel, register a Dataset, give the icicle and side table the
+// same Kernel + config (so they share the DataView).
+
+import type { ChartConfig, Dataset, DataNode } from "./types";
+import { Kernel } from "./kernel";
+import "./icicle-chart.ts";
+import "./side-table.ts";
+
+// ─── Sample hierarchical data ──────────────────────────────────────────────
+
+const sampleData: DataNode = {
+  id: "root",
+  label: "Budget",
+  value: 0,
+  children: [
+    {
+      id: "housing",
+      label: "Housing",
+      value: 0,
+      color: "oklch(0.6 0.12 240)",
+      children: [
+        { id: "rent", label: "Rent", value: 2200, color: "oklch(0.6 0.12 240)", children: [] },
+        { id: "utilities", label: "Utilities", value: 380, color: "oklch(0.65 0.12 240)", children: [] },
+        { id: "insurance", label: "Insurance", value: 180, color: "oklch(0.7 0.12 240)", children: [] },
+      ],
+    },
+    {
+      id: "food",
+      label: "Food",
+      value: 0,
+      color: "oklch(0.6 0.12 120)",
+      children: [
+        { id: "groceries", label: "Groceries", value: 620, color: "oklch(0.6 0.12 120)", children: [] },
+        { id: "dining", label: "Dining out", value: 340, color: "oklch(0.65 0.12 120)", children: [] },
+      ],
+    },
+    {
+      id: "transport",
+      label: "Transport",
+      value: 0,
+      color: "oklch(0.6 0.12 40)",
+      children: [
+        { id: "gas", label: "Gas", value: 280, color: "oklch(0.6 0.12 40)", children: [] },
+        { id: "transit", label: "Transit", value: 120, color: "oklch(0.65 0.12 40)", children: [] },
+        { id: "parking", label: "Parking", value: 60, color: "oklch(0.7 0.12 40)", children: [] },
+      ],
+    },
+    {
+      id: "savings",
+      label: "Savings",
+      value: 0,
+      color: "oklch(0.6 0.12 200)",
+      children: [
+        { id: "emergency", label: "Emergency fund", value: 500, color: "oklch(0.6 0.12 200)", children: [] },
+        { id: "retire", label: "Retirement", value: 800, color: "oklch(0.65 0.12 200)", children: [] },
+      ],
+    },
+  ],
+};
+
+const dataset: Dataset = {
+  id: "budget",
+  dataShape: "hierarchical",
+  root: sampleData,
+};
+
+const config: ChartConfig = {
+  datasetId: "budget",
+  measure: "value",
+  sort: "index",
+  depth: 3,
+  orientation: "vertical",
+};
+
+// ─── Wire up ───────────────────────────────────────────────────────────────
+
+const kernel = new Kernel();
+kernel.registerDataset(dataset);
+
+const icicle = document.querySelector("v-icicle") as any;
+const table = document.querySelector("v-side-table") as any;
+
+icicle.kernel = kernel;
+icicle.config = config;
+table.kernel = kernel;
+table.config = config;
+
+// Global Esc handler — cancel any active draft.
+// Per-component Esc is handled inside each chart/table (they check editor
+// state on their own keyup/cancel paths); this is the fallback for the case
+// where focus is outside both surfaces.
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    const active = kernel.drafts.activeEditor;
+    if (active && active.state === "Drafting") {
+      const dv = icicle._dataView;
+      if (dv && dv.editor === active) dv.cancel();
+      else {
+        const tDv = table._dataView;
+        if (tDv && tDv.editor === active) tDv.cancel();
+      }
+    }
+  }
+});
+
+// Status display
+const icicleStatus = document.getElementById("icicle-status")!;
+const tableStatus = document.getElementById("table-status")!;
+kernel.drafts.subscribe((isDrafting, activeEditor) => {
+  const label = isDrafting ? "drafting" : "idle";
+  icicleStatus.textContent = label;
+  tableStatus.textContent = label;
+  if (isDrafting) {
+    icicleStatus.classList.add("drafting");
+    tableStatus.classList.add("drafting");
+  } else {
+    icicleStatus.classList.remove("drafting");
+    tableStatus.classList.remove("drafting");
+  }
+});
+
+console.log("icicle harness ready", { kernel, config });
