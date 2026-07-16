@@ -1,4 +1,5 @@
 import { defineConfig } from "vite";
+import { resolve } from "path";
 
 export default defineConfig({
   server: { host: true },
@@ -16,5 +17,11 @@ export default defineConfig({
     // must also survive: Diagram subclasses derive their custom element tag
     // name from the class name via static get tagName().
     minify: false,
+    rollupOptions: {
+      input: {
+        main: resolve(__dirname, 'index.html'),
+        'vf-icicle-demo': resolve(__dirname, 'vf-icicle-demo.html'),
+      },
+    },
   },
 });
