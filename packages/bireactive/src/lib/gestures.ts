@@ -41,6 +41,7 @@ export interface ChartGestureSetup {
 
 export function attachChartGestures(host: HTMLElement | SVGElement, setup: ChartGestureSetup): () => void {
   const { root, parentOf, state } = setup;
+  const defaultScalingMode: ScalingMode = setup.scalingMode ?? "additive";
 
   // Gesture lifecycle: when a dataView is provided, gestures go through the
   // state machine (start/commit/cancel) which drives the GestureCoordinator
@@ -135,8 +136,8 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
     heldKeys.add(e.key);
     // Fractional dynamic step (∝ current value, Shift = fine).
     const step = dynamicWheelStep(f.value.total.value, e.shiftKey);
-    // Default = additive; Alt → proportional-neighbor (per spec, reversed from old behavior).
-    const mode: ScalingMode = e.altKey ? "proportional-neighbor" : "additive";
+    // Default = chart's configured conservationMode; Alt → proportional-neighbor override.
+    const mode: ScalingMode = e.altKey ? "proportional-neighbor" : defaultScalingMode;
     if (e.key === "ArrowUp" || e.key === "ArrowRight") {
       applyDelta(f, parentOf(f), +step, { mode });
     } else {

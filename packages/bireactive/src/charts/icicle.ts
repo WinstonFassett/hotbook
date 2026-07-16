@@ -93,6 +93,13 @@ export class MdIcicleLC extends Diagram {
   get canReorder(): boolean { return this._canReorderCell.value }
   set canReorder(v: boolean) { this._canReorderCell.value = v }
 
+  private _conservationModeCell = cell<'additive' | 'proportional-neighbor' | 'proportional-siblings'>('additive')
+  /** Default conservation mode for keyboard edits. Default 'additive' (only the
+   *  target moves, parent total not preserved). Alt overrides to
+   *  'proportional-neighbor' (immediate neighbor absorbs delta). */
+  get conservationMode(): 'additive' | 'proportional-neighbor' | 'proportional-siblings' { return this._conservationModeCell.value }
+  set conservationMode(v: 'additive' | 'proportional-neighbor' | 'proportional-siblings') { this._conservationModeCell.value = v }
+
   /** Fired on a committed reorder. Chart only previews; owner mutates data. */
   onReorder?: (parentId: string | null, orderedIds: string[]) => void
 
@@ -178,7 +185,7 @@ export class MdIcicleLC extends Diagram {
     this._trackScene(biEffect(() => {
       const root = rootCell.value;
       gestureDispose?.();
-      gestureDispose = attachChartGestures(this, { root, parentOf, state, scalingMode: "proportional-neighbor", dataView });
+      gestureDispose = attachChartGestures(this, { root, parentOf, state, scalingMode: this._conservationModeCell.value as any, dataView });
     }));
     this._trackScene(() => { gestureDispose?.(); gestureDispose = null; });
     const hoverCell = cell<BiNode | null>(null);
