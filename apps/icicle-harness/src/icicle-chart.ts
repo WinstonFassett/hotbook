@@ -24,8 +24,6 @@ import {
 } from "./hierarchy";
 import {
   attachEdgeHandleDrag,
-  computeReapportion,
-  computeGroupReapportion,
   type GestureContext,
 } from "./gestures";
 import { useHostSize } from "./host-size";
@@ -73,6 +71,9 @@ export class IcicleChart extends HTMLElement implements GestureContext {
   layout() { return this._layout!.value; }
   get pairTotal() { return this._gesture?.store.pairTotal ?? 0; }
   setPairTotal(n: number) { if (this._gesture) this._gesture.store.pairTotal = n; }
+  private _dragBoundary = 0; // pixel position of the boundary at gesture start
+  private _dragPairSize = 0; // pixel size of the pair at gesture start
+  private _dragGroupSize = 0; // pixel size of the entire sibling group at gesture start
 
   set kernel(k: Kernel) { this._kernelCell.value = k; }
   set config(c: ChartConfig) {
@@ -264,6 +265,26 @@ export class IcicleChart extends HTMLElement implements GestureContext {
     const right = findNode(root, edge.rightId)!;
     this.setPairTotal(left.value.value + right.value.value);
 
+    // Capture boundary position and sizes at gesture start.
+    const layout = this.layout();
+    const lr = layout.get(edge.leftId)!;
+    const rr = layout.get(edge.rightId)!;
+    const isHoriz = this.config.orientation === "horizontal";
+    this._dragBoundary = isHoriz ? lr.y + lr.height : lr.x + lr.width;
+    this._dragPairSize = isHoriz ? lr.height + rr.height : lr.width + rr.width;
+
+    // Group size = full span of all siblings (for proportional-siblings mode).
+    if (left.parent) {
+      const sibs = left.parent.children;
+      const first = layout.get(sibs[0].id)!;
+      const last = layout.get(sibs[sibs.length - 1].id)!;
+      this._dragGroupSize = isHoriz
+        ? (last.y + last.height) - first.y
+        : (last.x + last.width) - first.x;
+    } else {
+      this._dragGroupSize = this._dragPairSize;
+    }
+
     this.classList.add("gesture-active");
 
     this._dataView!.draft({
@@ -280,38 +301,48 @@ export class IcicleChart extends HTMLElement implements GestureContext {
   updateGesture(edge: Edge, point: { x: number; y: number }) {
     const g = this._gesture!;
     if (g.state !== "Drafting") return;
+
+    // Restore from snapshot so each frame starts from clean baseline.
+    this.restore();
+
     const root = this._treeRoot.value!;
-    const layout = this.layout();
     const config = this.config;
     const left = findNode(root, edge.leftId)!;
-    const right = findNode(root, edge.rightId)!;
-
-    // Restore from snapshot so each frame computes from clean baseline.
-    this.restore();
+    const isHoriz = config.orientation === "horizontal";
 
     const mode = effectiveMode(this.conservationMode, this.altHeld());
 
+    // Delta from the captured boundary position at gesture start.
+    const pos = isHoriz ? point.y : point.x;
+    const deltaPx = pos - this._dragBoundary;
+
+    // In proportional-siblings mode, the left tile's pixel width is its share
+    // of the entire sibling group, so pixel→value must use group total/size.
+    // In pair-only modes, it's the pair total/size.
+    let valueScale: number;
     if (mode === "proportional-siblings" && left.parent) {
       const siblings = left.parent.children;
       const groupTotal = siblings.reduce((sum, c) =>
         sum + (this.snapshot?.get(c.id) ?? c.value.value), 0);
-      const newLeftVal = computeGroupReapportion(
-        edge, layout, groupTotal, siblings, point, config.orientation,
-      );
-      const snapLeft = this.snapshot?.get(edge.leftId) ?? left.value.value;
-      const delta = newLeftVal - snapLeft;
+      valueScale = this._dragGroupSize > 0 ? groupTotal / this._dragGroupSize : 0;
+    } else {
+      valueScale = this._dragPairSize > 0 ? this.pairTotal / this._dragPairSize : 0;
+    }
+    const deltaValue = deltaPx * valueScale;
 
+    const snapLeft = this.snapshot?.get(edge.leftId) ?? left.value.value;
+    const newLeft = Math.max(0, snapLeft + deltaValue);
+
+    if (mode === "proportional-siblings" && left.parent) {
       const ctx: ConservationContext = {
         valueOf: this.valueOf,
         writeValue: this.writeValue,
         siblings: this.siblings,
         snapshot: this.snapshot,
       };
-      applyConservedDelta(ctx, edge.leftId, delta, "proportional-siblings");
+      applyConservedDelta(ctx, edge.leftId, newLeft - snapLeft, "proportional-siblings");
     } else {
-      const { left: newLeft, right: newRight } = computeReapportion(
-        edge, layout, this.pairTotal, point, config.orientation,
-      );
+      const newRight = Math.max(0, this.pairTotal - newLeft);
       this.writeValue(edge.leftId, newLeft);
       this.writeValue(edge.rightId, newRight);
     }
