@@ -31,7 +31,6 @@ export function bindChart(b: ChartBinding): () => void {
 
     if (event.type === "updated") {
       if (g.state === "Drafting") return;
-      console.log("[chart-binding] updated → rebuild");
       b.frozenOrder && (b.frozenOrder.value = null);
       g.resetStore();
       b.rebuild();

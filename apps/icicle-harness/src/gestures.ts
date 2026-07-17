@@ -33,7 +33,6 @@ export function attachEdgeHandleDrag(handle: any, ctx: GestureContext): () => vo
   return draggable(handle, (local) => {
     ctx.updateGesture(edge, { x: local.x, y: local.y });
   }, (active) => {
-    console.log("[drag] onState:", active, "edge:", edge.id);
     if (active) ctx.startGesture(edge);
     else ctx.endGesture(edge);
   });

@@ -298,10 +298,6 @@ export class IcicleChart extends HTMLElement implements GestureContext {
     g.store.activeEdge = edge;
     g.store.snapshot = snapshotValues(root);
 
-    // Debug: log the window order at gesture start
-    const winLevel1 = this._window?.value.filter(n => n.depth === 1).map(n => n.id) ?? [];
-    console.log("[startGesture] edge:", edge.id, "window level1:", winLevel1, "frozenOrder:", !!g.store.frozenOrder);
-
     const left = findNode(root, edge.leftId)!;
     const right = findNode(root, edge.rightId)!;
     this.setPairTotal(left.value.value + right.value.value);
@@ -315,13 +311,24 @@ export class IcicleChart extends HTMLElement implements GestureContext {
     this._dragPairSize = isHoriz ? lr.height + rr.height : lr.width + rr.width;
 
     // Group size = full span of all siblings (for proportional-siblings mode).
+    // Siblings may be in any order (sort="value" reorders them), so compute
+    // the span from min/max positions, not first/last index.
     if (left.parent) {
       const sibs = left.parent.children;
-      const first = layout.get(sibs[0].id)!;
-      const last = layout.get(sibs[sibs.length - 1].id)!;
-      this._dragGroupSize = isHoriz
-        ? (last.y + last.height) - first.y
-        : (last.x + last.width) - first.x;
+      let minStart = Infinity;
+      let maxEnd = -Infinity;
+      for (const s of sibs) {
+        const r = layout.get(s.id);
+        if (!r) continue;
+        if (isHoriz) {
+          minStart = Math.min(minStart, r.y);
+          maxEnd = Math.max(maxEnd, r.y + r.height);
+        } else {
+          minStart = Math.min(minStart, r.x);
+          maxEnd = Math.max(maxEnd, r.x + r.width);
+        }
+      }
+      this._dragGroupSize = maxEnd > minStart ? maxEnd - minStart : this._dragPairSize;
     } else {
       this._dragGroupSize = this._dragPairSize;
     }
@@ -334,7 +341,6 @@ export class IcicleChart extends HTMLElement implements GestureContext {
     // frozenOrder so chart-binding applies it correctly on the first frame.
     if (this.config.sort !== "index" && !g.store.frozenOrder) {
       const order = captureOrderFromWindow(this._window?.value ?? null);
-      console.log("[startGesture] edge:", edge.id, "captured order root:", order.get("root"), "windowLen:", this._window?.value.length);
       this._frozenOrder.value = order;
       g.store.frozenOrder = order;
     }
