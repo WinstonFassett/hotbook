@@ -1,34 +1,77 @@
-// side-table.ts — flat hierarchical table on the same DataView as the icicle.
-// Cell drags on leaves produce draft events; the table writes on its own commit.
+// side-table.ts — bireactive treetable on the same Kernel as the icicle.
+// All cells are editable (not just leaves). When a parent is edited, the delta
+// is distributed proportionally to its leaf descendants. The bireactive tree
+// (leaf = writable num, parent = total of children) cascades changes upward
+// automatically, so every cell in the table updates live during a drag.
+//
+// Uses the Gesture/Editor model: cell drag → draft → commit/cancel.
+// Shares the Kernel with the icicle; committed values propagate via "updated".
 
-import type { ChartConfig, DraftEvent, RenderNode } from "./types";
+import { cell, derive, effect, type Cell } from "bireactive";
+import type { ChartConfig, DataNode } from "./types";
 import { Kernel } from "./kernel";
 import { DataView, type DataViewEvent } from "./data-view";
+import { Gesture } from "./gesture";
+import {
+  buildTree,
+  findNode,
+  leafValues,
+  snapshotValues,
+  restoreValues,
+  type ChartNode,
+} from "./hierarchy";
 
 const INDENT = 16;
 
+interface Row {
+  node: ChartNode;
+  depth: number;
+}
+
 export class SideTable extends HTMLElement {
   private _kernel: Kernel | null = null;
+  private _config: ChartConfig | null = null;
+  private _treeRoot: Cell<ChartNode | null> = cell<ChartNode | null>(null);
+  private _gesture: Gesture | null = null;
   private _dataView: DataView | null = null;
   private _unsub: (() => void) | null = null;
+  private _disposers: (() => void)[] = [];
   private _container: HTMLDivElement | null = null;
 
   set kernel(k: Kernel) {
     this._kernel = k;
-    this._connect();
+    this._rebuild();
   }
 
   set config(c: ChartConfig) {
-    this._connect(c);
+    this._config = c;
+    this._rebuild();
   }
 
-  private _connect(nextConfig?: ChartConfig): void {
-    if (!this._kernel) return;
-    const cfg = nextConfig ?? this._dataView?.config;
-    if (!cfg) return;
+  get dataView() {
+    return this._dataView;
+  }
+
+  private _rebuild(): void {
+    if (!this._kernel || !this._config) return;
+
+    this._disposers.forEach((d) => d());
+    this._disposers = [];
+    this._unsub?.();
     this._dataView?.dispose();
-    this._dataView = new DataView(this._kernel, cfg);
+    this._gesture?.dispose();
+
+    const cfg = this._config;
+    this._gesture = new Gesture(undefined, cfg);
+    this._gesture.store.host = this;
+    this._gesture.store.tree = this._treeRoot;
+
+    this._dataView = new DataView(this._kernel, cfg, this._gesture.editor);
     this._unsub = this._dataView.subscribe((e) => this._onEvent(e));
+
+    const ds = this._kernel.getDataset(cfg.datasetId);
+    if (ds) this._treeRoot.value = buildTree(ds.root);
+
     this._render();
   }
 
@@ -43,99 +86,84 @@ export class SideTable extends HTMLElement {
   }
 
   disconnectedCallback(): void {
+    this._disposers.forEach((d) => d());
+    this._disposers = [];
     this._unsub?.();
     this._dataView?.dispose();
+    this._gesture?.dispose();
   }
 
   private _onEvent(event: DataViewEvent): void {
+    const root = this._treeRoot.value;
+    if (!root) return;
+    const g = this._gesture!;
+
     if (event.type === "updated") {
-      if (this._dataView?.editor.state === "Drafting") return;
+      if (g.state === "Drafting") return;
+      const ds = this._dataView!.kernel.getDataset(this._dataView!.config.datasetId);
+      if (ds) this._treeRoot.value = buildTree(ds.root);
       this._render();
       return;
     }
 
-    if (event.type === "draft" && event.draft) {
-      const draft = event.draft;
-      this._updateCell(draft.nodeId, draft.value, event.isActive);
-      if (draft.secondaryNodeId) {
-        this._updateCell(draft.secondaryNodeId, draft.secondaryValue ?? 0, event.isActive);
+    if (event.type === "draft") {
+      if (event.isActive) {
+        if (!g.store.snapshot) g.store.snapshot = snapshotValues(root);
+        return;
       }
+      // Cross-view draft — apply
       return;
     }
 
     if (event.type === "commit") {
-      if (event.isActive && event.draft && event.draft.intent === "edit") {
-        this._commitValue(event.draft);
+      if (event.isActive) {
+        const writes = leafValues(root);
+        this._dataView!.kernel.writeValues(this._dataView!.config.datasetId, writes);
       }
-      this._clearDraftHighlight();
+      g.resetStore();
       return;
     }
 
     if (event.type === "cancel") {
-      this._clearDraftHighlight();
+      if (g.store.snapshot) restoreValues(root, g.store.snapshot);
+      g.resetStore();
+      return;
     }
-  }
-
-  private _commitValue(draft: DraftEvent): void {
-    if (!this._kernel || !this._dataView) return;
-    const dsId = this._dataView.config.datasetId;
-    if (draft.secondaryNodeId) {
-      this._kernel.writeValues(dsId, [
-        { nodeId: draft.nodeId, value: draft.value },
-        { nodeId: draft.secondaryNodeId, value: draft.secondaryValue ?? 0 },
-      ]);
-    } else {
-      this._kernel.writeValue(dsId, draft.nodeId, draft.value);
-    }
-  }
-
-  private _updateCell(nodeId: string, value: number, isActive: boolean): void {
-    const cell = this._container?.querySelector(`.value[data-id="${nodeId}"]`) as HTMLDivElement | null;
-    if (!cell) return;
-    cell.textContent = fmtNum(value);
-    cell.style.background = isActive ? "oklch(0.28 0.1 240)" : "oklch(0.22 0 0)";
-  }
-
-  private _clearDraftHighlight(): void {
-    this._container?.querySelectorAll(".value").forEach((c) => {
-      (c as HTMLElement).style.background = "";
-    });
-    this._render();
   }
 
   private _render(): void {
-    if (!this._container || !this._dataView) return;
-    const win = this._dataView.getWindow();
-
+    if (!this._container) return;
+    const root = this._treeRoot.value;
     this._container.innerHTML = "";
     this._container.appendChild(header());
-    const rows = this._visibleRows(win);
-    for (const node of rows) this._container.appendChild(this._buildRow(node));
+
+    if (!root) return;
+
+    const rows = this._collectRows(root);
+    for (const row of rows) {
+      this._container.appendChild(this._buildRow(row));
+    }
   }
 
-  private _visibleRows(win: RenderNode[]): RenderNode[] {
-    const byId = new Map(win.map((n) => [n.id, n]));
-    const result: RenderNode[] = [];
-    const roots = win.filter((n) => !n.parentId || !byId.has(n.parentId));
-
-    const walk = (node: RenderNode) => {
-      result.push(node);
-      for (const child of node.children) {
-        const found = byId.get(child.id);
-        if (found) walk(found);
-      }
+  private _collectRows(root: ChartNode): Row[] {
+    const rows: Row[] = [];
+    const walk = (node: ChartNode, depth: number) => {
+      rows.push({ node, depth });
+      for (const child of node.children) walk(child, depth + 1);
     };
-
-    for (const root of roots) walk(root);
-    return result;
+    walk(root, 0);
+    return rows;
   }
 
-  private _buildRow(node: RenderNode): HTMLDivElement {
-    const row = document.createElement("div");
-    row.style.cssText = "display:flex;align-items:center;padding:3px 8px;cursor:default;";
+  private _buildRow(row: Row): HTMLDivElement {
+    const { node, depth } = row;
 
+    const el = document.createElement("div");
+    el.style.cssText = "display:flex;align-items:center;padding:3px 8px;cursor:default;";
+
+    // Name cell
     const name = document.createElement("div");
-    name.style.cssText = `flex:1;display:flex;align-items:center;gap:4px;padding-left:${node.depth * INDENT}px;min-width:0;`;
+    name.style.cssText = `flex:1;display:flex;align-items:center;gap:4px;padding-left:${depth * INDENT}px;min-width:0;`;
 
     const dot = document.createElement("span");
     dot.style.cssText = `width:8px;height:8px;border-radius:50%;background:${node.color};flex-shrink:0;`;
@@ -145,28 +173,58 @@ export class SideTable extends HTMLElement {
     label.style.cssText = "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:oklch(0.88 0 0);";
     label.textContent = node.label;
     name.appendChild(label);
-    row.appendChild(name);
+    el.appendChild(name);
 
+    // Value cell — bireactive: effect updates textContent when tree value changes.
     const valCell = document.createElement("div");
     valCell.dataset.id = node.id;
     valCell.className = "value";
     valCell.style.cssText =
-      "width:80px;text-align:right;color:oklch(0.7 0 0);font-variant-numeric:tabular-nums;user-select:none;";
-    valCell.textContent = fmtNum(node.value);
+      "width:80px;text-align:right;color:oklch(0.7 0 0);font-variant-numeric:tabular-nums;user-select:none;cursor:ns-resize;touch-action:none;";
+    valCell.textContent = fmtNum(node.value.value);
 
-    if (node.children.length === 0) {
-      valCell.style.cursor = "ns-resize";
-      valCell.style.touchAction = "none";
-      this._attachCellDrag(valCell, node);
-    }
+    // Live update: when the node's value changes (via bireactive cascade), update the cell.
+    const disposer = effect(() => {
+      valCell.textContent = fmtNum(node.value.value);
+    });
+    this._disposers.push(disposer);
 
-    row.appendChild(valCell);
-    return row;
+    this._attachCellDrag(valCell, node);
+    el.appendChild(valCell);
+    return el;
   }
 
-  private _attachCellDrag(cell: HTMLDivElement, node: RenderNode): void {
-    if (!this._dataView) return;
+  /** Distribute a delta across a node's leaf descendants proportionally. */
+  private _distributeDelta(node: ChartNode, delta: number): void {
+    const leaves = this._collectLeaves(node);
+    if (leaves.length === 0) return;
+    const total = leaves.reduce((sum, l) => sum + l.value.value, 0);
+    if (total <= 0) {
+      // Even split if all zeros
+      const each = delta / leaves.length;
+      for (const l of leaves) l.value.value = Math.max(0, l.value.value + each);
+      return;
+    }
+    for (const l of leaves) {
+      const share = (l.value.value / total) * delta;
+      l.value.value = Math.max(0, l.value.value + share);
+    }
+  }
+
+  private _collectLeaves(node: ChartNode): ChartNode[] {
+    const leaves: ChartNode[] = [];
+    const walk = (n: ChartNode) => {
+      if (n.children.length === 0) leaves.push(n);
+      else for (const c of n.children) walk(c);
+    };
+    walk(node);
+    return leaves;
+  }
+
+  private _attachCellDrag(cell: HTMLDivElement, node: ChartNode): void {
+    if (!this._dataView || !this._gesture) return;
     const dv = this._dataView;
+    const g = this._gesture;
     let startY = 0;
     let startVal = 0;
     let dragging = false;
@@ -174,28 +232,61 @@ export class SideTable extends HTMLElement {
     const onMove = (e: PointerEvent) => {
       if (!dragging) return;
       const dy = startY - e.clientY;
-      const newVal = Math.max(0, Math.round(startVal + dy * 0.5));
-      if (dv.editor.state === "Idle") {
-        dv.draft({ nodeId: node.id, value: newVal, source: "table-cell", intent: "edit" });
+      const newVal = Math.max(0, startVal + dy * 0.5);
+
+      if (g.state !== "Drafting") return; // cancelled
+
+      // Write to the tree: if leaf, write directly; if parent, distribute.
+      const delta = newVal - startVal;
+      if (node.children.length === 0) {
+        node.value.value = newVal;
       } else {
-        dv.updateDraft({ nodeId: node.id, value: newVal, source: "table-cell", intent: "edit" });
+        // Reset to start, then distribute the full delta
+        // (since previous drag moves already modified leaves)
+        if (g.store.snapshot) restoreValues(this._treeRoot.value!, g.store.snapshot);
+        this._distributeDelta(node, delta);
       }
+
+      dv.updateDraft({
+        nodeId: node.id,
+        value: newVal,
+        source: "table-cell",
+        intent: "edit",
+      });
     };
 
     const onUp = () => {
       if (!dragging) return;
       dragging = false;
+      cell.style.background = "";
       document.removeEventListener("pointermove", onMove);
       document.removeEventListener("pointerup", onUp);
-      if (dv.editor.state === "Drafting") dv.commit();
+      if (g.state === "Drafting") dv.commit();
     };
 
     const onDown = (e: PointerEvent) => {
       e.preventDefault();
       dragging = true;
       startY = e.clientY;
-      startVal = node.value;
+      startVal = node.value.value;
       cell.style.background = "oklch(0.28 0.1 240)";
+
+      // Snapshot before first write
+      const root = this._treeRoot.value!;
+      g.store.snapshot = snapshotValues(root);
+
+      // Initial draft
+      const delta = 0; // no movement yet
+      if (node.children.length > 0) {
+        this._distributeDelta(node, delta);
+      }
+      dv.draft({
+        nodeId: node.id,
+        value: startVal,
+        source: "table-cell",
+        intent: "edit",
+      });
+
       document.addEventListener("pointermove", onMove);
       document.addEventListener("pointerup", onUp);
     };

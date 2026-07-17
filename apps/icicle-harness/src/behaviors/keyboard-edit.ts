@@ -13,6 +13,13 @@ export type ConservationMode = "additive" | "proportional-neighbor" | "proportio
 
 const ARROW_KEYS = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"];
 
+/** Flip to the inverse conservation mode. */
+function invertMode(mode: ConservationMode): ConservationMode {
+  if (mode === "proportional-siblings") return "proportional-neighbor";
+  if (mode === "proportional-neighbor") return "proportional-siblings";
+  return "additive";
+}
+
 export interface KeyboardEditOptions {
   /** Getter for the focused node id. */
   target: GestureGetter<string | null>;
@@ -54,13 +61,14 @@ export function keyboardEdit(opts: KeyboardEditOptions): Behavior {
     });
 
     const applyDelta = (id: string, delta: number, altMode: boolean) => {
-      const mode = altMode
-        ? "proportional-neighbor"
-        : opts.conservationMode(gesture);
+      const defaultMode = opts.conservationMode(gesture);
+      // Alt flips to the inverse of the config default.
+      const mode = altMode ? invertMode(defaultMode) : defaultMode;
 
       const siblingsFn = opts.siblings(gesture);
       const siblings = siblingsFn(id);
       const idx = siblings.indexOf(id);
+      const valueFn = opts.valueOf(gesture);
 
       if (mode === "proportional-neighbor") {
         // ArrowRight/Up = increase = take from next sibling
@@ -69,7 +77,6 @@ export function keyboardEdit(opts: KeyboardEditOptions): Behavior {
         const neighborId = siblings[neighborIdx];
 
         if (neighborId) {
-          const valueFn = opts.valueOf(gesture);
           const cur = valueFn(id);
           const neighborCur = valueFn(neighborId);
           const newSelf = Math.max(0, cur + delta);
@@ -82,8 +89,27 @@ export function keyboardEdit(opts: KeyboardEditOptions): Behavior {
         // No neighbor — fall through to additive
       }
 
-      // Additive (or proportional-siblings, which for now is the same)
-      const valueFn = opts.valueOf(gesture);
+      if (mode === "proportional-siblings") {
+        // Delta is absorbed proportionally by all other siblings.
+        const cur = valueFn(id);
+        const newSelf = Math.max(0, cur + delta);
+        const actualDelta = newSelf - cur;
+        const others = siblings.filter((s) => s !== id);
+        const otherTotal = others.reduce((sum, s) => sum + valueFn(s), 0);
+        if (otherTotal <= 0) {
+          opts.writeValue(id, newSelf);
+          return null;
+        }
+        for (const s of others) {
+          const sCur = valueFn(s);
+          const share = otherTotal > 0 ? (sCur / otherTotal) * actualDelta : 0;
+          opts.writeValue(s, Math.max(0, sCur - share));
+        }
+        opts.writeValue(id, newSelf);
+        return null;
+      }
+
+      // Additive: just change the value, no conservation.
       const cur = valueFn(id);
       const newVal = Math.max(0, cur + delta);
       opts.writeValue(id, newVal);
