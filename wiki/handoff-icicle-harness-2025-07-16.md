@@ -81,10 +81,10 @@ The spec (`wiki/specs/icicle.md`) describes behaviors that are **not yet impleme
 - **Current state:** `forEach` in `icicle-chart.ts` handles add/remove of tiles/edges, but there's no enter/exit animation — tiles just appear/disappear.
 - **Gap:** Need exit-clone mechanism (freeze exiting tile's geometry, fade opacity, remove after duration) and enter animation (fade in opacity). This is the one place CSS transitions aren't sufficient — need a small lifecycle wrapper around `forEach`.
 
-### 5. Drill + viewport tween (spec §5, "Drill" section)
-- **What:** Drill-down/up changes the drill focus → `updated` event → animated transition. The focus node's subtree expands to fill canvas; ancestors recede. Viewport tween animates the level change.
+### 5. Drill (spec §5, "Drill" section)
+- **What:** Drill-down/up changes the drill focus → `updated` event → animated transition. The layout re-roots at the focus node; its subtree fills the available canvas (minus breadcrumb); ancestors and off-screen siblings exit. Tiles transition to new rects via CSS; enter/exit fades handle structural change.
 - **Current state:** `DataView` has `drillId` and `setDrill()` but **nothing calls it**. No dblclick handler, no breadcrumb UI. The `buildWindow` function in `data-view.ts` already supports drill (includes ancestors, walks from focus node), but it's untested.
-- **Gap:** Add dblclick on tile → `dataView.setDrill(tileId)`. Add breadcrumb or back button → `setDrill(null)`. The transition is a viewport tween (animate the depth-axis position of each level). This is the hardest transition — may need a bireactive tween cell for the viewport position, not just CSS transitions on individual tiles.
+- **Gap:** Add dblclick on tile → `dataView.setDrill(tileId)`. Add breadcrumb or back button → `setDrill(null)`. The transition is a relayout + CSS transitions on x/y/w/h (same as sort/orientation toggle) + enter/exit fades. No viewport layer needed.
 
 ## Next steps (in order)
 

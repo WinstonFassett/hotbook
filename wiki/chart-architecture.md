@@ -204,4 +204,4 @@ Use `bireactive` `forEach` with a `key` function for stable mark identity across
 
 ### Drill transition
 
-Drill is an `updated` event, not a gesture. Animate it as a viewport tween along the depth axis plus fades: exiting tiles fade out in place (geometry frozen), entering tiles fade in at target geometry. If the viewport tween is too hard to get right in the first pass, a mark-level tween (all tiles slide to new slots) is acceptable; the spec is viewport tween.
+Drill is an `updated` event, not a gesture. The layout re-roots at the focus node and recomputes against the available canvas (accounting for breadcrumb). Tiles transition to their new rects via CSS on x/y/w/h; exiting tiles fade out in place (geometry frozen); entering tiles fade in at target geometry. Same mechanism as any other layout-changing `updated` (sort toggle, orientation toggle) — no viewport or camera layer.

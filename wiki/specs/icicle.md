@@ -84,7 +84,7 @@ Per the Hierarchical family effect contract (`gesture-architecture.md` §"Hierar
 
 Drill-down / drill-up is a change of the drill focus — an `updated`, not a gesture (there is no continuous drill, no preview of a drill). It is rendered as an autonomous `transition`:
 
-- Drill-in: the focus node's subtree expands to fill the canvas; ancestors recede. A viewport tween animates the level change. Exiting tiles fade out in place; entering tiles fade in. The drilled-to node (the "context node") is visually distinguished from its expanded children (dimmed opacity).
+- Drill-in: the layout re-roots at the focus node — its subtree fills the available canvas (minus breadcrumb if present); ancestors and off-screen siblings exit. Tiles transition to their new rects via CSS on x/y/w/h; exiting tiles fade out in place (geometry frozen); entering tiles fade in at target geometry. The drilled-to node (the "context node") is visually distinguished from its expanded children (dimmed opacity).
 - Drill-out: the reverse.
 - The drill transition is interruptible and disposable (rule 13).
 
@@ -112,10 +112,10 @@ Both focus and hover have visual highlights (stroke color/width changes); the ex
 - **Focus/hover** (§6): chart-level selection and hover states with stroke highlights, Tab navigation, and cross-tile sync. These are not `Editor` states — they are independent interaction state layered on top.
 - **Edge handles** (§3): the specific input behavior for two-sibling reapportion along interior edges. The family contract says "hierarchical marks have handles"; the icicle specifies edge handles between adjacent siblings.
 - **`conservationMode` config** (§2): the family contract says value-mapping is overridable; the icicle exposes `conservationMode` as the config knob for keyboard edit value-mapping.
-- **Drill viewport tween** (§5): the family contract says "drill is an `updated` rendered as a `transition`"; the viewport tween is the icicle's specific transition strategy for zooming into a subtree.
+- **Drill relayout** (§5): the family contract says "drill is an `updated` rendered as a `transition`"; the icicle's strategy is to re-root the layout at the focus node and transition tiles to their new canvas rects. Same mechanism as sort/orientation toggle — no special viewport or camera layer.
 
 The core gesture/transition model holds: `draft` (via `previewFullRender`) patches in place with siblings frozen; `commit` / `cancel` / `updated` (via `transitionOnUpdated`) `transition`. The icicle composes shared behaviors onto a `Gesture` (an `Editor` + store + `setup` API) — the chart-specific code is the composition and the value-mappings, not the gesture machinery itself.
 
 ## Summary
 
-The icicle is the reference Hierarchical chart. It composes shared input behaviors (`wheelEdit`, `keyboardEdit`, `edgeHandleDrag`, `reorderDrag`) and shared render behaviors (`previewFullRender`, `transitionOnUpdated`, `enterExitLifecycle`) onto a base `Gesture` machine. `draft` renders immediately with sibling order frozen; `commit` / `cancel` / `updated` transition. Drill is an `updated` rendered as a viewport-tween transition. Focus and hover are independent interaction state. The chart-specific code is the composition and the value-mappings — the gesture machinery is shared across all charts.
+The icicle is the reference Hierarchical chart. It composes shared input behaviors (`wheelEdit`, `keyboardEdit`, `edgeHandleDrag`, `reorderDrag`) and shared render behaviors (`previewFullRender`, `transitionOnUpdated`, `enterExitLifecycle`) onto a base `Gesture` machine. `draft` renders immediately with sibling order frozen; `commit` / `cancel` / `updated` transition. Drill is an `updated` that re-roots the layout at the focus node, rendered as a `transition` (tiles slide to new rects, enter/exit fades handle structural change). Focus and hover are independent interaction state. The chart-specific code is the composition and the value-mappings — the gesture machinery is shared across all charts.
