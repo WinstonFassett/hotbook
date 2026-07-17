@@ -5,24 +5,30 @@
 // The gesture lifecycle is tied to the modifier key:
 // - ctrl/cmd held + wheel → gesture active (can pause wheeling indefinitely)
 // - ctrl/cmd released → commit
-// - Escape while held → cancel
+// - Escape while held → cancel (handled globally by Gesture)
 //
-// The target is resolved ONCE at gesture start (hovered or focused leaf)
-// and cached in store.activeTarget.
+// Alt flips the conservation mode (proportional-siblings ↔ proportional-neighbor).
+// The target is resolved ONCE at gesture start and cached in store.activeTarget.
 
 import type { Gesture, Behavior, GestureGetter } from "../gesture";
-
-export type WheelMapping = "additive" | "proportional";
+import type { ConservationMode } from "./keyboard-edit";
 
 export interface WheelEditOptions {
   target: GestureGetter<string | null>;
   valueOf: GestureGetter<(id: string) => number>;
   writeValue: (id: string, value: number) => void;
   frozenOrder: GestureGetter<Map<string, string[]> | null>;
-  mapping?: GestureGetter<WheelMapping>;
+  conservationMode: GestureGetter<ConservationMode>;
+  siblings: GestureGetter<(id: string) => string[]>;
   stepFraction?: GestureGetter<number>;
   fineStepFraction?: GestureGetter<number>;
   minStep?: GestureGetter<number>;
+}
+
+function invertMode(mode: ConservationMode): ConservationMode {
+  if (mode === "proportional-siblings") return "proportional-neighbor";
+  if (mode === "proportional-neighbor") return "proportional-siblings";
+  return "additive";
 }
 
 export function wheelEdit(opts: WheelEditOptions): Behavior {
@@ -32,7 +38,6 @@ export function wheelEdit(opts: WheelEditOptions): Behavior {
 
     let active = false;
 
-    // Reset local state when the editor cancels (e.g. global Escape).
     const unsubCancel = gesture.editor.subscribe((t) => {
       if (t.type === "cancel") {
         active = false;
@@ -53,7 +58,6 @@ export function wheelEdit(opts: WheelEditOptions): Behavior {
 
       e.preventDefault();
 
-      // Snapshot before first write so cancel can revert to pre-gesture values.
       if (!active) {
         gesture.store.takeSnapshot?.();
       }
@@ -68,21 +72,54 @@ export function wheelEdit(opts: WheelEditOptions): Behavior {
       const direction = e.deltaY < 0 ? 1 : -1;
       const step = Math.max(minStep, Math.abs(currentValue * frac)) * direction;
       const newValue = Math.max(0, currentValue + step);
+      const delta = newValue - currentValue;
 
-      opts.writeValue(targetId, newValue);
+      // Apply with conservation mode (alt flips).
+      const defaultMode = opts.conservationMode(gesture);
+      const mode = e.altKey ? invertMode(defaultMode) : defaultMode;
+      const siblingsFn = opts.siblings(gesture);
+      const siblings = siblingsFn(targetId);
+      const idx = siblings.indexOf(targetId);
+
+      let secondaryNodeId: string | undefined;
+      let secondaryValue: number | undefined;
+
+      if (mode === "proportional-neighbor" && siblings.length > 1) {
+        const neighborIdx = idx + 1 < siblings.length ? idx + 1 : (idx - 1 >= 0 ? idx - 1 : -1);
+        const neighborId = neighborIdx >= 0 ? siblings[neighborIdx] : null;
+        if (neighborId) {
+          const neighborCur = valueFn(neighborId);
+          const newNeighbor = Math.max(0, neighborCur - delta);
+          opts.writeValue(neighborId, newNeighbor);
+          secondaryNodeId = neighborId;
+          secondaryValue = newNeighbor;
+        }
+        opts.writeValue(targetId, newValue);
+      } else if (mode === "proportional-siblings" && siblings.length > 1) {
+        const others = siblings.filter((s) => s !== targetId);
+        const otherTotal = others.reduce((sum, s) => sum + valueFn(s), 0);
+        if (otherTotal > 0) {
+          for (const s of others) {
+            const sCur = valueFn(s);
+            const share = (sCur / otherTotal) * delta;
+            opts.writeValue(s, Math.max(0, sCur - share));
+          }
+        }
+        opts.writeValue(targetId, newValue);
+      } else {
+        opts.writeValue(targetId, newValue);
+      }
 
       const frozenOrder = opts.frozenOrder(gesture);
 
       if (!active) {
         active = true;
         host.classList.add("gesture-active");
-        // Snapshot before first write so cancel can revert to pre-gesture values.
-        if (!gesture.store.snapshot) {
-          gesture.store.snapshot = takeSnapshot(gesture);
-        }
         gesture.draft({
           nodeId: targetId,
           value: newValue,
+          secondaryNodeId,
+          secondaryValue,
           source: "wheel",
           intent: "edit",
           frozenOrder: frozenOrder ?? undefined,
@@ -91,6 +128,8 @@ export function wheelEdit(opts: WheelEditOptions): Behavior {
         gesture.updateDraft({
           nodeId: targetId,
           value: newValue,
+          secondaryNodeId,
+          secondaryValue,
           source: "wheel",
           intent: "edit",
           frozenOrder: frozenOrder ?? undefined,
@@ -108,8 +147,6 @@ export function wheelEdit(opts: WheelEditOptions): Behavior {
       }
     };
 
-    // Wheel starts on the host; modifier release (commit) is on window
-    // so the gesture ends even if focus moved off the chart.
     host.addEventListener("wheel", onWheel, { passive: false });
     window.addEventListener("keyup", onKeyUp);
 

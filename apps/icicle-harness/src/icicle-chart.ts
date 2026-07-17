@@ -235,6 +235,15 @@ export class IcicleChart extends HTMLElement implements GestureContext {
           if (node) node.value.value = value;
         },
         frozenOrder: () => this._frozenOrder.value,
+        conservationMode: (g) =>
+          (g.store.config.value?.conservationMode as ConservationMode) ?? "additive",
+        siblings: (g) => (id: string) => {
+          const root = g.store.tree.value;
+          if (!root) return [];
+          const node = findNode(root, id);
+          if (!node || !node.parent) return [];
+          return node.parent.children.map((c) => c.id);
+        },
       }),
       keyboardEdit({
         target: (g) => g.store.focus.value,
@@ -340,8 +349,6 @@ export class IcicleChart extends HTMLElement implements GestureContext {
 
   updateGesture(edge: Edge, point: { x: number; y: number }) {
     const g = this._gesture!;
-    // Ignore drag updates after cancel — the draggable is still active
-    // until pointerup, but the editor is Idle.
     if (g.state !== "Drafting") return;
     const root = this._treeRoot.value!;
     const layout = this._layout!.value;
@@ -355,14 +362,35 @@ export class IcicleChart extends HTMLElement implements GestureContext {
       this._configCell.value!.orientation,
     );
 
-    left.value.value = newLeft;
-    right.value.value = newRight;
+    // Alt flips to proportional-siblings: all siblings absorb, not just the pair.
+    if (g.store.altHeld && left.parent) {
+      const delta = newLeft - left.value.value;
+      const siblings = left.parent.children.filter((c) => c.id !== edge.leftId && c.id !== edge.rightId);
+      const otherTotal = siblings.reduce((sum, s) => sum + s.value.value, 0);
+      if (otherTotal > 0 && siblings.length > 0) {
+        // Restore from snapshot, then distribute
+        if (g.store.snapshot) restoreValues(root, g.store.snapshot);
+        left.value.value = newLeft;
+        right.value.value = newRight;
+        const pairDelta = newLeft - (g.store.snapshot?.get(edge.leftId) ?? left.value.value);
+        for (const s of siblings) {
+          const share = (s.value.value / otherTotal) * (-pairDelta);
+          s.value.value = Math.max(0, s.value.value + share);
+        }
+      } else {
+        left.value.value = newLeft;
+        right.value.value = newRight;
+      }
+    } else {
+      left.value.value = newLeft;
+      right.value.value = newRight;
+    }
 
     this._dataView!.updateDraft({
       nodeId: edge.leftId,
-      value: newLeft,
+      value: left.value.value,
       secondaryNodeId: edge.rightId,
-      secondaryValue: newRight,
+      secondaryValue: right.value.value,
       source: "divider-handle",
       intent: "edit",
       frozenOrder: g.store.frozenOrder ?? undefined,

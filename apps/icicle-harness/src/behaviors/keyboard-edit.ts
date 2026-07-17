@@ -71,10 +71,12 @@ export function keyboardEdit(opts: KeyboardEditOptions): Behavior {
       const valueFn = opts.valueOf(gesture);
 
       if (mode === "proportional-neighbor") {
-        // ArrowRight/Up = increase = take from next sibling
-        // ArrowLeft/Down = decrease = give to previous sibling
-        const neighborIdx = delta > 0 ? idx + 1 : idx - 1;
-        const neighborId = siblings[neighborIdx];
+        // Always pair with the NEXT sibling (like an edge handle).
+        // ArrowRight/Up = increase self, take from next.
+        // ArrowLeft/Down = decrease self, give to next.
+        // If no next sibling, try previous; if alone, fall through to additive.
+        const neighborIdx = idx + 1 < siblings.length ? idx + 1 : (idx - 1 >= 0 ? idx - 1 : -1);
+        const neighborId = neighborIdx >= 0 ? siblings[neighborIdx] : null;
 
         if (neighborId) {
           const cur = valueFn(id);

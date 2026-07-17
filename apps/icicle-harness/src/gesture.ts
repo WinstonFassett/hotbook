@@ -43,6 +43,8 @@ export interface GestureStore {
   heldKeys: Set<string>;
   keyGestureActive: boolean;
   keySnapshot: Map<string, number> | null;
+  /** Whether Alt/Option is currently held (live modifier state for behaviors). */
+  altHeld: boolean;
 
   extra: Map<string, unknown>;
 
@@ -76,18 +78,22 @@ export class Gesture {
       heldKeys: new Set(),
       keyGestureActive: false,
       keySnapshot: null,
+      altHeld: false,
       extra: new Map(),
       takeSnapshot: undefined,
     };
 
     // Global Escape → cancel. One listener per Gesture. Behaviors don't
     // need to know about Escape — they just stop when the Editor goes Idle.
+    // Also tracks Alt/Option state live for behaviors that flip on it.
     this._escHandler = (e: KeyboardEvent) => {
       if (e.key === "Escape" && this.state === "Drafting") {
         this.cancel();
       }
+      this.store.altHeld = e.altKey;
     };
     document.addEventListener("keydown", this._escHandler);
+    document.addEventListener("keyup", this._escHandler);
   }
 
   get state(): "Idle" | "Drafting" {
