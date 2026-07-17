@@ -3,9 +3,9 @@
 
 import type { ChartConfig, DataNode, DraftEvent, LayoutRect, RenderNode } from "./types";
 import {
+  Anchor,
   cell,
   derive,
-  effect,
   forEach,
   group,
   label,
@@ -13,6 +13,7 @@ import {
   readNow,
   rect,
   total,
+  Vec,
   type Cell,
   type Num,
   type Read,
@@ -297,47 +298,23 @@ export function makeTile(
     });
   }
 
-  // Label: positioned with padding inside the rounded rect, clipped to the
-  // tile's inner bounds so it never overflows the rounded corners or crosses
-  // the divider. Uses a real SVG <clipPath> (CSS overflow:hidden doesn't work
-  // on SVG <g>). The clip rect matches the tile's inner rect (rw × rh) — the
-  // label is offset by LABEL_PAD, and the clip prevents text from extending
-  // past the tile edge.
-  const LABEL_PAD = 4;
-  const text = label(tile.at(0, 0)!, node.label, {
-    align: { x: 0, y: 0 },
-    fill: "#fff",
-    size: 10,
+  // Label: centered in the tile, hidden when the tile is too small to show it.
+  // Matches the reference icicle's approach (Anchor.Center, size-gated).
+  // No clipPath needed — the label is centered and gated on size, so it never
+  // overflows. The centering gives natural breathing room on all sides.
+  const labelText = derive(() => {
+    const w0 = rw.value, h0 = rh.value;
+    if (w0 <= 28 || h0 <= 16) return "";
+    return node.label;
   });
-  text.el.style.pointerEvents = "none";
-  // Offset the label by LABEL_PAD so it sits inside the rounded corner.
-  text.el.setAttribute("transform", `translate(${LABEL_PAD}, ${LABEL_PAD})`);
+  const lbl = label(
+    Vec.derive(() => ({ x: rx.value + rw.value / 2, y: ry.value + rh.value / 2 })),
+    labelText,
+    { size: 10, align: Anchor.Center, fill: "#fff" },
+  );
+  lbl.el.style.pointerEvents = "none";
 
-  // Create a clipPath with a reactive rect matching the tile's inner area.
-  // The clip rect is in the tile's local coordinate space — it spans the full
-  // inner rect (rw × rh), so text is visible up to the tile edge but no
-  // further. The label's LABEL_PAD offset gives the inner breathing room.
-  const clipId = `clip-${node.id}`;
-  const clipPath = document.createElementNS("http://www.w3.org/2000/svg", "clipPath");
-  clipPath.setAttribute("id", clipId);
-  const clipRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-  clipPath.appendChild(clipRect);
-  const clipDispose = effect(() => {
-    // The clip rect must be in the SVG root coordinate space (same space as
-    // the text element's x/y). The text is at tile.at(0,0) = (rx, ry) in root
-    // space, so the clip rect must be positioned at the tile's actual position,
-    // not at (0,0). With clipPathUnits="userSpaceOnUse" (default), the clip
-    // coordinates are in the parent's coordinate system = SVG root space.
-    clipRect.setAttribute("x", String(rx.value));
-    clipRect.setAttribute("y", String(ry.value));
-    clipRect.setAttribute("width", String(Math.max(0, rw.value)));
-    clipRect.setAttribute("height", String(Math.max(0, rh.value)));
-  });
-  text.el.setAttribute("clip-path", `url(#${clipId})`);
-
-  const g = group({}, tile, text);
-  g.el.appendChild(clipPath);
-  (g as any).track?.(clipDispose);
+  const g = group({}, tile, lbl);
 
   // Enter/exit fade on the wrapping group (fades rect + label together).
   // `withExitDelay` in the chart keeps the group mounted for EXIT_MS after the
