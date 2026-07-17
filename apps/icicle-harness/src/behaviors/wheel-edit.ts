@@ -12,6 +12,7 @@
 
 import type { Gesture, Behavior, GestureGetter } from "../gesture";
 import type { ConservationMode } from "./keyboard-edit";
+import { applyConservedDelta, effectiveMode, type ConservationContext } from "./conservation";
 
 export interface WheelEditOptions {
   target: GestureGetter<string | null>;
@@ -23,12 +24,6 @@ export interface WheelEditOptions {
   stepFraction?: GestureGetter<number>;
   fineStepFraction?: GestureGetter<number>;
   minStep?: GestureGetter<number>;
-}
-
-function invertMode(mode: ConservationMode): ConservationMode {
-  if (mode === "proportional-siblings") return "proportional-neighbor";
-  if (mode === "proportional-neighbor") return "proportional-siblings";
-  return "additive";
 }
 
 export function wheelEdit(opts: WheelEditOptions): Behavior {
@@ -71,44 +66,18 @@ export function wheelEdit(opts: WheelEditOptions): Behavior {
       const frac = e.shiftKey ? fineFrac : stepFrac;
       const direction = e.deltaY < 0 ? 1 : -1;
       const step = Math.max(minStep, Math.abs(currentValue * frac)) * direction;
-      const newValue = Math.max(0, currentValue + step);
-      const delta = newValue - currentValue;
+      const delta = step; // applyConservedDelta handles the clamping
 
       // Apply with conservation mode (alt flips).
-      const defaultMode = opts.conservationMode(gesture);
-      const mode = e.altKey ? invertMode(defaultMode) : defaultMode;
-      const siblingsFn = opts.siblings(gesture);
-      const siblings = siblingsFn(targetId);
-      const idx = siblings.indexOf(targetId);
-
-      let secondaryNodeId: string | undefined;
-      let secondaryValue: number | undefined;
-
-      if (mode === "proportional-neighbor" && siblings.length > 1) {
-        const neighborIdx = idx + 1 < siblings.length ? idx + 1 : (idx - 1 >= 0 ? idx - 1 : -1);
-        const neighborId = neighborIdx >= 0 ? siblings[neighborIdx] : null;
-        if (neighborId) {
-          const neighborCur = valueFn(neighborId);
-          const newNeighbor = Math.max(0, neighborCur - delta);
-          opts.writeValue(neighborId, newNeighbor);
-          secondaryNodeId = neighborId;
-          secondaryValue = newNeighbor;
-        }
-        opts.writeValue(targetId, newValue);
-      } else if (mode === "proportional-siblings" && siblings.length > 1) {
-        const others = siblings.filter((s) => s !== targetId);
-        const otherTotal = others.reduce((sum, s) => sum + valueFn(s), 0);
-        if (otherTotal > 0) {
-          for (const s of others) {
-            const sCur = valueFn(s);
-            const share = (sCur / otherTotal) * delta;
-            opts.writeValue(s, Math.max(0, sCur - share));
-          }
-        }
-        opts.writeValue(targetId, newValue);
-      } else {
-        opts.writeValue(targetId, newValue);
-      }
+      const mode = effectiveMode(opts.conservationMode(gesture), e.altKey);
+      const ctx: ConservationContext = {
+        valueOf: valueFn,
+        writeValue: opts.writeValue,
+        siblings: opts.siblings(gesture),
+        snapshot: gesture.store.snapshot,
+      };
+      const result = applyConservedDelta(ctx, targetId, delta, mode);
+      const newValue = valueFn(targetId);
 
       const frozenOrder = opts.frozenOrder(gesture);
 
@@ -118,8 +87,8 @@ export function wheelEdit(opts: WheelEditOptions): Behavior {
         gesture.draft({
           nodeId: targetId,
           value: newValue,
-          secondaryNodeId,
-          secondaryValue,
+          secondaryNodeId: result.secondaryId,
+          secondaryValue: result.secondaryValue,
           source: "wheel",
           intent: "edit",
           frozenOrder: frozenOrder ?? undefined,
@@ -128,8 +97,8 @@ export function wheelEdit(opts: WheelEditOptions): Behavior {
         gesture.updateDraft({
           nodeId: targetId,
           value: newValue,
-          secondaryNodeId,
-          secondaryValue,
+          secondaryNodeId: result.secondaryId,
+          secondaryValue: result.secondaryValue,
           source: "wheel",
           intent: "edit",
           frozenOrder: frozenOrder ?? undefined,

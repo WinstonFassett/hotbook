@@ -8,17 +8,11 @@
 // keyup of the last held arrow commits.
 
 import type { Gesture, Behavior, GestureGetter } from "../gesture";
+import { effectiveMode } from "./conservation";
 
 export type ConservationMode = "additive" | "proportional-neighbor" | "proportional-siblings";
 
 const ARROW_KEYS = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"];
-
-/** Flip to the inverse conservation mode. */
-function invertMode(mode: ConservationMode): ConservationMode {
-  if (mode === "proportional-siblings") return "proportional-neighbor";
-  if (mode === "proportional-neighbor") return "proportional-siblings";
-  return "additive";
-}
 
 export interface KeyboardEditOptions {
   /** Getter for the focused node id. */
@@ -74,8 +68,7 @@ export function keyboardEdit(opts: KeyboardEditOptions): Behavior {
     };
 
     const applyDelta = (id: string, delta: number, altMode: boolean) => {
-      const defaultMode = opts.conservationMode(gesture);
-      const mode = altMode ? invertMode(defaultMode) : defaultMode;
+      const mode = effectiveMode(opts.conservationMode(gesture), altMode);
       const valueFn = opts.valueOf(gesture);
 
       if (mode === "proportional-neighbor") {

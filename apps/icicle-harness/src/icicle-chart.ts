@@ -1,8 +1,8 @@
 // icicle-chart.ts — custom element rendering a hierarchical icicle using bireactive shapes.
 // Host-sized SVG (no fixed viewBox), gesture-driven editing via the Gesture/Editor model.
 // Shared input behaviors (wheelEdit, keyboardEdit) composed via setup().
-// Chart state (config, focus, hover, tree) stored as bireactive cells — living, subscribable,
-// and participating in the reactive graph so derive()s re-run automatically.
+// Edge handle drag via attachEdgeHandleDrag + GestureContext.
+// Chart state (config, focus, hover, tree) stored as bireactive cells.
 
 import { cell, derive, effect, forEach, group, type Cell } from "bireactive";
 import type { ChartConfig, LayoutRect, RenderNode } from "./types";
@@ -24,10 +24,16 @@ import {
   type ChartNode,
   type Edge,
 } from "./hierarchy";
-import { attachEdgeHandleDrag, computeReapportion, type GestureContext } from "./gestures";
+import {
+  attachEdgeHandleDrag,
+  computeReapportion,
+  computeGroupReapportion,
+  type GestureContext,
+} from "./gestures";
 import { useHostSize } from "./host-size";
 import { wheelEdit } from "./behaviors/wheel-edit";
 import { keyboardEdit, type ConservationMode } from "./behaviors/keyboard-edit";
+import { applyConservedDelta, effectiveMode, type ConservationContext } from "./behaviors/conservation";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const FALLBACK_W = 720;
@@ -40,8 +46,6 @@ export class IcicleChart extends HTMLElement implements GestureContext {
   private _configCell = cell<ChartConfig | null>(null);
   private _treeRoot = cell<ChartNode | null>(null);
   private _frozenOrder = cell<Map<string, string[]> | null>(null);
-
-  // Selection/focus/hover as bireactive cells — shared with the gesture store.
   private _focusCell = cell<string | null>(null);
   private _hoverCell = cell<string | null>(null);
 
@@ -58,56 +62,60 @@ export class IcicleChart extends HTMLElement implements GestureContext {
   private _buildDisposers: (() => void)[] = [];
   private _behaviorDispose: (() => void) | null = null;
 
-  set kernel(k: Kernel) {
-    this._kernelCell.value = k;
+  // GestureContext fields
+  get config() { return this._configCell.value!; }
+  get conservationMode(): ConservationMode {
+    return (this._configCell.value?.conservationMode as ConservationMode) ?? "additive";
   }
+  altHeld() { return this._gesture?.store.altHeld ?? false; }
+  get snapshot() { return this._gesture?.store.snapshot ?? null; }
+  treeRoot() { return this._treeRoot.value; }
+  layout() { return this._layout!.value; }
+  get pairTotal() { return this._gesture?.store.pairTotal ?? 0; }
+  setPairTotal(n: number) { if (this._gesture) this._gesture.store.pairTotal = n; }
 
+  set kernel(k: Kernel) { this._kernelCell.value = k; }
   set config(c: ChartConfig) {
     this._configCell.value = { ...c };
     if (this._gesture) this._gesture.store.config.value = { ...c };
   }
+  get dataView() { return this._dataView; }
+  get gesture() { return this._gesture; }
 
-  get dataView() {
-    return this._dataView;
-  }
+  setFocus(id: string | null) { this._focusCell.value = id; }
+  setHover(id: string | null) { this._hoverCell.value = id; }
+  get focusedId() { return this._focusCell.value; }
+  get hoveredId() { return this._hoverCell.value; }
+  get focusCell() { return this._focusCell; }
+  get hoverCell() { return this._hoverCell; }
 
-  get gesture() {
-    return this._gesture;
-  }
-
-  get config() {
-    return this._configCell.value;
-  }
-
-  // Selection = focus. Click selects. Tab navigates.
-  setFocus(id: string | null) {
-    this._focusCell.value = id;
-  }
-
-  setHover(id: string | null) {
-    this._hoverCell.value = id;
-  }
-
-  get focusedId() {
-    return this._focusCell.value;
-  }
-
-  get hoveredId() {
-    return this._hoverCell.value;
-  }
-
-  // Expose cells for makeTile's derive()s to read reactively.
-  get focusCell() {
-    return this._focusCell;
-  }
-
-  get hoverCell() {
-    return this._hoverCell;
-  }
+  // GestureContext value accessors
+  valueOf = (id: string) => {
+    const root = this._treeRoot.value;
+    if (!root) return 0;
+    const node = findNode(root, id);
+    return node ? node.value.value : 0;
+  };
+  writeValue = (id: string, value: number) => {
+    const root = this._treeRoot.value;
+    if (!root) return;
+    const node = findNode(root, id);
+    if (node) node.value.value = value;
+  };
+  siblings = (id: string) => {
+    const root = this._treeRoot.value;
+    if (!root) return [];
+    const node = findNode(root, id);
+    if (!node || !node.parent) return [];
+    return node.parent.children.map((c) => c.id);
+  };
+  restore = () => {
+    const root = this._treeRoot.value;
+    if (root && this._gesture?.store.snapshot) restoreValues(root, this._gesture.store.snapshot);
+  };
 
   connectedCallback() {
     if (this._svg) return;
-
     this.style.display = "block";
     this.style.width = "100%";
     this.style.height = "100%";
@@ -155,18 +163,15 @@ export class IcicleChart extends HTMLElement implements GestureContext {
 
     this._gesture = new Gesture(undefined, config);
     this._gesture.store.host = this;
-    // Share the chart's bireactive cells with the gesture store.
     this._gesture.store.focus = this._focusCell;
     this._gesture.store.hover = this._hoverCell;
     this._gesture.store.tree = this._treeRoot;
-    // Provide snapshot function so behaviors can snapshot before first write.
     this._gesture.store.takeSnapshot = () => {
       const root = this._treeRoot.value;
       if (root && !this._gesture!.store.snapshot) {
         this._gesture!.store.snapshot = snapshotValues(root);
       }
     };
-    // config is already seeded in the Gesture constructor; keep it in sync.
 
     this._dataView = new DataView(kernel, config, this._gesture.editor);
     this._dataView.subscribe((e) => this._onEvent(e));
@@ -191,10 +196,7 @@ export class IcicleChart extends HTMLElement implements GestureContext {
     });
 
     const windowCell = this._window;
-    this._edges = derive(() => {
-      const win = windowCell!.value;
-      return buildEdges(win);
-    });
+    this._edges = derive(() => buildEdges(windowCell!.value));
 
     const tilesLayer = group();
     const edgesLayer = group();
@@ -222,52 +224,18 @@ export class IcicleChart extends HTMLElement implements GestureContext {
     this._behaviorDispose = setup(this._gesture)(
       wheelEdit({
         target: (g) => g.store.hover.value ?? g.store.focus.value,
-        valueOf: (g) => (id: string) => {
-          const root = g.store.tree.value;
-          if (!root) return 0;
-          const node = findNode(root, id);
-          return node ? node.value.value : 0;
-        },
-        writeValue: (id, value) => {
-          const root = this._treeRoot.value;
-          if (!root) return;
-          const node = findNode(root, id);
-          if (node) node.value.value = value;
-        },
+        valueOf: (g) => this.valueOf,
+        writeValue: this.writeValue,
         frozenOrder: () => this._frozenOrder.value,
-        conservationMode: (g) =>
-          (g.store.config.value?.conservationMode as ConservationMode) ?? "additive",
-        siblings: (g) => (id: string) => {
-          const root = g.store.tree.value;
-          if (!root) return [];
-          const node = findNode(root, id);
-          if (!node || !node.parent) return [];
-          return node.parent.children.map((c) => c.id);
-        },
+        conservationMode: (g) => this.conservationMode,
+        siblings: (g) => this.siblings,
       }),
       keyboardEdit({
         target: (g) => g.store.focus.value,
-        valueOf: (g) => (id: string) => {
-          const root = g.store.tree.value;
-          if (!root) return 0;
-          const node = findNode(root, id);
-          return node ? node.value.value : 0;
-        },
-        writeValue: (id, value) => {
-          const root = this._treeRoot.value;
-          if (!root) return;
-          const node = findNode(root, id);
-          if (node) node.value.value = value;
-        },
-        conservationMode: (g) =>
-          (g.store.config.value?.conservationMode as ConservationMode) ?? "additive",
-        siblings: (g) => (id: string) => {
-          const root = g.store.tree.value;
-          if (!root) return [];
-          const node = findNode(root, id);
-          if (!node || !node.parent) return [];
-          return node.parent.children.map((c) => c.id);
-        },
+        valueOf: (g) => this.valueOf,
+        writeValue: this.writeValue,
+        conservationMode: (g) => this.conservationMode,
+        siblings: (g) => this.siblings,
         frozenOrder: () => this._frozenOrder.value,
       }),
     );
@@ -289,11 +257,9 @@ export class IcicleChart extends HTMLElement implements GestureContext {
 
     if (event.type === "draft") {
       if (event.isActive) {
-        // Active draft (from our own gesture) — snapshot on first draft if not yet taken.
         if (!g.store.snapshot) g.store.snapshot = snapshotValues(root);
         return;
       }
-      // Cross-tile draft from another chart — snapshot + apply.
       const draft = event.draft!;
       if (!g.store.snapshot) g.store.snapshot = snapshotValues(root);
       applyDraft(root, draft);
@@ -321,7 +287,7 @@ export class IcicleChart extends HTMLElement implements GestureContext {
     }
   }
 
-  // --- GestureContext implementation (edge handle drag) ---
+  // --- GestureContext: edge handle drag lifecycle ---
 
   startGesture(edge: Edge) {
     const root = this._treeRoot.value!;
@@ -332,7 +298,7 @@ export class IcicleChart extends HTMLElement implements GestureContext {
 
     const left = findNode(root, edge.leftId)!;
     const right = findNode(root, edge.rightId)!;
-    g.store.pairTotal = left.value.value + right.value.value;
+    this.setPairTotal(left.value.value + right.value.value);
 
     this.classList.add("gesture-active");
 
@@ -351,46 +317,46 @@ export class IcicleChart extends HTMLElement implements GestureContext {
     const g = this._gesture!;
     if (g.state !== "Drafting") return;
     const root = this._treeRoot.value!;
-    const layout = this._layout!.value;
+    const layout = this.layout();
+    const config = this.config;
     const left = findNode(root, edge.leftId)!;
     const right = findNode(root, edge.rightId)!;
-    const { left: newLeft, right: newRight } = computeReapportion(
-      edge,
-      layout,
-      g.store.pairTotal,
-      point,
-      this._configCell.value!.orientation,
-    );
 
-    // Alt flips to proportional-siblings: all siblings absorb, not just the pair.
-    if (g.store.altHeld && left.parent) {
-      const delta = newLeft - left.value.value;
-      const siblings = left.parent.children.filter((c) => c.id !== edge.leftId && c.id !== edge.rightId);
-      const otherTotal = siblings.reduce((sum, s) => sum + s.value.value, 0);
-      if (otherTotal > 0 && siblings.length > 0) {
-        // Restore from snapshot, then distribute
-        if (g.store.snapshot) restoreValues(root, g.store.snapshot);
-        left.value.value = newLeft;
-        right.value.value = newRight;
-        const pairDelta = newLeft - (g.store.snapshot?.get(edge.leftId) ?? left.value.value);
-        for (const s of siblings) {
-          const share = (s.value.value / otherTotal) * (-pairDelta);
-          s.value.value = Math.max(0, s.value.value + share);
-        }
-      } else {
-        left.value.value = newLeft;
-        right.value.value = newRight;
-      }
+    // Restore from snapshot so each frame computes from clean baseline.
+    this.restore();
+
+    const mode = effectiveMode(this.conservationMode, this.altHeld());
+
+    if (mode === "proportional-siblings" && left.parent) {
+      const siblings = left.parent.children;
+      const groupTotal = siblings.reduce((sum, c) =>
+        sum + (this.snapshot?.get(c.id) ?? c.value.value), 0);
+      const newLeftVal = computeGroupReapportion(
+        edge, layout, groupTotal, siblings, point, config.orientation,
+      );
+      const snapLeft = this.snapshot?.get(edge.leftId) ?? left.value.value;
+      const delta = newLeftVal - snapLeft;
+
+      const ctx: ConservationContext = {
+        valueOf: this.valueOf,
+        writeValue: this.writeValue,
+        siblings: this.siblings,
+        snapshot: this.snapshot,
+      };
+      applyConservedDelta(ctx, edge.leftId, delta, "proportional-siblings");
     } else {
-      left.value.value = newLeft;
-      right.value.value = newRight;
+      const { left: newLeft, right: newRight } = computeReapportion(
+        edge, layout, this.pairTotal, point, config.orientation,
+      );
+      this.writeValue(edge.leftId, newLeft);
+      this.writeValue(edge.rightId, newRight);
     }
 
     this._dataView!.updateDraft({
       nodeId: edge.leftId,
-      value: left.value.value,
+      value: this.valueOf(edge.leftId),
       secondaryNodeId: edge.rightId,
-      secondaryValue: right.value.value,
+      secondaryValue: this.valueOf(edge.rightId),
       source: "divider-handle",
       intent: "edit",
       frozenOrder: g.store.frozenOrder ?? undefined,
@@ -399,11 +365,9 @@ export class IcicleChart extends HTMLElement implements GestureContext {
 
   endGesture(_edge: Edge) {
     const g = this._gesture!;
-    // If the gesture was cancelled (Escape), don't commit — values were restored.
-    if (g.state !== "Drafting") {
-      this.classList.remove("gesture-active");
-      return;
-    }
+    if (g.state !== "Drafting") return;
+    this.setPairTotal(0);
+    g.store.activeEdge = null;
     this.classList.remove("gesture-active");
     this._dataView!.commit();
   }
