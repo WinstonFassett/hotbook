@@ -55,29 +55,32 @@ export function keyboardEdit(opts: KeyboardEditOptions): Behavior {
       if (t.type === "cancel") {
         keyGestureActive = false;
         keySnapshot = null;
+        lockedNeighborId = null;
         heldKeys.clear();
         host.classList.remove("gesture-active");
       }
     });
 
-    const applyDelta = (id: string, delta: number, altMode: boolean) => {
-      const defaultMode = opts.conservationMode(gesture);
-      // Alt flips to the inverse of the config default.
-      const mode = altMode ? invertMode(defaultMode) : defaultMode;
+    // Locked neighbor — resolved once at gesture start, reused for all keys.
+    let lockedNeighborId: string | null = null;
 
+    const resolveNeighbor = (id: string): string | null => {
       const siblingsFn = opts.siblings(gesture);
       const siblings = siblingsFn(id);
       const idx = siblings.indexOf(id);
+      // Prefer next sibling; fall back to previous.
+      const neighborIdx = idx + 1 < siblings.length ? idx + 1 : (idx - 1 >= 0 ? idx - 1 : -1);
+      return neighborIdx >= 0 ? siblings[neighborIdx] : null;
+    };
+
+    const applyDelta = (id: string, delta: number, altMode: boolean) => {
+      const defaultMode = opts.conservationMode(gesture);
+      const mode = altMode ? invertMode(defaultMode) : defaultMode;
       const valueFn = opts.valueOf(gesture);
 
       if (mode === "proportional-neighbor") {
-        // Always pair with the NEXT sibling (like an edge handle).
-        // ArrowRight/Up = increase self, take from next.
-        // ArrowLeft/Down = decrease self, give to next.
-        // If no next sibling, try previous; if alone, fall through to additive.
-        const neighborIdx = idx + 1 < siblings.length ? idx + 1 : (idx - 1 >= 0 ? idx - 1 : -1);
-        const neighborId = neighborIdx >= 0 ? siblings[neighborIdx] : null;
-
+        // Use the locked neighbor (resolved at gesture start).
+        const neighborId = lockedNeighborId;
         if (neighborId) {
           const cur = valueFn(id);
           const neighborCur = valueFn(neighborId);
@@ -92,7 +95,8 @@ export function keyboardEdit(opts: KeyboardEditOptions): Behavior {
       }
 
       if (mode === "proportional-siblings") {
-        // Delta is absorbed proportionally by all other siblings.
+        const siblingsFn = opts.siblings(gesture);
+        const siblings = siblingsFn(id);
         const cur = valueFn(id);
         const newSelf = Math.max(0, cur + delta);
         const actualDelta = newSelf - cur;
@@ -111,7 +115,7 @@ export function keyboardEdit(opts: KeyboardEditOptions): Behavior {
         return null;
       }
 
-      // Additive: just change the value, no conservation.
+      // Additive
       const cur = valueFn(id);
       const newVal = Math.max(0, cur + delta);
       opts.writeValue(id, newVal);
@@ -139,6 +143,8 @@ export function keyboardEdit(opts: KeyboardEditOptions): Behavior {
         keyGestureActive = true;
         // Snapshot before first write so cancel can revert.
         gesture.store.takeSnapshot?.();
+        // Lock the neighbor for the entire gesture (like an edge handle).
+        lockedNeighborId = resolveNeighbor(targetId);
         const siblingsFn = opts.siblings(gesture);
         const siblings = siblingsFn(targetId);
         const valueFn = opts.valueOf(gesture);
@@ -193,6 +199,7 @@ export function keyboardEdit(opts: KeyboardEditOptions): Behavior {
       if (heldKeys.size === 0) {
         keyGestureActive = false;
         keySnapshot = null;
+        lockedNeighborId = null;
         host.classList.remove("gesture-active");
         gesture.commit();
       }
