@@ -1,13 +1,21 @@
 // behaviors/tile-body-drag.ts — drag-to-resize a tile by dragging its body.
-// The number-scrubber convention: drag up or right = grow, drag down or left =
-// shrink. Both axes contribute (magnitude from total travel, sign by direction)
-// — the user is dragging a *number*, not a *boundary*, so orientation doesn't
-// enter it.
+//
+// The drag is proportional to the tile's pixel span along the sibling axis:
+// dragging the tile by its full width doubles its value, matching the visual
+// exactly. This is the same approach as the splitter (pairTotal / pairPixelSpan)
+// — applied to a single tile (startVal / tilePixelSpan).
+//
+// Travel is along the sibling axis only: right = grow for vertical orientation
+// (siblings along x), up = grow for horizontal orientation (siblings along y).
+// The visual feedback is along that axis, so proportionality requires matching
+// it. The number-scrubber convention (up/right = grow) is preserved per-axis.
 //
 // Value-mapping is governed by config.conservationMode (additive /
-// proportional-neighbor / proportional-siblings), same as keyboard edit. This
-// is the per-item gesture — the splitter (edge handle) is always two-sibling
-// reapportion and ignores conservationMode.
+// proportional-neighbor / proportional-siblings), same as keyboard edit. No
+// alt-flip — without a splitter there's no clear "neighbor" to flip to, so the
+// mode is a config choice, not a per-gesture toggle. This is the per-item
+// gesture — the splitter (edge handle) is always two-sibling reapportion and
+// ignores conservationMode.
 //
 // Click-vs-drag: a pointerdown that doesn't move past a 3px threshold is a
 // click (focus the tile), not a drag. This preserves the existing click-to-
@@ -20,13 +28,11 @@
 
 import type { Gesture, Behavior, GestureGetter } from "../gesture";
 import type { ConservationMode } from "./keyboard-edit";
-import { applyConservedDelta, effectiveMode, type ConservationContext } from "./conservation";
+import { applyConservedDelta, type ConservationContext } from "./conservation";
 import { captureOrderFromWindow } from "./preview-full-render";
 
 /** Click-vs-drag threshold in pixels. Below this, pointerup is a click. */
 const DRAG_THRESHOLD_PX = 3;
-/** Pixels of pointer travel per +1 unit of value. */
-const PX_PER_UNIT = 4;
 
 export interface TileBodyDragOptions {
   /** Getter for the hovered or focused node id (drag target). */
@@ -63,6 +69,8 @@ export function tileBodyDrag(opts: TileBodyDragOptions): Behavior {
     let startVal = 0;
     let moved = false;
     let targetId: string | null = null;
+    let valueScale = 0; // value per pixel along the sibling axis
+    let isHoriz = false;
 
     const unsubCancel = gesture.editor.subscribe((t) => {
       if (t.type === "cancel") {
@@ -70,6 +78,7 @@ export function tileBodyDrag(opts: TileBodyDragOptions): Behavior {
         moved = false;
         pointerId = -1;
         targetId = null;
+        valueScale = 0;
         gesture.store.activeTarget = null;
       }
     });
@@ -80,9 +89,10 @@ export function tileBodyDrag(opts: TileBodyDragOptions): Behavior {
 
       const dx = e.clientX - startX;
       const dy = startY - e.clientY; // up = positive
-      const travel = dx + dy; // up/right = grow, down/left = shrink
+      // Travel along the sibling axis only (right for vertical, up for horizontal).
+      const travel = isHoriz ? dy : dx;
 
-      if (!moved && Math.abs(dx) < DRAG_THRESHOLD_PX && Math.abs(dy) < DRAG_THRESHOLD_PX) {
+      if (!moved && Math.abs(travel) < DRAG_THRESHOLD_PX) {
         return; // still a potential click
       }
 
@@ -111,11 +121,12 @@ export function tileBodyDrag(opts: TileBodyDragOptions): Behavior {
       }
 
       // Restore from snapshot so each frame starts from clean baseline.
-      // The gesture store's restore function handles this.
-      gesture.store.takeSnapshot && restoreFromSnapshot(gesture);
+      restoreFromSnapshot(gesture);
 
-      const delta = travel / PX_PER_UNIT;
-      const mode = effectiveMode(opts.conservationMode(gesture), e.altKey);
+      // Proportional scaling: travel pixels × (startVal / tilePixelSpan) = value delta.
+      // Dragging the tile by its full span doubles its value — matches the visual.
+      const delta = travel * valueScale;
+      const mode = opts.conservationMode(gesture);
       const ctx: ConservationContext = {
         valueOf: opts.valueOf(gesture),
         writeValue: opts.writeValue,
@@ -154,6 +165,7 @@ export function tileBodyDrag(opts: TileBodyDragOptions): Behavior {
       active = false;
       moved = false;
       targetId = null;
+      valueScale = 0;
       gesture.store.activeTarget = null;
     };
 
@@ -170,10 +182,24 @@ export function tileBodyDrag(opts: TileBodyDragOptions): Behavior {
       const sibs = opts.siblings(gesture)(id);
       if (sibs.length === 0) return; // root has no siblings → not editable
 
+      // Read orientation from config to determine the sibling axis.
+      const config = gesture.store.config.value;
+      isHoriz = config.orientation === "horizontal";
+
+      // Capture the target tile's pixel span along the sibling axis from the DOM.
+      // This makes the drag proportional: dragging by the tile's full span doubles
+      // its value, matching the visual exactly (same approach as the splitter).
+      const tileG = host.querySelector(`g[data-id="${id}"]`);
+      const tileRect = tileG?.querySelector("rect")?.getBoundingClientRect();
+      if (!tileRect) return;
+      const pixelSpan = isHoriz ? tileRect.height : tileRect.width;
+      if (pixelSpan <= 0) return;
+
       pointerId = e.pointerId;
       startX = e.clientX;
       startY = e.clientY;
       startVal = opts.valueOf(gesture)(id);
+      valueScale = startVal / pixelSpan;
       moved = false;
       active = true;
       targetId = id;
