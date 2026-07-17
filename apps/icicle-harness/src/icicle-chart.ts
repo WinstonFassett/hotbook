@@ -298,6 +298,10 @@ export class IcicleChart extends HTMLElement implements GestureContext {
     g.store.activeEdge = edge;
     g.store.snapshot = snapshotValues(root);
 
+    // Debug: log the window order at gesture start
+    const winLevel1 = this._window?.value.filter(n => n.depth === 1).map(n => n.id) ?? [];
+    console.log("[startGesture] edge:", edge.id, "window level1:", winLevel1, "frozenOrder:", !!g.store.frozenOrder);
+
     const left = findNode(root, edge.leftId)!;
     const right = findNode(root, edge.rightId)!;
     this.setPairTotal(left.value.value + right.value.value);
