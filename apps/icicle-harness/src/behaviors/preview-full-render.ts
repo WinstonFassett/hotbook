@@ -23,7 +23,7 @@
 
 import type { Cell, Writable } from "bireactive";
 import type { Gesture, Behavior } from "../gesture";
-import type { ChartNode } from "../hierarchy";
+import type { ChartNode, RenderNode } from "../hierarchy";
 
 export interface PreviewFullRenderOptions {
   /** Predicate read once at gesture start. When true, capture and freeze
@@ -37,7 +37,11 @@ export interface PreviewFullRenderOptions {
   captureOrder: () => Map<string, string[]>;
 }
 
-/** Capture sibling order from a reactive tree root. */
+/** Capture sibling order from a reactive tree root. NOTE: this captures
+ *  the tree's children array order, which is the DATASET order (index
+ *  order), NOT the rendered/sorted order. Use `captureOrderFromWindow`
+ *  when you need the currently-displayed order (e.g. for freezing sort
+ *  during gestures). */
 export function captureOrderFromTree(root: ChartNode | null): Map<string, string[]> {
   const order = new Map<string, string[]>();
   if (!root) return order;
@@ -48,6 +52,21 @@ export function captureOrderFromTree(root: ChartNode | null): Map<string, string
     }
   }
   walk(root);
+  return order;
+}
+
+/** Capture the currently-rendered sibling order from a window (the output
+ *  of `buildWindow`). This respects the current sort config and any
+ *  existing frozenOrder, so it captures what the user actually sees —
+ *  not the dataset's index order. */
+export function captureOrderFromWindow(window: RenderNode[] | null): Map<string, string[]> {
+  const order = new Map<string, string[]>();
+  if (!window) return order;
+  for (const rn of window) {
+    if (rn.children.length > 0) {
+      order.set(rn.id, rn.children.map((c) => c.id));
+    }
+  }
   return order;
 }
 

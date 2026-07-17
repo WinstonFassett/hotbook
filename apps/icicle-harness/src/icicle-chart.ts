@@ -31,7 +31,7 @@ import { wheelEdit } from "./behaviors/wheel-edit";
 import { keyboardEdit, type ConservationMode } from "./behaviors/keyboard-edit";
 import { applyConservedDelta, effectiveMode, type ConservationContext } from "./behaviors/conservation";
 import { transitionOnUpdated } from "./behaviors/transition-on-updated";
-import { previewFullRender, captureOrderFromTree } from "./behaviors/preview-full-render";
+import { previewFullRender, captureOrderFromWindow } from "./behaviors/preview-full-render";
 import { bindChart, rebuildTree } from "./chart-binding";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -268,7 +268,7 @@ export class IcicleChart extends HTMLElement implements GestureContext {
       previewFullRender({
         deferSort: () => this.config.sort !== "index",
         frozenOrder: this._frozenOrder,
-        captureOrder: () => captureOrderFromTree(this._treeRoot.value),
+        captureOrder: () => captureOrderFromWindow(this._window?.value ?? null),
       }),
       // Input behaviors.
       wheelEdit({
@@ -329,7 +329,7 @@ export class IcicleChart extends HTMLElement implements GestureContext {
     // first frame. Capturing here ensures the draft event carries the
     // frozenOrder so chart-binding applies it correctly on the first frame.
     if (this.config.sort !== "index" && !g.store.frozenOrder) {
-      const order = captureOrderFromTree(root);
+      const order = captureOrderFromWindow(this._window?.value ?? null);
       this._frozenOrder.value = order;
       g.store.frozenOrder = order;
     }
