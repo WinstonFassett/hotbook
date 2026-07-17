@@ -300,8 +300,9 @@ export function makeTile(
   // Label: positioned with padding inside the rounded rect, clipped to the
   // tile's inner bounds so it never overflows the rounded corners or crosses
   // the divider. Uses a real SVG <clipPath> (CSS overflow:hidden doesn't work
-  // on SVG <g>). The clip rect is reactively sized to the tile's inner area
-  // minus label padding on both sides.
+  // on SVG <g>). The clip rect matches the tile's inner rect (rw × rh) — the
+  // label is offset by LABEL_PAD, and the clip prevents text from extending
+  // past the tile edge.
   const LABEL_PAD = 4;
   const text = label(tile.at(0, 0)!, node.label, {
     align: { x: 0, y: 0 },
@@ -312,29 +313,25 @@ export function makeTile(
   // Offset the label by LABEL_PAD so it sits inside the rounded corner.
   text.el.setAttribute("transform", `translate(${LABEL_PAD}, ${LABEL_PAD})`);
 
-  // Create a clipPath with a reactive rect that matches the tile's inner area
-  // minus padding. The clip rect is in the tile's local coordinate space
-  // (before the label's translate offset), so it spans the full inner rect.
+  // Create a clipPath with a reactive rect matching the tile's inner area.
+  // The clip rect is in the tile's local coordinate space — it spans the full
+  // inner rect (rw × rh), so text is visible up to the tile edge but no
+  // further. The label's LABEL_PAD offset gives the inner breathing room.
   const clipId = `clip-${node.id}`;
   const clipPath = document.createElementNS("http://www.w3.org/2000/svg", "clipPath");
   clipPath.setAttribute("id", clipId);
   const clipRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
   clipPath.appendChild(clipRect);
-  // Reactively size the clip rect to the tile's inner area minus padding.
   const clipDispose = effect(() => {
-    clipRect.setAttribute("x", String(LABEL_PAD));
-    clipRect.setAttribute("y", String(LABEL_PAD));
-    clipRect.setAttribute("width", String(Math.max(0, rw.value - LABEL_PAD * 2)));
-    clipRect.setAttribute("height", String(Math.max(0, rh.value - LABEL_PAD * 2)));
+    clipRect.setAttribute("x", "0");
+    clipRect.setAttribute("y", "0");
+    clipRect.setAttribute("width", String(Math.max(0, rw.value)));
+    clipRect.setAttribute("height", String(Math.max(0, rh.value)));
   });
-  // Apply the clip to the label element.
   text.el.setAttribute("clip-path", `url(#${clipId})`);
 
   const g = group({}, tile, text);
-  // The clipPath must be a child of the group (or in <defs>) for the
-  // clip-path reference to resolve. Append it to the group's <g> element.
   g.el.appendChild(clipPath);
-  // Clean up the clip effect when the group is disposed.
   (g as any).track?.(clipDispose);
 
   // Enter/exit fade on the wrapping group (fades rect + label together).
