@@ -6,6 +6,7 @@ import {
   Anchor,
   cell,
   derive,
+  effect,
   forEach,
   group,
   label,
@@ -13,7 +14,6 @@ import {
   readNow,
   rect,
   total,
-  Vec,
   type Cell,
   type Num,
   type Read,
@@ -298,23 +298,40 @@ export function makeTile(
     });
   }
 
-  // Label: centered in the tile, hidden when the tile is too small to show it.
-  // Matches the reference icicle's approach (Anchor.Center, size-gated).
-  // No clipPath needed — the label is centered and gated on size, so it never
-  // overflows. The centering gives natural breathing room on all sides.
-  const labelText = derive(() => {
-    const w0 = rw.value, h0 = rh.value;
-    if (w0 <= 28 || h0 <= 16) return "";
-    return node.label;
-  });
+  // Label: upper-left of the tile with padding, clipped to tile bounds.
+  // The label is positioned at the tile's top-left corner (tile.at(0,0))
+  // and nudged by LABEL_PAD for breathing room. A clipPath prevents overflow
+  // past the tile edge — the clip rect is in root coordinate space (matching
+  // the text's coordinate space), positioned at the tile's actual (rx, ry).
+  const LABEL_PAD = 6;
   const lbl = label(
-    Vec.derive(() => ({ x: rx.value + rw.value / 2, y: ry.value + rh.value / 2 })),
-    labelText,
-    { size: 10, align: Anchor.Center, fill: "#fff" },
+    tile.at(0, 0)!,
+    node.label,
+    { size: 10, align: Anchor.TopLeft, fill: "#fff" },
   );
   lbl.el.style.pointerEvents = "none";
+  // Nudge the label inward by LABEL_PAD for breathing room.
+  lbl.el.setAttribute("transform", `translate(${LABEL_PAD}, ${LABEL_PAD})`);
+
+  // Clip the label to the tile's inner rect so it doesn't overflow the
+  // rounded corners or cross the divider. The clip rect is in root coordinate
+  // space (userSpaceOnUse), positioned at the tile's actual position.
+  const clipId = `clip-${node.id}`;
+  const clipPath = document.createElementNS("http://www.w3.org/2000/svg", "clipPath");
+  clipPath.setAttribute("id", clipId);
+  const clipRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+  clipPath.appendChild(clipRect);
+  const clipDispose = effect(() => {
+    clipRect.setAttribute("x", String(rx.value));
+    clipRect.setAttribute("y", String(ry.value));
+    clipRect.setAttribute("width", String(Math.max(0, rw.value)));
+    clipRect.setAttribute("height", String(Math.max(0, rh.value)));
+  });
+  lbl.el.setAttribute("clip-path", `url(#${clipId})`);
 
   const g = group({}, tile, lbl);
+  g.el.appendChild(clipPath);
+  (g as any).track?.(clipDispose);
 
   // Enter/exit fade on the wrapping group (fades rect + label together).
   // `withExitDelay` in the chart keeps the group mounted for EXIT_MS after the
