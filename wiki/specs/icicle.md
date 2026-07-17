@@ -16,16 +16,22 @@ Spec for the icicle `Chart`, written in the vocabulary of `UBIQUITOUS_LANGUAGE.m
 
 ## 2. What `DataView` query does it subscribe?
 
-The icicle subscribes a `DataView` keyed by canonical config. `datasetId` is one field (naming the `Dataset`, whose `dataShape` is `hierarchical`); the other fields are below. A livebound treetable (or any other hierarchical chart) on the same canonical config shares this `DataView`; a difference in any field — including `datasetId` — means they do not share.
+The icicle subscribes a `DataView` keyed by canonical config. Config dimensions split into two tiers:
 
-Config dimensions:
+**Query fields** — determine what the `DataView` returns. These are the canonical key: two charts share a `DataView` iff their query fields match. A change to a query field creates a new `DataView` (rebuild).
 
+- `datasetId` — names the `Dataset` (whose `dataShape` is `hierarchical`).
 - `measure` — which value binding drives tile spans.
-- `sort` — `index` (caller-supplied child order) or `value` (descending value). Drives sibling ordering within every parent.
 - `depth` — maximum number of levels rendered below the focus node. When unset, the full subtree is shown.
-- `orientation` — depth-axis assignment (see §1). Does not change the query result, only the geometry; it is still part of the canonical config key.
+
+**Render fields** — determine how the chart renders the query result. Applied by the chart, not the `DataView`. A change to a render field is an `updated` event on the same `DataView`: the chart re-derives layout on existing DOM and `transition`s (§5). Render fields are NOT part of the canonical key.
+
+- `sort` — `index` (caller-supplied child order) or `value` (descending value). Drives sibling ordering within every parent.
+- `orientation` — depth-axis assignment (see §1). Does not change the query result, only the geometry.
 - `conservationMode` — `'additive' | 'proportional-neighbor' | 'proportional-siblings'`, default `'additive'`. The default value-mapping for keyboard edits. Alt key overrides to `'proportional-neighbor'` regardless of this setting. Wheel is always additive and ignores this config.
 - `canReorder` — `boolean`, default `false`. Enables the reorder input behavior. Only meaningful when `sort === 'index'`.
+
+A livebound treetable (or any other hierarchical chart) shares this `DataView` iff their query fields match; a difference in any query field — including `datasetId` — means they do not share. Two charts with the same query fields but different render fields (e.g. one sorted by index, one by value) share the `DataView` but render differently.
 
 The query result is a hierarchy windowed by the **drill focus** plus `depth`:
 

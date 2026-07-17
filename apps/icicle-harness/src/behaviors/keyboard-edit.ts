@@ -37,8 +37,7 @@ export interface KeyboardEditOptions {
 
 export function keyboardEdit(opts: KeyboardEditOptions): Behavior {
   return (gesture: Gesture) => {
-    const host = gesture.store.host;
-    if (!host) return () => {};
+    if (!gesture.store.host) return () => {};
 
     const heldKeys = gesture.store.heldKeys;
     let keySnapshot: Map<string, number> | null = null;
@@ -51,7 +50,6 @@ export function keyboardEdit(opts: KeyboardEditOptions): Behavior {
         keySnapshot = null;
         lockedNeighborId = null;
         heldKeys.clear();
-        host.classList.remove("gesture-active");
       }
     });
 
@@ -142,7 +140,6 @@ export function keyboardEdit(opts: KeyboardEditOptions): Behavior {
         const siblings = siblingsFn(targetId);
         const valueFn = opts.valueOf(gesture);
         keySnapshot = new Map(siblings.map((id) => [id, valueFn(id)]));
-        host.classList.add("gesture-active");
 
         const frozenOrder = opts.frozenOrder(gesture);
         gesture.draft({
@@ -193,7 +190,6 @@ export function keyboardEdit(opts: KeyboardEditOptions): Behavior {
         keyGestureActive = false;
         keySnapshot = null;
         lockedNeighborId = null;
-        host.classList.remove("gesture-active");
         gesture.commit();
       }
     };

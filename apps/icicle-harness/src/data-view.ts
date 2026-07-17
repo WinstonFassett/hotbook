@@ -157,7 +157,11 @@ function defaultColor(depth: number): string {
 
 export class DataView {
   readonly kernel: Kernel;
-  readonly config: ChartConfig;
+  /** Mutable so the chart can update render fields (sort, orientation, etc.)
+   *  without rebuilding the DataView. Query fields (datasetId, measure, depth)
+   *  are fixed for the DataView's lifetime — a query-field change creates a
+   *  new DataView. */
+  config: ChartConfig;
   readonly editor: Editor;
   readonly key: string;
 

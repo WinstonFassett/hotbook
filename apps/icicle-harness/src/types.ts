@@ -19,8 +19,9 @@ export interface Dataset {
   root: DataNode;
 }
 
-/** Canonical config that keys a DataView. Two charts with the same
- *  canonical config share a DataView. */
+/** Canonical config. Query fields (datasetId, measure, depth) key the
+ *  DataView. Render fields (sort, orientation, conservationMode, canReorder)
+ *  are chart-applied and do not affect the DataView key. */
 export interface ChartConfig {
   datasetId: string;
   measure: string;

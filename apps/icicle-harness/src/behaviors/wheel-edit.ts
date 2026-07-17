@@ -37,7 +37,6 @@ export function wheelEdit(opts: WheelEditOptions): Behavior {
       if (t.type === "cancel") {
         active = false;
         gesture.store.activeTarget = null;
-        host.classList.remove("gesture-active");
       }
     });
 
@@ -83,7 +82,6 @@ export function wheelEdit(opts: WheelEditOptions): Behavior {
 
       if (!active) {
         active = true;
-        host.classList.add("gesture-active");
         gesture.draft({
           nodeId: targetId,
           value: newValue,
@@ -111,7 +109,6 @@ export function wheelEdit(opts: WheelEditOptions): Behavior {
       if ((e.key === "Control" || e.key === "Meta") && active) {
         active = false;
         gesture.store.activeTarget = null;
-        host.classList.remove("gesture-active");
         gesture.commit();
       }
     };

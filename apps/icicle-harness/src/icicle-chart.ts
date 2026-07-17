@@ -6,7 +6,7 @@
 
 import { cell, derive, effect, forEach, group, type Cell } from "bireactive";
 import type { ChartConfig, LayoutRect, RenderNode } from "./types";
-import { Kernel } from "./kernel";
+import { Kernel, configKey } from "./kernel";
 import { DataView } from "./data-view";
 import { Gesture, setup } from "./gesture";
 import {
@@ -30,6 +30,8 @@ import { useHostSize } from "./host-size";
 import { wheelEdit } from "./behaviors/wheel-edit";
 import { keyboardEdit, type ConservationMode } from "./behaviors/keyboard-edit";
 import { applyConservedDelta, effectiveMode, type ConservationContext } from "./behaviors/conservation";
+import { transitionOnUpdated } from "./behaviors/transition-on-updated";
+import { previewFullRender, captureOrderFromTree } from "./behaviors/preview-full-render";
 import { bindChart, rebuildTree } from "./chart-binding";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -41,6 +43,7 @@ export class IcicleChart extends HTMLElement implements GestureContext {
 
   private _kernelCell = cell<Kernel | null>(null);
   private _configCell = cell<ChartConfig | null>(null);
+  private _queryKeyCell = cell<string>("");
   private _treeRoot = cell<ChartNode | null>(null);
   private _frozenOrder = cell<Map<string, string[]> | null>(null);
   private _focusCell = cell<string | null>(null);
@@ -77,8 +80,21 @@ export class IcicleChart extends HTMLElement implements GestureContext {
 
   set kernel(k: Kernel) { this._kernelCell.value = k; }
   set config(c: ChartConfig) {
+    const prev = this._configCell.value;
+    const prevKey = prev ? configKey(prev) : "";
+    const nextKey = configKey(c);
     this._configCell.value = { ...c };
     if (this._gesture) this._gesture.store.config.value = { ...c };
+    // Query key change → rebuild data layer (new DataView). Render-field-only
+    // change → same DataView, derivers re-run on existing DOM → transition.
+    if (prevKey !== nextKey) {
+      this._queryKeyCell.value = nextKey;
+    } else if (this._dataView) {
+      // Render field change: update the DataView's config in place and fire
+      // an `updated` so the chart re-derives and transitions.
+      this._dataView.config = { ...c };
+      this._gesture?.editor.updated();
+    }
   }
   get dataView() { return this._dataView; }
   get gesture() { return this._gesture; }
@@ -134,11 +150,62 @@ export class IcicleChart extends HTMLElement implements GestureContext {
 
     this._hostSize = useHostSize(this, { width: FALLBACK_W, height: FALLBACK_H });
 
+    // Rendering layer — created once, persists across config changes.
+    // Derivers read config from _configCell, so render-field changes
+    // (sort, orientation, etc.) re-derive on existing DOM → transition.
+    const { w: Wc, h: Hc } = this._hostSize;
+
+    this._window = derive(() => {
+      const root = this._treeRoot.value;
+      const frozen = this._frozenOrder.value;
+      const config = this._configCell.value;
+      if (!root || !config) return [];
+      return buildWindow(root, config, frozen ?? undefined);
+    });
+
+    this._layout = derive(() => {
+      const root = this._treeRoot.value;
+      const frozen = this._frozenOrder.value;
+      const config = this._configCell.value;
+      if (!root || !config) return new Map<string, LayoutRect>();
+      return computeLayout(root, config, frozen ?? undefined, Wc.value, Hc.value);
+    });
+
+    const windowCell = this._window;
+    this._edges = derive(() => buildEdges(windowCell!.value));
+
+    const tilesLayer = group();
+    const edgesLayer = group();
+    this._rootShape.add(tilesLayer, edgesLayer);
+
+    const tilesResult = forEach(tilesLayer, this._window, (node) =>
+      makeTile(node, this._layout!, this),
+      { key: (node) => node.id },
+    );
+
+    const edgesResult = forEach(edgesLayer, this._edges, (edge) => {
+      const handle = makeHandle(edge, this._layout!, this._configCell);
+      const off = attachEdgeHandleDrag(handle, this);
+      handle.track(off);
+      return handle;
+    }, { key: (edge) => edge.id });
+
+    this._setupDisposers.push(() => {
+      tilesResult.dispose();
+      edgesResult.dispose();
+      tilesLayer.dispose();
+      edgesLayer.dispose();
+    });
+
+    // Data layer — rebuilds only when the query key changes (datasetId,
+    // measure, depth). Render-field changes update the config cell in place
+    // and fire `updated` via the config setter; the derivers above re-run.
     this._setupDisposers.push(
       effect(() => {
         const k = this._kernelCell.value;
+        const _key = this._queryKeyCell.value; // re-run on query key change
         const c = this._configCell.value;
-        if (k && c) this._build(k, c);
+        if (k && c && _key) this._build(k, c);
       }),
     );
   }
@@ -184,55 +251,26 @@ export class IcicleChart extends HTMLElement implements GestureContext {
       rebuild: () => {
         rebuildTree(this._dataView!, this._treeRoot);
       },
-      onActiveChange: (active) => this.classList.toggle("gesture-active", active),
       frozenOrder: this._frozenOrder,
     });
 
     rebuildTree(this._dataView, this._treeRoot);
 
-    const { w: Wc, h: Hc } = this._hostSize!;
-
-    this._window = derive(() => {
-      const root = this._treeRoot.value;
-      const frozen = this._frozenOrder.value;
-      if (!root) return [];
-      return buildWindow(root, config, frozen ?? undefined);
-    });
-
-    this._layout = derive(() => {
-      const root = this._treeRoot.value;
-      const frozen = this._frozenOrder.value;
-      if (!root) return new Map<string, LayoutRect>();
-      return computeLayout(root, config, frozen ?? undefined, Wc.value, Hc.value);
-    });
-
-    const windowCell = this._window;
-    this._edges = derive(() => buildEdges(windowCell!.value));
-
-    const tilesLayer = group();
-    const edgesLayer = group();
-    this._rootShape.add(tilesLayer, edgesLayer);
-
-    const tilesResult = forEach(tilesLayer, this._window, (node) => makeTile(node, this._layout!, this), {
-      key: (node) => node.id,
-    });
-
-    const edgesResult = forEach(edgesLayer, this._edges, (edge) => {
-      const handle = makeHandle(edge, this._layout!, config);
-      const off = attachEdgeHandleDrag(handle, this);
-      handle.track(off);
-      return handle;
-    }, { key: (edge) => edge.id });
-
-    this._buildDisposers.push(() => {
-      tilesResult.dispose();
-      edgesResult.dispose();
-      tilesLayer.dispose();
-      edgesLayer.dispose();
-    });
-
-    // Compose shared input behaviors onto the gesture.
+    // Compose shared input + render behaviors onto the gesture.
     this._behaviorDispose = setup(this._gesture)(
+      // Render behaviors.
+      // Settle CSS on commit/cancel/updated; suppression class toggled
+      // by this behavior via Editor subscription (single owner).
+      transitionOnUpdated(),
+      // Freeze sibling order during own gestures when sort !== 'index'.
+      // Reads deferSort once at gesture start; captures and holds order
+      // for the gesture's duration; clears on commit/cancel.
+      previewFullRender({
+        deferSort: () => this.config.sort !== "index",
+        frozenOrder: this._frozenOrder,
+        captureOrder: () => captureOrderFromTree(this._treeRoot.value),
+      }),
+      // Input behaviors.
       wheelEdit({
         target: (g) => g.store.hover.value ?? g.store.focus.value,
         valueOf: (g) => this.valueOf,
@@ -259,7 +297,6 @@ export class IcicleChart extends HTMLElement implements GestureContext {
     const g = this._gesture!;
     g.store.activeEdge = edge;
     g.store.snapshot = snapshotValues(root);
-    g.store.frozenOrder = this._dataView!.captureOrder();
 
     const left = findNode(root, edge.leftId)!;
     const right = findNode(root, edge.rightId)!;
@@ -284,8 +321,6 @@ export class IcicleChart extends HTMLElement implements GestureContext {
     } else {
       this._dragGroupSize = this._dragPairSize;
     }
-
-    this.classList.add("gesture-active");
 
     this._dataView!.draft({
       nodeId: edge.leftId,
@@ -363,7 +398,6 @@ export class IcicleChart extends HTMLElement implements GestureContext {
     if (g.state !== "Drafting") return;
     this.setPairTotal(0);
     g.store.activeEdge = null;
-    this.classList.remove("gesture-active");
     this._dataView!.commit();
   }
 }

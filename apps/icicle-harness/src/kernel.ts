@@ -35,9 +35,13 @@ export function findParent(root: DataNode, id: string): DataNode | null {
   return null;
 }
 
-/** Canonical config key — two charts with the same key share a DataView. */
+/** Canonical config key — two charts with the same key share a DataView.
+ *  Only query fields (datasetId, measure, depth) are hashed. Render fields
+ *  (sort, orientation, conservationMode, canReorder) are chart-applied and
+ *  do not affect the DataView key. A render-field change is an `updated`
+ *  on the same DataView, not a rebuild. */
 export function configKey(config: ChartConfig): string {
-  return `${config.datasetId}:${config.measure}:${config.sort}:${config.depth ?? "all"}:${config.orientation}`;
+  return `${config.datasetId}:${config.measure}:${config.depth ?? "all"}`;
 }
 
 /** Listener for data updates from the Kernel. */

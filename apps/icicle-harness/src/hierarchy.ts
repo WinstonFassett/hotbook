@@ -289,28 +289,36 @@ const HANDLE_W = 6;
 export function makeHandle(
   edge: Edge,
   layout: Cell<Map<string, LayoutRect>>,
-  config: ChartConfig,
+  configCell: Cell<ChartConfig | null>,
 ): Shape {
-  const isHoriz = config.orientation === "horizontal";
+  const isHoriz = derive(() => configCell.value?.orientation === "horizontal");
 
-  const hx = isHoriz
-    ? derive(() => layout.value.get(edge.leftId)?.x ?? 0)
-    : derive(() => (layout.value.get(edge.leftId)?.x ?? 0) + (layout.value.get(edge.leftId)?.width ?? 0) - HANDLE_W / 2);
+  const hx = derive(() => {
+    const lr = layout.value.get(edge.leftId);
+    if (!lr) return 0;
+    return isHoriz.value ? lr.x : lr.x + lr.width - HANDLE_W / 2;
+  });
 
-  const hy = isHoriz
-    ? derive(() => (layout.value.get(edge.leftId)?.y ?? 0) + (layout.value.get(edge.leftId)?.height ?? 0) - HANDLE_W / 2)
-    : derive(() => layout.value.get(edge.leftId)?.y ?? 0);
+  const hy = derive(() => {
+    const lr = layout.value.get(edge.leftId);
+    if (!lr) return 0;
+    return isHoriz.value ? lr.y + lr.height - HANDLE_W / 2 : lr.y;
+  });
 
-  const hw = isHoriz
-    ? derive(() => layout.value.get(edge.leftId)?.width ?? 0)
-    : num(HANDLE_W);
+  const hw = derive(() => {
+    if (isHoriz.value) return layout.value.get(edge.leftId)?.width ?? 0;
+    return HANDLE_W;
+  });
 
-  const hh = isHoriz
-    ? num(HANDLE_W)
-    : derive(() => layout.value.get(edge.leftId)?.height ?? 0);
+  const hh = derive(() => {
+    if (isHoriz.value) return HANDLE_W;
+    return layout.value.get(edge.leftId)?.height ?? 0;
+  });
 
   const handle = rect(hx, hy, hw, hh, { fill: "rgba(255,255,255,0.08)", stroke: "none" });
-  handle.el.style.cursor = isHoriz ? "row-resize" : "col-resize";
+  handle.effect(() => {
+    handle.el.style.cursor = isHoriz.value ? "row-resize" : "col-resize";
+  });
   handle.el.style.pointerEvents = "all";
   (handle as any)._edge = edge;
   return handle;

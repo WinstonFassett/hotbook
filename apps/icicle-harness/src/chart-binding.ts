@@ -17,8 +17,6 @@ export interface ChartBinding {
   dataView: DataView;
   /** Called when the tree should be rebuilt from the dataset (updated event). */
   rebuild: () => void;
-  /** Called when gesture-active state changes (add/remove CSS class, etc). */
-  onActiveChange?: (active: boolean) => void;
   /** Optional: frozen order cell to update on draft/cancel. */
   frozenOrder?: { value: Map<string, string[]> | null };
 }
@@ -56,17 +54,17 @@ export function bindChart(b: ChartBinding): () => void {
         const writes = leafValues(root);
         b.dataView.kernel.writeValues(b.dataView.config.datasetId, writes);
       }
-      b.frozenOrder && (b.frozenOrder.value = null);
+      // frozenOrder clear on commit/cancel is owned by the previewFullRender
+      // behavior (via Editor subscription). chart-binding only clears on
+      // `updated` (stale after data change) and applies incoming frozenOrder
+      // on cross-tile drafts.
       g.resetStore();
-      b.onActiveChange?.(false);
       return;
     }
 
     if (event.type === "cancel") {
       if (g.store.snapshot) restoreValues(root, g.store.snapshot);
-      b.frozenOrder && (b.frozenOrder.value = null);
       g.resetStore();
-      b.onActiveChange?.(false);
       return;
     }
   });
