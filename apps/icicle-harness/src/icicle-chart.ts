@@ -7,16 +7,14 @@
 import { cell, derive, effect, forEach, group, type Cell } from "bireactive";
 import type { ChartConfig, LayoutRect, RenderNode } from "./types";
 import { Kernel } from "./kernel";
-import { DataView, type DataViewEvent } from "./data-view";
+import { DataView } from "./data-view";
 import { Gesture, setup } from "./gesture";
 import {
-  applyDraft,
   buildEdges,
   buildTree,
   buildWindow,
   computeLayout,
   findNode,
-  leafValues,
   makeHandle,
   makeTile,
   restoreValues,
@@ -34,6 +32,7 @@ import { useHostSize } from "./host-size";
 import { wheelEdit } from "./behaviors/wheel-edit";
 import { keyboardEdit, type ConservationMode } from "./behaviors/keyboard-edit";
 import { applyConservedDelta, effectiveMode, type ConservationContext } from "./behaviors/conservation";
+import { bindChart, rebuildTree } from "./chart-binding";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const FALLBACK_W = 720;
@@ -61,6 +60,7 @@ export class IcicleChart extends HTMLElement implements GestureContext {
   private _setupDisposers: (() => void)[] = [];
   private _buildDisposers: (() => void)[] = [];
   private _behaviorDispose: (() => void) | null = null;
+  private _unsubChart: (() => void) | null = null;
 
   // GestureContext fields
   get config() { return this._configCell.value!; }
@@ -143,6 +143,7 @@ export class IcicleChart extends HTMLElement implements GestureContext {
   }
 
   disconnectedCallback() {
+    this._unsubChart?.();
     this._behaviorDispose?.();
     this._buildDisposers.forEach((d) => d());
     this._setupDisposers.forEach((d) => d());
@@ -157,6 +158,7 @@ export class IcicleChart extends HTMLElement implements GestureContext {
   private _build(kernel: Kernel, config: ChartConfig) {
     this._buildDisposers.forEach((d) => d());
     this._buildDisposers = [];
+    this._unsubChart?.();
     this._behaviorDispose?.();
     this._gesture?.dispose();
     this._dataView?.dispose();
@@ -174,10 +176,18 @@ export class IcicleChart extends HTMLElement implements GestureContext {
     };
 
     this._dataView = new DataView(kernel, config, this._gesture.editor);
-    this._dataView.subscribe((e) => this._onEvent(e));
+    this._unsubChart = bindChart({
+      treeRoot: this._treeRoot,
+      gesture: this._gesture,
+      dataView: this._dataView,
+      rebuild: () => {
+        rebuildTree(this._dataView!, this._treeRoot);
+      },
+      onActiveChange: (active) => this.classList.toggle("gesture-active", active),
+      frozenOrder: this._frozenOrder,
+    });
 
-    const ds = kernel.getDataset(config.datasetId);
-    if (ds) this._treeRoot.value = buildTree(ds.root);
+    rebuildTree(this._dataView, this._treeRoot);
 
     const { w: Wc, h: Hc } = this._hostSize!;
 
@@ -239,52 +249,6 @@ export class IcicleChart extends HTMLElement implements GestureContext {
         frozenOrder: () => this._frozenOrder.value,
       }),
     );
-  }
-
-  private _onEvent(event: DataViewEvent) {
-    const root = this._treeRoot.value;
-    if (!root) return;
-    const g = this._gesture!;
-
-    if (event.type === "updated") {
-      if (g.state === "Drafting") return;
-      this._frozenOrder.value = null;
-      g.resetStore();
-      const ds = this._dataView!.kernel.getDataset(this._dataView!.config.datasetId);
-      if (ds) this._treeRoot.value = buildTree(ds.root);
-      return;
-    }
-
-    if (event.type === "draft") {
-      if (event.isActive) {
-        if (!g.store.snapshot) g.store.snapshot = snapshotValues(root);
-        return;
-      }
-      const draft = event.draft!;
-      if (!g.store.snapshot) g.store.snapshot = snapshotValues(root);
-      applyDraft(root, draft);
-      this._frozenOrder.value = draft.frozenOrder ? new Map(draft.frozenOrder.entries()) : null;
-      return;
-    }
-
-    if (event.type === "commit") {
-      if (event.isActive) {
-        const writes = leafValues(root);
-        this._dataView!.kernel.writeValues(this._dataView!.config.datasetId, writes);
-      }
-      this._frozenOrder.value = null;
-      g.resetStore();
-      this.classList.remove("gesture-active");
-      return;
-    }
-
-    if (event.type === "cancel") {
-      if (g.store.snapshot) restoreValues(root, g.store.snapshot);
-      this._frozenOrder.value = null;
-      g.resetStore();
-      this.classList.remove("gesture-active");
-      return;
-    }
   }
 
   // --- GestureContext: edge handle drag lifecycle ---

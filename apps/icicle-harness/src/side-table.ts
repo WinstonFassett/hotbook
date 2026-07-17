@@ -10,7 +10,7 @@
 import { cell, derive, effect, type Cell } from "bireactive";
 import type { ChartConfig, DataNode } from "./types";
 import { Kernel } from "./kernel";
-import { DataView, type DataViewEvent } from "./data-view";
+import { DataView } from "./data-view";
 import { Gesture } from "./gesture";
 import {
   buildTree,
@@ -20,6 +20,7 @@ import {
   restoreValues,
   type ChartNode,
 } from "./hierarchy";
+import { bindChart, rebuildTree } from "./chart-binding";
 
 const INDENT = 16;
 
@@ -67,11 +68,17 @@ export class SideTable extends HTMLElement {
     this._gesture.store.tree = this._treeRoot;
 
     this._dataView = new DataView(this._kernel, cfg, this._gesture.editor);
-    this._unsub = this._dataView.subscribe((e) => this._onEvent(e));
+    this._unsub = bindChart({
+      treeRoot: this._treeRoot,
+      gesture: this._gesture,
+      dataView: this._dataView,
+      rebuild: () => {
+        rebuildTree(this._dataView!, this._treeRoot);
+        this._render();
+      },
+    });
 
-    const ds = this._kernel.getDataset(cfg.datasetId);
-    if (ds) this._treeRoot.value = buildTree(ds.root);
-
+    rebuildTree(this._dataView, this._treeRoot);
     this._render();
   }
 
@@ -91,44 +98,6 @@ export class SideTable extends HTMLElement {
     this._unsub?.();
     this._dataView?.dispose();
     this._gesture?.dispose();
-  }
-
-  private _onEvent(event: DataViewEvent): void {
-    const root = this._treeRoot.value;
-    if (!root) return;
-    const g = this._gesture!;
-
-    if (event.type === "updated") {
-      if (g.state === "Drafting") return;
-      const ds = this._dataView!.kernel.getDataset(this._dataView!.config.datasetId);
-      if (ds) this._treeRoot.value = buildTree(ds.root);
-      this._render();
-      return;
-    }
-
-    if (event.type === "draft") {
-      if (event.isActive) {
-        if (!g.store.snapshot) g.store.snapshot = snapshotValues(root);
-        return;
-      }
-      // Cross-view draft — apply
-      return;
-    }
-
-    if (event.type === "commit") {
-      if (event.isActive) {
-        const writes = leafValues(root);
-        this._dataView!.kernel.writeValues(this._dataView!.config.datasetId, writes);
-      }
-      g.resetStore();
-      return;
-    }
-
-    if (event.type === "cancel") {
-      if (g.store.snapshot) restoreValues(root, g.store.snapshot);
-      g.resetStore();
-      return;
-    }
   }
 
   private _render(): void {
