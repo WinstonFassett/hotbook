@@ -27,7 +27,6 @@
 // work via the existing plumbing.
 
 import type { Gesture, Behavior, GestureGetter } from "../gesture";
-import type { ConservationMode } from "./keyboard-edit";
 import { applyConservedDelta, type ConservationContext } from "./conservation";
 import { captureOrderFromWindow } from "./preview-full-render";
 
@@ -41,8 +40,6 @@ export interface TileBodyDragOptions {
   valueOf: GestureGetter<(id: string) => number>;
   /** Function to write a value into the reactive tree. */
   writeValue: (id: string, value: number) => void;
-  /** Getter for the conservation mode. */
-  conservationMode: GestureGetter<ConservationMode>;
   /** Getter for a function that returns sibling ids of a node's parent group. */
   siblings: GestureGetter<(id: string) => string[]>;
   /** Getter for the frozen order map (or null). */
@@ -126,14 +123,17 @@ export function tileBodyDrag(opts: TileBodyDragOptions): Behavior {
       // Proportional scaling: travel pixels × (startVal / tilePixelSpan) = value delta.
       // Dragging the tile by its full span doubles its value — matches the visual.
       const delta = travel * valueScale;
-      const mode = opts.conservationMode(gesture);
+      // Body drag always distributes across ALL siblings (proportional-siblings).
+      // conservationMode (which may be proportional-neighbor) doesn't apply here —
+      // without a boundary there's no way to know which neighbor the user means.
+      // The splitter is the pair operation; the body drag is the all-siblings one.
       const ctx: ConservationContext = {
         valueOf: opts.valueOf(gesture),
         writeValue: opts.writeValue,
         siblings: opts.siblings(gesture),
         snapshot: gesture.store.snapshot,
       };
-      applyConservedDelta(ctx, targetId, delta, mode);
+      applyConservedDelta(ctx, targetId, delta, "proportional-siblings");
 
       const valueFn = opts.valueOf(gesture);
       const frozenOrder = opts.frozenOrder(gesture);

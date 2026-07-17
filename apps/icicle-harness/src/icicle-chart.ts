@@ -303,7 +303,6 @@ export class IcicleChart extends HTMLElement implements GestureContext {
         target: (g) => g.store.hover.value ?? g.store.focus.value,
         valueOf: (g) => this.valueOf,
         writeValue: this.writeValue,
-        conservationMode: (g) => this.conservationMode,
         siblings: (g) => this.siblings,
         frozenOrder: () => this._frozenOrder.value,
         windowGetter: () => this._window?.value ?? null,
