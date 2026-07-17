@@ -323,8 +323,13 @@ export function makeTile(
   const clipRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
   clipPath.appendChild(clipRect);
   const clipDispose = effect(() => {
-    clipRect.setAttribute("x", "0");
-    clipRect.setAttribute("y", "0");
+    // The clip rect must be in the SVG root coordinate space (same space as
+    // the text element's x/y). The text is at tile.at(0,0) = (rx, ry) in root
+    // space, so the clip rect must be positioned at the tile's actual position,
+    // not at (0,0). With clipPathUnits="userSpaceOnUse" (default), the clip
+    // coordinates are in the parent's coordinate system = SVG root space.
+    clipRect.setAttribute("x", String(rx.value));
+    clipRect.setAttribute("y", String(ry.value));
     clipRect.setAttribute("width", String(Math.max(0, rw.value)));
     clipRect.setAttribute("height", String(Math.max(0, rh.value)));
   });
