@@ -82,11 +82,11 @@ export function transitionOnUpdated(opts: TransitionOnUpdatedOptions = {}): Beha
     // Scope the suppression to the host carrying the class so multiple charts
     // on the page don't clobber each other.
     const css = `
-${selector} rect { transition: ${transitionValue}; }
-${selector}.${GESTURE_ACTIVE_CLASS} rect { transition: none !important; }
+${selector} rect, ${selector} text { transition: ${transitionValue}; }
+${selector}.${GESTURE_ACTIVE_CLASS} rect, ${selector}.${GESTURE_ACTIVE_CLASS} text { transition: none !important; }
 ${selector}.${GESTURE_ACTIVE_CLASS} * { transition: none !important; }
 @media (prefers-reduced-motion: reduce) {
-  ${selector} rect { transition: none !important; }
+  ${selector} rect, ${selector} text { transition: none !important; }
 }
 `;
 
