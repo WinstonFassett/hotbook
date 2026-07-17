@@ -5,7 +5,6 @@
 // Chart state (config, focus, hover, tree) stored as bireactive cells.
 
 import { cell, derive, effect, forEach, group, type Cell } from "bireactive";
-import { enterExitForEach } from "./behaviors/enter-exit-lifecycle";
 import type { ChartConfig, LayoutRect, RenderNode } from "./types";
 import { Kernel, configKey } from "./kernel";
 import { DataView } from "./data-view";
@@ -179,7 +178,7 @@ export class IcicleChart extends HTMLElement implements GestureContext {
     const edgesLayer = group();
     this._rootShape.add(tilesLayer, edgesLayer);
 
-    const tilesResult = enterExitForEach(tilesLayer, this._window, (node) =>
+    const tilesResult = forEach(tilesLayer, this._window, (node) =>
       makeTile(node, this._layout!, this),
       { key: (node) => node.id },
     );
@@ -321,6 +320,18 @@ export class IcicleChart extends HTMLElement implements GestureContext {
         : (last.x + last.width) - first.x;
     } else {
       this._dragGroupSize = this._dragPairSize;
+    }
+
+    // Capture frozen order BEFORE draft(). The previewFullRender behavior
+    // subscribes to the Editor AFTER the DataView, so its capture would fire
+    // after chart-binding has already applied the draft without frozenOrder
+    // — causing siblings to jump to their natural sorted position on the
+    // first frame. Capturing here ensures the draft event carries the
+    // frozenOrder so chart-binding applies it correctly on the first frame.
+    if (this.config.sort !== "index" && !g.store.frozenOrder) {
+      const order = captureOrderFromTree(root);
+      this._frozenOrder.value = order;
+      g.store.frozenOrder = order;
     }
 
     this._dataView!.draft({

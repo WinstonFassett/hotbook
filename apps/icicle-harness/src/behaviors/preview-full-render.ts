@@ -58,10 +58,14 @@ export function previewFullRender(opts: PreviewFullRenderOptions): Behavior {
     const unsub = gesture.editor.subscribe((t) => {
       if (t.type === "draft" && t.from === "Idle") {
         // Gesture start — read deferSort once, capture if true.
+        // If frozenOrder is already set (e.g. startGesture captured it
+        // before dispatching the draft), use that — don't re-capture.
         if (!captured && opts.deferSort()) {
-          const order = opts.captureOrder();
-          opts.frozenOrder.value = order;
-          gesture.store.frozenOrder = order;
+          if (!opts.frozenOrder.value) {
+            const order = opts.captureOrder();
+            opts.frozenOrder.value = order;
+          }
+          gesture.store.frozenOrder = opts.frozenOrder.value;
           captured = true;
         }
       } else if (t.type === "commit" || t.type === "cancel") {
