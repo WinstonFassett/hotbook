@@ -330,6 +330,7 @@ export class IcicleChart extends HTMLElement implements GestureContext {
     // frozenOrder so chart-binding applies it correctly on the first frame.
     if (this.config.sort !== "index" && !g.store.frozenOrder) {
       const order = captureOrderFromWindow(this._window?.value ?? null);
+      console.log("[startGesture] edge:", edge.id, "captured order root:", order.get("root"), "windowLen:", this._window?.value.length);
       this._frozenOrder.value = order;
       g.store.frozenOrder = order;
     }
