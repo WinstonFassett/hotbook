@@ -86,7 +86,7 @@ export class SideTable extends HTMLElement {
     if (!this._container) {
       this._container = document.createElement("div");
       this._container.style.cssText =
-        "width:100%;height:100%;overflow-y:auto;font-size:12px;font-family:inherit;padding-top:28px;";
+        "width:100%;height:100%;overflow-y:auto;font-size:12px;font-family:inherit;";
       this.appendChild(this._container);
     }
     this._render();

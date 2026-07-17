@@ -296,12 +296,23 @@ export function makeTile(
     });
   }
 
+  // Label: positioned with padding inside the rounded rect, clipped to the
+  // tile's bounds so it never overflows. The anchor is offset from the
+  // top-left corner by the pad; the text element gets overflow clip so long
+  // labels don't bleed outside the rounded corners.
+  const LABEL_PAD = 4;
   const text = label(tile.at(0, 0)!, node.label, {
     align: { x: 0, y: 0 },
     fill: "#fff",
     size: 10,
   });
   text.el.style.pointerEvents = "none";
+  // Offset the label group by LABEL_PAD so it sits inside the rounded corner.
+  text.el.setAttribute("transform", `translate(${LABEL_PAD}, ${LABEL_PAD})`);
+  // CSS overflow clip on the label's <g> prevents text from bleeding outside
+  // the tile's rounded corners. The clip rect is the tile's inner area minus
+  // padding on both sides.
+  text.el.style.overflow = "hidden";
   const g = group({}, tile, text);
 
   // Enter/exit fade on the wrapping group (fades rect + label together).

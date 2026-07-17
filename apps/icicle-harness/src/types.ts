@@ -39,7 +39,7 @@ export interface DraftEvent {
   /** The proposed new value. */
   value: number;
   /** Which control surface produced this draft. */
-  source: "divider-handle" | "wheel" | "keyboard" | "table-cell" | "reorder";
+  source: "divider-handle" | "wheel" | "keyboard" | "table-cell" | "reorder" | "tile-body";
   /** What kind of edit: value change or reorder. */
   intent: "edit" | "reorder";
   /** For two-sibling reapportion (boundary knob): the neighbor node that

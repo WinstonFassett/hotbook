@@ -30,6 +30,7 @@ import { useHostSize } from "./host-size";
 import { wheelEdit } from "./behaviors/wheel-edit";
 import { keyboardEdit, type ConservationMode } from "./behaviors/keyboard-edit";
 import { applyConservedDelta, effectiveMode, type ConservationContext } from "./behaviors/conservation";
+import { tileBodyDrag } from "./behaviors/tile-body-drag";
 import { transitionOnUpdated } from "./behaviors/transition-on-updated";
 import { previewFullRender, captureOrderFromWindow } from "./behaviors/preview-full-render";
 import { withExitDelay, membershipCell } from "./behaviors/mark-lifecycle";
@@ -295,6 +296,21 @@ export class IcicleChart extends HTMLElement implements GestureContext {
         siblings: (g) => this.siblings,
         frozenOrder: () => this._frozenOrder.value,
       }),
+      // Tile-body drag: drag anywhere on a tile to resize its value.
+      // Both axes (up/right = grow, down/left = shrink). Click (no move) =
+      // focus. conservationMode governs distribution (same as keyboard).
+      tileBodyDrag({
+        target: (g) => g.store.hover.value ?? g.store.focus.value,
+        valueOf: (g) => this.valueOf,
+        writeValue: this.writeValue,
+        conservationMode: (g) => this.conservationMode,
+        siblings: (g) => this.siblings,
+        frozenOrder: () => this._frozenOrder.value,
+        windowGetter: () => this._window?.value ?? null,
+        frozenOrderCell: this._frozenOrder,
+        deferSort: () => this.config.sort !== "index",
+        focusTile: (id) => this.setFocus(id),
+      }),
     );
   }
 
@@ -376,42 +392,23 @@ export class IcicleChart extends HTMLElement implements GestureContext {
     const left = findNode(root, edge.leftId)!;
     const isHoriz = config.orientation === "horizontal";
 
-    const mode = effectiveMode(this.conservationMode, this.altHeld());
-
-    // Delta from the captured boundary position at gesture start.
+    // Edge handle drag is ALWAYS two-sibling reapportion (spec §3): only the
+    // two adjacent siblings change, by the drag fraction. conservationMode
+    // governs per-item gestures (keyboard, wheel, tile-body drag) — not the
+    // splitter. The handle lives between A and B; it has no relationship to
+    // C, D, E. Making it redistribute across all siblings is a category error
+    // (pair-affordance doing single-item work) and produces the asymmetric
+    // rightmost-splitter bug.
     const pos = isHoriz ? point.y : point.x;
     const deltaPx = pos - this._dragBoundary;
-
-    // In proportional-siblings mode, the left tile's pixel width is its share
-    // of the entire sibling group, so pixel→value must use group total/size.
-    // In pair-only modes, it's the pair total/size.
-    let valueScale: number;
-    if (mode === "proportional-siblings" && left.parent) {
-      const siblings = left.parent.children;
-      const groupTotal = siblings.reduce((sum, c) =>
-        sum + (this.snapshot?.get(c.id) ?? c.value.value), 0);
-      valueScale = this._dragGroupSize > 0 ? groupTotal / this._dragGroupSize : 0;
-    } else {
-      valueScale = this._dragPairSize > 0 ? this.pairTotal / this._dragPairSize : 0;
-    }
+    const valueScale = this._dragPairSize > 0 ? this.pairTotal / this._dragPairSize : 0;
     const deltaValue = deltaPx * valueScale;
 
     const snapLeft = this.snapshot?.get(edge.leftId) ?? left.value.value;
     const newLeft = Math.max(0, snapLeft + deltaValue);
-
-    if (mode === "proportional-siblings" && left.parent) {
-      const ctx: ConservationContext = {
-        valueOf: this.valueOf,
-        writeValue: this.writeValue,
-        siblings: this.siblings,
-        snapshot: this.snapshot,
-      };
-      applyConservedDelta(ctx, edge.leftId, newLeft - snapLeft, "proportional-siblings");
-    } else {
-      const newRight = Math.max(0, this.pairTotal - newLeft);
-      this.writeValue(edge.leftId, newLeft);
-      this.writeValue(edge.rightId, newRight);
-    }
+    const newRight = Math.max(0, this.pairTotal - newLeft);
+    this.writeValue(edge.leftId, newLeft);
+    this.writeValue(edge.rightId, newRight);
 
     this._dataView!.updateDraft({
       nodeId: edge.leftId,

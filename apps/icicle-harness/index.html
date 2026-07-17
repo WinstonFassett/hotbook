@@ -34,31 +34,37 @@
         border: 1px solid var(--border);
         border-radius: 6px;
         overflow: hidden;
-        position: relative;
+        display: flex;
+        flex-direction: column;
+      }
+      .tile-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 6px 8px;
+        flex-shrink: 0;
+        border-bottom: 1px solid var(--border);
       }
       .tile-label {
-        position: absolute;
-        top: 6px;
-        left: 8px;
         font-size: 10px;
         font-weight: 600;
         letter-spacing: 0.06em;
         color: var(--muted);
         text-transform: uppercase;
-        z-index: 1;
         pointer-events: none;
       }
       .status {
-        position: absolute;
-        top: 6px;
-        right: 8px;
         font-size: 10px;
         color: var(--muted);
-        z-index: 1;
         pointer-events: none;
         font-variant-numeric: tabular-nums;
       }
       .status.drafting { color: var(--accent); }
+      .tile-body {
+        flex: 1 1 0;
+        min-height: 0;
+        position: relative;
+      }
       v-icicle, v-side-table {
         display: block;
         width: 100%;
@@ -130,14 +136,22 @@
     </div>
     <div id="app">
       <div class="tile" id="icicle-tile">
-        <span class="tile-label">icicle</span>
-        <span class="status" id="icicle-status">idle</span>
-        <v-icicle></v-icicle>
+        <div class="tile-header">
+          <span class="tile-label">icicle</span>
+          <span class="status" id="icicle-status">idle</span>
+        </div>
+        <div class="tile-body">
+          <v-icicle></v-icicle>
+        </div>
       </div>
       <div class="tile" id="table-tile">
-        <span class="tile-label">side table</span>
-        <span class="status" id="table-status">idle</span>
-        <v-side-table></v-side-table>
+        <div class="tile-header">
+          <span class="tile-label">side table</span>
+          <span class="status" id="table-status">idle</span>
+        </div>
+        <div class="tile-body">
+          <v-side-table></v-side-table>
+        </div>
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>

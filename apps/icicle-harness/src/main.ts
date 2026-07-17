@@ -72,7 +72,7 @@ const config: ChartConfig = {
   depth: 3,
   orientation: "vertical",
   canReorder: false,
-  conservationMode: "proportional-siblings",
+  conservationMode: "proportional-neighbor",
 };
 
 // ─── Wire up ───────────────────────────────────────────────────────────────
