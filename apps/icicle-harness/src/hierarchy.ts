@@ -9,13 +9,16 @@ import {
   group,
   label,
   num,
+  readNow,
   rect,
   total,
   type Cell,
   type Num,
+  type Read,
   type Shape,
   type Writable,
 } from "bireactive";
+import { enterExitFade } from "./behaviors/mark-lifecycle";
 
 export interface ChartNode {
   id: string;
@@ -240,12 +243,30 @@ export function makeTile(
     focusCell: Cell<string | null>;
     hoverCell: Cell<string | null>;
   },
+  present?: Read<boolean>,
 ): Shape {
   const pad = 2;
-  const rx = derive(() => (layout.value.get(node.id)?.x ?? 0) + pad);
-  const ry = derive(() => (layout.value.get(node.id)?.y ?? 0) + pad);
-  const rw = derive(() => Math.max(0, (layout.value.get(node.id)?.width ?? 0) - pad * 2));
-  const rh = derive(() => Math.max(0, (layout.value.get(node.id)?.height ?? 0) - pad * 2));
+
+  // Live-or-frozen rect. While `present` is true we read the live layout and
+  // cache it. When `present` flips false (the node left the window but
+  // `withExitDelay` is holding it for the exit fade), we return the last cached
+  // rect so the tile fades out in place instead of collapsing to 0×0.
+  // Matches the reference icicle's frozen-geometry pattern for exiting tiles.
+  let frozen: LayoutRect = { x: 0, y: 0, width: 0, height: 0 };
+  const liveRect = derive(() => {
+    const r = layout.value.get(node.id);
+    if (present) {
+      const p = readNow(present);
+      if (p && r) { frozen = r; return r; }
+      if (p) return r ?? frozen;
+    }
+    return r ?? frozen;
+  });
+
+  const rx = derive(() => liveRect.value.x + pad);
+  const ry = derive(() => liveRect.value.y + pad);
+  const rw = derive(() => Math.max(0, liveRect.value.width - pad * 2));
+  const rh = derive(() => Math.max(0, liveRect.value.height - pad * 2));
 
   // Stroke reflects focus/selection and hover state — reads bireactive cells
   // so the derive re-runs automatically when focus/hover changes.
@@ -281,7 +302,17 @@ export function makeTile(
     size: 10,
   });
   text.el.style.pointerEvents = "none";
-  return group({}, tile, text);
+  const g = group({}, tile, text);
+
+  // Enter/exit fade on the wrapping group (fades rect + label together).
+  // `withExitDelay` in the chart keeps the group mounted for EXIT_MS after the
+  // node leaves the window, so the exit fade has time to play before forEach
+  // disposes it. Geometry is frozen above for the same duration.
+  if (present) {
+    enterExitFade(g.el, { present });
+  }
+
+  return g;
 }
 
 const HANDLE_W = 6;

@@ -32,6 +32,7 @@ import { keyboardEdit, type ConservationMode } from "./behaviors/keyboard-edit";
 import { applyConservedDelta, effectiveMode, type ConservationContext } from "./behaviors/conservation";
 import { transitionOnUpdated } from "./behaviors/transition-on-updated";
 import { previewFullRender, captureOrderFromWindow } from "./behaviors/preview-full-render";
+import { withExitDelay, membershipCell } from "./behaviors/mark-lifecycle";
 import { bindChart, rebuildTree } from "./chart-binding";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -174,12 +175,19 @@ export class IcicleChart extends HTMLElement implements GestureContext {
     const windowCell = this._window;
     this._edges = derive(() => buildEdges(windowCell!.value));
 
+    // Enter/exit lifecycle: hold removed tiles in the rendered set for EXIT_MS
+    // so a CSS opacity fade can play before forEach evicts them. `membership`
+    // is the undelayed set — used per-tile to freeze geometry + drive the fade
+    // while a tile is in its exit window.
+    const renderedSet = withExitDelay(windowCell!, { key: (n) => n.id });
+    const membership = membershipCell(windowCell!, (n) => n.id);
+
     const tilesLayer = group();
     const edgesLayer = group();
     this._rootShape.add(tilesLayer, edgesLayer);
 
-    const tilesResult = forEach(tilesLayer, this._window, (node) =>
-      makeTile(node, this._layout!, this),
+    const tilesResult = forEach(tilesLayer, renderedSet, (node) =>
+      makeTile(node, this._layout!, this, derive(() => membership.value.has(node.id))),
       { key: (node) => node.id },
     );
 
