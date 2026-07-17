@@ -5,6 +5,7 @@ import type { ChartConfig, DataNode, DraftEvent, LayoutRect, RenderNode } from "
 import {
   cell,
   derive,
+  effect,
   forEach,
   group,
   label,
@@ -297,9 +298,10 @@ export function makeTile(
   }
 
   // Label: positioned with padding inside the rounded rect, clipped to the
-  // tile's bounds so it never overflows. The anchor is offset from the
-  // top-left corner by the pad; the text element gets overflow clip so long
-  // labels don't bleed outside the rounded corners.
+  // tile's inner bounds so it never overflows the rounded corners or crosses
+  // the divider. Uses a real SVG <clipPath> (CSS overflow:hidden doesn't work
+  // on SVG <g>). The clip rect is reactively sized to the tile's inner area
+  // minus label padding on both sides.
   const LABEL_PAD = 4;
   const text = label(tile.at(0, 0)!, node.label, {
     align: { x: 0, y: 0 },
@@ -307,13 +309,33 @@ export function makeTile(
     size: 10,
   });
   text.el.style.pointerEvents = "none";
-  // Offset the label group by LABEL_PAD so it sits inside the rounded corner.
+  // Offset the label by LABEL_PAD so it sits inside the rounded corner.
   text.el.setAttribute("transform", `translate(${LABEL_PAD}, ${LABEL_PAD})`);
-  // CSS overflow clip on the label's <g> prevents text from bleeding outside
-  // the tile's rounded corners. The clip rect is the tile's inner area minus
-  // padding on both sides.
-  text.el.style.overflow = "hidden";
+
+  // Create a clipPath with a reactive rect that matches the tile's inner area
+  // minus padding. The clip rect is in the tile's local coordinate space
+  // (before the label's translate offset), so it spans the full inner rect.
+  const clipId = `clip-${node.id}`;
+  const clipPath = document.createElementNS("http://www.w3.org/2000/svg", "clipPath");
+  clipPath.setAttribute("id", clipId);
+  const clipRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+  clipPath.appendChild(clipRect);
+  // Reactively size the clip rect to the tile's inner area minus padding.
+  const clipDispose = effect(() => {
+    clipRect.setAttribute("x", String(LABEL_PAD));
+    clipRect.setAttribute("y", String(LABEL_PAD));
+    clipRect.setAttribute("width", String(Math.max(0, rw.value - LABEL_PAD * 2)));
+    clipRect.setAttribute("height", String(Math.max(0, rh.value - LABEL_PAD * 2)));
+  });
+  // Apply the clip to the label element.
+  text.el.setAttribute("clip-path", `url(#${clipId})`);
+
   const g = group({}, tile, text);
+  // The clipPath must be a child of the group (or in <defs>) for the
+  // clip-path reference to resolve. Append it to the group's <g> element.
+  g.el.appendChild(clipPath);
+  // Clean up the clip effect when the group is disposed.
+  (g as any).track?.(clipDispose);
 
   // Enter/exit fade on the wrapping group (fades rect + label together).
   // `withExitDelay` in the chart keeps the group mounted for EXIT_MS after the

@@ -32,7 +32,12 @@ export function effectiveMode(
 }
 
 /** Apply a delta to a target node, distributing to siblings per conservation mode.
- *  Returns optional secondary info for draft events. */
+ *  Returns optional secondary info for draft events.
+ *
+ *  Conservation is strict: the pair/group sum is always preserved. When a
+ *  sibling hits 0, the delta is capped to what's available — the target
+ *  absorbs only as much as the siblings can give (on shrink) or gives only as
+ *  much as it has (on grow past 0). No value is lost to the floor. */
 export function applyConservedDelta(
   ctx: ConservationContext,
   targetId: string,
@@ -50,9 +55,11 @@ export function applyConservedDelta(
     if (neighborId) {
       const cur = valueOf(targetId);
       const neighborCur = valueOf(neighborId);
-      const newSelf = Math.max(0, cur + delta);
-      const actualDelta = newSelf - cur;
-      const newNeighbor = Math.max(0, neighborCur - actualDelta);
+      // Cap delta to what the neighbor can absorb (grow) or self can give (shrink).
+      // This preserves the pair sum exactly — no value lost to the floor.
+      const cappedDelta = capDelta(delta, cur, neighborCur);
+      const newSelf = cur + cappedDelta;
+      const newNeighbor = neighborCur - cappedDelta;
       writeValue(targetId, newSelf);
       writeValue(neighborId, newNeighbor);
       return { secondaryId: neighborId, secondaryValue: newNeighbor };
@@ -62,25 +69,36 @@ export function applyConservedDelta(
 
   if (mode === "proportional-siblings" && sibs.length > 1) {
     const cur = valueOf(targetId);
-    const newSelf = Math.max(0, cur + delta);
-    const actualDelta = newSelf - cur;
     const others = sibs.filter((s) => s !== targetId);
     const otherTotal = others.reduce((sum, s) => sum + valueOf(s), 0);
+    // Cap delta to what others can give (grow) or self can give (shrink).
+    const cappedDelta = capDelta(delta, cur, otherTotal);
+    const newSelf = cur + cappedDelta;
     if (otherTotal > 0) {
       for (const s of others) {
         const sCur = valueOf(s);
-        const share = (sCur / otherTotal) * actualDelta;
-        writeValue(s, Math.max(0, sCur - share));
+        const share = (sCur / otherTotal) * cappedDelta;
+        writeValue(s, sCur - share);
       }
     }
     writeValue(targetId, newSelf);
     return {};
   }
 
-  // Additive
+  // Additive — no conservation, just clamp to 0.
   const cur = valueOf(targetId);
   writeValue(targetId, Math.max(0, cur + delta));
   return {};
+}
+
+/** Cap a delta so neither the target nor the absorber goes below 0.
+ *  - Growing (delta > 0): cap to absorberTotal (can't take more than they have).
+ *  - Shrinking (delta < 0): cap to -targetVal (can't go below 0).
+ *  This preserves the pair/group sum exactly. */
+function capDelta(delta: number, targetVal: number, absorberTotal: number): number {
+  if (delta > 0) return Math.min(delta, absorberTotal);
+  if (delta < 0) return Math.max(delta, -targetVal);
+  return 0;
 }
 
 /** Restore all leaf values from a snapshot. */

@@ -405,8 +405,14 @@ export class IcicleChart extends HTMLElement implements GestureContext {
     const deltaValue = deltaPx * valueScale;
 
     const snapLeft = this.snapshot?.get(edge.leftId) ?? left.value.value;
-    const newLeft = Math.max(0, snapLeft + deltaValue);
-    const newRight = Math.max(0, this.pairTotal - newLeft);
+    const snapRight = this.snapshot?.get(edge.rightId) ?? this.pairTotal - snapLeft;
+    // Cap delta to preserve the pair sum exactly — no value lost to the floor.
+    // Growing left: can't take more than right has. Shrinking left: can't go below 0.
+    const cappedDelta = deltaValue > 0
+      ? Math.min(deltaValue, snapRight)
+      : Math.max(deltaValue, -snapLeft);
+    const newLeft = snapLeft + cappedDelta;
+    const newRight = snapRight - cappedDelta;
     this.writeValue(edge.leftId, newLeft);
     this.writeValue(edge.rightId, newRight);
 
