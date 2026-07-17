@@ -28,6 +28,7 @@ export interface ChartConfig {
   depth?: number;
   orientation: "horizontal" | "vertical";
   canReorder?: boolean;
+  conservationMode?: "additive" | "proportional-neighbor" | "proportional-siblings";
 }
 
 /** A draft event produced by a control surface. */

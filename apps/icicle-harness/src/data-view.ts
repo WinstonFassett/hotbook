@@ -168,11 +168,11 @@ export class DataView {
   private _unsubEditor: (() => void) | null = null;
   private _disposed = false;
 
-  constructor(kernel: Kernel, config: ChartConfig) {
+  constructor(kernel: Kernel, config: ChartConfig, editor?: Editor) {
     this.kernel = kernel;
     this.config = config;
     this.key = configKey(config);
-    this.editor = new Editor();
+    this.editor = editor ?? new Editor();
     kernel.drafts.register(this.editor);
 
     // Subscribe to Kernel data updates

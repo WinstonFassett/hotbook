@@ -12,7 +12,7 @@ export interface GestureContext {
   endGesture(edge: Edge): void;
 }
 
-export function attachDividerDrag(handle: any, ctx: GestureContext): () => void {
+export function attachEdgeHandleDrag(handle: any, ctx: GestureContext): () => void {
   const edge: Edge = handle._edge;
   if (!edge) return () => {};
 

@@ -1,10 +1,14 @@
 // icicle-chart.ts — custom element rendering a hierarchical icicle using bireactive shapes.
-// All gesture policy lives in the chart; geometry helpers are in hierarchy.ts and gestures.ts.
+// Host-sized SVG (no fixed viewBox), gesture-driven editing via the Gesture/Editor model.
+// Shared input behaviors (wheelEdit, keyboardEdit) composed via setup().
+// Chart state (config, focus, hover, tree) stored as bireactive cells — living, subscribable,
+// and participating in the reactive graph so derive()s re-run automatically.
 
-import { cell, derive, effect, forEach, group } from "bireactive";
-import type { ChartConfig, LayoutRect } from "./types";
+import { cell, derive, effect, forEach, group, type Cell } from "bireactive";
+import type { ChartConfig, LayoutRect, RenderNode } from "./types";
 import { Kernel } from "./kernel";
 import { DataView, type DataViewEvent } from "./data-view";
+import { Gesture, setup } from "./gesture";
 import {
   applyDraft,
   buildEdges,
@@ -20,11 +24,14 @@ import {
   type ChartNode,
   type Edge,
 } from "./hierarchy";
-import { attachDividerDrag, computeReapportion, type GestureContext } from "./gestures";
+import { attachEdgeHandleDrag, computeReapportion, type GestureContext } from "./gestures";
+import { useHostSize } from "./host-size";
+import { wheelEdit } from "./behaviors/wheel-edit";
+import { keyboardEdit, type ConservationMode } from "./behaviors/keyboard-edit";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
-const VIEW_W = 720;
-const VIEW_H = 480;
+const FALLBACK_W = 720;
+const FALLBACK_H = 360;
 
 export class IcicleChart extends HTMLElement implements GestureContext {
   static tag = "v-icicle";
@@ -34,52 +41,89 @@ export class IcicleChart extends HTMLElement implements GestureContext {
   private _treeRoot = cell<ChartNode | null>(null);
   private _frozenOrder = cell<Map<string, string[]> | null>(null);
 
+  // Selection/focus/hover as bireactive cells — shared with the gesture store.
+  private _focusCell = cell<string | null>(null);
+  private _hoverCell = cell<string | null>(null);
+
+  private _gesture: Gesture | null = null;
   private _dataView: DataView | null = null;
   private _svg?: SVGSVGElement;
   private _rootShape?: any;
-  private _window?: any;
-  private _layout?: any;
-  private _edges?: any;
-
-  private _snapshot: Map<string, number> | null = null;
-  private _pairTotal = 0;
-  private _activeEdge: Edge | null = null;
+  private _window?: Cell<RenderNode[]>;
+  private _layout?: Cell<Map<string, LayoutRect>>;
+  private _edges?: Cell<Edge[]>;
+  private _hostSize?: ReturnType<typeof useHostSize>;
 
   private _setupDisposers: (() => void)[] = [];
   private _buildDisposers: (() => void)[] = [];
+  private _behaviorDispose: (() => void) | null = null;
 
   set kernel(k: Kernel) {
     this._kernelCell.value = k;
   }
 
   set config(c: ChartConfig) {
-    // Clone so object identity changes trigger reactive rebuilds.
     this._configCell.value = { ...c };
+    if (this._gesture) this._gesture.store.config.value = { ...c };
   }
 
   get dataView() {
     return this._dataView;
   }
 
-  get _dataView() {
-    return this._dataView;
+  get gesture() {
+    return this._gesture;
   }
 
   get config() {
     return this._configCell.value;
   }
 
+  // Selection = focus. Click selects. Tab navigates.
+  setFocus(id: string | null) {
+    this._focusCell.value = id;
+  }
+
+  setHover(id: string | null) {
+    this._hoverCell.value = id;
+  }
+
+  get focusedId() {
+    return this._focusCell.value;
+  }
+
+  get hoveredId() {
+    return this._hoverCell.value;
+  }
+
+  // Expose cells for makeTile's derive()s to read reactively.
+  get focusCell() {
+    return this._focusCell;
+  }
+
+  get hoverCell() {
+    return this._hoverCell;
+  }
+
   connectedCallback() {
     if (this._svg) return;
+
+    this.style.display = "block";
+    this.style.width = "100%";
+    this.style.height = "100%";
+    this.style.outline = "none";
+    this.tabIndex = -1;
+
     this._svg = document.createElementNS(SVG_NS, "svg");
-    this._svg.setAttribute("width", "100%");
-    this._svg.setAttribute("height", "100%");
-    this._svg.setAttribute("viewBox", `0 0 ${VIEW_W} ${VIEW_H}`);
-    this._svg.setAttribute("preserveAspectRatio", "none");
+    this._svg.style.display = "block";
+    this._svg.style.width = "100%";
+    this._svg.style.height = "100%";
     this.appendChild(this._svg);
 
     this._rootShape = group();
     this._svg.appendChild(this._rootShape.el);
+
+    this._hostSize = useHostSize(this, { width: FALLBACK_W, height: FALLBACK_H });
 
     this._setupDisposers.push(
       effect(() => {
@@ -91,25 +135,46 @@ export class IcicleChart extends HTMLElement implements GestureContext {
   }
 
   disconnectedCallback() {
+    this._behaviorDispose?.();
     this._buildDisposers.forEach((d) => d());
     this._setupDisposers.forEach((d) => d());
     this._rootShape?.dispose();
+    this._gesture?.dispose();
     this._dataView?.dispose();
+    (this as any)._roDispose?.();
     this._buildDisposers = [];
     this._setupDisposers = [];
   }
 
   private _build(kernel: Kernel, config: ChartConfig) {
-    // Tear down previous chart wiring.
     this._buildDisposers.forEach((d) => d());
     this._buildDisposers = [];
+    this._behaviorDispose?.();
+    this._gesture?.dispose();
     this._dataView?.dispose();
 
-    this._dataView = new DataView(kernel, config);
+    this._gesture = new Gesture(undefined, config);
+    this._gesture.store.host = this;
+    // Share the chart's bireactive cells with the gesture store.
+    this._gesture.store.focus = this._focusCell;
+    this._gesture.store.hover = this._hoverCell;
+    this._gesture.store.tree = this._treeRoot;
+    // Provide snapshot function so behaviors can snapshot before first write.
+    this._gesture.store.takeSnapshot = () => {
+      const root = this._treeRoot.value;
+      if (root && !this._gesture!.store.snapshot) {
+        this._gesture!.store.snapshot = snapshotValues(root);
+      }
+    };
+    // config is already seeded in the Gesture constructor; keep it in sync.
+
+    this._dataView = new DataView(kernel, config, this._gesture.editor);
     this._dataView.subscribe((e) => this._onEvent(e));
 
     const ds = kernel.getDataset(config.datasetId);
     if (ds) this._treeRoot.value = buildTree(ds.root);
+
+    const { w: Wc, h: Hc } = this._hostSize!;
 
     this._window = derive(() => {
       const root = this._treeRoot.value;
@@ -122,11 +187,12 @@ export class IcicleChart extends HTMLElement implements GestureContext {
       const root = this._treeRoot.value;
       const frozen = this._frozenOrder.value;
       if (!root) return new Map<string, LayoutRect>();
-      return computeLayout(root, config, frozen ?? undefined, VIEW_W, VIEW_H);
+      return computeLayout(root, config, frozen ?? undefined, Wc.value, Hc.value);
     });
 
+    const windowCell = this._window;
     this._edges = derive(() => {
-      const win = this._window.value;
+      const win = windowCell!.value;
       return buildEdges(win);
     });
 
@@ -134,13 +200,13 @@ export class IcicleChart extends HTMLElement implements GestureContext {
     const edgesLayer = group();
     this._rootShape.add(tilesLayer, edgesLayer);
 
-    const tilesResult = forEach(tilesLayer, this._window, (node) => makeTile(node, this._layout!), {
+    const tilesResult = forEach(tilesLayer, this._window, (node) => makeTile(node, this._layout!, this), {
       key: (node) => node.id,
     });
 
     const edgesResult = forEach(edgesLayer, this._edges, (edge) => {
       const handle = makeHandle(edge, this._layout!, config);
-      const off = attachDividerDrag(handle, this);
+      const off = attachEdgeHandleDrag(handle, this);
       handle.track(off);
       return handle;
     }, { key: (edge) => edge.id });
@@ -151,28 +217,76 @@ export class IcicleChart extends HTMLElement implements GestureContext {
       tilesLayer.dispose();
       edgesLayer.dispose();
     });
+
+    // Compose shared input behaviors onto the gesture.
+    this._behaviorDispose = setup(this._gesture)(
+      wheelEdit({
+        target: (g) => g.store.hover.value ?? g.store.focus.value,
+        valueOf: (g) => (id: string) => {
+          const root = g.store.tree.value;
+          if (!root) return 0;
+          const node = findNode(root, id);
+          return node ? node.value.value : 0;
+        },
+        writeValue: (id, value) => {
+          const root = this._treeRoot.value;
+          if (!root) return;
+          const node = findNode(root, id);
+          if (node) node.value.value = value;
+        },
+        frozenOrder: () => this._frozenOrder.value,
+      }),
+      keyboardEdit({
+        target: (g) => g.store.focus.value,
+        valueOf: (g) => (id: string) => {
+          const root = g.store.tree.value;
+          if (!root) return 0;
+          const node = findNode(root, id);
+          return node ? node.value.value : 0;
+        },
+        writeValue: (id, value) => {
+          const root = this._treeRoot.value;
+          if (!root) return;
+          const node = findNode(root, id);
+          if (node) node.value.value = value;
+        },
+        conservationMode: (g) =>
+          (g.store.config.value?.conservationMode as ConservationMode) ?? "additive",
+        siblings: (g) => (id: string) => {
+          const root = g.store.tree.value;
+          if (!root) return [];
+          const node = findNode(root, id);
+          if (!node || !node.parent) return [];
+          return node.parent.children.map((c) => c.id);
+        },
+        frozenOrder: () => this._frozenOrder.value,
+      }),
+    );
   }
 
   private _onEvent(event: DataViewEvent) {
     const root = this._treeRoot.value;
     if (!root) return;
+    const g = this._gesture!;
 
     if (event.type === "updated") {
-      // Rebuild from committed data. Skip while we're drafting (draft overlay should remain).
-      if (this._dataView!.editor.state === "Drafting") return;
+      if (g.state === "Drafting") return;
       this._frozenOrder.value = null;
-      this._snapshot = null;
-      this._activeEdge = null;
-      this._pairTotal = 0;
+      g.resetStore();
       const ds = this._dataView!.kernel.getDataset(this._dataView!.config.datasetId);
       if (ds) this._treeRoot.value = buildTree(ds.root);
       return;
     }
 
     if (event.type === "draft") {
-      if (event.isActive) return; // we already wrote the cells in updateGesture
+      if (event.isActive) {
+        // Active draft (from our own gesture) — snapshot on first draft if not yet taken.
+        if (!g.store.snapshot) g.store.snapshot = snapshotValues(root);
+        return;
+      }
+      // Cross-tile draft from another chart — snapshot + apply.
       const draft = event.draft!;
-      if (!this._snapshot) this._snapshot = snapshotValues(root);
+      if (!g.store.snapshot) g.store.snapshot = snapshotValues(root);
       applyDraft(root, draft);
       this._frozenOrder.value = draft.frozenOrder ? new Map(draft.frozenOrder.entries()) : null;
       return;
@@ -180,40 +294,36 @@ export class IcicleChart extends HTMLElement implements GestureContext {
 
     if (event.type === "commit") {
       if (event.isActive) {
-        // Persist the current leaf values so parent totals and internal ratios are preserved.
         const writes = leafValues(root);
         this._dataView!.kernel.writeValues(this._dataView!.config.datasetId, writes);
       }
       this._frozenOrder.value = null;
-      this._snapshot = null;
-      this._activeEdge = null;
-      this._pairTotal = 0;
+      g.resetStore();
       this.classList.remove("gesture-active");
       return;
     }
 
     if (event.type === "cancel") {
-      if (this._snapshot) restoreValues(root, this._snapshot);
+      if (g.store.snapshot) restoreValues(root, g.store.snapshot);
       this._frozenOrder.value = null;
-      this._snapshot = null;
-      this._activeEdge = null;
-      this._pairTotal = 0;
+      g.resetStore();
       this.classList.remove("gesture-active");
       return;
     }
   }
 
-  // GestureContext implementation
+  // --- GestureContext implementation (edge handle drag) ---
 
   startGesture(edge: Edge) {
     const root = this._treeRoot.value!;
-    this._activeEdge = edge;
-    this._snapshot = snapshotValues(root);
-    this._frozenOrder.value = this._dataView!.captureOrder();
+    const g = this._gesture!;
+    g.store.activeEdge = edge;
+    g.store.snapshot = snapshotValues(root);
+    g.store.frozenOrder = this._dataView!.captureOrder();
 
     const left = findNode(root, edge.leftId)!;
     const right = findNode(root, edge.rightId)!;
-    this._pairTotal = left.value.value + right.value.value;
+    g.store.pairTotal = left.value.value + right.value.value;
 
     this.classList.add("gesture-active");
 
@@ -224,11 +334,15 @@ export class IcicleChart extends HTMLElement implements GestureContext {
       secondaryValue: right.value.value,
       source: "divider-handle",
       intent: "edit",
-      frozenOrder: this._frozenOrder.value ?? undefined,
+      frozenOrder: g.store.frozenOrder ?? undefined,
     });
   }
 
   updateGesture(edge: Edge, point: { x: number; y: number }) {
+    const g = this._gesture!;
+    // Ignore drag updates after cancel — the draggable is still active
+    // until pointerup, but the editor is Idle.
+    if (g.state !== "Drafting") return;
     const root = this._treeRoot.value!;
     const layout = this._layout!.value;
     const left = findNode(root, edge.leftId)!;
@@ -236,7 +350,7 @@ export class IcicleChart extends HTMLElement implements GestureContext {
     const { left: newLeft, right: newRight } = computeReapportion(
       edge,
       layout,
-      this._pairTotal,
+      g.store.pairTotal,
       point,
       this._configCell.value!.orientation,
     );
@@ -251,11 +365,17 @@ export class IcicleChart extends HTMLElement implements GestureContext {
       secondaryValue: newRight,
       source: "divider-handle",
       intent: "edit",
-      frozenOrder: this._frozenOrder.value ?? undefined,
+      frozenOrder: g.store.frozenOrder ?? undefined,
     });
   }
 
   endGesture(_edge: Edge) {
+    const g = this._gesture!;
+    // If the gesture was cancelled (Escape), don't commit — values were restored.
+    if (g.state !== "Drafting") {
+      this.classList.remove("gesture-active");
+      return;
+    }
     this.classList.remove("gesture-active");
     this._dataView!.commit();
   }

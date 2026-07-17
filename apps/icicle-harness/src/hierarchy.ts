@@ -234,19 +234,53 @@ export function buildEdges(windowNodes: RenderNode[]): Edge[] {
 export function makeTile(
   node: RenderNode,
   layout: Cell<Map<string, LayoutRect>>,
+  chart?: {
+    setHover(id: string | null): void;
+    setFocus(id: string | null): void;
+    focusCell: Cell<string | null>;
+    hoverCell: Cell<string | null>;
+  },
 ): Shape {
   const pad = 2;
   const rx = derive(() => (layout.value.get(node.id)?.x ?? 0) + pad);
   const ry = derive(() => (layout.value.get(node.id)?.y ?? 0) + pad);
   const rw = derive(() => Math.max(0, (layout.value.get(node.id)?.width ?? 0) - pad * 2));
   const rh = derive(() => Math.max(0, (layout.value.get(node.id)?.height ?? 0) - pad * 2));
-  const tile = rect(rx, ry, rw, rh, { fill: node.color, stroke: "none" });
-  tile.el.style.pointerEvents = "none"; // tiles are not interactive; handles are
+
+  // Stroke reflects focus/selection and hover state — reads bireactive cells
+  // so the derive re-runs automatically when focus/hover changes.
+  const stroke = derive(() => {
+    if (!chart) return "none";
+    if (chart.focusCell.value === node.id) return "#fff";
+    if (chart.hoverCell.value === node.id) return "#c8cdd6";
+    return "none";
+  });
+  const strokeWidth = derive(() => {
+    if (!chart) return 0;
+    if (chart.focusCell.value === node.id || chart.hoverCell.value === node.id) return 2;
+    return 0;
+  });
+
+  const tile = rect(rx, ry, rw, rh, { fill: node.color, stroke, strokeWidth });
+  tile.el.style.cursor = "pointer";
+  tile.el.setAttribute("data-id", node.id);
+
+  // Wire focus/selection and hover if chart is provided.
+  if (chart) {
+    tile.el.addEventListener("pointerenter", () => chart.setHover(node.id));
+    tile.el.addEventListener("pointerleave", () => chart.setHover(null));
+    tile.el.addEventListener("click", () => {
+      chart.setFocus(node.id);
+      (tile.el as SVGRectElement).focus?.();
+    });
+  }
+
   const text = label(tile.at(0, 0)!, node.label, {
     align: { x: 0, y: 0 },
     fill: "#fff",
     size: 10,
   });
+  text.el.style.pointerEvents = "none";
   return group({}, tile, text);
 }
 
