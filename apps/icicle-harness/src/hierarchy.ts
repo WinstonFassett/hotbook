@@ -250,12 +250,9 @@ export function makeTile(
 ): Shape {
   const pad = 2;
 
-  // Entering nodes start at their parent's position so they appear to "grow
-  // out of" the parent. On first render, seed from the parent's layout rect;
-  // on subsequent renders, use the node's own layout. This gives the CSS
-  // transition a previous value to animate from.
-  const parentId = node.parentId;
-  let seeded = false;
+  // D3-style: tiles move to their target position. No grow/shrink animation.
+  // Entering tiles mount at target. Exiting tiles freeze at last position
+  // (withExitDelay holds them mounted briefly so they don't vanish instantly).
   let frozen: LayoutRect = { x: 0, y: 0, width: 0, height: 0 };
   const liveRect = derive(() => {
     const r = layout.value.get(node.id);
@@ -264,29 +261,9 @@ export function makeTile(
       if (p && r) { frozen = r; return r; }
       if (p) return r ?? frozen;
     }
-    // Exiting node (present=false): the layout no longer has this node.
-    // Return the parent's current rect so the tile shrinks into its parent
-    // — matching the "absorbed by parent" metaphor from D3.
-    if (!r) {
-      if (parentId) {
-        const parentRect = layout.value.get(parentId);
-        if (parentRect) return parentRect;
-      }
-      return frozen;
-    }
-    // Entering node: seed from parent on first read so CSS transition animates
-    // from parent position to target.
-    if (!seeded && parentId) {
-      const parentRect = layout.value.get(parentId);
-      if (parentRect) {
-        frozen = parentRect;
-        seeded = true;
-        return parentRect;
-      }
-    }
-    seeded = true;
-    frozen = r;
-    return r;
+    // Exiting node: freeze at last position so it stays put while
+    // withExitDelay holds it, then gets evicted.
+    return r ?? frozen;
   });
 
   const rx = derive(() => liveRect.value.x + pad);
@@ -324,24 +301,19 @@ export function makeTile(
 
   // Label: upper-left of the tile with padding. Positioned via CSS transform
   // on a wrapper <g> (not SVG x/y attributes) because CSS transitions animate
-  // transforms but NOT SVG x/y on <text> elements. The wrapper's transform
-  // transitions smoothly, carrying the label from old to new position.
-  // Clipped to the tile inner rect so text doesn't cross the divider.
+  // transforms but NOT SVG x/y on <text> elements. Size-gated (hidden when
+  // tile too small) like D3's labelVisible — no clipPath needed.
   const LABEL_PAD = 3;
-  const clipId = `clip-${node.id}`;
-  const clipPath = document.createElementNS("http://www.w3.org/2000/svg", "clipPath");
-  clipPath.setAttribute("id", clipId);
-  const clipRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-  clipPath.appendChild(clipRect);
-
-  // Create label at origin (0,0) — position is controlled by the wrapper's transform.
+  const labelText = derive(() => {
+    if (rw.value <= 28 || rh.value <= 16) return "";
+    return node.label;
+  });
   const lbl = label(
     Vec.derive(() => ({ x: 0, y: 0 })),
-    node.label,
+    labelText,
     { size: 10, align: Anchor.TopLeft, fill: "#fff" },
   );
   lbl.el.style.pointerEvents = "none";
-  lbl.el.setAttribute("clip-path", `url(#${clipId})`);
 
   // Wrapper <g> carries the label via CSS-transformable translate.
   const labelWrap = document.createElementNS("http://www.w3.org/2000/svg", "g");
@@ -351,18 +323,9 @@ export function makeTile(
     labelWrap.style.transform = `translate(${rx.value + LABEL_PAD}px, ${ry.value + LABEL_PAD}px)`;
   });
 
-  const clipDispose = effect(() => {
-    clipRect.setAttribute("x", String(rx.value));
-    clipRect.setAttribute("y", String(ry.value));
-    clipRect.setAttribute("width", String(Math.max(0, rw.value)));
-    clipRect.setAttribute("height", String(Math.max(0, rh.value)));
-  });
-
   const g = group({}, tile);
   g.el.appendChild(labelWrap);
-  g.el.appendChild(clipPath);
   (g as any).track?.(labelDispose);
-  (g as any).track?.(clipDispose);
 
   return g;
 }
