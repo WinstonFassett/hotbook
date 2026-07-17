@@ -5,6 +5,7 @@
 // Chart state (config, focus, hover, tree) stored as bireactive cells.
 
 import { cell, derive, effect, forEach, group, type Cell } from "bireactive";
+import { enterExitForEach } from "./behaviors/enter-exit-lifecycle";
 import type { ChartConfig, LayoutRect, RenderNode } from "./types";
 import { Kernel, configKey } from "./kernel";
 import { DataView } from "./data-view";
@@ -178,7 +179,7 @@ export class IcicleChart extends HTMLElement implements GestureContext {
     const edgesLayer = group();
     this._rootShape.add(tilesLayer, edgesLayer);
 
-    const tilesResult = forEach(tilesLayer, this._window, (node) =>
+    const tilesResult = enterExitForEach(tilesLayer, this._window, (node) =>
       makeTile(node, this._layout!, this),
       { key: (node) => node.id },
     );
