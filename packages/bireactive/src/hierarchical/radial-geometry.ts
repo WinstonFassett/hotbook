@@ -29,6 +29,7 @@ import {
 } from "bireactive";
 import type { ChartConfig, RadialRect, RenderNode } from "./types";
 import type { Gesture } from "./gesture";
+import { TRANSITION_DURATION } from "../lib/transitions";
 import {
   type ChartNode,
   type Edge,
@@ -430,7 +431,11 @@ function easeOutQuad(t: number): number {
   return 1 - (1 - t) * (1 - t);
 }
 
-const SETTLE_MS = 300; // 3× TRANSITION_BASE_MS
+// Settle duration is now a live cell read (WIN-352). Sampled at each anim's
+// start below and stored on the per-arc anim state so an in-flight tween keeps
+// its original duration but the next commit picks up the new value from the
+// tweaks pane. `TRANSITION_DURATION.drill` is a getter on `motion.baseMs`
+// (3× base by default = 300ms) — bumping base or drill retimes this.
 
 /**
  * Chart-level settle driver: watches the layout cell and moves the per-arc
@@ -452,7 +457,7 @@ export function settleArcCells(
   arcCellsMap: ArcCellsMap,
   isDrafting: () => boolean,
 ): () => void {
-  const anims = new Map<string, { from: RadialRect; to: RadialRect; start: number }>();
+  const anims = new Map<string, { from: RadialRect; to: RadialRect; start: number; duration: number }>();
   let raf: number | null = null;
 
   const writeCells = (cells: ArcCells, r: RadialRect) => {
@@ -468,7 +473,7 @@ export function settleArcCells(
     for (const [id, a] of anims) {
       const cells = arcCellsMap.get(id);
       if (!cells) { anims.delete(id); continue; }
-      const t = Math.min(1, (now - a.start) / SETTLE_MS);
+      const t = Math.min(1, (now - a.start) / a.duration);
       const e = easeOutQuad(t);
       writeCells(cells, {
         a0: a.from.a0 + (a.to.a0 - a.from.a0) * e,
@@ -508,7 +513,9 @@ export function settleArcCells(
           anims.delete(id);
           continue;
         }
-        anims.set(id, { from, to: target, start });
+        // Sample duration once per anim start so the tweaks pane retimes the
+        // NEXT settle, but an in-flight tween keeps its original duration.
+        anims.set(id, { from, to: target, start, duration: TRANSITION_DURATION.drill });
       }
       if (anims.size > 0 && raf === null) raf = requestAnimationFrame(step);
     });

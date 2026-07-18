@@ -24,6 +24,8 @@
 //
 // `prefers-reduced-motion` collapses to `transition: none` in one place.
 
+import { effect } from "bireactive";
+import { motion } from "../../lib/runtime-config";
 import type { Gesture, Behavior } from "../gesture";
 
 /** Host CSS class toggled while a gesture is live. */
@@ -31,8 +33,11 @@ export const GESTURE_ACTIVE_CLASS = "gesture-active";
 /** Host CSS class for reorder gestures — allows sibling transitions. */
 export const REORDER_ACTIVE_CLASS = "reorder-active";
 
-/** Base timing token (Interaction Principle 12): every duration is a multiple. */
-export const TRANSITION_BASE_MS = 100;
+/** Base timing token (Interaction Principle 12): every duration is a multiple.
+ *  Live via `motion.baseMs` (WIN-352 wave-1) — kept as a `let` re-export so
+ *  legacy consumers that treated it as a raw number still see updates. */
+export let TRANSITION_BASE_MS = motion.baseMs.value;
+effect(() => { TRANSITION_BASE_MS = motion.baseMs.value; });
 
 const SETTLE_ATTRS = ["x", "y", "width", "height"] as const;
 
@@ -42,13 +47,15 @@ export function prefersReducedMotion(): boolean {
     && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-/** Build a CSS transition string for the given SVG attributes. */
+/** Build a CSS transition string for the given SVG attributes. Reads the
+ *  master rhythm at call-time so a tweaks-pane bump is picked up on the next
+ *  `<style>` emission (see `transitionOnUpdated`, which re-emits on cell change). */
 export function settleTransition(
   attrs: readonly string[] = SETTLE_ATTRS,
   durationMult = 3,
 ): string {
   if (prefersReducedMotion()) return "none";
-  const dur = TRANSITION_BASE_MS * durationMult;
+  const dur = motion.baseMs.value * durationMult;
   return attrs.map((a) => `${a} ${dur}ms ease-out`).join(", ");
 }
 
@@ -83,11 +90,20 @@ export function transitionOnUpdated(opts: TransitionOnUpdatedOptions = {}): Beha
     const selector = opts.selector ?? host.tagName.toLowerCase();
     const elements = opts.elements ?? "rect, text";
 
-    const transitionValue = settleTransition(attrs, durationMult);
     // Scope the suppression to the host carrying the class so multiple charts
     // on the page don't clobber each other.
     const elemSel = elements.split(", ").map((e) => `${selector} ${e}`).join(", ");
-    const css = `
+
+    const styleEl = document.createElement("style");
+    styleEl.setAttribute("data-vf-transitions", selector);
+    host.prepend(styleEl);
+
+    // Re-emit the settle CSS whenever the master rhythm changes so the tweaks
+    // pane retimes settle live (WIN-352). settleTransition reads motion.baseMs
+    // at call-time; the effect subscribes via that read.
+    const styleDispose = effect(() => {
+      const transitionValue = settleTransition(attrs, durationMult);
+      styleEl.textContent = `
 ${elemSel} { transition: ${transitionValue}; }
 ${selector}.${GESTURE_ACTIVE_CLASS} * { transition: none !important; }
 ${selector}.${REORDER_ACTIVE_CLASS} [data-reordering],
@@ -96,11 +112,7 @@ ${selector}.${REORDER_ACTIVE_CLASS} [data-reordering] * { transition: none !impo
   ${elemSel} { transition: none !important; }
 }
 `;
-
-    const styleEl = document.createElement("style");
-    styleEl.setAttribute("data-vf-transitions", selector);
-    styleEl.textContent = css;
-    host.prepend(styleEl);
+    });
 
     // Single owner of the suppression class. Input behaviors call
     // gesture.draft/commit/cancel; this subscriber reacts. No other site
@@ -124,6 +136,7 @@ ${selector}.${REORDER_ACTIVE_CLASS} [data-reordering] * { transition: none !impo
 
     return () => {
       unsub();
+      styleDispose();
       styleEl.remove();
       // Defensive: ensure the class is not left on the host if the behavior
       // is torn down mid-gesture (e.g. config change rebuilds the chart).

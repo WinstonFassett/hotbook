@@ -5,6 +5,7 @@
 // radial-geometry.ts. No gesture policy here; that lives in gestures.ts.
 
 import type { ChartConfig, LayoutRect, RenderNode } from "./types";
+import { motion } from "../lib/runtime-config";
 import {
   Anchor,
   derive,
@@ -313,7 +314,10 @@ export function makeTile(
   // Clipped to the tile rect so labels don't overflow.
   const labelWrap = document.createElementNS("http://www.w3.org/2000/svg", "g");
   labelWrap.appendChild(lbl.el);
-  labelWrap.style.transition = "transform 300ms ease-out";
+  // Live-timed via motion.baseMs (WIN-352). 3× baseMs = settle role duration.
+  effect(() => {
+    labelWrap.style.transition = `transform ${motion.baseMs.value * 3}ms ease-out`;
+  });
 
   // Per-tile clipPath — clips the label to the tile's rect dimensions.
   // Applied to the outer <g> (no CSS transform) so clipPath coordinates
