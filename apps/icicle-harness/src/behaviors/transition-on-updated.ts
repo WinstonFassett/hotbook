@@ -28,6 +28,8 @@ import type { Gesture, Behavior } from "../gesture";
 
 /** Host CSS class toggled while a gesture is live. */
 export const GESTURE_ACTIVE_CLASS = "gesture-active";
+/** Host CSS class for reorder gestures — allows sibling transitions. */
+export const REORDER_ACTIVE_CLASS = "reorder-active";
 
 /** Base timing token (Interaction Principle 12): every duration is a multiple. */
 export const TRANSITION_BASE_MS = 100;
@@ -85,6 +87,7 @@ export function transitionOnUpdated(opts: TransitionOnUpdatedOptions = {}): Beha
 ${selector} rect, ${selector} text { transition: ${transitionValue}; }
 ${selector}.${GESTURE_ACTIVE_CLASS} rect, ${selector}.${GESTURE_ACTIVE_CLASS} text { transition: none !important; }
 ${selector}.${GESTURE_ACTIVE_CLASS} * { transition: none !important; }
+${selector}.${REORDER_ACTIVE_CLASS} [data-reordering] { transition: none !important; }
 @media (prefers-reduced-motion: reduce) {
   ${selector} rect, ${selector} text { transition: none !important; }
 }
@@ -100,9 +103,17 @@ ${selector}.${GESTURE_ACTIVE_CLASS} * { transition: none !important; }
     // should toggle `gesture-active`.
     const unsub = gesture.editor.subscribe((t) => {
       if (t.type === "draft") {
-        host.classList.add(GESTURE_ACTIVE_CLASS);
+        // Reorder gestures use a separate class that allows sibling
+        // transitions (siblings slide to provisional slots). Value-edit
+        // gestures suppress all transitions to prevent jitter.
+        if (t.draft?.intent === "reorder") {
+          host.classList.add(REORDER_ACTIVE_CLASS);
+        } else {
+          host.classList.add(GESTURE_ACTIVE_CLASS);
+        }
       } else if (t.type === "commit" || t.type === "cancel") {
         host.classList.remove(GESTURE_ACTIVE_CLASS);
+        host.classList.remove(REORDER_ACTIVE_CLASS);
       }
       // `updated` does not change Editor state — class stays as-is.
     });
@@ -113,6 +124,7 @@ ${selector}.${GESTURE_ACTIVE_CLASS} * { transition: none !important; }
       // Defensive: ensure the class is not left on the host if the behavior
       // is torn down mid-gesture (e.g. config change rebuilds the chart).
       host.classList.remove(GESTURE_ACTIVE_CLASS);
+      host.classList.remove(REORDER_ACTIVE_CLASS);
     };
   };
 }
