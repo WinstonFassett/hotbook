@@ -395,7 +395,7 @@ export function makeHandle(
     return layout.value.get(edge.leftId)?.height ?? 0;
   });
 
-  const handle = rect(hx, hy, hw, hh, { fill: "rgba(255,255,255,0.08)", stroke: "none" });
+  const handle = rect(hx, hy, hw, hh, { fill: "rgba(255,255,255,0.15)", stroke: "none" });
   handle.el.setAttribute("data-edge", edge.id);
   handle.effect(() => {
     handle.el.style.cursor = isHoriz.value ? "row-resize" : "col-resize";
