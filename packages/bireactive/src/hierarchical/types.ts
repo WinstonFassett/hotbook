@@ -45,6 +45,11 @@ export interface ChartConfig {
    *  - "depth": group hue brightened by depth (center saturated, outer washed out).
    *  - "mono": single accent color for all tiles. */
   colorMode?: "flat" | "depth" | "mono";
+  /** Whether exiting tiles linger and fade out (true) or are evicted
+   *  immediately (false). Default: true for sunburst (radial — items fade
+   *  out on level changes), false for icicle/treemap/pack (content moves
+   *  off-screen on drill, no exit fade needed). */
+  exitFade?: boolean;
 }
 
 /** A draft event produced by a control surface. */

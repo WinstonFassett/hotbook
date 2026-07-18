@@ -308,10 +308,12 @@ function hierMountProps(ctx: MountContext): (el: any) => void {
       colorMode?: 'flat' | 'depth' | 'mono'
       dragBehavior?: 'none' | 'resize' | 'reorder'
       conservationMode?: 'additive' | 'proportional-neighbor' | 'proportional-siblings'
+      exitFade?: boolean
     }
     if (t.colorMode != null) el.colorMode = t.colorMode
     if (t.dragBehavior != null) el.dragBehavior = t.dragBehavior
     if (t.conservationMode != null) el.conservationMode = t.conservationMode
+    if (t.exitFade != null) el.exitFade = t.exitFade
   }
 }
 

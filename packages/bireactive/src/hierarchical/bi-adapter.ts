@@ -215,6 +215,7 @@ export function withBiCompat<
       showRoot: defaults.showRoot ?? true,
       colorMode: defaults.colorMode as ColorMode | undefined,
       dragBehavior: defaults.dragBehavior as DragBehavior | undefined,
+      exitFade: defaults.exitFade as boolean | undefined,
     };
     private _kernelSet = false;
     private _offReorder: (() => void) | null = null;
@@ -250,6 +251,9 @@ export function withBiCompat<
 
     get dragBehavior(): DragBehavior | undefined { return this._c.dragBehavior; }
     set dragBehavior(v: DragBehavior | undefined) { this._c.dragBehavior = v; this._push(); }
+
+    get exitFade(): boolean | undefined { return this._c.exitFade; }
+    set exitFade(v: boolean | undefined) { this._c.exitFade = v; this._push(); }
 
     get showBreadcrumb(): boolean { return this._c.showBreadcrumb; }
     set showBreadcrumb(v: boolean) { this._c.showBreadcrumb = v; this._push(); }
@@ -313,6 +317,7 @@ export function withBiCompat<
         showRoot: c.showRoot,
         showBreadcrumb: c.showBreadcrumb,
         colorMode: c.colorMode,
+        exitFade: c.exitFade,
       };
     }
 

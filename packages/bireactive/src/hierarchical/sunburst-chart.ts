@@ -79,7 +79,14 @@ export class SunburstChart extends HierarchicalChartBase implements GestureConte
     const presentNodes = derive(() => allNodes.value.filter((n) => n.present));
     this._edges = derive(() => buildEdges(allNodes.value));
     const membership = membershipCell(presentNodes, (n) => n.id);
-    const renderedNodes = withExitDelay(allNodes, { key: (n: RenderNode) => n.id });
+    // exitFade (config): when true, exiting arcs linger and fade out. When
+    // false, arcs are evicted immediately (same as icicle/treemap/pack).
+    // Default: true for sunburst (radial — items fade in place on level
+    // changes rather than moving off-screen).
+    const exitFade = this._configCell.value?.exitFade ?? true;
+    const renderedNodes = exitFade
+      ? withExitDelay(allNodes, { key: (n: RenderNode) => n.id })
+      : allNodes;
 
     const tilesLayer = group();
     const edgesLayer = group();

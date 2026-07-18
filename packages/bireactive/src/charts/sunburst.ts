@@ -12,4 +12,4 @@
 import { SunburstChart } from "../hierarchical/sunburst-chart";
 import { withBiCompat } from "../hierarchical/bi-adapter";
 
-export class MdSunburstLC extends withBiCompat(SunburstChart, {}) {}
+export class MdSunburstLC extends withBiCompat(SunburstChart, { exitFade: true }) {}
