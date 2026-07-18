@@ -14,7 +14,6 @@ import {
   findNode,
   makeHandle,
   makeTile,
-  snapshotValues,
   type ChartNode,
   type Edge,
 } from "./hierarchy";
@@ -138,14 +137,7 @@ export class IcicleChart extends HierarchicalChartBase implements GestureContext
   // --- GestureContext: edge handle drag lifecycle (icicle-specific) ---
 
   startGesture(edge: Edge) {
-    const root = this._treeRoot.value!;
-    const g = this._gesture!;
-    g.store.activeEdge = edge;
-    g.store.snapshot = snapshotValues(root);
-
-    const left = findNode(root, edge.leftId)!;
-    const right = findNode(root, edge.rightId)!;
-    this.setPairTotal(left.value.value + right.value.value);
+    const { left, g } = this._startGestureCommon(edge);
 
     // Capture boundary position and sizes at gesture start.
     const layout = this.layout();
@@ -177,28 +169,6 @@ export class IcicleChart extends HierarchicalChartBase implements GestureContext
     } else {
       this._dragGroupSize = this._dragPairSize;
     }
-
-    // Capture frozen order BEFORE draft(). The previewFullRender behavior
-    // subscribes to the Editor AFTER the DataView, so its capture would fire
-    // after chart-binding has already applied the draft without frozenOrder
-    // — causing siblings to jump to their natural sorted position on the
-    // first frame. Capturing here ensures the draft event carries the
-    // frozenOrder so chart-binding applies it correctly on the first frame.
-    if (this.config.sort !== "index" && !g.store.frozenOrder) {
-      const order = captureOrderFromWindow(this._window?.value ?? null);
-      this._frozenOrder.value = order;
-      g.store.frozenOrder = order;
-    }
-
-    this._dataView!.draft({
-      nodeId: edge.leftId,
-      value: left.value.value,
-      secondaryNodeId: edge.rightId,
-      secondaryValue: right.value.value,
-      source: "divider-handle",
-      intent: "edit",
-      frozenOrder: g.store.frozenOrder ?? undefined,
-    });
   }
 
   updateGesture(edge: Edge, point: { x: number; y: number }) {
@@ -249,11 +219,7 @@ export class IcicleChart extends HierarchicalChartBase implements GestureContext
   }
 
   endGesture(_edge: Edge) {
-    const g = this._gesture!;
-    if (g.state !== "Drafting") return;
-    this.setPairTotal(0);
-    g.store.activeEdge = null;
-    this._dataView!.commit();
+    this._endGestureCommon();
   }
 }
 

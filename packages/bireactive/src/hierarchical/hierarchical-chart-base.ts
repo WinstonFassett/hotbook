@@ -21,7 +21,7 @@ import type { ChartConfig } from "./types";
 import { Kernel, configKey } from "./kernel";
 import { DataView } from "./data-view";
 import { Gesture, setup, type Behavior } from "./gesture";
-import { findNode, snapshotValues, restoreValues, type ChartNode } from "./tree";
+import { findNode, snapshotValues, restoreValues, type ChartNode, type Edge } from "./tree";
 import { bindChart, rebuildTree } from "./chart-binding";
 import { useHostSize } from "./host-size";
 import type { ConservationMode } from "./behaviors/keyboard-edit";
@@ -640,5 +640,53 @@ export abstract class HierarchicalChartBase extends HTMLElement {
     if (dragBehavior === "resize") return [resizeBehavior];
     if (dragBehavior === "reorder") return [reorderBehavior];
     return [];
+  }
+
+  /** Shared startGesture setup: captures snapshot, finds left/right nodes,
+   *  sets pair total, captures frozen order, and opens the draft. Returns
+   *  the common context {root, g, left, right} for chart-specific use.
+   *  Charts call this first, then do their geometry-specific capture. */
+  protected _startGestureCommon(edge: Edge): {
+    root: ChartNode;
+    g: Gesture;
+    left: ChartNode;
+    right: ChartNode;
+  } {
+    const root = this._treeRoot.value!;
+    const g = this._gesture!;
+    g.store.activeEdge = edge;
+    g.store.snapshot = snapshotValues(root);
+
+    const left = findNode(root, edge.leftId)!;
+    const right = findNode(root, edge.rightId)!;
+    this.setPairTotal(left.value.value + right.value.value);
+
+    if (this.config.sort !== "index" && !g.store.frozenOrder) {
+      const order = captureOrderFromWindow(this._window?.value ?? null);
+      this._frozenOrder.value = order;
+      g.store.frozenOrder = order;
+    }
+
+    this._dataView!.draft({
+      nodeId: edge.leftId,
+      value: left.value.value,
+      secondaryNodeId: edge.rightId,
+      secondaryValue: right.value.value,
+      source: "divider-handle",
+      intent: "edit",
+      frozenOrder: g.store.frozenOrder ?? undefined,
+    });
+
+    return { root, g, left, right };
+  }
+
+  /** Shared endGesture teardown: clears pair total, active edge, commits
+   *  the draft. Charts call this at the end of their endGesture. */
+  protected _endGestureCommon(): void {
+    const g = this._gesture!;
+    if (g.state !== "Drafting") return;
+    this.setPairTotal(0);
+    g.store.activeEdge = null;
+    this._dataView!.commit();
   }
 }

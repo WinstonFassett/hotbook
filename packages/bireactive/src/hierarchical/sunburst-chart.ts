@@ -15,7 +15,6 @@ import {
   type Edge,
   findNode,
   buildEdges,
-  snapshotValues,
 } from "./tree";
 import {
   computeRadialLayout,
@@ -183,14 +182,7 @@ export class SunburstChart extends HierarchicalChartBase implements GestureConte
   // angular geometry (pointer → angle → value delta).
 
   startGesture(edge: Edge) {
-    const root = this._treeRoot.value!;
-    const g = this._gesture!;
-    g.store.activeEdge = edge;
-    g.store.snapshot = snapshotValues(root);
-
-    const left = findNode(root, edge.leftId)!;
-    const right = findNode(root, edge.rightId)!;
-    this.setPairTotal(left.value.value + right.value.value);
+    this._startGestureCommon(edge);
 
     // Capture boundary angle and pair angular span at gesture start.
     const layout = this._layout!.value;
@@ -198,22 +190,6 @@ export class SunburstChart extends HierarchicalChartBase implements GestureConte
     const rr = layout.get(edge.rightId)!;
     this._dragBoundaryAngle = lr.a1;
     this._dragPairSpan = (lr.a1 - lr.a0) + (rr.a1 - rr.a0);
-
-    if (this.config.sort !== "index" && !g.store.frozenOrder) {
-      const order = captureOrderFromWindow(this._window?.value ?? null);
-      this._frozenOrder.value = order;
-      g.store.frozenOrder = order;
-    }
-
-    this._dataView!.draft({
-      nodeId: edge.leftId,
-      value: left.value.value,
-      secondaryNodeId: edge.rightId,
-      secondaryValue: right.value.value,
-      source: "divider-handle",
-      intent: "edit",
-      frozenOrder: g.store.frozenOrder ?? undefined,
-    });
   }
 
   updateGesture(edge: Edge, point: { x: number; y: number }) {
@@ -262,11 +238,7 @@ export class SunburstChart extends HierarchicalChartBase implements GestureConte
   }
 
   endGesture(_edge: Edge) {
-    const g = this._gesture!;
-    if (g.state !== "Drafting") return;
-    this.setPairTotal(0);
-    g.store.activeEdge = null;
-    this._dataView!.commit();
+    this._endGestureCommon();
   }
 }
 
