@@ -98,6 +98,9 @@ export abstract class HierarchicalChartBase extends HTMLElement {
   protected _breadcrumbBar?: HTMLElement;
   protected _rootShape?: any;
   protected _defs?: SVGDefsElement;
+  /** Unique instance ID for clipPath/gradient IDs (avoids collisions
+   *  when multiple chart instances are on the same page). */
+  protected _instanceId = `c${Math.random().toString(36).slice(2, 8)}`;
   protected _hostSize?: ReturnType<typeof useHostSize>;
 
   protected _setupDisposers: (() => void)[] = [];

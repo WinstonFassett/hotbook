@@ -225,6 +225,7 @@ export function makeTile(
   present?: Read<boolean>,
   isHoriz?: Read<boolean>,
   defs?: SVGDefsElement,
+  instanceId?: string,
 ): Shape {
   const pad = 2;
 
@@ -318,7 +319,7 @@ export function makeTile(
   let clipId: string | null = null;
   let clipRect: SVGRectElement | null = null;
   if (defs) {
-    clipId = `tile-clip-${node.id}`;
+    clipId = `${instanceId ?? "c"}-tile-clip-${node.id}`;
     const clipPath = document.createElementNS("http://www.w3.org/2000/svg", "clipPath");
     clipPath.setAttribute("id", clipId);
     clipRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
