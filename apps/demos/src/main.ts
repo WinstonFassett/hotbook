@@ -298,6 +298,13 @@ function mountHierFamily(section: HTMLElement, demo: HTMLElement, el: HTMLElemen
   tw.style.cssText = "overflow:hidden;border:1px solid var(--border);border-radius:6px;";
   tw.appendChild(table);
   demo.appendChild(tw);
+
+  // Wire reactive sort to all four hierarchical charts + treetable.
+  // The global sort button and per-chart sort dropdown both feed into
+  // chartSort(el).effective, which sets el.sortBy → config.sort → re-derive.
+  for (const c of [el, sunburst, treemap, pack, table] as HTMLElement[]) {
+    wireSort(c, table, model, "icicle");
+  }
 }
 
 function mountLayoutSection(section: HTMLElement, demo: HTMLElement, el: HTMLElement): void {
