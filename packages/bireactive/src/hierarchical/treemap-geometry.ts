@@ -263,7 +263,7 @@ export function makeTreemapTile(
   const lbl = label(Vec.derive(() => ({ x: 0, y: 0 })), labelText, {
     size: node.isLeaf ? 11 : 10,
     align: Anchor.TopLeft,
-    fill: "#fff",
+    fill: "#1a1d24",
     bold: !node.isLeaf,
   });
   lbl.el.style.pointerEvents = "none";

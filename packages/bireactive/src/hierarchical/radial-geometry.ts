@@ -321,7 +321,7 @@ export function makeArc(
   const lbl = label(
     Vec.derive(() => ({ x: 0, y: 0 })),
     labelText,
-    { size: 10, align: Anchor.Center, fill: "#fff" },
+    { size: 10, align: Anchor.Center, fill: "#1a1d24" },
   );
   lbl.el.setAttribute("dy", "0.35em");
   lbl.el.style.pointerEvents = "none";

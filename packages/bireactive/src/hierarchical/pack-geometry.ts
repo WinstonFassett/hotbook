@@ -183,7 +183,7 @@ export function makeCircle(
     const lbl = label(Vec.derive(() => ({ x: cx.value, y: cy.value })), text, {
       size: 10,
       align: Anchor.Center,
-      fill: "rgba(255,255,255,0.85)",
+      fill: "#1a1d24",
     });
     lbl.el.style.pointerEvents = "none";
     const grp = group();

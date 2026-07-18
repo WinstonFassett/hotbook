@@ -305,7 +305,7 @@ export function makeTile(
   const lbl = label(
     Vec.derive(() => ({ x: 0, y: 0 })),
     labelText,
-    { size: 10, align: Anchor.TopLeft, fill: "#fff" },
+    { size: 10, align: Anchor.TopLeft, fill: "#1a1d24" },
   );
   lbl.el.style.pointerEvents = "none";
 
