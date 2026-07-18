@@ -121,8 +121,9 @@ export function tileBodyReorder(opts: TileBodyReorderOptions): Behavior {
           initialMids.set(id, isHoriz ? (r.y + r.height / 2) : (r.x + r.width / 2));
         }
 
-        // Elevate the ghost.
-        ghostEl = host.querySelector(`g[data-id="${targetId}"]`) as SVGGraphicsElement | null;
+        // Elevate the ghost: find the tile's <g> (parent of the <rect> with data-id).
+        const tileRect = host.querySelector(`rect[data-id="${targetId}"]`);
+        ghostEl = (tileRect?.parentElement as SVGGraphicsElement) ?? null;
         if (ghostEl) {
           prevGhostTransition = ghostEl.style.transition;
           ghostEl.style.transition = "none";
