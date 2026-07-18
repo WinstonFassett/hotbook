@@ -9,11 +9,13 @@ export interface HostSize {
 }
 
 export function useHostSize(
-  host: HTMLElement,
+  target: HTMLElement,
   fallback: { width: number; height: number },
+  observe?: Element,
 ): HostSize {
   const w = cell(fallback.width);
   const h = cell(fallback.height);
+  const el = observe ?? target;
 
   if (typeof ResizeObserver !== "undefined") {
     const ro = new ResizeObserver(([e]) => {
@@ -23,15 +25,15 @@ export function useHostSize(
       if (nw !== w.value) w.value = nw;
       if (nh !== h.value) h.value = nh;
     });
-    ro.observe(host);
+    ro.observe(el);
 
-    const r = host.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
     if (r.width > 0) w.value = Math.max(1, Math.floor(r.width));
     if (r.height > 0) h.value = Math.max(1, Math.floor(r.height));
 
     // Return disposer alongside cells via a side channel — the caller
-    // can't get it back, so we stash it on the host for cleanup.
-    (host as any)._roDispose = () => ro.disconnect();
+    // can't get it back, so we stash it on the target for cleanup.
+    (target as any)._roDispose = () => ro.disconnect();
   }
 
   return { w, h };

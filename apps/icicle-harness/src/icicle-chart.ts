@@ -55,6 +55,7 @@ export class IcicleChart extends HTMLElement implements GestureContext {
   private _gesture: Gesture | null = null;
   private _dataView: DataView | null = null;
   private _svg?: SVGSVGElement;
+  private _chromeLayer?: HTMLDivElement;
   private _rootShape?: any;
   private _window?: Cell<RenderNode[]>;
   private _layout?: Cell<Map<string, LayoutRect>>;
@@ -122,7 +123,9 @@ export class IcicleChart extends HTMLElement implements GestureContext {
       const root = this._treeRoot.value;
       if (root) {
         const node = findNode(root, id);
-        this._drillId.value = node?.parent?.id ?? null;
+        const parentId = node?.parent?.id ?? null;
+        // Drilling out to the tree root = no drill (show full tree).
+        this._drillId.value = parentId === root.id ? null : parentId;
       }
       return;
     }
@@ -156,24 +159,32 @@ export class IcicleChart extends HTMLElement implements GestureContext {
 
   connectedCallback() {
     if (this._svg) return;
-    this.style.display = "block";
+    this.style.display = "flex";
+    this.style.flexDirection = "column";
     this.style.width = "100%";
     this.style.height = "100%";
     this.style.outline = "none";
     this.style.userSelect = "none";
     this.tabIndex = -1;
 
+    // Chrome layer: HTML bar above the SVG for breadcrumb etc.
+    // Flex: 0 0 auto — takes its content height, SVG fills the rest.
+    this._chromeLayer = document.createElement("div");
+    this._chromeLayer.style.flex = "0 0 auto";
+    this._chromeLayer.style.pointerEvents = "none";
+    this.appendChild(this._chromeLayer);
+
     this._svg = document.createElementNS(SVG_NS, "svg");
     this._svg.style.display = "block";
+    this._svg.style.flex = "1 1 0";
     this._svg.style.width = "100%";
-    this._svg.style.height = "100%";
     this._svg.style.overflow = "hidden"; // clip off-canvas tiles during drill
     this.appendChild(this._svg);
 
     this._rootShape = group();
     this._svg.appendChild(this._rootShape.el);
 
-    this._hostSize = useHostSize(this, { width: FALLBACK_W, height: FALLBACK_H });
+    this._hostSize = useHostSize(this, { width: FALLBACK_W, height: FALLBACK_H }, this._svg);
 
     // Rendering layer — created once, persists across config changes.
     // D3-style: ALL descendants mount once via forEach over _allNodes
@@ -198,6 +209,8 @@ export class IcicleChart extends HTMLElement implements GestureContext {
       const config = this._configCell.value;
       const drill = this._drillId.value;
       if (!root || !config) return new Map<string, LayoutRect>();
+      // Hc is the SVG's actual size (measured by ResizeObserver on the SVG),
+      // which already excludes the breadcrumb height because of flexbox.
       return computeLayout(root, config, frozen ?? undefined, Wc.value, Hc.value, drill);
     });
 
@@ -249,6 +262,54 @@ export class IcicleChart extends HTMLElement implements GestureContext {
     };
     this.addEventListener("dblclick", onDblClick);
     this._setupDisposers.push(() => this.removeEventListener("dblclick", onDblClick));
+
+    // Drill breadcrumb: reactive HTML overlay in the chrome layer.
+    // Rebuilds when drillId or treeRoot changes. Only shown when
+    // config.showBreadcrumb is true and a drill focus is set.
+    const breadcrumbDispose = effect(() => {
+      const drillId = this._drillId.value;
+      const root = this._treeRoot.value;
+      const showBc = this._configCell.value?.showBreadcrumb === true;
+      // Clear previous breadcrumb.
+      this._chromeLayer!.innerHTML = "";
+      if (!showBc || !drillId || !root) return;
+
+      // Walk ancestor path from drill focus to root.
+      const path: ChartNode[] = [];
+      let cur: ChartNode | null = findNode(root, drillId);
+      while (cur) {
+        path.unshift(cur);
+        cur = cur.parent;
+      }
+      if (path.length <= 1) return; // just root, no breadcrumb needed
+
+      const bar = document.createElement("nav");
+      bar.style.cssText = "display:flex;align-items:center;gap:2px;padding:4px 8px;font-size:11px;pointer-events:auto;";
+
+      // Root crumb
+      const rootBtn = document.createElement("button");
+      rootBtn.textContent = path[0].label;
+      rootBtn.style.cssText = "background:none;border:none;color:var(--muted,#888);cursor:pointer;font:inherit;padding:2px 4px;border-radius:3px;";
+      rootBtn.addEventListener("click", () => this.drill(null));
+      bar.appendChild(rootBtn);
+
+      // Path segments (skip root, skip current focus — it's the last tile)
+      for (let i = 1; i < path.length - 1; i++) {
+        const sep = document.createElement("span");
+        sep.textContent = "›";
+        sep.style.cssText = "color:var(--muted,#555);";
+        bar.appendChild(sep);
+
+        const btn = document.createElement("button");
+        btn.textContent = path[i].label;
+        btn.style.cssText = "background:none;border:none;color:var(--ink,#ccc);cursor:pointer;font:inherit;padding:2px 4px;border-radius:3px;";
+        btn.addEventListener("click", () => this.drill(path[i].id));
+        bar.appendChild(btn);
+      }
+
+      this._chromeLayer!.appendChild(bar);
+    });
+    this._setupDisposers.push(breadcrumbDispose);
 
     // Data layer — rebuilds only when the query key changes (datasetId,
     // measure, depth). Render-field changes update the config cell in place

@@ -158,6 +158,9 @@ export function buildAllDescendants(
   drillId?: string | null,
 ): RenderNode[] {
   const maxDepth = Math.min(config.depth ?? 100, treeDepth(root));
+  const showRoot = config.showRoot !== false; // default true
+  // First visible depth: 0 if showRoot, 1 if not (skip root tile).
+  const visDepthStart = showRoot ? 0 : 1;
   const result: RenderNode[] = [];
 
   // Compute the set of ids in the drill focus's subtree + the focus's
@@ -189,9 +192,13 @@ export function buildAllDescendants(
   function build(n: ChartNode, depth: number, parentId: string | null): RenderNode {
     const children: RenderNode[] = [];
     const isLeaf = n.children.length === 0;
+    // present: within the visible depth window.
+    // - No drill: depth in [visDepthStart, maxDepth] (skip root if !showRoot).
+    // - Drill: focus is the view root (relDepth 0, always present);
+    //   descendants up to maxDepth relative levels.
     const present = focusSubtreeIds
       ? focusSubtreeIds.has(n.id) && (depth - focusTreeDepth) <= maxDepth
-      : depth <= maxDepth;
+      : depth >= visDepthStart && depth <= maxDepth;
     const rn: RenderNode = {
       id: n.id,
       label: n.label,
@@ -223,13 +230,18 @@ export function computeLayout(
   drillId?: string | null,
 ): Map<string, LayoutRect> {
   const maxDepth = Math.min(config.depth ?? 100, treeDepth(root));
+  const showRoot = config.showRoot !== false; // default true
+  const visDepthStart = showRoot ? 0 : 1;
+  // Number of visible depth bands = maxDepth - visDepthStart + 1.
+  const numBands = maxDepth - visDepthStart + 1;
   const isHoriz = config.orientation === "horizontal";
-  const band = isHoriz ? W / (maxDepth + 1) : H / (maxDepth + 1);
+  const band = isHoriz ? W / numBands : H / numBands;
   const valueSpan = isHoriz ? H : W;
   const map = new Map<string, LayoutRect>();
 
   function setRect(id: string, v0: number, v1: number, d: number) {
-    const depthPos = d * band;
+    // Shift depth position so visDepthStart maps to position 0.
+    const depthPos = (d - visDepthStart) * band;
     const size = v1 - v0;
     if (isHoriz) {
       map.set(id, { x: depthPos, y: v0, width: band, height: size });

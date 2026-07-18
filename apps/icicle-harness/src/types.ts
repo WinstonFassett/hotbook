@@ -30,6 +30,11 @@ export interface ChartConfig {
   orientation: "horizontal" | "vertical";
   canReorder?: boolean;
   conservationMode?: "additive" | "proportional-neighbor" | "proportional-siblings";
+  /** Show the root node as a tile. When false, depth counts from the
+   *  root's children (depth 1 = first visible row). Default: true. */
+  showRoot?: boolean;
+  /** Show a drill breadcrumb above the chart when drilled in. Default: false. */
+  showBreadcrumb?: boolean;
 }
 
 /** A draft event produced by a control surface. */

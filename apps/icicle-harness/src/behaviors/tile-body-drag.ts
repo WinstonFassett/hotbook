@@ -172,6 +172,9 @@ export function tileBodyDrag(opts: TileBodyDragOptions): Behavior {
     const onDown = (e: PointerEvent) => {
       if (e.button !== 0) return;
       if (gesture.state === "Drafting") return; // one gesture at a time
+      // Ignore pointerdown outside the SVG (breadcrumb buttons, chrome layer) —
+      // setPointerCapture would steal the click from HTML elements.
+      if (!(e.target as Element)?.closest?.("svg")) return;
 
       // Resolve target from the hovered/focused tile.
       const id = opts.target(gesture);

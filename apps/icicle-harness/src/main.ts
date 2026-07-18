@@ -141,6 +141,8 @@ const config: ChartConfig = {
   orientation: "vertical",
   canReorder: false,
   conservationMode: "proportional-neighbor",
+  showRoot: false,
+  showBreadcrumb: true,
 };
 // Tree is now 5 levels deep (root → category → subcategory → item → detail).
 // depth:3 shows root + 2 levels; drilling into a category reveals its
@@ -176,7 +178,7 @@ document.querySelectorAll("#config-bar button").forEach((btn) => {
     btn.classList.add("active");
     // Parse value
     if (cfg === "depth") updateConfig(cfg, parseInt(val!));
-    else if (cfg === "canReorder") updateConfig(cfg, val === "true");
+    else if (cfg === "canReorder" || cfg === "showRoot" || cfg === "showBreadcrumb") updateConfig(cfg, val === "true");
     else updateConfig(cfg, val);
   });
 });
