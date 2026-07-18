@@ -20,8 +20,30 @@ const sampleData: DataNode = {
       value: 0,
       color: "oklch(0.6 0.12 240)",
       children: [
-        { id: "rent", label: "Rent", value: 2200, color: "oklch(0.6 0.12 240)", children: [] },
-        { id: "utilities", label: "Utilities", value: 380, color: "oklch(0.65 0.12 240)", children: [] },
+        {
+          id: "rent",
+          label: "Rent",
+          value: 0,
+          color: "oklch(0.6 0.12 240)",
+          children: [
+            { id: "rent-base", label: "Base rent", value: 1800, color: "oklch(0.6 0.12 240)", children: [
+              { id: "rent-base-lease", label: "Lease", value: 1700, color: "oklch(0.6 0.12 240)", children: [] },
+              { id: "rent-base-fees", label: "Fees", value: 100, color: "oklch(0.65 0.12 240)", children: [] },
+            ] },
+            { id: "rent-parking", label: "Parking spot", value: 400, color: "oklch(0.65 0.12 240)", children: [] },
+          ],
+        },
+        {
+          id: "utilities",
+          label: "Utilities",
+          value: 0,
+          color: "oklch(0.65 0.12 240)",
+          children: [
+            { id: "electric", label: "Electric", value: 180, color: "oklch(0.65 0.12 240)", children: [] },
+            { id: "water", label: "Water", value: 80, color: "oklch(0.7 0.12 240)", children: [] },
+            { id: "internet", label: "Internet", value: 120, color: "oklch(0.75 0.12 240)", children: [] },
+          ],
+        },
         { id: "insurance", label: "Insurance", value: 180, color: "oklch(0.7 0.12 240)", children: [] },
       ],
     },
@@ -31,8 +53,27 @@ const sampleData: DataNode = {
       value: 0,
       color: "oklch(0.6 0.12 120)",
       children: [
-        { id: "groceries", label: "Groceries", value: 620, color: "oklch(0.6 0.12 120)", children: [] },
-        { id: "dining", label: "Dining out", value: 340, color: "oklch(0.65 0.12 120)", children: [] },
+        {
+          id: "groceries",
+          label: "Groceries",
+          value: 0,
+          color: "oklch(0.6 0.12 120)",
+          children: [
+            { id: "produce", label: "Produce", value: 240, color: "oklch(0.6 0.12 120)", children: [] },
+            { id: "protein", label: "Protein", value: 220, color: "oklch(0.65 0.12 120)", children: [] },
+            { id: "pantry", label: "Pantry", value: 160, color: "oklch(0.7 0.12 120)", children: [] },
+          ],
+        },
+        {
+          id: "dining",
+          label: "Dining out",
+          value: 0,
+          color: "oklch(0.65 0.12 120)",
+          children: [
+            { id: "lunch", label: "Lunch", value: 180, color: "oklch(0.65 0.12 120)", children: [] },
+            { id: "dinner", label: "Dinner", value: 160, color: "oklch(0.7 0.12 120)", children: [] },
+          ],
+        },
       ],
     },
     {
@@ -41,7 +82,16 @@ const sampleData: DataNode = {
       value: 0,
       color: "oklch(0.6 0.12 40)",
       children: [
-        { id: "gas", label: "Gas", value: 280, color: "oklch(0.6 0.12 40)", children: [] },
+        {
+          id: "gas",
+          label: "Gas",
+          value: 0,
+          color: "oklch(0.6 0.12 40)",
+          children: [
+            { id: "gas-commute", label: "Commute", value: 200, color: "oklch(0.6 0.12 40)", children: [] },
+            { id: "gas-trips", label: "Trips", value: 80, color: "oklch(0.65 0.12 40)", children: [] },
+          ],
+        },
         { id: "transit", label: "Transit", value: 120, color: "oklch(0.65 0.12 40)", children: [] },
         { id: "parking", label: "Parking", value: 60, color: "oklch(0.7 0.12 40)", children: [] },
       ],
@@ -52,8 +102,26 @@ const sampleData: DataNode = {
       value: 0,
       color: "oklch(0.6 0.12 200)",
       children: [
-        { id: "emergency", label: "Emergency fund", value: 500, color: "oklch(0.6 0.12 200)", children: [] },
-        { id: "retire", label: "Retirement", value: 800, color: "oklch(0.65 0.12 200)", children: [] },
+        {
+          id: "emergency",
+          label: "Emergency fund",
+          value: 0,
+          color: "oklch(0.6 0.12 200)",
+          children: [
+            { id: "emergency-monthly", label: "Monthly", value: 300, color: "oklch(0.6 0.12 200)", children: [] },
+            { id: "emergency-buffer", label: "Buffer", value: 200, color: "oklch(0.65 0.12 200)", children: [] },
+          ],
+        },
+        {
+          id: "retire",
+          label: "Retirement",
+          value: 0,
+          color: "oklch(0.65 0.12 200)",
+          children: [
+            { id: "retire-401k", label: "401k", value: 500, color: "oklch(0.65 0.12 200)", children: [] },
+            { id: "retire-ira", label: "IRA", value: 300, color: "oklch(0.7 0.12 200)", children: [] },
+          ],
+        },
       ],
     },
   ],
@@ -74,6 +142,9 @@ const config: ChartConfig = {
   canReorder: false,
   conservationMode: "proportional-neighbor",
 };
+// Tree is now 5 levels deep (root → category → subcategory → item → detail).
+// depth:3 shows root + 2 levels; drilling into a category reveals its
+// subcategories + items, drilling again reveals items + details.
 
 // ─── Wire up ───────────────────────────────────────────────────────────────
 

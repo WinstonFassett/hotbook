@@ -50,6 +50,7 @@ export class IcicleChart extends HTMLElement implements GestureContext {
   private _frozenOrder = cell<Map<string, string[]> | null>(null);
   private _focusCell = cell<string | null>(null);
   private _hoverCell = cell<string | null>(null);
+  private _drillId = cell<string | null>(null);
 
   private _gesture: Gesture | null = null;
   private _dataView: DataView | null = null;
@@ -108,6 +109,26 @@ export class IcicleChart extends HTMLElement implements GestureContext {
   get focusCell() { return this._focusCell; }
   get hoverCell() { return this._hoverCell; }
 
+  // D3-style drill: dblclick a node to drill in; dblclick the current
+  // focus to drill out to its parent. The layout transform re-roots at
+  // the focus; CSS transitions animate the slide.
+  drill = (id: string | null) => {
+    if (id === null) {
+      this._drillId.value = null;
+      return;
+    }
+    // Drilling to the current focus → drill out to parent.
+    if (this._drillId.value === id) {
+      const root = this._treeRoot.value;
+      if (root) {
+        const node = findNode(root, id);
+        this._drillId.value = node?.parent?.id ?? null;
+      }
+      return;
+    }
+    this._drillId.value = id;
+  };
+
   // GestureContext value accessors
   valueOf = (id: string) => {
     const root = this._treeRoot.value;
@@ -139,12 +160,14 @@ export class IcicleChart extends HTMLElement implements GestureContext {
     this.style.width = "100%";
     this.style.height = "100%";
     this.style.outline = "none";
+    this.style.userSelect = "none";
     this.tabIndex = -1;
 
     this._svg = document.createElementNS(SVG_NS, "svg");
     this._svg.style.display = "block";
     this._svg.style.width = "100%";
     this._svg.style.height = "100%";
+    this._svg.style.overflow = "hidden"; // clip off-canvas tiles during drill
     this.appendChild(this._svg);
 
     this._rootShape = group();
@@ -163,8 +186,9 @@ export class IcicleChart extends HTMLElement implements GestureContext {
       const root = this._treeRoot.value;
       const frozen = this._frozenOrder.value;
       const config = this._configCell.value;
+      const drill = this._drillId.value;
       if (!root || !config) return [];
-      return buildAllDescendants(root, config, frozen ?? undefined);
+      return buildAllDescendants(root, config, frozen ?? undefined, drill);
     });
     this._window = allNodes;
 
@@ -172,8 +196,9 @@ export class IcicleChart extends HTMLElement implements GestureContext {
       const root = this._treeRoot.value;
       const frozen = this._frozenOrder.value;
       const config = this._configCell.value;
+      const drill = this._drillId.value;
       if (!root || !config) return new Map<string, LayoutRect>();
-      return computeLayout(root, config, frozen ?? undefined, Wc.value, Hc.value);
+      return computeLayout(root, config, frozen ?? undefined, Wc.value, Hc.value, drill);
     });
 
     // Present-filtered subset for membership (per-tile/per-handle visibility).
@@ -212,6 +237,18 @@ export class IcicleChart extends HTMLElement implements GestureContext {
       tilesLayer.dispose();
       edgesLayer.dispose();
     });
+
+    // D3-style drill via host-level dblclick. Attached to the host (not
+    // individual tiles) because setPointerCapture in tileBodyDrag can
+    // prevent dblclick from reaching tile elements. Reads hovered/focused
+    // node like production gestures.ts does.
+    const onDblClick = () => {
+      const id = this._hoverCell.value ?? this._focusCell.value;
+      if (!id) return;
+      this.drill(id);
+    };
+    this.addEventListener("dblclick", onDblClick);
+    this._setupDisposers.push(() => this.removeEventListener("dblclick", onDblClick));
 
     // Data layer — rebuilds only when the query key changes (datasetId,
     // measure, depth). Render-field changes update the config cell in place

@@ -208,7 +208,9 @@ export function tileBodyDrag(opts: TileBodyDragOptions): Behavior {
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp);
       window.addEventListener("pointercancel", onUp);
-      e.preventDefault();
+      // Don't preventDefault on pointerdown — it suppresses dblclick events,
+      // which we need for drill. Text selection / default drag is prevented
+      // via CSS user-select:none on the host instead.
     };
 
     host.addEventListener("pointerdown", onDown);

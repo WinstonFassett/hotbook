@@ -145,18 +145,53 @@ export function sortedChildren(
 /** Walk the FULL tree — every descendant, not just the depth window.
  *  D3-style: all nodes mount once; `present` gates visibility. Off-window
  *  nodes (depth > maxDepth) get layout rects beyond the canvas edge and
- *  slide to/from there via CSS transitions + opacity fade. */
+ *  slide to/from there via CSS transitions + opacity fade.
+ *
+ *  Drill: when `drillId` is set, the focus node becomes the root of the
+ *  visible window. `present` = node is in the focus's subtree AND relative
+ *  depth ≤ maxDepth. Ancestors and off-subtree nodes stay mounted but are
+ *  not present — they slide off-canvas via the layout transform. */
 export function buildAllDescendants(
   root: ChartNode,
   config: ChartConfig,
   frozenOrder?: Map<string, string[]> | null,
+  drillId?: string | null,
 ): RenderNode[] {
   const maxDepth = Math.min(config.depth ?? 100, treeDepth(root));
   const result: RenderNode[] = [];
 
+  // Compute the set of ids in the drill focus's subtree + the focus's
+  // tree depth (for relative-depth present check).
+  let focusSubtreeIds: Set<string> | null = null;
+  let focusTreeDepth = 0;
+  if (drillId) {
+    const focus = findNode(root, drillId);
+    if (focus) {
+      focusSubtreeIds = new Set<string>();
+      function collect(n: ChartNode) {
+        focusSubtreeIds!.add(n.id);
+        for (const c of n.children) collect(c);
+      }
+      collect(focus);
+      // Find focus tree depth by walking from root.
+      function findDepth(n: ChartNode, d: number): number {
+        if (n.id === drillId) return d;
+        for (const c of n.children) {
+          const r = findDepth(c, d + 1);
+          if (r >= 0) return r;
+        }
+        return -1;
+      }
+      focusTreeDepth = findDepth(root, 0);
+    }
+  }
+
   function build(n: ChartNode, depth: number, parentId: string | null): RenderNode {
     const children: RenderNode[] = [];
     const isLeaf = n.children.length === 0;
+    const present = focusSubtreeIds
+      ? focusSubtreeIds.has(n.id) && (depth - focusTreeDepth) <= maxDepth
+      : depth <= maxDepth;
     const rn: RenderNode = {
       id: n.id,
       label: n.label,
@@ -165,7 +200,7 @@ export function buildAllDescendants(
       depth,
       parentId,
       isLeaf,
-      present: depth <= maxDepth,
+      present,
       children,
     };
     result.push(rn);
@@ -185,6 +220,7 @@ export function computeLayout(
   frozenOrder: Map<string, string[]> | null | undefined,
   W: number,
   H: number,
+  drillId?: string | null,
 ): Map<string, LayoutRect> {
   const maxDepth = Math.min(config.depth ?? 100, treeDepth(root));
   const isHoriz = config.orientation === "horizontal";
@@ -205,8 +241,7 @@ export function computeLayout(
   function partition(n: ChartNode, v0: number, v1: number, d: number) {
     setRect(n.id, v0, v1, d);
     // Don't stop at maxDepth — compute rects for ALL descendants so
-    // off-window nodes have geometry to transition from/to. Nodes beyond
-    // maxDepth get depthPos > canvas extent (below/right of canvas).
+    // off-window nodes have geometry to transition from/to.
     const children = sortedChildren(n, config, frozenOrder);
     const totalValue = children.reduce((s, c) => s + c.value.value, 0);
     const span = v1 - v0;
@@ -219,6 +254,37 @@ export function computeLayout(
   }
 
   partition(root, 0, valueSpan, 0);
+
+  // D3-style drill transform: affine transform on the partition coords.
+  // Scale the value axis so the focus node's span fills the canvas;
+  // shift the depth axis so the focus is at position 0. Off-subtree nodes
+  // get pushed off-canvas — they slide there via CSS transitions.
+  if (drillId) {
+    const focusRect = map.get(drillId);
+    if (focusRect) {
+      const focusDepthPos = isHoriz ? focusRect.x : focusRect.y;
+      const focusV0 = isHoriz ? focusRect.y : focusRect.x;
+      const focusSpan = isHoriz ? focusRect.height : focusRect.width;
+      const scale = focusSpan > 0 ? valueSpan / focusSpan : 1;
+
+      for (const [id, r] of map) {
+        if (isHoriz) {
+          // x = depth axis, y = value axis
+          const newDepthPos = r.x - focusDepthPos;
+          const newV0 = (r.y - focusV0) * scale;
+          const newSize = r.height * scale;
+          map.set(id, { x: newDepthPos, y: newV0, width: r.width, height: newSize });
+        } else {
+          // y = depth axis, x = value axis
+          const newDepthPos = r.y - focusDepthPos;
+          const newV0 = (r.x - focusV0) * scale;
+          const newSize = r.width * scale;
+          map.set(id, { x: newV0, y: newDepthPos, width: newSize, height: r.height });
+        }
+      }
+    }
+  }
+
   return map;
 }
 
@@ -296,6 +362,9 @@ export function makeTile(
   tile.el.setAttribute("data-id", node.id);
 
   // Wire focus/selection and hover if chart is provided.
+  // dblclick for drill is handled at the host level (see icicle-chart.ts),
+  // not per-tile — setPointerCapture in tileBodyDrag can prevent dblclick
+  // from reaching individual tile elements.
   if (chart) {
     tile.el.addEventListener("pointerenter", () => chart.setHover(node.id));
     tile.el.addEventListener("pointerleave", () => chart.setHover(null));
