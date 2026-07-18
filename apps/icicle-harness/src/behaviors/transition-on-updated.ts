@@ -87,7 +87,8 @@ export function transitionOnUpdated(opts: TransitionOnUpdatedOptions = {}): Beha
 ${selector} rect, ${selector} text { transition: ${transitionValue}; }
 ${selector}.${GESTURE_ACTIVE_CLASS} rect, ${selector}.${GESTURE_ACTIVE_CLASS} text { transition: none !important; }
 ${selector}.${GESTURE_ACTIVE_CLASS} * { transition: none !important; }
-${selector}.${REORDER_ACTIVE_CLASS} [data-reordering] { transition: none !important; }
+${selector}.${REORDER_ACTIVE_CLASS} [data-reordering],
+${selector}.${REORDER_ACTIVE_CLASS} [data-reordering] * { transition: none !important; }
 @media (prefers-reduced-motion: reduce) {
   ${selector} rect, ${selector} text { transition: none !important; }
 }
