@@ -5,9 +5,11 @@
 // writes layout targets to them, annularSector reads from them.
 // makeAngularHandle reads from the same cells so handles stay in sync.
 //
-// Label transform follows the d3 zoomable-sunburst pattern:
-// rotate(midAngle - 90) translate(midRadius, 0) rotate(flip)
-// with text-anchor: middle, dy: 0.35em, and flip = midAngle < 180 ? 0 : 180.
+// Label transform: rotate(midAngle) translate(midRadius, 0) rotate(flip)
+// with text-anchor: middle, dy: 0.35em, and flip = midAngle in (90°, 270°) ? 180 : 0.
+// annularSector uses standard math angles (0 = right, clockwise in SVG), so
+// the label rotation matches directly — no -90 offset (that's the d3 convention
+// where 0 = top, which doesn't apply here).
 
 import {
   Anchor,
@@ -327,6 +329,7 @@ export function makeArc(
   // Wrapper <g> carries the d3-style transform.
   const labelWrap = document.createElementNS("http://www.w3.org/2000/svg", "g");
   labelWrap.appendChild(lbl.el);
+  labelWrap.setAttribute("data-label-wrap", "");
 
   const labelDispose = effect(() => {
     const midA = (a0Effective.value + a1Effective.value) / 2;
@@ -334,10 +337,19 @@ export function makeArc(
     const midDeg = (midA * 180) / Math.PI;
     const cx = center.x.value;
     const cy = center.y.value;
-    // d3 pattern: translate to center, rotate to radial, translate to midR, flip
-    const flip = midDeg < 180 ? 0 : 180;
-    labelWrap.style.transform =
-      `translate(${cx}px, ${cy}px) rotate(${midDeg - 90}deg) translate(${midR}px, 0px) rotate(${flip}deg)`;
+    // annularSector uses standard math angles (cos/sin, 0 = right, clockwise
+    // in SVG). The label transform must match: rotate(midDeg) places the label
+    // at the arc's mid-angle. No -90 offset (that's the d3 convention where
+    // 0 = top, but our arcs use 0 = right).
+    // Flip labels on the left half (90°–270°) so they're not upside down.
+    // Use the SVG transform attribute (not CSS style.transform) — CSS transforms
+    // on SVG <g> elements get normalized to matrix() by the browser and can
+    // lose the original transform string.
+    const flip = midDeg > 90 && midDeg < 270 ? 180 : 0;
+    labelWrap.setAttribute(
+      "transform",
+      `translate(${cx},${cy}) rotate(${midDeg}) translate(${midR},0) rotate(${flip})`,
+    );
   });
 
   const g = group({}, arc);
