@@ -26,6 +26,7 @@ import { dataModelFor, type DemoDataModel } from "./data-models";
 import { sharedRows, sharedEdges } from "./layout/demo-data";
 import { mountControls } from "./layout/controls";
 import { getChartSchema } from "@hotbook/core";
+import { cell, derive, effect, untracked } from "bireactive";
 import "@hotbook/bireactive"; // Import to trigger schema registration
 import { MdViewerDemo } from "./viewer-demo-element";
 import { MdCartesianViewerDemo } from "./cartesian-viewer-demo";
@@ -135,29 +136,89 @@ function readConfig(): ReproConfig {
     only: onlyRaw ? onlyRaw.split(',').map(s => s.trim()).filter(Boolean) : null,
   };
 }
-let config = readConfig();
+// `only` is read once at load (reload on change); `sort` is reactive below.
+const config = { only: readConfig().only };
 
-// Live sort: hierarchical charts expose a reactive sortBy and animate the
-// toggle themselves; flat charts tween on data-order changes, so their demo
-// data model re-feeds sorted data (setSort). Treetables re-sort via sortBy.
-function applySort(el: HTMLElement, treetable: HTMLElement | null, model: DemoDataModel | undefined, kind?: string) {
-  // Only drive chart sort if the schema actually declares a sort field.
+// --- Sort: reactive global default + per-chart overrides ---
+// (chart-architecture.md §"Config layering": global defaults, per-chart
+// overrides win. The chart is the source of truth for its own effective
+// config; the global bar is a default, not a hidden override.)
+//
+// `globalSort` is the page-wide default, driven by the global sort button and
+// the URL hash. Each chart gets its own `sortOverride` cell (null = fall back
+// to global). `effectiveSort` derives per chart: override ?? global. An effect
+// per chart applies the effective sort to the chart + side treetable whenever
+// it changes — no applySort loop, no hashchange walker, no gesturecommit
+// re-apply reading a stale global.
+const globalSort = cell<'index' | 'value'>(readConfig().sort);
+// Update globalSort from URL hash changes (the global button writes the hash).
+let lastCfgSeg = parseHash().cfg.toString();
+window.addEventListener('hashchange', () => {
+  const cfgSeg = parseHash().cfg.toString();
+  if (cfgSeg === lastCfgSeg) return;
+  lastCfgSeg = cfgSeg;
+  const next = readConfig();
+  globalSort.value = next.sort;
+  // `only` change requires a reload (chart set changes).
+  if (JSON.stringify(next.only) !== JSON.stringify(config.only)) location.reload();
+});
+
+interface ChartSortState {
+  /** Per-chart override cell (null = fall back to global default). */
+  override: ReturnType<typeof cell<'index' | 'value' | null>>;
+  /** Derived effective sort: override ?? globalSort. */
+  effective: ReturnType<typeof derive<'index' | 'value'>>;
+}
+const chartSortStates = new Map<HTMLElement, ChartSortState>();
+
+/** Get or create the per-chart sort state for an element. The per-chart
+ *  selector writes to `override`; everyone else reads `effective`. */
+function chartSort(el: HTMLElement): ChartSortState {
+  let st = chartSortStates.get(el);
+  if (!st) {
+    const override = cell<'index' | 'value' | null>(null);
+    const effective = derive(() => override.value ?? globalSort.value);
+    st = { override, effective };
+    chartSortStates.set(el, st);
+  }
+  return st;
+}
+
+/** Wire a chart's effective sort to its chart + side treetable. The effect
+ *  fires on mount and whenever the effective sort changes (global or override).
+ *  Hierarchical charts have a reactive `sortBy` → setting it re-derives layout.
+ *  Flat charts (bar/pie) re-feed sorted data via the data model. The treetable
+ *  follows via its own `sortBy`. */
+function wireSort(
+  el: HTMLElement,
+  treetable: HTMLElement | null,
+  model: DemoDataModel | undefined,
+  kind?: string,
+): void {
   const schema = kind ? getChartSchema(kind) : undefined;
   const hasSort = schema?.ui.fields.some(f => f.type === 'sort') ?? false;
-  if (hasSort) {
-    if ('sortBy' in el) {
-      (el as any).sortBy = config.sort;
-    } else if (model?.setSort) {
-      model.setSort(el, config.sort);
-      if (treetable) {
-        (treetable as any).externalRoot = model.root;
-        (treetable as any).refresh?.();
+  if (!hasSort) return;
+  const { effective } = chartSort(el);
+  effect(() => {
+    const sort = effective.value;
+    // untracked: setSort/apply reads el.dataCell and el.measureKey (bireactive
+    // cells). Without untracked, the effect would track those cells as deps
+    // and re-fire when apply writes el.externalData → infinite loop.
+    untracked(() => {
+      if ('sortBy' in el) {
+        (el as any).sortBy = sort;
+      } else if (model?.setSort) {
+        model.setSort(el, sort);
+        if (treetable) {
+          (treetable as any).externalRoot = model.root;
+          (treetable as any).refresh?.();
+        }
       }
-    }
-  }
-  if (treetable && 'sortBy' in treetable) (treetable as any).sortBy = config.sort;
-  // Drag-to-reorder gate (WIN-262): only active when sort is by natural order.
-  if ('canReorder' in el) (el as any).canReorder = (config.sort === 'index');
+      if (treetable && 'sortBy' in treetable) (treetable as any).sortBy = sort;
+      // Drag-to-reorder gate (WIN-262): only active when sort is by natural order.
+      if ('canReorder' in el) (el as any).canReorder = (sort === 'index');
+    });
+  });
 }
 
 function wireReorder(el: HTMLElement, treetable: HTMLElement | null, model: DemoDataModel | undefined) {
@@ -230,17 +291,14 @@ function mountLayoutSection(section: HTMLElement, demo: HTMLElement, el: HTMLEle
     treetable.externalRoot = nested.root;
     if (nested.columns) treetable.columns = nested.columns;
     dataWrap.appendChild(treetable);
-    // Track this treetable so it gets sort updates.
-    applySort(el, treetable, nested);
-    mounted.push({ el, treetable, model: nested });
+    // Wire reactive sort (effective = per-chart override ?? global default).
+    wireSort(el, treetable, nested);
   }
 
   mountControls(toolbar);
 
   section.insertBefore(toolbar, demo);
 }
-
-let updateSortLabel: () => void = () => {};
 
 // Build schema-driven config UI for a demo chart
 function buildChartConfigUI(demoId: string, chartEl: HTMLElement, dataModel?: DemoDataModel): HTMLElement | null {
@@ -336,11 +394,11 @@ function buildChartConfigUI(demoId: string, chartEl: HTMLElement, dataModel?: De
         sel.value = (chartEl as any).sortBy ?? 'index';
         sel.addEventListener('change', () => {
           const newSort = sel.value as 'index' | 'value';
-          if ('sortBy' in chartEl) {
-            (chartEl as any).sortBy = newSort;
-          } else if (dataModel?.setSort) {
-            dataModel.setSort(chartEl, newSort);
-          }
+          // Per-chart override: write to the override cell. The wireSort effect
+          // reacts and applies it to the chart + treetable. Global sort changes
+          // can't clobber this — effectiveSort = override ?? global.
+          // (chart-architecture.md §"Config layering".)
+          chartSort(chartEl).override.value = newSort;
           chartEl.dispatchEvent(new CustomEvent('chartconfigchange', { bubbles: true }));
         });
         controls.appendChild(label);
@@ -401,15 +459,15 @@ function buildConfigBar(): HTMLElement {
     location.hash = anchor ? `${parts[0] ?? ''}|${anchor}` : (parts[0] ?? '');
   };
   const sortBtn = document.createElement('button');
-  sortBtn.textContent = `sort: ${config.sort}`;
-  sortBtn.onclick = () => set('sort', config.sort === 'value' ? 'index' : 'value');
+  // Reactive label + onclick: the button reflects and writes the global default.
+  // Per-chart overrides are not affected (effectiveSort = override ?? global).
+  effect(() => { sortBtn.textContent = `sort: ${globalSort.value}`; });
+  sortBtn.onclick = () => set('sort', globalSort.value === 'value' ? 'index' : 'value');
   bar.append(sortBtn);
-  updateSortLabel = () => { sortBtn.textContent = `sort: ${config.sort}`; };
   return bar;
 }
 
 const app = document.getElementById("app");
-const mounted: Array<{ el: HTMLElement; treetable: HTMLElement | null; model?: DemoDataModel; kind?: string }> = [];
 if (app) {
   app.prepend(buildConfigBar());
   const shown = config.only
@@ -447,7 +505,12 @@ if (app) {
         const hasSort = schema?.ui.fields.some(f => f.type === 'sort') ?? false;
         queueMicrotask(() => {
           if (!(el as any).gestureActive && hasSort && dataModel.setSort) {
-            dataModel.setSort(el, config.sort);
+            // Re-feed sorted data using the chart's reactive effective sort.
+            // The bar chart freezes display order during gestures; after commit
+            // it needs a re-feed to reconcile to the (possibly new) sorted
+            // order. Reading the reactive effective sort means per-chart
+            // overrides are respected. (chart-architecture.md §"Config layering".)
+            dataModel.setSort(el, chartSort(el).effective.value);
             el.dispatchEvent(new CustomEvent('chartconfigchange', { bubbles: true }));
           }
         });
@@ -523,24 +586,11 @@ if (app) {
 
       const kind = demoIdToKind[e.id];
       wireReorder(el, treetable, dataModel);
-      applySort(el, treetable, dataModel, kind);
-      mounted.push({ el, treetable, model: dataModel, kind });
+      // Wire reactive sort (effective = per-chart override ?? global default).
+      wireSort(el, treetable, dataModel, kind);
     }
   }
 }
-
-let lastCfgSeg = parseHash().cfg.toString();
-window.addEventListener('hashchange', () => {
-  const cfgSeg = parseHash().cfg.toString();
-  if (cfgSeg === lastCfgSeg) return;
-  lastCfgSeg = cfgSeg;
-  const next = readConfig();
-  const needsReload = JSON.stringify(next.only) !== JSON.stringify(config.only);
-  config = next;
-  if (needsReload) { location.reload(); return; }
-  updateSortLabel();
-  for (const { el, treetable, model, kind } of mounted) applySort(el, treetable, model, kind);
-});
 
 // WIN-352: live design-tweaks pane. Ephemeral, unconditional in dev + preview.
 mountMotionTweaks({ position: { top: 8, right: 8 } });

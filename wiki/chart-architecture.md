@@ -19,6 +19,7 @@ Older architecture drafts that conflict with this doc are in `wiki/stale/`.
 - **Use the full public `bireactive` surface** (`num`, `total`/`lens`, `derive`, `effect`, `rect`, `forEach`, `group`, `label`, `drag`/`dragModel`/`d`), not just `cell/derive/effect`.
 - **CSS transitions for autonomous motion; immediate write-through for reactive motion.** (`transitions-decision.md`)
 - **No overflow.** A mark must never render outside the chart bounds. If a pre-edit exceeds the domain, scale the domain or re-render. (`interaction-principles.md`)
+- **Config layering: global defaults, per-chart overrides win.** A chart's effective config is the per-chart setting if set, else the global default. The demos page global toolbar (and hotbook's tile-config defaults) carry the global defaults; per-chart config UIs (the schema-driven `<select>`s, the tweaks panel) override them. Both layers must stay in sync: a per-chart override is the chart's new effective value, and any handler that re-applies config on lifecycle events (e.g. `gesturecommit` re-applying sort) must read the chart's **effective** value, not the stale global. The chart is the source of truth for its own effective config; the global bar is a default, not a hidden override.
 
 ## The parts
 

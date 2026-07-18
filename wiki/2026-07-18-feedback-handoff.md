@@ -8,9 +8,23 @@ Dev servers: `hotbook-demos.localhost:1355` (demos) + `icicle-harness.localhost:
 
 ## Winston's feedback (reviewed demos page, 2026-07-18)
 
-### Regressions (fix first)
+### Round 2 feedback (slow-motion animation review, 2026-07-18)
 
-1. **Pack not transitioning** — likely caused by Phase 3/4 changes (`exitFade` default, `_transitionOpts()` extraction). Pack drill has no transition animation at all. Investigate `pack-chart.ts` `_setupRendering` + `_transitionOpts()` + the `transitionOnUpdated` behavior wiring.
+**5. Treemap drill transition is fundamentally wrong.** When drilling into a node (e.g. "tech", the blue top-level node):
+   - The "tech" node itself **shrinks into the upper-left corner** until it vanishes. This is backwards — tech is the container of the things filling the screen, so it should GROW and get pushed off-screen as its children take over.
+   - The other root-level siblings **also scale down into the upper-left corner**. What they should do is slide DOWN (or in the appropriate direction), preserving separation, using offsets to push off-screen.
+   - Labels vanish during the animation-out but reappear on pop-out (weird).
+   - **Root cause:** `computeTreemapLayout` runs d3.treemap on the **effective root only** (drill target). The drill target's children get fresh layout filling [0,0,W,H], but the drill target itself + its siblings get NO layout entry → fall back to `{x:0,y:0,width:0,height:0}` → shrink to corner. This is NOT the D3 zoomable-treemap pattern.
+   - **Fix:** mirror icicle's `computeLayout` — run d3.treemap on the FULL tree, then apply a 2D affine transform (scale + translate) that maps the focus node's rect → [0,0,W,H]. Off-subtree nodes scale up and translate off-screen, sliding there via CSS transitions. Icicle's transitions are the gold standard.
+   - Reference: D3 zoomable treemap pattern. Production treemap (`packages/bireactive/src/charts/treemap.ts`) wraps the same `TreemapChart` — same bug. LayerChart inspo (`inspo/layerchart-treemap-sample.tsx`) is a static treemap, no drill transition to reference.
+
+**6. Sunburst transitions are also not right.** Icicle transitions are wonderful and set the bar; sunburst needs to match. Need to study the D3 zoomable-sunburst example more carefully. (Also still has regression #3 below — center color fades to black on drill.)
+
+**7. Circle pack still not zooming at all, still no breadcrumb.** (Same as regressions #1 + #4 below — confirmed still open.)
+
+### Round 1 regressions (fix first)
+
+1. **Pack not transitioning** — likely caused by Phase 3/4 changes (`exitFade` default, `_transitionOpts()` extraction). Pack drill has no transition animation at all. Investigate `pack-chart.ts` `_setupRendering` + `_transitionOpts()` + the `transitionOnUpdated` behavior wiring. **Root cause found:** pack never wired `withExitDelay` (unlike sunburst), so exiting circles are evicted immediately — the opacity CSS transition fires but is invisible. Also pack uses the same "recompute on effective root" pattern as treemap (see #5 above) — needs the same D3-style affine transform fix.
 
 2. **Bar chart sort regression** — change sort to "order by value", edit a bar, release → bars animate back to original sort order instead of staying sorted by value. Probably a `frozenOrder` issue in `_composeStandardBehaviors` or the bar chart's own sort logic. Check `bar-chart.ts` + `behaviors/preview-full-render.ts`.
 
@@ -87,6 +101,45 @@ Dev servers: `hotbook-demos.localhost:1355` (demos) + `icicle-harness.localhost:
 
 22. **Nested-layered** — proven out in another project, adapted here, basically works but has a weird unrelated treetable. Under-construction.
 
+## D3 zoomable reference (fetched to `inspo/d3-zoomable/`)
+
+Source: `inspo/d3-zoomable/zoomable-treemap.js`, `zoomable-sunburst.js`, `zoomable-icicle.js` (from `https://api.observablehq.com/@d3/zoomable-*.js`).
+
+### Icicle (the gold standard — already matches)
+
+- `d3.partition().size([height, (height+1)*width/3])` — **full tree laid out once**.
+- On click: `focus = focus === p ? p.parent : p`, then compute `d.target` for EVERY node:
+  - `x0: (d.x0 - p.x0) / (p.x1 - p.x0) * height` — affine on value axis (scale + translate)
+  - `y0: d.y0 - p.y0` — depth shift (translate only, no scale on depth)
+- Transition: `cell.transition().duration(750).attr("transform", d => translate(target.y0, target.x0))` + rect height tween + label opacity tween.
+- **No clamp.** Off-subtree nodes get `x0/x1` outside `[0, height]` → slide off-canvas. This is why icicle feels right — siblings slide away, focus children slide in, all on one shared timeline.
+- Our `computeLayout` already does this (1D affine on value axis). ✓
+
+### Treemap (the fix target)
+
+- Custom `tile` function: `d3.treemapBinary(node, 0, 0, width, height)` then rescale children: `child.x0 = x0 + child.x0/width * (x1-x0)` etc. — **affine during tiling**, so focus children fill the focus's rect.
+- `d3.treemap().tile(tile)(hierarchy)` — full tree laid out once.
+- Scales `x.domain([d.x0, d.x1]); y.domain([d.y0, d.y1])` map focus rect → `[0,W]×[0,H]`.
+- **Transition = two-layer crossfade**: `zoomin` creates a NEW `<g>` on top with the focus's children (fades in), the OLD `<g>` transitions to `position(d.parent)` (slides/shrinks to where focus was in the old view) + fades out + removes. `zoomout` reverses (old on top fades out, new underneath).
+- D3 renders ONE level at a time (focus.children only), so crossfade is the natural choice.
+- **Our architecture renders ALL descendants (nested)**, so we have a better option: single-set + 2D affine (the icicle pattern extended to 2D). Lay out the full nested treemap once, then for each rect apply `scaleX = W/focusW, scaleY = H/focusH, translate = (-focusX*scaleX, -focusY*scaleY)`. Every node including focus siblings gets a target → they slide off-screen (downward if focus was at top, preserving separation). Focus children scale up from inside the focus's old rect → fill screen. CSS transitions on x/y/width/height animate the slide. This gives the icicle feel Winston wants, not the crossfade D3 uses.
+
+### Sunburst (also needs work)
+
+- `d3.partition().size([2π, height+1])` — full tree laid out once.
+- `root.each(d => d.current = d)` — stores per-node current state.
+- On click: compute `d.target` for EVERY node:
+  - `x0: Math.max(0, Math.min(1, (d.x0 - p.x0) / (p.x1 - p.x0))) * 2π` — **CLAMPED to [0, 2π]**
+  - `y0: Math.max(0, d.y0 - p.depth)` — clamped to ≥0
+- Transition: `path.transition(t).tween("data", d => interpolate(d.current, d.target)).attrTween("d", d => () => arc(d.current))` — **interpolates `current → target` per frame** via `attrTween`, re-rendering the arc path each frame. The clamp makes off-subtree arcs collapse to slivers, but the smooth interpolation makes the collapse look like a smooth shrink, not a snap.
+- `arcVisible(d)`: `d.y1 <= 3 && d.y0 >= 1 && d.x1 > d.x0` — visibility gate (2 rings at a time).
+- **NO center colored disc in the D3 reference.** The center is a transparent `<circle>` with `datum(root)` for click-to-zoom-out. Winston's "center stays drilled color" is our own design choice — needs its own fix (don't crossfade the center; swap instantly or z-order it on top so the old root disc is never visible during the transition).
+- Our `computeRadialLayout` already clamps (matching D3) and uses per-arc cells + `settleArcCells` RAF tween (analogous to `attrTween`). The clamp is correct for sunburst. The remaining issue is the center color crossfade (#3) + matching the feel of icicle's transitions.
+
+### Key takeaway
+
+The unifying pattern: **lay out the full tree once, compute a per-node target on drill, tween every node from current → target.** Icicle does this (1D affine, no clamp). Sunburst does this (angular affine + clamp + attrTween). Treemap should do this (2D affine, no clamp) — our nested-rendering architecture makes single-set + affine a better fit than D3's crossfade. Pack should do this (2D affine on circles).
+
 ## LayerChart inspo reference
 
 File: `inspo/layerchart-treemap-sample.tsx` + `inspo/layerchart/packages/layerchart/src/lib/components/Treemap.svelte`
@@ -103,11 +156,35 @@ Key patterns to adopt:
 
 ## Proposed plan (next session)
 
-### Phase A: Fix regressions (blockers)
-1. Pack transitions — investigate `pack-chart.ts` `_setupRendering` + `_transitionOpts()`
-2. Bar chart sort — investigate `frozenOrder` + `preview-full-render`
-3. Sunburst center color on drill — make center circle fill reactive to `drillId`
-4. Pack breadcrumb — ensure breadcrumb wiring is active in pack
+### Phase A: Fix drill transitions (blockers — biggest wins)
+
+The unifying root cause: treemap, pack, and sunburst all use a "recompute layout on the effective root (drill target)" pattern. This makes the drill target's children fill the screen but leaves everything else with no layout entry → shrink-to-corner. Icicle is the gold standard because it walks the FULL tree and applies a D3-style affine transform so off-subtree nodes slide off-canvas.
+
+**A1. Treemap drill transition** (feedback #5) — `treemap-geometry.ts` `computeTreemapLayout`:
+  - Run d3.treemap on the FULL `root` (not `effectiveRoot`), walking all descendants into the map.
+  - If `drillId`, find the focus rect `[fx, fy, fw, fh]` and apply 2D affine: `scaleX = W/fw, scaleY = H/fh, translate = (-fx*scaleX, -fy*scaleY)` to every rect.
+  - Result: focus node grows to fill screen → its children (nested inside) take over; siblings scale up + translate off-screen (e.g. downward) preserving relative layout. CSS transitions on x/y/width/height animate the slide.
+  - This matches icicle's `computeLayout` drill transform (1D value-axis scale) extended to 2D.
+  - **Focus-node rendering = config option** (Winston's call): like icicle's `showRoot` and like `showBreadcrumb`, treemap should expose a config flag (e.g. `showRoot` reused, or a treemap-specific `showFocusTile`) controlling whether the focus node renders as a visible tile during drill or is the invisible container. Default TBD — likely hidden (container) to match D3 zoomable-treemap, but consumer-configurable.
+
+**A2. Pack drill transition** (feedback #7, regression #1) — `pack-geometry.ts` `computePackLayout`:
+  - Same fix: run d3.pack on the FULL tree, apply 2D affine transform mapping focus circle → canvas. Off-subtree circles slide off-screen.
+  - Also wire `withExitDelay` in `pack-chart.ts` `_setupRendering` (like sunburst) so exit fade is visible. Currently exiting circles are evicted immediately → opacity transition fires but is invisible.
+  - Pack positions (cx/cy/r) change on every layout re-derivation — the `_transitionOpts` already excludes cx/cy/r from CSS transition (only opacity). The affine transform approach should make this work because circles move smoothly via the transform, not via re-derivation chasing. May need to revisit whether to CSS-transition cx/cy/r now that the layout is stable.
+
+**A3. Sunburst drill transition** (feedback #6, regression #3) — `radial-geometry.ts`:
+  - Study D3 zoomable-sunburst example. Current `computeRadialLayout` already walks the full tree + applies angular scaling, BUT clamps angles to [0, 2π] → off-subtree arcs collapse to slivers instead of sliding off. Icicle lets off-subtree nodes go off-canvas. Sunburst may need the same (no clamp, let arcs render outside [0, 2π]).
+  - Center color bug (#3): the root arc (full disc, rIn=0) fades out via `withExitDelay` while the drilled node's arc fades in → crossfade through black background. Fix: the new center (drilled node) should appear instantly or the old root should persist until the new one is opaque (z-order / timing).
+
+**A4. Pack breadcrumb** (regression #4) — `pack-chart.ts`:
+  - Pack calls `_composeStandardBehaviors` (which doesn't include breadcrumb — breadcrumb is wired in `connectedCallback` via `_setupBreadcrumb`, gated on `config.showBreadcrumb === true`). Check the demo config sets `showBreadcrumb: true`. The base wiring is shared; pack inherits it automatically. Likely a demo config issue.
+
+**A5. Bar chart sort** (regression #2) — `apps/demos/src/main.ts` — **FIXED (fully reactive)**:
+  - **Root cause:** the demos page was entirely imperative — no `cell`/`derive`/`effect` imports, just a mutable `let config` + `addEventListener('hashchange')` + an `applySort` loop walking a `mounted[]` array. Two sort states (global `config.sort` vs per-chart selector) fought because every sort code path unconditionally used the global, clobbering per-chart overrides.
+  - **Architectural principle added** to `wiki/chart-architecture.md` §"Core stance": **Config layering — global defaults, per-chart overrides win.** The chart's effective config is the per-chart setting if set, else the global default. The chart is the source of truth for its own effective config; the global bar is a default, not a hidden override.
+  - **Fix (reactive):** `globalSort = cell<'index'|'value'>(readConfig().sort)`. Each chart gets `sortOverride = cell<'index'|'value'|null>(null)` + `effective = derive(() => override.value ?? globalSort.value)`. A `wireSort(el, treetable, model, kind)` effect per chart applies the effective sort to the chart + treetable whenever it changes. The per-chart selector writes to `override.value`; the global button writes the URL hash → `hashchange` → `globalSort.value`. No `applySort` loop, no `mounted[]` array, no `gesturecommit` re-apply reading a stale global. The `gesturecommit` handler now reads `chartSort(el).effective.value` (reactive) for the bar chart's post-commit re-feed.
+  - **Bar chart itself is already reactive on sort** — it detects data-array id-sequence changes via `orderHash` and tweens positions. It just needs the data model to re-feed sorted data, which the `wireSort` effect does. No bar-chart code change needed.
+  - **What was deleted:** `let config` (mutable global), `applySort()` (imperative loop), `effectiveSort()` (event-faking helper), `mounted[]` array, `updateSortLabel()`, the second `hashchange` handler that walked `mounted[]`. ~70 lines of imperative orchestration replaced by ~40 lines of reactive wiring.
 
 ### Phase B: Demos reorganization
 5. Sticky TOC (left sidebar, hamburger on narrow)

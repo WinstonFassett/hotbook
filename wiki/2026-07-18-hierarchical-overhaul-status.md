@@ -212,6 +212,16 @@ This is a large effort — deferred to a separate plan/ticket, but acknowledged 
 25. **Migrate app** — update all consumers to new chart components
 26. **Create ticket** for this phase (deferred from this plan)
 
+### Phase 8: Consumer reactivity audit (NEW — added after A5 sort regression)
+The hierarchical overhaul made charts reactive (config cells, derive, effects), but the **consumer layer** was never audited. The demos page sort regression (A5) slipped through because the plan was chart-internal only. Principle now documented in `chart-architecture.md` §"Config layering": global defaults, per-chart overrides win; consumers must use `cell`/`derive`/`effect`, not imperative event-chasing with mutable globals.
+
+Audit checklist:
+- [x] **`apps/demos/src/main.ts` sort** — FIXED (A5). `globalSort` cell + per-chart `sortOverride` cells + `wireSort` effect. Deleted `applySort` loop, `mounted[]` array, `effectiveSort` helper, second `hashchange` handler.
+- [ ] **`apps/demos/src/main.ts` other config dimensions** (measureKey, orientation, depth, xKey/yKey) — currently write directly to chart properties. Works for hierarchical charts (reactive setters) but inconsistent with the sort pattern. Consider wiring all config through cells for uniformity.
+- [ ] **`apps/icicle-harness/src/main.ts`** — `updateConfig()` (line 171-175) pushes a mutable `config` object to all three charts imperatively. Not buggy (no per-chart overrides) but imperative where charts have reactive config cells. Should use cells + effects.
+- [ ] **`apps/hotbook/src/DockView.ts`** — callback-based (`tileRec.onSortChange` etc.). Pubsub/event-oriented, architecturally fine per AGENTS.md. No global-vs-per-chart fighting. No change needed unless we want uniformity.
+- [ ] **Playwright regression test** — verify per-chart sort override survives global sort toggle on the demos page. Catches the A5 regression if it recurs.
+
 ## 7. Resolved Decisions
 
 1. **Enter/exit fade**: The distinction is whether content can move off-screen. Icicle/treemap/pack drill = no fade (content crops/moves off-screen). Sunburst = fade (circular frame). Treemap/pack level changes = fade in new levels. Current state is probably close — needs verification, not redesign.
