@@ -318,6 +318,18 @@ export abstract class HierarchicalChartBase extends HTMLElement {
     // Breadcrumb (shared).
     this._setupBreadcrumb();
 
+    // Reserve breadcrumb bar space when enabled — the chrome layer gets a
+    // min-height so the chart area doesn't jump when the breadcrumb bar
+    // appears/disappears on drill. The bar itself stays mounted (empty, opacity
+    // 0) when at root level; only the crumb segments fade in/out.
+    const bcReserveDispose = effect(() => {
+      const showBc = this._configCell.value?.showBreadcrumb === true;
+      // Breadcrumb bar height: padding 4px*2 + font-size 11px + button padding
+      // 2px*2 ≈ 24px. Reserve a touch more for the border.
+      this._chromeLayer!.style.minHeight = showBc ? "26px" : "";
+    });
+    this._setupDisposers.push(bcReserveDispose);
+
     // Legacy hotbook HUD bridge (brSync): external hover/select/drill in,
     // own hover/focus changes out. External pushes are recorded so the
     // outgoing effects don't echo them back to the store.
@@ -513,9 +525,12 @@ export abstract class HierarchicalChartBase extends HTMLElement {
       }
 
       if (path.length === 0) {
+        // Keep the bar mounted but empty (opacity 0) so the chart area doesn't
+        // jump when drilling in. The bar's space is reserved via min-height on
+        // the chrome layer (set when showBreadcrumb is enabled). Only fade out
+        // the crumb segments, not the bar itself.
         if (this._breadcrumbBar) {
-          fadeOutEl(this._breadcrumbBar);
-          this._breadcrumbBar = undefined;
+          this._breadcrumbBar.style.opacity = "0";
         }
         return;
       }
@@ -529,6 +544,9 @@ export abstract class HierarchicalChartBase extends HTMLElement {
         void bar.offsetHeight;
         bar.style.opacity = "1";
         this._breadcrumbBar = bar;
+      } else {
+        // Bar exists but was faded out when at root — fade it back in.
+        this._breadcrumbBar.style.opacity = "1";
       }
 
       for (let i = 0; i < path.length; i++) {

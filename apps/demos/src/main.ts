@@ -233,27 +233,55 @@ function wireReorder(el: HTMLElement, treetable: HTMLElement | null, model: Demo
   };
 }
 
-// All four hierarchical charts on ONE dataset (same BiNode root → shared
+// All five hierarchical charts on ONE dataset (same BiNode root → shared
 // Kernel dataset via the bi-adapter). Edits preview live everywhere; drill
 // syncs across views via the kernel drill channel.
+//
+// Layout: icicle (left, full height) | pack + sunburst (center, stacked) |
+// treemap (right, full height) | treetable (far right). This makes a neat
+// rectangle and lets you compare visual/separation styles across all 4
+// hierarchical SVG charts side by side.
 function mountHierFamily(section: HTMLElement, demo: HTMLElement, el: HTMLElement): void {
   const model = dataModelFor("icicle");
   if (!model?.root) return;
 
-  demo.style.cssText += "display:grid;grid-template-columns:1fr 1fr 1fr 240px;gap:8px;height:480px;overflow:hidden;";
+  demo.style.cssText += "display:grid;grid-template-columns:1fr 1fr 1fr 240px;gap:8px;height:560px;overflow:hidden;";
 
   const sunburst = document.createElement("v-sunburst") as any;
   const treemap = document.createElement("v-treemap") as any;
+  const pack = document.createElement("v-pack") as any;
   const table = document.createElement("v-treetable") as any;
 
-  for (const c of [el, sunburst, treemap] as any[]) {
+  // Left column: icicle (el) — full height.
+  el.externalRoot = model.root;
+  el.showBreadcrumb = true;
+  const icicleWrap = document.createElement("div");
+  icicleWrap.style.cssText = "min-width:0;overflow:hidden;border:1px solid var(--border);border-radius:6px;";
+  icicleWrap.appendChild(el);
+  demo.appendChild(icicleWrap);
+
+  // Center column: pack (top) + sunburst (bottom) — stacked.
+  const centerCol = document.createElement("div");
+  centerCol.style.cssText = "display:flex;flex-direction:column;gap:8px;min-width:0;";
+  for (const c of [pack, sunburst] as any[]) {
     c.externalRoot = model.root;
     c.showBreadcrumb = true;
     const wrap = document.createElement("div");
-    wrap.style.cssText = "min-width:0;overflow:hidden;border:1px solid var(--border);border-radius:6px;";
+    wrap.style.cssText = "flex:1;min-height:0;overflow:hidden;border:1px solid var(--border);border-radius:6px;";
     wrap.appendChild(c);
-    demo.appendChild(wrap);
+    centerCol.appendChild(wrap);
   }
+  demo.appendChild(centerCol);
+
+  // Right column: treemap — full height.
+  treemap.externalRoot = model.root;
+  treemap.showBreadcrumb = true;
+  const treemapWrap = document.createElement("div");
+  treemapWrap.style.cssText = "min-width:0;overflow:hidden;border:1px solid var(--border);border-radius:6px;";
+  treemapWrap.appendChild(treemap);
+  demo.appendChild(treemapWrap);
+
+  // Far right: treetable.
   table.externalRoot = model.root;
   if (model.columns) table.columns = model.columns;
   const tw = document.createElement("div");

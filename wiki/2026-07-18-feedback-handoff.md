@@ -22,6 +22,23 @@ Dev servers: `hotbook-demos.localhost:1355` (demos) + `icicle-harness.localhost:
 
 **7. Circle pack still not zooming at all, still no breadcrumb.** (Same as regressions #1 + #4 below — confirmed still open.)
 
+### Round 3 feedback (visual separation + layout, 2026-07-18)
+
+**17. Breadcrumb space reservation** — when breadcrumb is enabled, it currently appears/disappears dynamically, causing a layout jump when drilling in (chart resizes to accommodate the breadcrumb bar, then transitions). Fix: if `showBreadcrumb` is enabled, always reserve the breadcrumb bar's space (even at root level when no breadcrumb shows). The chart area stays constant; the breadcrumb bar is either populated or empty but always takes the same height.
+
+**18. Hierarchical family layout** — rearrange the 4-chart grid to 5 charts in a neat rectangle:
+   - Left column: icicle (full height)
+   - Center column: pack (top) + sunburst (bottom) — these fit in one column due to their dimensions
+   - Right column: treemap (full height)
+   - This makes it easy to compare visual/separation styles across all 4 hierarchical SVG charts + treetable.
+
+**19. Inner padding / separation standardization** (extends #10-12 above with more specificity):
+   - Icicle has the nicest separation — nothing nested inside, gaps are clean.
+   - Sunburst could have just as good separation as icicle. Needs a standard `paddingInner` (angular gap) that creates separation between top-level groups (black shows through the gaps) and between nested levels (parent color shows through).
+   - At nested levels, the gap shows the parent's color, not black. This raises a design question: **hairline borders** on nested slices/arcs/circles would give better visual distinction between levels. LayerChart uses `hsl(fill).darker(1)` for stroke.
+   - Treemap: top-level separation is good, but nested blocks go flush against their container edges. Need `paddingOuter` (gap between parent edge and children) matching the separation amount, so nested blocks don't look like they're touching the container wall.
+   - Standardize one `paddingInner` value across all hierarchical charts for consistent separation feel.
+
 ### Round 1 regressions (fix first)
 
 1. **Pack not transitioning** — likely caused by Phase 3/4 changes (`exitFade` default, `_transitionOpts()` extraction). Pack drill has no transition animation at all. Investigate `pack-chart.ts` `_setupRendering` + `_transitionOpts()` + the `transitionOnUpdated` behavior wiring. **Root cause found:** pack never wired `withExitDelay` (unlike sunburst), so exiting circles are evicted immediately — the opacity CSS transition fires but is invisible. Also pack uses the same "recompute on effective root" pattern as treemap (see #5 above) — needs the same D3-style affine transform fix.
