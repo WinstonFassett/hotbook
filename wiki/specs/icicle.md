@@ -118,16 +118,16 @@ The core gesture/transition model holds: `draft` (via `previewFullRender`) patch
 
 ## 8. Instance hygiene (multi-instance safety)
 
-The icicle is rendered as a custom element and may be instantiated multiple times on the same page (e.g. a "hierarchical family" demo section with icicle + sunburst + treemap + treetable). **No `id`, `clipPath` id, or `xlink:href` reference may be bare** — every document-scoped identifier must incorporate the chart's `instanceUid` to prevent collisions.
+The icicle is rendered as a custom element and may be instantiated multiple times on the same page (e.g. a "hierarchical family" demo section with icicle + sunburst + treemap + treetable). **No `id`, `clipPath` id, or `xlink:href` reference may be bare** — every document-scoped identifier must incorporate the chart's `instanceId` to prevent collisions.
 
 **Examples:**
-- Tile `clipPath`: `id="tile-clip-${nodeId}-${instanceUid}"`, not `id="tile-clip-${nodeId}"`
-- Pattern fills: `id="pattern-stripe-${instanceUid}"`, not `id="pattern-stripe"`
-- Uses: `xlink:href="#tile-clip-${nodeId}-${instanceUid}"`, not `xlink:href="#tile-clip-${nodeId}"`
+- Tile `clipPath`: `id="tile-clip-${nodeId}-${instanceId}"`, not `id="tile-clip-${nodeId}"`
+- Pattern fills: `id="pattern-stripe-${instanceId}"`, not `id="pattern-stripe"`
+- Uses: `xlink:href="#tile-clip-${nodeId}-${instanceId}"`, not `xlink:href="#tile-clip-${nodeId}"`
 
-The base class exposes `instanceUid` (a short unique string per chart instance). Every generated `id` and every `xlink:href` / `url(#...)` reference must incorporate it.
+The base class provides a protected `instanceId` (a short unique string per chart instance). Every generated `id` and every `xlink:href` / `url(#...)` reference must incorporate it.
 
-**Verification:** Grep the implementation for `id="`, `id=\``, `clipPath id`, `<use xlink:href`, `url(#`. Every match must use `instanceUid`. Bare IDs are bugs.
+**Verification:** Grep the implementation for `id="`, `id=\``, `clipPath id`, `<use xlink:href`, `url(#`. Every match must use `instanceId`. Bare IDs are bugs.
 
 **Consequence of violation:** The second icicle on the page will reference the first icicle's `<defs>`, clipping tiles to the wrong geometry and rendering them invisible or misplaced.
 

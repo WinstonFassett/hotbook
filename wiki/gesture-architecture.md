@@ -272,11 +272,11 @@ Charts rendered as custom elements may be instantiated multiple times on the sam
 
 **Right:**
 ```javascript
-<clipPath id={`tile-clip-tech-${instanceUid}`}>
-<use xlink:href={`#tile-clip-tech-${instanceUid}`}/>
+<clipPath id={`tile-clip-tech-${instanceId}`}>
+<use xlink:href={`#tile-clip-tech-${instanceId}`}/>
 ```
 
-The base class exposes an `instanceUid` (a short unique string per chart instance). Every generated `id` and every `xlink:href` / `url(#...)` reference MUST incorporate it.
+The base class provides a protected `instanceId` (a short unique string per chart instance). Every generated `id` and every `xlink:href` / `url(#...)` reference MUST incorporate it.
 
 **Verification:** Grep the chart implementation for string literals containing `id="` or `id=\``, `clipPath id`, `<pattern id`, `<use xlink:href`, or `url(#`. Every match must incorporate the instance uid. Bare IDs are bugs.
 

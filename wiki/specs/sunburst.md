@@ -37,7 +37,7 @@ None — same answer as icicle. The broadened Hierarchical `draft` contract cove
 
 ## Instance hygiene
 
-Same requirement as icicle §8: every `id`, `clipPath` id, `<pattern>` id, and `xlink:href` / `url(#...)` reference must incorporate the chart's `instanceUid`. Arc clip paths, gradient/pattern fills, and any `<defs>` elements must be instance-scoped. See icicle §8 for the pattern and verification steps.
+Same requirement as icicle §8: every `id`, `clipPath` id, `<pattern>` id, and `xlink:href` / `url(#...)` reference must incorporate the chart's `instanceId`. Arc clip paths, gradient/pattern fills, and any `<defs>` elements must be instance-scoped. See icicle §8 for the pattern and verification steps.
 
 ## Summary
 
