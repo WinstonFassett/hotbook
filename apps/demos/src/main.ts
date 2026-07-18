@@ -70,33 +70,42 @@ const experiments: Array<{
   custom?: (section: HTMLElement, demo: HTMLElement, el: HTMLElement) => void;
   underConstruction?: boolean;
 }> = [
-  { id: "viewer-demo", title: "Viewer (pan/zoom/show demo)", tag: "md-viewer-demo", ctor: MdViewerDemo as unknown as CustomElementConstructor },
-  { id: "cartesian-viewer", title: "CartesianViewer (zoomable scatterplot with axes)", tag: "md-cartesian-viewer", ctor: MdCartesianViewerDemo as unknown as CustomElementConstructor },
+  // ── Tier 1: Hierarchical (the primary surface) ──────────────────────────
+  { id: "hier-family", title: "Hierarchical family (shared dataset, cross-view sync)", tag: "v-icicle", ctor: MdIcicleLC, custom: mountHierFamily },
+  { id: "icicle", title: "Icicle (Partition vertical)", tag: "v-icicle", ctor: MdIcicleLC },
+  { id: "sunburst", title: "Sunburst (Partition polar)", tag: "v-sunburst", ctor: MdSunburstLC },
+  { id: "treemap", title: "Treemap (squarified)", tag: "v-treemap", ctor: MdTreemapLC },
+  { id: "pack", title: "Pack (circle packing)", tag: "v-pack", ctor: MdPack },
+  // Hidden for now: demoing the treetable next to a treetable is redundant (WIN-255).
+  // { id: "treetable", title: "Treetable (hierarchical, editable rows)", tag: "v-treetable", ctor: MdTreetableLC as unknown as CustomElementConstructor },
+
+  // ── Tier 2: Cartesian family ────────────────────────────────────────────
   { id: "line-chart", title: "LineChart", tag: "v-line-chart", ctor: MdLineChartLC },
   { id: "area-chart", title: "AreaChart", tag: "v-area-chart", ctor: MdAreaChartLC },
   { id: "bar-chart", title: "BarChart (vertical)", tag: "v-bar-chart", ctor: MdBarChartLC },
   { id: "bands-chart", title: "Bands (horizontal, palette, inside labels)", tag: "v-bands-chart", ctor: MdBandsChartLC },
   { id: "scatter-chart", title: "ScatterChart", tag: "v-scatter-chart", ctor: MdScatterChartLC },
-  { id: "pie-chart", title: "PieChart (under construction)", tag: "v-pie-chart", ctor: MdPieChartLC, underConstruction: true },
+
+  // ── Tier 3: Novelty (radial / gauge) ────────────────────────────────────
   { id: "radar-chart", title: "RadarChart (Radial Line)", tag: "v-radar-chart", ctor: MdRadarChartLC },
   { id: "concentric-arc", title: "ConcentricArc", tag: "v-concentric-arc", ctor: MdConcentricArcLC },
   { id: "gauge", title: "Gauge (single 270° arc, draggable endpoint + center scrub)", tag: "v-gauge", ctor: MdGaugeLC },
   { id: "gauge-segmented", title: "Gauge (segmented, draggable boundaries)", tag: "v-gauge-segmented", ctor: MdGaugeSegmentedLC },
-  { id: "pack", title: "Pack (circle packing)", tag: "v-pack", ctor: MdPack },
-  { id: "hier-family", title: "Hierarchical family (shared dataset, cross-view sync)", tag: "v-icicle", ctor: MdIcicleLC, custom: mountHierFamily },
-  { id: "treemap", title: "Treemap (squarified)", tag: "v-treemap", ctor: MdTreemapLC },
-  { id: "icicle", title: "Icicle (Partition vertical)", tag: "v-icicle", ctor: MdIcicleLC },
-  { id: "sunburst", title: "Sunburst (Partition polar)", tag: "v-sunburst", ctor: MdSunburstLC },
-  { id: "sankey-simple", title: "Sankey (simple, editable)", tag: "v-sankey-simple", ctor: MdSankeySimple },
-  { id: "sankey-complex", title: "Sankey (UK energy)", tag: "v-sankey-complex", ctor: MdSankeyComplex },
+
+  // ── Tier 4: Under construction ──────────────────────────────────────────
+  { id: "pie-chart", title: "PieChart (under construction)", tag: "v-pie-chart", ctor: MdPieChartLC, underConstruction: true },
+  { id: "sankey-simple", title: "Sankey (simple, editable)", tag: "v-sankey-simple", ctor: MdSankeySimple, underConstruction: true },
+  { id: "sankey-complex", title: "Sankey (UK energy)", tag: "v-sankey-complex", ctor: MdSankeyComplex, underConstruction: true },
   // Hidden: more tree than flow (WIN-265).
   // { id: "sankey-hierarchy", title: "Sankey (hierarchy → flow)", tag: "v-sankey-hierarchy", ctor: MdSankeyHierarchy },
-  { id: "tree-chart", title: "Tree (node-link dendrogram)", tag: "v-tree-chart", ctor: MdTreeChart },
-  { id: "budget-tree", title: "Budget Tree (drag boundary handles)", tag: "v-budget-tree", ctor: MdBudgetTree },
-  // Hidden for now: demoing the treetable next to a treetable is redundant (WIN-255).
-  // { id: "treetable", title: "Treetable (hierarchical, editable rows)", tag: "v-treetable", ctor: MdTreetableLC as unknown as CustomElementConstructor },
-  { id: "gantt", title: "Gantt (drag propagates through dependencies, zero-slack enforced)", tag: "v-gantt", ctor: MdGanttEnforcedLC as unknown as CustomElementConstructor },
-  { id: "nested-layered", title: "Nested-layered layout (recursive graph layout)", tag: "md-nested-layered", ctor: MdNestedLayered as unknown as CustomElementConstructor, custom: mountLayoutSection },
+  { id: "tree-chart", title: "Tree (node-link dendrogram)", tag: "v-tree-chart", ctor: MdTreeChart, underConstruction: true },
+  { id: "budget-tree", title: "Budget Tree (drag boundary handles)", tag: "v-budget-tree", ctor: MdBudgetTree, underConstruction: true },
+  { id: "gantt", title: "Gantt (drag propagates through dependencies, zero-slack enforced)", tag: "v-gantt", ctor: MdGanttEnforcedLC as unknown as CustomElementConstructor, underConstruction: true },
+  { id: "nested-layered", title: "Nested-layered layout (recursive graph layout)", tag: "md-nested-layered", ctor: MdNestedLayered as unknown as CustomElementConstructor, custom: mountLayoutSection, underConstruction: true },
+
+  // ── Tier 5: Experimental viewers ────────────────────────────────────────
+  { id: "cartesian-viewer", title: "CartesianViewer (zoomable scatterplot with axes)", tag: "md-cartesian-viewer", ctor: MdCartesianViewerDemo as unknown as CustomElementConstructor, underConstruction: true },
+  { id: "viewer-demo", title: "Viewer (pan/zoom/show demo)", tag: "md-viewer-demo", ctor: MdViewerDemo as unknown as CustomElementConstructor, underConstruction: true },
 ];
 
 // The treetable demo section is hidden, but the side-by-side data tables still need the tag.
@@ -524,6 +533,61 @@ if (app) {
   const shown = config.only
     ? experiments.filter(e => config.only!.includes(e.id))
     : experiments;
+
+  // ── Sticky TOC sidebar ──────────────────────────────────────────────────
+  // Left sidebar listing all demo sections. Click to scroll. Grouped by tier.
+  const toc = document.createElement("nav");
+  toc.id = "toc";
+  toc.className = "toc";
+  const tocList = document.createElement("ul");
+  tocList.className = "toc-list";
+  const TIERS = [
+    { label: "Hierarchical", ids: ["hier-family", "icicle", "sunburst", "treemap", "pack"] },
+    { label: "Cartesian", ids: ["line-chart", "area-chart", "bar-chart", "bands-chart", "scatter-chart"] },
+    { label: "Novelty", ids: ["radar-chart", "concentric-arc", "gauge", "gauge-segmented"] },
+    { label: "Under construction", ids: ["pie-chart", "sankey-simple", "sankey-complex", "tree-chart", "budget-tree", "gantt", "nested-layered"] },
+    { label: "Experimental", ids: ["cartesian-viewer", "viewer-demo"] },
+  ];
+  for (const tier of TIERS) {
+    const tierShown = tier.ids.filter(id => shown.some(e => e.id === id));
+    if (tierShown.length === 0) continue;
+    const tierLi = document.createElement("li");
+    tierLi.className = "toc-tier";
+    const tierLabel = document.createElement("div");
+    tierLabel.className = "toc-tier-label";
+    tierLabel.textContent = tier.label;
+    tierLi.appendChild(tierLabel);
+    const subUl = document.createElement("ul");
+    subUl.className = "toc-sublist";
+    for (const id of tierShown) {
+      const e = shown.find(x => x.id === id)!;
+      const li = document.createElement("li");
+      li.className = "toc-item";
+      const a = document.createElement("a");
+      a.href = `#${id}`;
+      a.textContent = e.title.replace(/\s*\(.*\)$/, "");
+      a.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+      li.appendChild(a);
+      subUl.appendChild(li);
+    }
+    tierLi.appendChild(subUl);
+    tocList.appendChild(tierLi);
+  }
+  toc.appendChild(tocList);
+
+  // Wrap: TOC on left, sections on right.
+  const layout = document.createElement("div");
+  layout.className = "toc-layout";
+  const content = document.createElement("div");
+  content.className = "toc-content";
+  // Move existing app children (config bar already prepended) into content.
+  while (app.firstChild) content.appendChild(app.firstChild);
+  layout.append(toc, content);
+  app.appendChild(layout);
+
   for (const e of shown) {
     const section = document.createElement("section");
     section.id = e.id;
@@ -542,7 +606,7 @@ if (app) {
       demo.appendChild(placeholder);
       section.appendChild(h2);
       section.appendChild(demo);
-      app.appendChild(section);
+      content.appendChild(section);
       continue;
     }
 
@@ -597,7 +661,7 @@ if (app) {
     srcDetails.append(srcSummary, srcCode);
 
     section.append(h2, demo, srcDetails);
-    app.appendChild(section);
+    content.appendChild(section);
 
     if (e.custom) {
       e.custom(section, demo, el);
