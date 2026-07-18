@@ -6,7 +6,7 @@
 import { derive, forEach, group, type Cell } from "bireactive";
 import type { ChartConfig, LayoutRect, RenderNode } from "./types";
 import { Kernel } from "./kernel";
-import { Gesture, setup, type Behavior } from "./gesture";
+import { Gesture, type Behavior } from "./gesture";
 import {
   buildAllDescendants,
   buildEdges,
@@ -23,12 +23,8 @@ import {
   type GestureContext,
 } from "./gestures";
 import { useHostSize } from "./host-size";
-import { wheelEdit } from "./behaviors/wheel-edit";
-import { keyboardEdit } from "./behaviors/keyboard-edit";
 import { tileBodyDrag } from "./behaviors/tile-body-drag";
 import { tileBodyReorder } from "./behaviors/tile-body-reorder";
-import { transitionOnUpdated } from "./behaviors/transition-on-updated";
-import { previewFullRender, captureOrderFromWindow } from "./behaviors/preview-full-render";
 import { membershipCell } from "./behaviors/mark-lifecycle";
 import { HierarchicalChartBase } from "./hierarchical-chart-base";
 
@@ -122,32 +118,22 @@ export class IcicleChart extends HierarchicalChartBase implements GestureContext
   // --- Hook: chart-specific behavior composition ---
 
   protected _composeBehaviors(): void {
-    const config = this._configCell.value!;
-    const gesture = this._gesture!;
-
-    // Tile-body drag behavior: resize, reorder, or none, per config.
-    // When sort=index and dragBehavior not explicitly set, auto-enable
-    // reorder (matches production demo). Default otherwise: resize.
-    const dragBehavior = config.dragBehavior
-      ?? (config.sort === "index" ? "reorder" : "resize");
-    const dragBehaviors: Behavior[] = [];
-    if (dragBehavior === "resize") {
-      dragBehaviors.push(tileBodyDrag({
-        target: (g) => g.store.hover.value ?? g.store.focus.value,
-        valueOf: (g) => this.valueOf,
+    const dragBehaviors = this._selectDragBehaviors(
+      tileBodyDrag({
+        target: (g: any) => g.store.hover.value ?? g.store.focus.value,
+        valueOf: (g: any) => this.valueOf,
         writeValue: this.writeValue,
-        siblings: (g) => this.siblings,
+        siblings: (g: any) => this.siblings,
         frozenOrder: () => this._frozenOrder.value,
         windowGetter: () => this._window?.value ?? null,
         frozenOrderCell: this._frozenOrder,
         deferSort: () => this.config.sort !== "index",
         focusTile: (id) => this.setFocus(id),
-      }));
-    } else if (dragBehavior === "reorder") {
-      dragBehaviors.push(tileBodyReorder({
-        target: (g) => g.store.hover.value ?? g.store.focus.value,
-        treeRoot: (g) => this._treeRoot.value,
-        layout: (g) => this._layout!.value,
+      }),
+      tileBodyReorder({
+        target: (g: any) => g.store.hover.value ?? g.store.focus.value,
+        treeRoot: (g: any) => this._treeRoot.value,
+        layout: (g: any) => this._layout!.value,
         focusTile: (id) => this.setFocus(id),
         writeReorder: (parentId, orderedIds) => {
           const k = this._kernelCell.value;
@@ -156,41 +142,9 @@ export class IcicleChart extends HierarchicalChartBase implements GestureContext
         },
         bumpReorder: () => this.bumpReorder(),
         frozenOrderCell: this._frozenOrder,
-      }));
-    }
-
-    this._behaviorDispose = setup(gesture)(
-      // Render behaviors.
-      // Settle CSS on commit/cancel/updated; suppression class toggled
-      // by this behavior via Editor subscription (single owner).
-      transitionOnUpdated(),
-      // Freeze sibling order during own gestures when sort !== 'index'.
-      // Reads deferSort once at gesture start; captures and holds order
-      // for the gesture's duration; clears on commit/cancel.
-      previewFullRender({
-        deferSort: () => this.config.sort !== "index",
-        frozenOrder: this._frozenOrder,
-        captureOrder: () => captureOrderFromWindow(this._window?.value ?? null),
       }),
-      // Input behaviors.
-      wheelEdit({
-        target: (g) => g.store.hover.value ?? g.store.focus.value,
-        valueOf: (g) => this.valueOf,
-        writeValue: this.writeValue,
-        frozenOrder: () => this._frozenOrder.value,
-        conservationMode: (g) => this.conservationMode,
-        siblings: (g) => this.siblings,
-      }),
-      keyboardEdit({
-        target: (g) => g.store.focus.value,
-        valueOf: (g) => this.valueOf,
-        writeValue: this.writeValue,
-        conservationMode: (g) => this.conservationMode,
-        siblings: (g) => this.siblings,
-        frozenOrder: () => this._frozenOrder.value,
-      }),
-      ...dragBehaviors,
     );
+    this._behaviorDispose = this._composeStandardBehaviors(dragBehaviors);
   }
 
   // --- GestureContext: edge handle drag lifecycle (icicle-specific) ---

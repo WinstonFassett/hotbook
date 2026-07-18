@@ -20,12 +20,16 @@ import { cell, effect, group, type Cell } from "bireactive";
 import type { ChartConfig } from "./types";
 import { Kernel, configKey } from "./kernel";
 import { DataView } from "./data-view";
-import { Gesture } from "./gesture";
+import { Gesture, setup, type Behavior } from "./gesture";
 import { findNode, snapshotValues, restoreValues, type ChartNode } from "./tree";
 import { bindChart, rebuildTree } from "./chart-binding";
 import { useHostSize } from "./host-size";
 import type { ConservationMode } from "./behaviors/keyboard-edit";
 import { makeBridge, type BrSyncBridge, type ElementWithBridge } from "../lib/hud-bridge";
+import { transitionOnUpdated } from "./behaviors/transition-on-updated";
+import { previewFullRender, captureOrderFromWindow } from "./behaviors/preview-full-render";
+import { wheelEdit } from "./behaviors/wheel-edit";
+import { keyboardEdit } from "./behaviors/keyboard-edit";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const FALLBACK_W = 720;
@@ -554,4 +558,57 @@ export abstract class HierarchicalChartBase extends HTMLElement {
    *  + shared wheel/keyboard/transition/preview behaviors onto the gesture.
    *  Store the dispose fn in _behaviorDispose. */
   protected abstract _composeBehaviors(): void;
+
+  /** Shared behavior composition: transitionOnUpdated + [extraPre] +
+   *  previewFullRender + wheelEdit + keyboardEdit + chart-specific drag
+   *  behaviors. Charts call this from _composeBehaviors() to avoid
+   *  duplicating the standard wiring. Returns the dispose fn. */
+  protected _composeStandardBehaviors(
+    dragBehaviors: Behavior[],
+    transitionOpts?: Parameters<typeof transitionOnUpdated>[0],
+    extraPre?: Behavior[],
+  ): () => void {
+    const gesture = this._gesture!;
+    return setup(gesture)(
+      transitionOnUpdated(transitionOpts),
+      ...(extraPre ?? []),
+      previewFullRender({
+        deferSort: () => this.config.sort !== "index",
+        frozenOrder: this._frozenOrder,
+        captureOrder: () => captureOrderFromWindow(this._window?.value ?? null),
+      }),
+      wheelEdit({
+        target: (g: any) => g.store.hover.value ?? g.store.focus.value,
+        valueOf: (g: any) => this.valueOf,
+        writeValue: this.writeValue,
+        frozenOrder: () => this._frozenOrder.value,
+        conservationMode: (g: any) => this.conservationMode,
+        siblings: (g: any) => this.siblings,
+      }),
+      keyboardEdit({
+        target: (g: any) => g.store.focus.value,
+        valueOf: (g: any) => this.valueOf,
+        writeValue: this.writeValue,
+        conservationMode: (g: any) => this.conservationMode,
+        siblings: (g: any) => this.siblings,
+        frozenOrder: () => this._frozenOrder.value,
+      }),
+      ...dragBehaviors,
+    );
+  }
+
+  /** Shared drag-behavior selection: returns the drag behavior array based
+   *  on config.dragBehavior / config.sort. Charts pass their chart-specific
+   *  resize and reorder behavior factories. */
+  protected _selectDragBehaviors(
+    resizeBehavior: Behavior,
+    reorderBehavior: Behavior,
+  ): Behavior[] {
+    const config = this._configCell.value!;
+    const dragBehavior = config.dragBehavior
+      ?? (config.sort === "index" ? "reorder" : "resize");
+    if (dragBehavior === "resize") return [resizeBehavior];
+    if (dragBehavior === "reorder") return [reorderBehavior];
+    return [];
+  }
 }

@@ -9,7 +9,7 @@
 import { derive, forEach, group, Vec, type Cell } from "bireactive";
 import type { ChartConfig, RadialRect, RenderNode } from "./types";
 import { Kernel } from "./kernel";
-import { Gesture, setup, type Behavior } from "./gesture";
+import { Gesture, type Behavior } from "./gesture";
 import {
   type ChartNode,
   type Edge,
@@ -29,12 +29,8 @@ import {
   attachEdgeHandleDrag,
   type GestureContext,
 } from "./gestures";
-import { wheelEdit } from "./behaviors/wheel-edit";
-import { keyboardEdit } from "./behaviors/keyboard-edit";
 import { tileBodyDrag } from "./behaviors/tile-body-drag";
 import { arcBodyReorder } from "./behaviors/arc-body-reorder";
-import { transitionOnUpdated } from "./behaviors/transition-on-updated";
-import { previewFullRender, captureOrderFromWindow } from "./behaviors/preview-full-render";
 import { membershipCell, withExitDelay } from "./behaviors/mark-lifecycle";
 import { HierarchicalChartBase } from "./hierarchical-chart-base";
 
@@ -154,34 +150,24 @@ export class SunburstChart extends HierarchicalChartBase implements GestureConte
   // --- Hook: chart-specific behavior composition (mirrors icicle _build) ---
 
   protected _composeBehaviors(): void {
-    const config = this._configCell.value!;
-    const gesture = this._gesture!;
-
-    // Arc-body drag behavior: resize or reorder, per config.
-    // When sort=index and dragBehavior not explicitly set, auto-enable
-    // reorder (matches production demo). Default otherwise: resize.
-    const dragBehavior = config.dragBehavior
-      ?? (config.sort === "index" ? "reorder" : "resize");
-    const dragBehaviors: Behavior[] = [];
-    if (dragBehavior === "resize") {
-      dragBehaviors.push(tileBodyDrag({
-        target: (g) => g.store.hover.value ?? g.store.focus.value,
-        valueOf: (g) => this.valueOf,
+    const dragBehaviors = this._selectDragBehaviors(
+      tileBodyDrag({
+        target: (g: any) => g.store.hover.value ?? g.store.focus.value,
+        valueOf: (g: any) => this.valueOf,
         writeValue: this.writeValue,
-        siblings: (g) => this.siblings,
+        siblings: (g: any) => this.siblings,
         frozenOrder: () => this._frozenOrder.value,
         windowGetter: () => this._window?.value ?? null,
         frozenOrderCell: this._frozenOrder,
         deferSort: () => this.config.sort !== "index",
         focusTile: (id) => this.setFocus(id),
-      }));
-    } else if (dragBehavior === "reorder") {
-      dragBehaviors.push(arcBodyReorder({
-        target: (g) => g.store.hover.value ?? g.store.focus.value,
-        treeRoot: (g) => this._treeRoot.value,
-        layout: (g) => this._layout!.value,
-        centerX: (g) => this._hostSize!.w.value / 2,
-        centerY: (g) => this._hostSize!.h.value / 2,
+      }),
+      arcBodyReorder({
+        target: (g: any) => g.store.hover.value ?? g.store.focus.value,
+        treeRoot: (g: any) => this._treeRoot.value,
+        layout: (g: any) => this._layout!.value,
+        centerX: (g: any) => this._hostSize!.w.value / 2,
+        centerY: (g: any) => this._hostSize!.h.value / 2,
         focusArc: (id) => this.setFocus(id),
         writeReorder: (parentId, orderedIds) => {
           const k = this._kernelCell.value;
@@ -190,43 +176,16 @@ export class SunburstChart extends HierarchicalChartBase implements GestureConte
         },
         bumpReorder: () => this.bumpReorder(),
         frozenOrderCell: this._frozenOrder,
-      }));
-    }
-
-    this._behaviorDispose = setup(gesture)(
-      // Sunburst: transition opacity on paths (enter/exit fade) + transform
-      // on text (label movement). Path `d` can't CSS-transition (large-arc-flag
-      // flips mid-tween), so geometry settles via per-arc tween cells (spec §5).
-      transitionOnUpdated({
-        attrs: ["opacity"],
-        selector: this.tagName.toLowerCase(),
-        // Opacity is toggled on the arc's g[data-id] wrapper (makeArc), so
-        // the fade transition must target the group, not the path.
-        elements: "g[data-id], text",
       }),
-      previewFullRender({
-        deferSort: () => this.config.sort !== "index",
-        frozenOrder: this._frozenOrder,
-        captureOrder: () => captureOrderFromWindow(this._window?.value ?? null),
-      }),
-      wheelEdit({
-        target: (g) => g.store.hover.value ?? g.store.focus.value,
-        valueOf: (g) => this.valueOf,
-        writeValue: this.writeValue,
-        frozenOrder: () => this._frozenOrder.value,
-        conservationMode: (g) => this.conservationMode,
-        siblings: (g) => this.siblings,
-      }),
-      keyboardEdit({
-        target: (g) => g.store.focus.value,
-        valueOf: (g) => this.valueOf,
-        writeValue: this.writeValue,
-        conservationMode: (g) => this.conservationMode,
-        siblings: (g) => this.siblings,
-        frozenOrder: () => this._frozenOrder.value,
-      }),
-      ...dragBehaviors,
     );
+    // Sunburst: transition opacity on paths (enter/exit fade) + transform
+    // on text (label movement). Path `d` can't CSS-transition (large-arc-flag
+    // flips mid-tween), so geometry settles via per-arc tween cells (spec §5).
+    this._behaviorDispose = this._composeStandardBehaviors(dragBehaviors, {
+      attrs: ["opacity"],
+      selector: this.tagName.toLowerCase(),
+      elements: "g[data-id], text",
+    });
   }
 
   // --- GestureContext: angular edge handle drag lifecycle ---

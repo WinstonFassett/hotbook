@@ -6,16 +6,12 @@
 
 import { cell, derive, forEach, group, type Cell } from "bireactive";
 import type { LayoutRect, RenderNode } from "./types";
-import { setup, type Behavior } from "./gesture";
+import { type Behavior } from "./gesture";
 import { buildAllDescendants, type Edge } from "./hierarchy";
 import { computeTreemapLayout, makeTreemapTile } from "./treemap-geometry";
 import type { GestureContext } from "./gestures";
-import { wheelEdit } from "./behaviors/wheel-edit";
-import { keyboardEdit } from "./behaviors/keyboard-edit";
 import { tileBodyDrag } from "./behaviors/tile-body-drag";
 import { tileBodyReorder } from "./behaviors/tile-body-reorder";
-import { transitionOnUpdated } from "./behaviors/transition-on-updated";
-import { previewFullRender, captureOrderFromWindow } from "./behaviors/preview-full-render";
 import { membershipCell } from "./behaviors/mark-lifecycle";
 import { HierarchicalChartBase } from "./hierarchical-chart-base";
 import { findNode, sortedChildren, type ChartNode } from "./tree";
@@ -124,89 +120,51 @@ export class TreemapChart extends HierarchicalChartBase implements GestureContex
   // --- Hook: chart-specific behavior composition ---
 
   protected _composeBehaviors(): void {
-    const config = this._configCell.value!;
-    const gesture = this._gesture!;
-
-    // Treemap drag behavior: resize or reorder, per config.
-    const dragBehavior = config.dragBehavior ?? (config.sort === "index" ? "reorder" : "resize");
-    const dragBehaviors: Behavior[] = [];
-
-    if (dragBehavior === "resize") {
-      dragBehaviors.push(
-        tileBodyDrag({
-          target: (g) => g.store.hover.value ?? g.store.focus.value,
-          valueOf: (g) => this.valueOf,
-          writeValue: this.writeValue,
-          siblings: (g) => this.siblings,
-          frozenOrder: () => this._frozenOrder.value,
-          windowGetter: () => this._window?.value ?? null,
-          frozenOrderCell: this._frozenOrder,
-          deferSort: () => this.config.sort !== "index",
-          focusTile: (id) => this.setFocus(id),
-          mode: () => "additive",
-          axis: "x",
-        }),
-      );
-    } else if (dragBehavior === "reorder") {
-      dragBehaviors.push(
-        tileBodyReorder({
-          target: (g) => g.store.hover.value ?? g.store.focus.value,
-          treeRoot: (g) => this._treeRoot.value,
-          layout: (g) => this._layout!.value,
-          focusTile: (id) => this.setFocus(id),
-          writeReorder: (parentId, orderedIds) => {
-            const k = this._kernelCell.value;
-            const cfg = this._configCell.value;
-            if (k && cfg) k.writeReorder(cfg.datasetId, parentId, orderedIds);
-          },
-          bumpReorder: () => this.bumpReorder(),
-          frozenOrderCell: this._frozenOrder,
-        }),
-      );
-    }
-
-    // Cursor: set on leaf tiles, not the host. The icicle sets cursor on
-    // tiles and handles individually, not on the host — dead areas (gaps,
-    // SVG background) inherit the default cursor. We do the same.
-    // The actual cursor is set in makeTreemapTile based on dragBehavior.
-
-    this._behaviorDispose = setup(gesture)(
-      transitionOnUpdated(),
-      (g) =>
-        g.editor.subscribe((t) => {
-          if (t.type === "draft" && t.draft?.intent === "edit") {
-            if (!this._frozenLayout.value) {
-              this._frozenLayout.value = new Map(this._liveLayout!.value);
-            }
-            this._draftId.value = t.draft.nodeId;
-          } else if (t.type === "commit" || t.type === "cancel") {
-            this._frozenLayout.value = null;
-            this._draftId.value = null;
-          }
-        }),
-      previewFullRender({
+    const dragBehaviors = this._selectDragBehaviors(
+      tileBodyDrag({
+        target: (g: any) => g.store.hover.value ?? g.store.focus.value,
+        valueOf: (g: any) => this.valueOf,
+        writeValue: this.writeValue,
+        siblings: (g: any) => this.siblings,
+        frozenOrder: () => this._frozenOrder.value,
+        windowGetter: () => this._window?.value ?? null,
+        frozenOrderCell: this._frozenOrder,
         deferSort: () => this.config.sort !== "index",
-        frozenOrder: this._frozenOrder,
-        captureOrder: () => captureOrderFromWindow(this._window?.value ?? null),
+        focusTile: (id) => this.setFocus(id),
+        mode: () => "additive",
+        axis: "x",
       }),
-      wheelEdit({
-        target: (g) => g.store.hover.value ?? g.store.focus.value,
-        valueOf: (g) => this.valueOf,
-        writeValue: this.writeValue,
-        frozenOrder: () => this._frozenOrder.value,
-        conservationMode: (g) => this.conservationMode,
-        siblings: (g) => this.siblings,
+      tileBodyReorder({
+        target: (g: any) => g.store.hover.value ?? g.store.focus.value,
+        treeRoot: (g: any) => this._treeRoot.value,
+        layout: (g: any) => this._layout!.value,
+        focusTile: (id) => this.setFocus(id),
+        writeReorder: (parentId, orderedIds) => {
+          const k = this._kernelCell.value;
+          const cfg = this._configCell.value;
+          if (k && cfg) k.writeReorder(cfg.datasetId, parentId, orderedIds);
+        },
+        bumpReorder: () => this.bumpReorder(),
+        frozenOrderCell: this._frozenOrder,
       }),
-      keyboardEdit({
-        target: (g) => g.store.focus.value,
-        valueOf: (g) => this.valueOf,
-        writeValue: this.writeValue,
-        conservationMode: (g) => this.conservationMode,
-        siblings: (g) => this.siblings,
-        frozenOrder: () => this._frozenOrder.value,
-      }),
-      ...dragBehaviors,
     );
+
+    // Treemap-specific: freeze sibling layout during own edit-drafts so
+    // only the edited tile scales in place (spec §5 draft freeze).
+    const draftFreeze: Behavior = (g: any) =>
+      g.editor.subscribe((t: any) => {
+        if (t.type === "draft" && t.draft?.intent === "edit") {
+          if (!this._frozenLayout.value) {
+            this._frozenLayout.value = new Map(this._liveLayout!.value);
+          }
+          this._draftId.value = t.draft.nodeId;
+        } else if (t.type === "commit" || t.type === "cancel") {
+          this._frozenLayout.value = null;
+          this._draftId.value = null;
+        }
+      });
+
+    this._behaviorDispose = this._composeStandardBehaviors(dragBehaviors, undefined, [draftFreeze]);
   }
 
   // --- GestureContext: minimal stubs (treemap has no edge handles) ---
