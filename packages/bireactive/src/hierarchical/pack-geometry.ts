@@ -1,7 +1,9 @@
 // pack-geometry.ts — circle-packing layout and circle rendering.
 // Uses d3-hierarchy's pack for the circle-packing algorithm.
-// Rendering model: all descendants of the focus node (drilled subtree).
-// Drill = re-run pack on the focused subtree, sized to the full canvas.
+// Rendering model: all descendants rendered nested. Drill = 2D affine
+// transform (scale + translate) so the focus circle fills the canvas,
+// mirroring the icicle/treemap pattern. Siblings slide off-screen via
+// CSS transitions on cx/cy/r.
 // Spec: wiki/specs/pack.md (pending)
 
 import {
@@ -24,13 +26,22 @@ import {
 } from "bireactive";
 import type { ChartConfig, PackRect, RenderNode } from "./types";
 import type { ChartNode } from "./tree";
-import { findNode, sortedChildren, resolveFill } from "./tree";
+import { sortedChildren, resolveFill } from "./tree";
 
 const PAD = 2;
 
-/** Compute circle-packing layout for the focus subtree.
- *  Returns Map<nodeId, PackRect> for all descendants of the focus node
- *  (excluding the focus node itself — it is the invisible container). */
+/** Compute circle-packing layout for the FULL tree, then (when drilling)
+ *  apply a 2D affine transform so the focus circle fills the canvas.
+ *
+ *  Mirrors icicle's `computeLayout` affine pattern and treemap's 2D affine,
+ *  adapted for circles: d3.pack runs on the FULL root (not the drill target),
+ *  so every node gets a layout entry. When `drillId` is set, the focus
+ *  circle is scaled up to fill the canvas and centered; siblings and
+ *  off-subtree nodes scale + translate off-screen, sliding there via CSS
+ *  transitions.
+ *
+ *  Returns Map<nodeId, PackRect> for ALL nodes (including root). The chart's
+ *  `present` filter decides which nodes render; geometry positions them. */
 export function computePackLayout(
   root: ChartNode,
   config: ChartConfig,
@@ -41,17 +52,10 @@ export function computePackLayout(
 ): Map<string, PackRect> {
   const map = new Map<string, PackRect>();
 
-  // Determine effective root: drill target if drilling, else tree root.
-  let effectiveRoot = root;
-  if (drillId) {
-    const found = findNode(root, drillId);
-    if (found) effectiveRoot = found;
-  }
+  if (root.children.length === 0) return map;
 
-  if (effectiveRoot.children.length === 0) return map;
-
-  // Build d3 hierarchy from the effective root, descending through ALL levels.
-  const h = hierarchy(effectiveRoot, (d: ChartNode) => {
+  // Build d3 hierarchy from the FULL root, descending through ALL levels.
+  const h = hierarchy(root, (d: ChartNode) => {
     if (d.children.length === 0) return null;
     return sortedChildren(d, config, frozenOrder ?? undefined);
   }).sum((d) => {
@@ -65,24 +69,43 @@ export function computePackLayout(
     .size([size, size])
     .padding(PAD)(h);
 
-  // Extract circles for ALL nodes EXCEPT the effective root.
-  // Offset by (W - size) / 2 to center horizontally if canvas is wider than tall.
+  // Extract circles for ALL nodes (including root). Offset to center.
   const offsetX = (W - size) / 2;
   const offsetY = (H - size) / 2;
   const rootNode = h as HierarchyCircularNode<ChartNode>;
   const walk = (node: HierarchyCircularNode<ChartNode>) => {
-    if (node.data.id !== effectiveRoot.id) {
-      map.set(node.data.id, {
-        cx: node.x + offsetX,
-        cy: node.y + offsetY,
-        r: node.r,
-      });
-    }
+    map.set(node.data.id, {
+      cx: node.x + offsetX,
+      cy: node.y + offsetY,
+      r: node.r,
+    });
     for (const child of node.children ?? []) {
       walk(child as HierarchyCircularNode<ChartNode>);
     }
   };
   walk(rootNode);
+
+  // D3-style drill transform: 2D affine so the focus circle fills the canvas.
+  // Scale uniformly (circles must stay circular) and translate so the focus
+  // circle centers at (W/2, H/2). Siblings scale up + translate off-screen,
+  // sliding there via CSS transitions. Mirrors treemap's 2D affine.
+  if (drillId) {
+    const focus = map.get(drillId);
+    if (focus && focus.r > 0) {
+      // Scale so the focus circle's diameter fills the canvas's min dimension.
+      const scale = Math.min(W, H) / (2 * focus.r);
+      const newCx = W / 2;
+      const newCy = H / 2;
+      for (const [id, c] of map) {
+        map.set(id, {
+          cx: (c.cx - focus.cx) * scale + newCx,
+          cy: (c.cy - focus.cy) * scale + newCy,
+          r: c.r * scale,
+        });
+      }
+    }
+  }
+
   return map;
 }
 
@@ -122,9 +145,17 @@ export function makeCircle(
     stroke,
     strokeWidth,
   });
-  disc.el.style.cursor = "grab";
   disc.el.setAttribute("data-id", node.id);
-  disc.el.style.pointerEvents = "all";
+  // Root (depth 0) is the invisible container — transparent, no pointer
+  // events, no cursor. It's in the layout map for the affine transform but
+  // must not intercept clicks on its children.
+  if (node.depth === 0) {
+    disc.el.style.pointerEvents = "none";
+    disc.el.style.cursor = "default";
+  } else {
+    disc.el.style.cursor = "grab";
+    disc.el.style.pointerEvents = "all";
+  }
 
   // Visibility gate: opacity + pointer-events.
   if (present) {

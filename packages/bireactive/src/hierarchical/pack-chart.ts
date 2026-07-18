@@ -11,7 +11,7 @@ import { buildAllDescendants } from "./hierarchy";
 import { computePackLayout, makeCircle } from "./pack-geometry";
 import type { ChartAccessors } from "./gestures";
 import { tileBodyDrag } from "./behaviors/tile-body-drag";
-import { membershipCell } from "./behaviors/mark-lifecycle";
+import { membershipCell, withExitDelay } from "./behaviors/mark-lifecycle";
 import { HierarchicalChartBase } from "./hierarchical-chart-base";
 
 export class PackChart extends HierarchicalChartBase implements ChartAccessors<PackRect> {
@@ -91,9 +91,10 @@ export class PackChart extends HierarchicalChartBase implements ChartAccessors<P
     this._behaviorDispose = this._composeStandardBehaviors(dragBehaviors, this._transitionOpts());
   }
 
-  // Pack: transition opacity on circles (enter/exit fade).
-  // No CSS transition on cx/cy/r — pack positions change on every layout
-  // re-derivation, and CSS transitions would chase the layout derive.
+  // Pack: transition opacity only (enter/exit fade). cx/cy/r transitions
+  // cause an infinite loop with the reactive layout derive — the transition
+  // triggers a re-layout which triggers another transition. The drill affine
+  // slide happens instantly; CSS transitions on opacity handle enter/exit.
   protected _transitionOpts() {
     return {
       attrs: ["opacity"] as const,
