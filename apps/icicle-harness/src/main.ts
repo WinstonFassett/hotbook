@@ -140,7 +140,6 @@ const config: ChartConfig = {
   depth: 3,
   orientation: "vertical",
   canReorder: false,
-  dragBehavior: "resize",
   conservationMode: "proportional-neighbor",
   showRoot: false,
   showBreadcrumb: true,

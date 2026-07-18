@@ -1,19 +1,17 @@
 // behaviors/tile-body-reorder.ts — drag a tile to reorder it among siblings.
 //
-// Production-style reorder (wiki/interaction-principles.md):
-//   - Dragged tile follows the pointer (ghost) via an imperative CSS transform.
-//     Its transition is disabled so it tracks instantly. Elevated with
-//     drop-shadow via [data-reordering]. Raised in the DOM once on activation
-//     so it paints above siblings (SVG paint order = document order).
-//   - Siblings slide to their new slots via CSS transitions. The provisional
-//     order lives in frozenOrder — the layout re-derives with it, rect
-//     transitions animate the slide. The `reorder-active` class on the host
-//     allows transitions during the gesture (unlike `gesture-active` which
-//     suppresses them for value edits). The tree's children array is NOT
-//     mutated during the drag — forEach DOM order stays stable, so the ghost
-//     stays raised.
-//   - On commit, the tree's children array is reordered + written to the
-//     Kernel. On cancel, frozenOrder is cleared and siblings slide back.
+// Matches production's reorder mechanics (wiki/interaction-principles.md):
+//   - Center-crossing: sibling midpoints are FROZEN at activation. The ghost's
+//     midpoint = startMid + pointerDelta. All items (ghost + frozen siblings)
+//     are sorted by midpoint; the ghost's index in that sorted array is its
+//     target slot. When the ghost center crosses a sibling's FROZEN center,
+//     they swap — exactly like production.
+//   - Dragged tile follows the pointer (ghost) via imperative CSS transform.
+//     Transition disabled, elevated with drop-shadow, raised in DOM.
+//   - Siblings slide to provisional slots via CSS transitions. Provisional
+//     order lives in frozenOrder; layout re-derives, rect transitions animate.
+//   - Tree NOT mutated during drag. On commit, children array is reordered +
+//     written to Kernel. On cancel, frozenOrder clears, siblings slide back.
 
 import type { Gesture, Behavior, GestureGetter } from "../gesture";
 import type { ChartNode } from "../hierarchy";
@@ -45,6 +43,7 @@ export function tileBodyReorder(opts: TileBodyReorderOptions): Behavior {
     let currentOrder: string[] = [];
     let startPointer = 0;
     let startTileMid = 0;
+    let initialMids = new Map<string, number>();
     let ghostEl: SVGGraphicsElement | null = null;
     let prevGhostTransition = "";
 
@@ -81,6 +80,7 @@ export function tileBodyReorder(opts: TileBodyReorderOptions): Behavior {
         initialOrder = [];
         currentOrder = [];
         parentId = null;
+        initialMids.clear();
         ghostEl = null;
         gesture.store.activeTarget = null;
       }
@@ -109,10 +109,19 @@ export function tileBodyReorder(opts: TileBodyReorderOptions): Behavior {
           intent: "reorder",
         });
 
-        // Freeze initial order so siblings don't re-sort (for sort=value).
+        // Freeze initial order + capture sibling midpoints (FROZEN — don't
+        // re-read as siblings move; that's circular and causes jank).
         setFrozenOrder(initialOrder);
+        const layout = opts.layout(gesture);
+        initialMids.clear();
+        for (const id of initialOrder) {
+          if (id === targetId) continue;
+          const r = layout.get(id);
+          if (!r) continue;
+          initialMids.set(id, isHoriz ? (r.y + r.height / 2) : (r.x + r.width / 2));
+        }
 
-        // Elevate the ghost: disable transition, raise in DOM, mark.
+        // Elevate the ghost.
         ghostEl = host.querySelector(`g[data-id="${targetId}"]`) as SVGGraphicsElement | null;
         if (ghostEl) {
           prevGhostTransition = ghostEl.style.transition;
@@ -122,20 +131,19 @@ export function tileBodyReorder(opts: TileBodyReorderOptions): Behavior {
         }
       }
 
-      // Compute target index: count siblings whose center is before the ghost.
-      const layout = opts.layout(gesture);
-      const ghostCenter = startTileMid + (pointerAxis - startPointer);
-      const without = initialOrder.filter((id) => id !== targetId);
+      // Production center-crossing: sort ALL items by midpoint.
+      // Ghost midpoint = startTileMid + pointerDelta (follows pointer).
+      // Sibling midpoints = FROZEN initial values (don't change as they slide).
+      const ghostMid = startTileMid + (pointerAxis - startPointer);
+      const scored = initialOrder.map((id) => ({
+        id,
+        mid: id === targetId ? ghostMid : (initialMids.get(id) ?? 0),
+      }));
+      scored.sort((a, b) => a.mid - b.mid);
+      const targetIdx = scored.findIndex((s) => s.id === targetId);
 
-      let targetIdx = 0;
-      for (const id of without) {
-        const r = layout.get(id);
-        if (!r) continue;
-        const mid = isHoriz ? (r.y + r.height / 2) : (r.x + r.width / 2);
-        if (mid < ghostCenter) targetIdx++;
-      }
-
-      const next = [...without.slice(0, targetIdx), targetId, ...without.slice(targetIdx)];
+      // Build new order from sorted positions.
+      const next = scored.map((s) => s.id);
       let changed = next.length !== currentOrder.length;
       for (let i = 0; !changed && i < next.length; i++) if (next[i] !== currentOrder[i]) changed = true;
 
@@ -145,7 +153,6 @@ export function tileBodyReorder(opts: TileBodyReorderOptions): Behavior {
       }
 
       // Ghost: transform so visual center tracks pointer.
-      // transform = pointerPos - currentLayoutMid (along sibling axis).
       if (ghostEl) {
         const freshLayout = opts.layout(gesture);
         const r = freshLayout.get(targetId);
@@ -193,9 +200,6 @@ export function tileBodyReorder(opts: TileBodyReorderOptions): Behavior {
             opts.writeReorder(parentId, currentOrder.slice());
           }
         }
-        // Clear frozenOrder + restore ghost, then commit. The tree mutation
-        // + frozenOrder clear happen together; the layout re-derives from
-        // the real tree order (which now matches the provisional order).
         clearFrozenOrder();
         restoreGhost();
         gesture.commit();
@@ -206,6 +210,7 @@ export function tileBodyReorder(opts: TileBodyReorderOptions): Behavior {
       initialOrder = [];
       currentOrder = [];
       parentId = null;
+      initialMids.clear();
       ghostEl = null;
       gesture.store.activeTarget = null;
     };

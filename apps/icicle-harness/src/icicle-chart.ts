@@ -95,18 +95,17 @@ export class IcicleChart extends HTMLElement implements GestureContext {
     const prev = this._configCell.value;
     const prevKey = prev ? configKey(prev) : "";
     const nextKey = configKey(c);
-    const dragChanged = prev?.dragBehavior !== c.dragBehavior;
+    // Compute effective drag behavior (auto-derives from sort when not set).
+    const prevDrag = prev?.dragBehavior ?? (prev?.sort === "index" ? "reorder" : "resize");
+    const nextDrag = c.dragBehavior ?? (c.sort === "index" ? "reorder" : "resize");
+    const dragChanged = prevDrag !== nextDrag;
     this._configCell.value = { ...c };
     if (this._gesture) this._gesture.store.config.value = { ...c };
-    // Query key change OR dragBehavior change → rebuild (behaviors are
-    // composed in _build, so a dragBehavior switch needs a rebuild to
-    // re-compose). Render-field-only change → same DataView, derivers
-    // re-run on existing DOM → transition.
+    // Query key change OR effective dragBehavior change → rebuild (behaviors
+    // are composed in _build, so a dragBehavior switch needs a rebuild).
     if (prevKey !== nextKey || dragChanged) {
-      this._queryKeyCell.value = nextKey + (dragChanged ? `:drag=${c.dragBehavior}` : "");
+      this._queryKeyCell.value = nextKey + (dragChanged ? `:drag=${nextDrag}` : "");
     } else if (this._dataView) {
-      // Render field change: update the DataView's config in place and fire
-      // an `updated` so the chart re-derives and transitions.
       this._dataView.config = { ...c };
       this._gesture?.editor.updated();
     }
@@ -521,8 +520,10 @@ export class IcicleChart extends HTMLElement implements GestureContext {
 
     // Compose shared input + render behaviors onto the gesture.
     // Tile-body drag behavior: resize, reorder, or none, per config.
-    // Default is "resize" (drag tile body to change its value).
-    const dragBehavior = config.dragBehavior ?? "resize";
+    // When sort=index and dragBehavior not explicitly set, auto-enable
+    // reorder (matches production demo). Default otherwise: resize.
+    const dragBehavior = config.dragBehavior
+      ?? (config.sort === "index" ? "reorder" : "resize");
     const dragBehaviors: Behavior[] = [];
     if (dragBehavior === "resize") {
       dragBehaviors.push(tileBodyDrag({
