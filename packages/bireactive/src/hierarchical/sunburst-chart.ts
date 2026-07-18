@@ -6,7 +6,7 @@
 // (wheelEdit, keyboardEdit, transitionOnUpdated, previewFullRender) are
 // composed identically to the icicle.
 
-import { derive, forEach, group, type Cell } from "bireactive";
+import { circle, derive, effect, forEach, group, readNow, type Cell } from "bireactive";
 import type { ChartConfig, RadialRect, RenderNode } from "./types";
 import { Kernel } from "./kernel";
 import { Gesture, type Behavior } from "./gesture";
@@ -89,6 +89,33 @@ export class SunburstChart extends HierarchicalChartBase implements EdgeDragHand
     const tilesLayer = group();
     const edgesLayer = group();
     this._rootShape!.add(tilesLayer, edgesLayer);
+
+    // Background disc: fills the center with the logical root's color so the
+    // center is never transparent during drill transitions. Without this, the
+    // old root arc fades out (withExitDelay) while the new root slides in,
+    // leaving the center transparent → black SVG background shows through.
+    // The disc sits behind all arcs (added first = painted first in SVG).
+    // It reads the root's rOut from the layout so it matches the root band.
+    const bgDisc = circle(
+      { x: derive(() => center.x.value), y: derive(() => center.y.value) },
+      derive(() => {
+        // Root is the first node in allNodes (logical root). Its rOut is the
+        // innermost band's outer radius.
+        const root = allNodes.value[0];
+        if (!root) return 0;
+        const r = this._layout!.value.get(root.id);
+        return r?.rOut ?? 0;
+      }),
+      {
+        fill: derive(() => {
+          const root = allNodes.value[0];
+          return root?.color ?? "#1a1d24";
+        }),
+        stroke: "none",
+      },
+    );
+    bgDisc.el.style.pointerEvents = "none";
+    tilesLayer.add(bgDisc);
 
     // Per-arc cells map — shared between makeArc (writer) and
     // makeAngularHandle (reader) so handles stay in sync with arcs.
