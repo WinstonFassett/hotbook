@@ -31,11 +31,10 @@ import { motion } from "../lib/runtime-config";
 const PAD_TOP = 16; // Fixed-pixel group header space
 
 /** Treemap padding (inner + outer) — driven by the shared `motion.separation`
- *  cell so the tweaks pane retunes it live. Sampled at layout time. */
+ *  cell so the tweaks pane retunes it live. Sampled at layout time.
+ *  paddingInner creates a gap of exactly `sep` between siblings. */
 function padInner(): number {
-  // Use separation * 2 for treemap since 1px reads as too tight in a
-  // nested squarified layout (gaps need to be visible at the default).
-  return Math.max(0, motion.separation.value * 2);
+  return Math.max(0, motion.separation.value);
 }
 
 /** Leaf-sum of a subtree. Group value cells normally hold the sum already,
@@ -101,7 +100,7 @@ export function computeTreemapLayout(
     // container. Without this, children touch all 4 walls of their parent,
     // which looks wrong compared to the clean gaps between siblings.
     .paddingTop(PAD_TOP)
-    .round(true)(h);
+    .round(false)(h); // don't round — rounding halves sub-pixel padding
 
   // Extract rects for ALL nodes (including root). The chart's `present`
   // filter gates visibility; geometry positions everything so off-subtree
@@ -203,16 +202,19 @@ export function makeTreemapTile(
   present?: Read<boolean>,
   _defs?: SVGDefsElement,
 ): Shape {
-  const pad = 1;
-
+  // No drawn inset — d3.treemap's paddingInner/paddingOuter already
+  // creates the gaps in the layout. Drawing the rect at the full layout
+  // cell means the gap between siblings = exactly paddingInner = sep.
+  // (The previous hardcoded pad=1 inset was compounding with d3's
+  // padding, making internal separators 2-4× too wide.)
   const liveRect = derive(() => {
     return layout.value.get(node.id) ?? { x: 0, y: 0, width: 0, height: 0 };
   });
 
-  const rx = derive(() => liveRect.value.x + pad);
-  const ry = derive(() => liveRect.value.y + pad);
-  const rw = derive(() => Math.max(0, liveRect.value.width - pad * 2));
-  const rh = derive(() => Math.max(0, liveRect.value.height - pad * 2));
+  const rx = derive(() => liveRect.value.x);
+  const ry = derive(() => liveRect.value.y);
+  const rw = derive(() => Math.max(0, liveRect.value.width));
+  const rh = derive(() => Math.max(0, liveRect.value.height));
 
   const visible = present ? derive(() => readNow(present)) : null;
 
@@ -233,6 +235,14 @@ export function makeTreemapTile(
   const fill = derive(() => resolveFill(node.color, node.depth, fillColor?.value));
   const tile = rect(rx, ry, rw, rh, { fill, stroke, strokeWidth });
   tile.el.setAttribute("data-id", node.id);
+  // CSS-transition x/y/width/height so the tile animates on drill in/out
+  // in lockstep with the label (which transitions its transform). Without
+  // this, the rect jumps instantly while the label animates, breaking the
+  // physical metaphor. Duration matches the label's transform transition.
+  effect(() => {
+    const ms = motion.baseMs.value * 3;
+    tile.el.style.transition = `x ${ms}ms ease-out, y ${ms}ms ease-out, width ${ms}ms ease-out, height ${ms}ms ease-out`;
+  });
 
   // Group tiles: cursor pointer + click to drill in.
   // Leaf tiles: cursor grab (drag to resize) — set on the tile element,
@@ -257,49 +267,59 @@ export function makeTreemapTile(
     });
   }
 
-  // Treemap labels: center for leaves, top-left for groups.
-  // Size-gated (hidden when tile too small).
-  const labelText = derive(() => {
+  // Treemap labels: top-left for both leaves and groups (Budget tree
+  // pattern). Same-row format: name (bold) + value (regular) after it.
+  // SVG <text> doesn't render \n, so two separate <text> elements.
+  // Value hides first when the tile is too narrow; name hides next.
+  const labelFill = labelColorFor(node.color);
+  const nameText = derive(() => {
     const w0 = rw.value, h0 = rh.value;
     if (w0 <= 28 || h0 <= 16) return "";
-    if (node.isLeaf) {
-      return `${node.label}\n${node.value.toFixed(0)}`;
-    }
     return node.label;
   });
-
-  const lbl = label(Vec.derive(() => ({ x: 0, y: 0 })), labelText, {
-    size: node.isLeaf ? 11 : 10,
-    align: Anchor.TopLeft,
-    fill: labelColorFor(node.color),
-    bold: !node.isLeaf,
+  const valueText = derive(() => {
+    const w0 = rw.value, h0 = rh.value;
+    if (w0 <= 60 || h0 <= 16) return ""; // value needs more width
+    return node.value.toFixed(0);
   });
-  lbl.el.style.pointerEvents = "none";
 
-  // Wrapper <g> carries the label via CSS transform.
+  const nameLbl = label(Vec.derive(() => ({ x: 0, y: 0 })), nameText, {
+    size: 11,
+    align: Anchor.TopLeft,
+    fill: labelFill,
+    bold: true,
+  });
+  nameLbl.el.style.pointerEvents = "none";
+  // Value label offset to the right of the name (approximate name width).
+  const valueOffset = derive(() => {
+    const txt = nameText.value;
+    return txt ? txt.length * 6.5 + 6 : 0;
+  });
+  const valueLbl = label(
+    Vec.derive(() => ({ x: valueOffset.value, y: 0 })),
+    valueText,
+    {
+      size: 11,
+      align: Anchor.TopLeft,
+      fill: labelFill,
+      bold: false,
+    },
+  );
+  valueLbl.el.style.pointerEvents = "none";
+
+  // Wrapper <g> carries both labels via CSS transform.
   const labelWrap = document.createElementNS("http://www.w3.org/2000/svg", "g");
-  labelWrap.appendChild(lbl.el);
+  labelWrap.appendChild(nameLbl.el);
+  labelWrap.appendChild(valueLbl.el);
   // Live-timed via motion.baseMs (WIN-352). 3× baseMs = settle role duration.
   effect(() => {
     labelWrap.style.transition = `transform ${motion.baseMs.value * 3}ms ease-out`;
   });
 
-  // Position the label. This effect reads from derive cells that are created
-  // inside forEach's untracked context. To ensure it re-runs when the layout
-  // changes, we read the layout cell directly here (the effect closure
-  // captures the layout cell reference, which IS reactive).
+  // Position the label. Top-left for both leaves and groups now.
   const labelDispose = effect(() => {
-    // Read layout directly to subscribe to layout changes.
     const r = layout.value.get(node.id) ?? { x: 0, y: 0, width: 0, height: 0 };
-    const px = r.x + pad;
-    const py = r.y + pad;
-    const pw = Math.max(0, r.width - pad * 2);
-    const ph = Math.max(0, r.height - pad * 2);
-    if (node.isLeaf) {
-      labelWrap.style.transform = `translate(${px + pw / 2}px, ${py + ph / 2}px)`;
-    } else {
-      labelWrap.style.transform = `translate(${px + 4}px, ${py + 4}px)`;
-    }
+    labelWrap.style.transform = `translate(${r.x + 4}px, ${r.y + 4}px)`;
   });
 
   const g = group({}, tile);

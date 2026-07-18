@@ -96,7 +96,9 @@ export class PackChart extends HierarchicalChartBase implements ChartAccessors<P
   // every edit), so CSS transitions animate the slide without chasing.
   protected _transitionOpts() {
     return {
-      attrs: ["cx", "cy", "r", "opacity"] as const,
+      // Include x/y for <text> labels (they use x/y attributes, not cx/cy).
+      // Without this, labels jump instantly on drill while circles animate.
+      attrs: ["cx", "cy", "r", "opacity", "x", "y"] as const,
       selector: this.tagName.toLowerCase(),
       elements: "circle, text",
     };

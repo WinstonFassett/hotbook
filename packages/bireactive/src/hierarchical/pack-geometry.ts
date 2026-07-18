@@ -30,9 +30,10 @@ import { sortedChildren, resolveFill, labelColorFor } from "./tree";
 import { motion } from "../lib/runtime-config";
 
 /** Pack padding — driven by the shared `motion.separation` cell so the
- *  tweaks pane retunes it live. Sampled at layout time. */
+ *  tweaks pane retunes it live. Sampled at layout time. d3.pack padding
+ *  creates a gap of exactly `sep` between circles. */
 function pad(): number {
-  return Math.max(0, motion.separation.value * 2);
+  return Math.max(0, motion.separation.value);
 }
 
 /** Compute circle-packing layout for the FULL tree, then (when drilling)
@@ -147,7 +148,11 @@ export function makeCircle(
       ? Math.max(2, sep * 2) : sep;
   });
 
-  const disc = circle(Vec.derive(() => ({ x: cx.value, y: cy.value })), r, {
+  // Circle + labels are wrapped in a <g> whose transform carries the
+  // position. The circle sits at (0,0) inside the group; labels sit at
+  // (0, -6) and (0, 8). Animating the GROUP's transform (CSS transition)
+  // moves circle + labels together — no decoupled jump on drill.
+  const disc = circle(Vec.derive(() => ({ x: 0, y: 0 })), r, {
     fill,
     stroke,
     strokeWidth,
@@ -181,22 +186,52 @@ export function makeCircle(
     (disc.el as SVGElement).focus?.();
   });
 
-  // Label for leaf nodes with enough room.
+  // Wrapper group — carries position via CSS transform transition.
+  // Circle is at (0,0) inside; labels at fixed offsets from center.
+  const wrapG = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  wrapG.appendChild(disc.el);
+  // CSS transition on transform — animates the whole group (circle + labels)
+  // together on drill. Duration matches the chart's transition rhythm.
+  effect(() => {
+    const ms = motion.baseMs.value * 3;
+    wrapG.style.transition = `transform ${ms}ms ease-out`;
+  });
+  // Position the group — reactive to layout, animated via CSS transition.
+  effect(() => {
+    wrapG.style.transform = `translate(${cx.value}px, ${cy.value}px)`;
+  });
+
+  // Label for leaf nodes with enough room. Two-line center (Budget tree
+  // pattern): name (bold) on top, value (regular) below. Labels are at
+  // fixed offsets from the group's origin (0,0) = circle center, so they
+  // ride the group's transform animation in lockstep with the circle.
   if (node.children.length === 0) {
-    const text = derive(() => {
+    const labelFill = labelColorFor(node.color);
+    const nameText = derive(() => {
       if (r.value <= 14) return "";
-      return `${node.label}\n${node.value.toFixed(0)}`;
+      return node.label;
     });
-    const lbl = label(Vec.derive(() => ({ x: cx.value, y: cy.value })), text, {
-      size: 10,
-      align: Anchor.Center,
-      fill: labelColorFor(node.color),
+    const valueText = derive(() => {
+      if (r.value <= 20) return ""; // value needs more room
+      return node.value.toFixed(0);
     });
-    lbl.el.style.pointerEvents = "none";
-    const grp = group();
-    grp.add(disc, lbl);
-    return grp;
+    const nameLbl = label(
+      Vec.derive(() => ({ x: 0, y: -6 })),
+      nameText,
+      { size: 11, align: Anchor.Center, fill: labelFill, bold: true },
+    );
+    nameLbl.el.style.pointerEvents = "none";
+    const valueLbl = label(
+      Vec.derive(() => ({ x: 0, y: 8 })),
+      valueText,
+      { size: 10, align: Anchor.Center, fill: labelFill, bold: false },
+    );
+    valueLbl.el.style.pointerEvents = "none";
+    wrapG.appendChild(nameLbl.el);
+    wrapG.appendChild(valueLbl.el);
   }
 
-  return disc;
+  const grp = group();
+  grp.el.appendChild(wrapG);
+  return grp;
 }

@@ -234,9 +234,10 @@ export function makeTile(
 ): Shape {
   // Inset pad — driven by the shared `motion.separation` cell so the
   // tweaks pane retunes it live. Icicle uses an inset rect (shrink each
-  // tile by pad on all sides) to create the gap, unlike sunburst/pack
-  // which use stroke. Sampled reactively so the slider retunes live.
-  const pad = derive(() => motion.separation.value);
+  // tile by pad on all sides) to create the gap. Two adjacent tiles each
+  // inset by pad → gap of 2*pad between them. To make the gap equal sep,
+  // pad = sep/2.
+  const pad = derive(() => motion.separation.value / 2);
 
   // D3-style: every node always has a layout rect (computeLayout walks
   // the full tree). Off-window nodes have rects beyond the canvas edge.
