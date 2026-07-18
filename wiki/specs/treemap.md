@@ -36,6 +36,10 @@ Vocabulary: `UBIQUITOUS_LANGUAGE.md` and `wiki/gesture-architecture.md`. The old
 ### §6 Family-contract gaps
 **One — the Hierarchical family `draft` contract was too narrow.** The family contract line (before the fix) read "scale the edited node inside the saved parent bounds; freeze sibling ordering; do not recompute the full layout" — that described only the icicle/sunburst subtree-patch. Treemap (and pack) use scale-against-frozen-siblings: the layout *is* recomputed on every value write, but sibling repositioning is *not applied* while `Drafting`. "Do not recompute the full layout" conflated computation with application; "freeze sibling ordering" was the wrong freeze (no reorder; positions freeze). **Fixed** in `wiki/gesture-architecture.md` §"Hierarchical": the contract now states the observable invariant (edited mark moves live; sibling positions frozen; relayout transition deferred to `commit`) and names both mechanism variants. No remaining gaps.
 
+## Instance hygiene
+
+Same requirement as icicle §8: every `id`, `clipPath` id, `<pattern>` id, and `xlink:href` / `url(#...)` reference must incorporate the chart's `instanceUid`. Tile clip paths, group-header backgrounds, and any `<defs>` elements must be instance-scoped. See icicle §8 for the pattern and verification steps.
+
 ## Summary
 
 Treemap diverges from icicle on one axis, family-geometry: `draft` uses scale-against-frozen-siblings (layout recomputes internally, sibling repositioning suppressed until `commit`) vs icicle's subtree-patch. Drill is the same relayout approach in both (re-root at focus, transition tiles to new rects). The root is the invisible container (not a tile) — drill-out navigation is via breadcrumb. Uses `d3.treemapSquarify` — we do not originate the layout algorithm. Plus capability: no boundary knob, drag-mark-resize (additive) + wheel (additive) + keyboard (additive, Alt → proportional-neighbor) + cross-tile.

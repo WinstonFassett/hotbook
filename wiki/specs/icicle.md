@@ -116,6 +116,21 @@ Both focus and hover have visual highlights (stroke color/width changes); the ex
 
 The core gesture/transition model holds: `draft` (via `previewFullRender`) patches in place with siblings frozen; `commit` / `cancel` / `updated` (via `transitionOnUpdated`) `transition`. The icicle composes shared behaviors onto a `Gesture` (an `Editor` + store + `setup` API) — the chart-specific code is the composition and the value-mappings, not the gesture machinery itself.
 
+## 8. Instance hygiene (multi-instance safety)
+
+The icicle is rendered as a custom element and may be instantiated multiple times on the same page (e.g. a "hierarchical family" demo section with icicle + sunburst + treemap + treetable). **No `id`, `clipPath` id, or `xlink:href` reference may be bare** — every document-scoped identifier must incorporate the chart's `instanceUid` to prevent collisions.
+
+**Examples:**
+- Tile `clipPath`: `id="tile-clip-${nodeId}-${instanceUid}"`, not `id="tile-clip-${nodeId}"`
+- Pattern fills: `id="pattern-stripe-${instanceUid}"`, not `id="pattern-stripe"`
+- Uses: `xlink:href="#tile-clip-${nodeId}-${instanceUid}"`, not `xlink:href="#tile-clip-${nodeId}"`
+
+The base class exposes `instanceUid` (a short unique string per chart instance). Every generated `id` and every `xlink:href` / `url(#...)` reference must incorporate it.
+
+**Verification:** Grep the implementation for `id="`, `id=\``, `clipPath id`, `<use xlink:href`, `url(#`. Every match must use `instanceUid`. Bare IDs are bugs.
+
+**Consequence of violation:** The second icicle on the page will reference the first icicle's `<defs>`, clipping tiles to the wrong geometry and rendering them invisible or misplaced.
+
 ## Summary
 
 The icicle is the reference Hierarchical chart. It composes shared input behaviors (`wheelEdit`, `keyboardEdit`, `edgeHandleDrag`, `reorderDrag`) and shared render behaviors (`previewFullRender`, `transitionOnUpdated`, `enterExitLifecycle`) onto a base `Gesture` machine. `draft` renders immediately with sibling order frozen; `commit` / `cancel` / `updated` transition. Drill is an `updated` that re-roots the layout at the focus node, rendered as a `transition` (tiles slide to new rects, enter/exit fades handle structural change). Focus and hover are independent interaction state. The chart-specific code is the composition and the value-mappings — the gesture machinery is shared across all charts.

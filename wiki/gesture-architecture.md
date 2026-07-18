@@ -206,6 +206,82 @@ Two sub-patterns, both radial geometry:
 - `intent`: `edit` is the common case — anything mutated (value, config, data, "shit changed"). `reorder` is the special intent singled out because it freezes displayed order during the gesture. Future intents with different freeze/transition semantics get added when they exist, not now.
 - One draft at a time. No multi-value / simultaneous drafts. `gestureCoordinator.setActive` already enforces one active gesture globally. No observed need for more; do not expand scope.
 
+## Implementation invariants
+
+These are non-negotiable correctness requirements for chart implementations. Violations will break multi-instance usage, cross-chart sync, or memory safety.
+
+### Disposer discipline
+
+Any function returning a dispose/cleanup function MUST be caught and disposed on unmount or re-attach. This includes:
+- Reactive effect subscriptions (`effect`, `derive` with a returned cleanup, `watch`)
+- Event listener attachments that return a removal function
+- Timer/animation frame handles wrapped as disposers
+- Manual cleanup closures
+
+**Pattern:** Maintain a `Set<Disposer>` on the owning object. On every call that returns a disposer, add it to the set. On unmount/cleanup, iterate the set and call each disposer.
+
+**Verification:** Grep the diff for callers that discard the return value of known-disposer-returning functions. Any `const x = fn()` where `fn` is known to return a disposer but `x` is not captured into a disposal set is a leak.
+
+### Reactive-source ordering
+
+Every `derive()` call MUST depend ONLY on cells (reactive primitives), NOT on side-effect-populated data structures like `Map` or `Array` filled via `forEach` or imperative loops.
+
+**Wrong:**
+```javascript
+const map = new Map()
+data.forEach(d => map.set(d.id, compute(d)))  // side effect
+const result = derive(() => map.get(someId))  // reads stale map
+```
+
+**Right:**
+```javascript
+const mapCell = cell(new Map())
+effect(() => {
+  const map = new Map()
+  data.forEach(d => map.set(d.id, compute(d)))
+  mapCell.set(map)  // reactive write
+})
+const result = derive(() => mapCell.get().get(someId))  // reads reactive map
+```
+
+The `derive()` sees the populated map only after the effect runs. A `derive()` that reads a plain `Map` will execute before any `forEach` that populates it, producing stale or empty results.
+
+**Verification:** Any `derive()` that closes over a `Map`, `Set`, or `Array` that is mutated elsewhere (via `set()`, `push()`, `forEach`) is suspect. The structure must be wrapped in a cell and written atomically.
+
+### Drill and hover structural contracts
+
+Every hierarchical chart implementation MUST:
+
+1. **Accept `drillId` in its visibility/windowing computation.** The rendered set must respect the drill channel. A chart that ignores `drillId` will not respond to drill events from other charts.
+
+2. **Call `setHover(nodeId)` on row/tile enter and `setHover(null)` on leave.** Hover state is cross-chart; failing to emit it breaks hover sync.
+
+**Verification (drill):** Find the function that computes the visible node set. It must accept `drillId` (or the chart's drill-focus cell) and filter/window the tree accordingly.
+
+**Verification (hover):** Find the tile/row `pointerenter` and `pointerleave` handlers. They must call the chart's hover setter (which routes to the shared hover channel).
+
+### Multi-instance ID hygiene
+
+Charts rendered as custom elements may be instantiated multiple times on the same page. **No `id`, `clipPath` id, `<pattern>` id, `<use xlink:href>`, or any other document-scoped identifier may be bare (instance-independent).**
+
+**Wrong:**
+```javascript
+<clipPath id="tile-clip-tech">  <!-- collides across instances -->
+<use xlink:href="#tile-clip-tech"/>
+```
+
+**Right:**
+```javascript
+<clipPath id={`tile-clip-tech-${instanceUid}`}>
+<use xlink:href={`#tile-clip-tech-${instanceUid}`}/>
+```
+
+The base class exposes an `instanceUid` (a short unique string per chart instance). Every generated `id` and every `xlink:href` / `url(#...)` reference MUST incorporate it.
+
+**Verification:** Grep the chart implementation for string literals containing `id="` or `id=\``, `clipPath id`, `<pattern id`, `<use xlink:href`, or `url(#`. Every match must incorporate the instance uid. Bare IDs are bugs.
+
+**Consequence of violation:** The second instance of the chart on the page will reference the first instance's `<defs>`, clipping or rendering to the wrong geometry and producing invisible or misplaced marks.
+
 ## Open questions
 
 - **Per-surface value-mapping vocabulary.** Each `edit` control surface has its own value-mapping (`additive`, `proportional-neighbor`, `proportional-siblings`, two-sibling reapportion). The override statement (above) makes them per-surface policy, not model vocabulary. If a future cross-tile consumer needs to reason about value-mapping at the model level, promote them to `UBIQUITOUS_LANGUAGE.md`. Open; not blocking.

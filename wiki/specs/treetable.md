@@ -23,6 +23,10 @@ Delta spec for the treetable `Chart`. Treetable is in the Table family with the 
 ### §6 Family-contract gaps
 None beyond the flat table's gaps (absolute-set, no spatial `transition`). The treetable adds hierarchical rows, but the model already handles hierarchical data (same `Dataset.dataShape` as the Hierarchical family) and the Table family contract already handles enter/exit on rendered-set changes. No new gaps.
 
+## Instance hygiene
+
+Treetable is rendered as HTML table rows, not SVG, so there are no `id`/`clipPath` collision concerns. However, if the implementation uses any CSS `id` selectors or ARIA `id` references (e.g. `aria-describedby`), those must incorporate an instance identifier. In practice, treetable row rendering uses class selectors and data attributes, so this is a non-issue — but the principle holds: no bare document-scoped identifiers.
+
 ## Summary
 
 Treetable = flat table + hierarchical rows (indent, expand/collapse). Same edit surfaces (absolute-set type, additive number-drag), same cross-tile `draft` publishing, same no-spatial-`transition`-on-`commit`. `datasetId` names a `hierarchical` `Dataset` (shares `DataView` with icicle/sunburst/treemap/pack on the same config). Expand/collapse and `depth` changes are `updated` events with row enter/exit. No new model gaps.

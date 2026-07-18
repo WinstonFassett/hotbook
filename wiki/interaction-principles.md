@@ -126,6 +126,15 @@ Cursors must be set on the **interactive element** (tile, handle, cell), never o
 ### Testing and verification
 Gesture effects and transitions must be testable. The `Editor` state machine should expose observable transitions. The chart's effect callbacks should be unit-testable. Transitions should be deterministic and interruptible. The test checklist in `wiki/gesture-test-checklist.md` should be the source of truth for coverage.
 
+### Implementation correctness
+Chart implementations must satisfy the invariants in `wiki/gesture-architecture.md` §"Implementation invariants":
+- **Disposer discipline** — no memory leaks from undisposed subscriptions/listeners
+- **Reactive-source ordering** — `derive()` depends on cells, not side-effect-populated structures
+- **Drill and hover contracts** — hierarchical charts accept `drillId` and emit hover
+- **Multi-instance ID hygiene** — no bare `id`/`clipPath`/`xlink:href` that collides across instances
+
+These are correctness requirements, not style. Violations break multi-instance rendering, cross-chart sync, or leak memory.
+
 ---
 
 *References: Shneiderman (1983), Hutchins/Hollan/Norman (1985), Bret Victor — Magic Ink (2006). See also tickets [4c6d] and [10b7].*

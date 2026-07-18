@@ -35,6 +35,10 @@ Vocabulary: `UBIQUITOUS_LANGUAGE.md` and `wiki/gesture-architecture.md`. The old
 ### §6 Family-contract gaps
 None — same answer as icicle. The broadened Hierarchical `draft` contract covers the sunburst (subtree-patch variant, same as icicle). No model gaps. The transition-mechanism divergence (§5) is a geometry consequence, not a model gap — the *contract* (snap during draft, tween on commit/cancel/updated, interruptible, disposable) is identical; only the *mechanism* (CSS-on-rect-attrs vs tween-on-arc-cells) differs.
 
+## Instance hygiene
+
+Same requirement as icicle §8: every `id`, `clipPath` id, `<pattern>` id, and `xlink:href` / `url(#...)` reference must incorporate the chart's `instanceUid`. Arc clip paths, gradient/pattern fills, and any `<defs>` elements must be instance-scoped. See icicle §8 for the pattern and verification steps.
+
 ## Summary
 
 Sunburst = icicle with radial geometry. Six divergences, all geometry, none model-level: (1) arcs/radial-angular axes vs rects/sibling-depth axes; (2) no `orientation` config; (3) tangent boundary knobs on angular boundaries; (4) angular slot computation for reorder; (5) drill discards ancestors (windowing consequence of radial remapping not tolerating off-angle geometry); (6) transition mechanism is tween-on-arc-cells + viewport tween, not CSS-on-rect-attrs (consequence of `d` not being CSS-transitionable). The effect *contract* (snap during draft, tween on commit/cancel/updated, interruptible, disposable, enter/exit in place) is identical to icicle. Read icicle for everything else.
