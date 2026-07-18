@@ -429,11 +429,10 @@ export function makeTile(
     if (h) {
       labelWrap.style.transform = `translate(${rx.value + LABEL_PAD}px, ${ry.value + LABEL_PAD}px)`;
     } else {
-      // Vertical: translate to bottom-center of tile, rotate -90°.
-      // -90° = counterclockwise. Text reads bottom-to-top.
-      // transform-origin is 0 0 (the label's top-left), so after rotation
-      // the text extends upward. Position at bottom-center of tile.
-      labelWrap.style.transform = `translate(${rx.value + rw.value / 2}px, ${ry.value + rh.value - LABEL_PAD}px) rotate(-90deg)`;
+      // Vertical: position at left edge with padding (the "top" after
+      // rotation), at the bottom of the tile so rotated text reads upward.
+      // Consistent with horizontal's top-left placement.
+      labelWrap.style.transform = `translate(${rx.value + LABEL_PAD}px, ${ry.value + rh.value - LABEL_PAD}px) rotate(-90deg)`;
     }
   });
 
