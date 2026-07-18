@@ -30,7 +30,7 @@ import {
 } from "./gestures";
 import { tileBodyDrag } from "./behaviors/tile-body-drag";
 import { arcBodyReorder } from "./behaviors/arc-body-reorder";
-import { membershipCell, withExitDelay } from "./behaviors/mark-lifecycle";
+import { membershipCell } from "./behaviors/mark-lifecycle";
 import { HierarchicalChartBase } from "./hierarchical-chart-base";
 
 export class SunburstChart extends HierarchicalChartBase implements EdgeDragHandler<RadialRect> {
@@ -69,19 +69,18 @@ export class SunburstChart extends HierarchicalChartBase implements EdgeDragHand
       new Map<string, RadialRect>(),
     );
 
-    // Present-filtered subset for membership. Membership is computed from the
-    // FRESH node list, while the forEach below renders the exit-DELAYED list:
-    // a node dropped on drill stays mounted for the exit window with
-    // membership=false, so it freezes geometry (makeArc) and fades out in
-    // place (spec §5 exit freeze) before its DOM is disposed.
+    // Present-filtered subset for membership (pointer-events gating).
+    // All nodes are always mounted (D3 zoomable sunburst pattern) — the
+    // layout transform collapses off-subtree arcs to zero width on drill,
+    // so no DOM removal/re-mount is needed. Membership just controls
+    // pointer-events: off-window nodes (ancestors of focus, too-deep nodes)
+    // get pointer-events: none.
     const presentNodes = derive(() => allNodes.value.filter((n) => n.present));
     this._edges = derive(() => buildEdges(allNodes.value));
     const membership = membershipCell(presentNodes, (n) => n.id);
-    // Sunburst always uses withExitDelay: exiting arcs stay mounted during the
-    // collapse animation (angular width → zero via settle tween), then get
-    // evicted. This is the D3 zoomable sunburst "folding" metaphor — the focus
-    // slice expands to fill the circle while non-focus arcs collapse to zero.
-    const renderedNodes = withExitDelay(allNodes, { key: (n: RenderNode) => n.id });
+    // No withExitDelay — all nodes stay mounted permanently. The settle
+    // tween animates arcs to/from zero width on drill in/out.
+    const renderedNodes = allNodes;
 
     const tilesLayer = group();
     const edgesLayer = group();

@@ -26,7 +26,7 @@ import {
 } from "bireactive";
 import type { ChartConfig, PackRect, RenderNode } from "./types";
 import type { ChartNode } from "./tree";
-import { sortedChildren, resolveFill } from "./tree";
+import { sortedChildren, resolveFill, labelColorFor } from "./tree";
 
 const PAD = 2;
 
@@ -183,7 +183,7 @@ export function makeCircle(
     const lbl = label(Vec.derive(() => ({ x: cx.value, y: cy.value })), text, {
       size: 10,
       align: Anchor.Center,
-      fill: "#1a1d24",
+      fill: labelColorFor(node.color),
     });
     lbl.el.style.pointerEvents = "none";
     const grp = group();

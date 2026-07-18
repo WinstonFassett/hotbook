@@ -52,6 +52,16 @@ export function resolveFill(
   return baseColor;
 }
 
+/** Pick light or dark label color based on background luminance.
+ *  Dark backgrounds (like the #222 root) get light text; light backgrounds
+ *  (the oklch palette) get dark text. Uses d3-color's displayable luminance. */
+export function labelColorFor(bgColor: string): string {
+  const c = hsl(bgColor);
+  // hsl luminance approximation: use lightness L. Dark (L < 0.5) → light text.
+  // The root (#222) has L ≈ 0.13 → light text. Palette colors have L ≈ 0.6-0.8 → dark text.
+  return c.l < 0.5 ? "#e8e8ec" : "#1a1d24";
+}
+
 export function buildTree(root: DataNode, parent: ChartNode | null = null, depth = 0): ChartNode {
   const children = root.children.map((c) => buildTree(c, null, depth + 1));
   const value = children.length === 0 ? num(root.value) : total(children.map((c) => c.value));

@@ -25,7 +25,7 @@ import {
 } from "bireactive";
 import type { LayoutRect, RenderNode } from "./types";
 import type { ChartNode } from "./tree";
-import { sortedChildren, resolveFill } from "./tree";
+import { sortedChildren, resolveFill, labelColorFor } from "./tree";
 import { motion } from "../lib/runtime-config";
 
 const PAD_INNER = 2;
@@ -263,7 +263,7 @@ export function makeTreemapTile(
   const lbl = label(Vec.derive(() => ({ x: 0, y: 0 })), labelText, {
     size: node.isLeaf ? 11 : 10,
     align: Anchor.TopLeft,
-    fill: "#1a1d24",
+    fill: labelColorFor(node.color),
     bold: !node.isLeaf,
   });
   lbl.el.style.pointerEvents = "none";

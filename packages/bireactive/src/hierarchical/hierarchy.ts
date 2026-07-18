@@ -41,6 +41,7 @@ export {
   sortedChildren,
   buildEdges,
   resolveFill,
+  labelColorFor,
 } from "./tree";
 
 /** Walk the FULL tree — every descendant, not just the depth window.
@@ -305,7 +306,7 @@ export function makeTile(
   const lbl = label(
     Vec.derive(() => ({ x: 0, y: 0 })),
     labelText,
-    { size: 10, align: Anchor.TopLeft, fill: "#1a1d24" },
+    { size: 10, align: Anchor.TopLeft, fill: labelColorFor(node.color) },
   );
   lbl.el.style.pointerEvents = "none";
 

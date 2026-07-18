@@ -39,6 +39,7 @@ import {
   sortedChildren,
   treeDepth,
   resolveFill,
+  labelColorFor,
 } from "./tree";
 
 const TWO_PI = Math.PI * 2;
@@ -164,26 +165,25 @@ export function buildAllDescendantsRadial(
   frozenOrder?: Map<string, string[]> | null,
   drillId?: string | null,
 ): RenderNode[] {
+  // D3 zoomable sunburst pattern: ALWAYS render the full tree from the true
+  // root. The layout transform (computeRadialLayout) collapses off-subtree
+  // nodes to zero angular width on drill — they stay mounted at zero width
+  // and animate back to full width on drill-out. No DOM removal/re-mount.
   const maxDepth = Math.min(config.depth ?? 100, treeDepth(root));
   const showRoot = config.showRoot !== false;
   const result: RenderNode[] = [];
 
-  let logicalRoot: ChartNode = root;
   let logicalRootDepth = 0;
   if (drillId) {
-    const focus = findNode(root, drillId);
-    if (focus) {
-      logicalRoot = focus;
-      function findDepth(n: ChartNode, d: number): number {
-        if (n.id === drillId) return d;
-        for (const c of n.children) {
-          const r = findDepth(c, d + 1);
-          if (r >= 0) return r;
-        }
-        return -1;
+    function findDepth(n: ChartNode, d: number): number {
+      if (n.id === drillId) return d;
+      for (const c of n.children) {
+        const r = findDepth(c, d + 1);
+        if (r >= 0) return r;
       }
-      logicalRootDepth = findDepth(root, 0);
+      return -1;
     }
+    logicalRootDepth = findDepth(root, 0);
   }
   const visDepthStart = logicalRootDepth + (showRoot ? 0 : 1);
   const maxVisibleDepth = logicalRootDepth + maxDepth;
@@ -210,7 +210,7 @@ export function buildAllDescendantsRadial(
     return rn;
   }
 
-  build(logicalRoot, logicalRootDepth, null);
+  build(root, 0, null);
   return result;
 }
 
@@ -239,6 +239,11 @@ export function makeArc(
 ): Shape {
   // Per-arc cells — annularSector reads from these. The chart-level
   // settleArcCells effect writes layout targets to them (spec §5).
+  // Seed at the target layout value so arcs appear at correct size on mount.
+  // (Seeding at zero for expand-from-zero on drill-out doesn't work — the
+  // settle effect fires before forEach mounts new arcs, so the tween never
+  // picks them up. The collapse-to-zero on drill-in still works because
+  // exiting arcs are already mounted and their cells are in arcCellsMap.)
   const seed = layout.value.get(node.id) ?? { a0: 0, a1: 0, rIn: 0, rOut: 0 };
   const cells: ArcCells = {
     la0: num(seed.a0),
@@ -310,7 +315,7 @@ export function makeArc(
   const lbl = label(
     Vec.derive(() => ({ x: 0, y: 0 })),
     labelText,
-    { size: 10, align: Anchor.Center, fill: "#1a1d24" },
+    { size: 10, align: Anchor.Center, fill: labelColorFor(node.color) },
   );
   lbl.el.setAttribute("dy", "0.35em");
   lbl.el.style.pointerEvents = "none";
@@ -376,14 +381,26 @@ export function makeAngularHandle(
   present?: Read<boolean>,
   layout?: Cell<Map<string, RadialRect>>,
 ): Shape {
-  // Read geometry from the LAYOUT cell (reactive) rather than arcCellsMap
-  // (plain Map, not reactive). The arcCellsMap is populated lazily by
-  // makeArc inside forEach, which may not have run yet when handles are
-  // created. The layout cell is always available and reactive.
-  const leftRect = derive(() => layout?.value.get(edge.leftId) ?? null);
-  const boundaryAngle = derive(() => leftRect.value?.a1 ?? 0);
-  const rIn = derive(() => Math.max(0, leftRect.value?.rIn ?? 0));
-  const rOut = derive(() => Math.max(0, leftRect.value?.rOut ?? 0));
+  // Read geometry from arcCellsMap (the ANIMATED cells) so handles stay in
+  // sync with arcs during the settle tween. The cells are reactive (num()),
+  // so derive() tracks them. If the arc isn't mounted yet (no cell entry),
+  // fall back to the layout target so the handle has a sane initial position.
+  const leftCells = () => arcCellsMap.get(edge.leftId);
+  const boundaryAngle = derive(() => {
+    const c = leftCells();
+    if (c) return c.la1.value;
+    return layout?.value.get(edge.leftId)?.a1 ?? 0;
+  });
+  const rIn = derive(() => {
+    const c = leftCells();
+    if (c) return Math.max(0, c.lrIn.value);
+    return Math.max(0, layout?.value.get(edge.leftId)?.rIn ?? 0);
+  });
+  const rOut = derive(() => {
+    const c = leftCells();
+    if (c) return Math.max(0, c.lrOut.value);
+    return Math.max(0, layout?.value.get(edge.leftId)?.rOut ?? 0);
+  });
   const radialSpan = derive(() => rOut.value - rIn.value);
 
   // Handle is a thin rect centered at origin. Wrapper <g> carries the
