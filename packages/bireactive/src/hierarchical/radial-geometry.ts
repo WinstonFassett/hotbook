@@ -271,16 +271,20 @@ export function makeArc(
   const rInEffective = derive(() => cells.lrIn.value);
   const rOutEffective = derive(() => cells.lrOut.value);
 
+  // Production sunburst look (matches main): every arc gets a thin
+  // near-black stroke as the separator. Focus/hover bumps to 2px with
+  // white/light-gray. The stroke IS the divider — no separate handle
+  // rects needed for the clean rendering.
   const stroke = derive(() => {
-    if (!chart) return "none";
+    if (!chart) return "#0b0d12";
     if (chart.focusCell.value === node.id) return "#fff";
     if (chart.hoverCell.value === node.id) return "#c8cdd6";
-    return "none";
+    return "#0b0d12";
   });
   const strokeWidth = derive(() => {
-    if (!chart) return 0;
+    if (!chart) return 1;
     if (chart.focusCell.value === node.id || chart.hoverCell.value === node.id) return 2;
-    return 0;
+    return 1;
   });
 
   const arc = annularSector(center, rOutEffective, rInEffective, a0Effective, a1Effective, {
