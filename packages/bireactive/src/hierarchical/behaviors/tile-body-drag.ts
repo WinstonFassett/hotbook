@@ -52,6 +52,13 @@ export interface TileBodyDragOptions {
   deferSort: GestureGetter<boolean>;
   /** Focus the tile on click (no-drag pointerup). */
   focusTile: (id: string) => void;
+  /** Value-mapping for the drag. Default: "proportional-siblings" (the
+   *  icicle body-drag semantic). Treemap passes "additive" per its spec
+   *  (drag-mark-resize: only the dragged tile's value changes). */
+  mode?: GestureGetter<"additive" | "proportional-neighbor" | "proportional-siblings">;
+  /** Drag axis override. Default: derived from config.orientation (the
+   *  icicle sibling axis). Treemap passes "x" (horizontal scrub, right = +). */
+  axis?: "x" | "y";
 }
 
 export function tileBodyDrag(opts: TileBodyDragOptions): Behavior {
@@ -133,7 +140,7 @@ export function tileBodyDrag(opts: TileBodyDragOptions): Behavior {
         siblings: opts.siblings(gesture),
         snapshot: gesture.store.snapshot,
       };
-      applyConservedDelta(ctx, targetId, delta, "proportional-siblings");
+      applyConservedDelta(ctx, targetId, delta, opts.mode ? opts.mode(gesture) : "proportional-siblings");
 
       const valueFn = opts.valueOf(gesture);
       const frozenOrder = opts.frozenOrder(gesture);
@@ -185,9 +192,10 @@ export function tileBodyDrag(opts: TileBodyDragOptions): Behavior {
       const sibs = opts.siblings(gesture)(id);
       if (sibs.length === 0) return; // root has no siblings → not editable
 
-      // Read orientation from config to determine the sibling axis.
+      // Read orientation from config to determine the sibling axis, unless
+      // the chart pinned an explicit drag axis (treemap: horizontal scrub).
       const config = gesture.store.config.value;
-      isHoriz = config.orientation === "horizontal";
+      isHoriz = opts.axis ? opts.axis === "y" : config.orientation === "horizontal";
 
       // Capture the target tile's pixel span along the sibling axis from the DOM.
       // This makes the drag proportional: dragging by the tile's full span doubles
