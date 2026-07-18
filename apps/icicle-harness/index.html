@@ -101,6 +101,34 @@
       }
       #config-bar button:hover { border-color: var(--accent); }
       #config-bar .group { display: flex; gap: 4px; align-items: center; }
+      /* Drill breadcrumb */
+      .drill-breadcrumb {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        padding: 4px 8px;
+        font-size: 11px;
+        pointer-events: auto;
+      }
+      .drill-segment { display: inline-flex; align-items: center; }
+      .drill-crumb {
+        background: none;
+        border: none;
+        color: var(--muted);
+        cursor: pointer;
+        font: inherit;
+        padding: 2px 6px;
+        border-radius: 3px;
+        transition: color 100ms, background 100ms;
+      }
+      .drill-crumb:hover { color: var(--ink); background: var(--panel); }
+      .drill-crumb--current {
+        color: var(--ink);
+        font-weight: 600;
+        cursor: default;
+      }
+      .drill-crumb--current:hover { background: none; }
+      .drill-sep { color: var(--border); margin: 0 1px; }
     </style>
   </head>
   <body>

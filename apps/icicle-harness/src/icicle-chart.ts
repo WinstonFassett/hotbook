@@ -56,6 +56,7 @@ export class IcicleChart extends HTMLElement implements GestureContext {
   private _dataView: DataView | null = null;
   private _svg?: SVGSVGElement;
   private _chromeLayer?: HTMLDivElement;
+  private _breadcrumbBar?: HTMLElement;
   private _rootShape?: any;
   private _window?: Cell<RenderNode[]>;
   private _layout?: Cell<Map<string, LayoutRect>>;
@@ -265,62 +266,175 @@ export class IcicleChart extends HTMLElement implements GestureContext {
         if (node && node.children.length === 0) return;
       }
       this.drill(id);
+      // Keep focus on the chart host so Escape can drill out. The dblclick
+      // target (a tile) may be torn down by the re-render, losing focus.
+      this.focus({ preventScroll: true });
     };
     this.addEventListener("dblclick", onDblClick);
     this._setupDisposers.push(() => this.removeEventListener("dblclick", onDblClick));
 
+    // Escape → drill out one level. Only when idle (a drafting gesture's
+    // Escape is handled by the Gesture's document-level handler → cancel).
+    // Scoped to the host (tabIndex = -1) so it only fires when the chart
+    // has focus — matches production's document.activeElement.drillKey check.
+    const onKeydown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (this._gesture?.state === "Drafting") return; // let Gesture cancel
+      const drillId = this._drillId.value;
+      if (!drillId) return;
+      e.preventDefault();
+      this.drill(drillId); // drill(currentFocus) → drill out to parent
+    };
+    this.addEventListener("keydown", onKeydown);
+    this._setupDisposers.push(() => this.removeEventListener("keydown", onKeydown));
+
     // Drill breadcrumb: reactive HTML overlay in the chrome layer.
-    // Rebuilds when drillId or treeRoot changes. Only shown when
-    // config.showBreadcrumb is true and a drill focus is set.
+    // D3-style enter/exit on individual crumbs — each crumb fades in
+    // when it appears (drill deeper) and fades out when it disappears
+    // (drill out). The bar itself stays mounted while any crumb is
+    // visible; only the whole bar fades when the last crumb exits.
+    const CRUMB_FADE_MS = 160;
+
+    const fadeOutEl = (el: HTMLElement) => {
+      el.style.opacity = "0";
+      el.addEventListener("transitionend", function onEnd(e: TransitionEvent) {
+        if (e.propertyName !== "opacity") return;
+        el.removeEventListener("transitionend", onEnd);
+        el.remove();
+      });
+      setTimeout(() => el.remove(), CRUMB_FADE_MS + 60); // fallback
+    };
+
+    // Build a crumb segment: optional separator + button, keyed by node id.
+    // Wrapped in a span so the separator fades with the crumb.
+    const buildSegment = (node: ChartNode, isLast: boolean): HTMLElement => {
+      const seg = document.createElement("span");
+      seg.className = "drill-segment";
+      seg.dataset.crumbId = node.id;
+      seg.style.transition = `opacity ${CRUMB_FADE_MS}ms ease`;
+      seg.style.opacity = "0";
+
+      const sep = document.createElement("span");
+      sep.className = "drill-sep";
+      sep.textContent = "›";
+      seg.appendChild(sep);
+
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = isLast ? "drill-crumb drill-crumb--current" : "drill-crumb";
+      btn.textContent = node.label;
+      if (!isLast) {
+        btn.addEventListener("click", () => this.drill(node.id));
+      }
+      seg.appendChild(btn);
+      return seg;
+    };
+
+    // Root crumb — no separator, always first.
+    const buildRootSegment = (node: ChartNode): HTMLElement => {
+      const seg = document.createElement("span");
+      seg.className = "drill-segment";
+      seg.dataset.crumbId = node.id;
+      seg.style.transition = `opacity ${CRUMB_FADE_MS}ms ease`;
+      seg.style.opacity = "0";
+
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "drill-crumb";
+      btn.textContent = node.label;
+      btn.addEventListener("click", () => this.drill(null));
+      seg.appendChild(btn);
+      return seg;
+    };
+
+    // Track mounted crumb segments by node id for D3-style join.
+    const crumbEls = new Map<string, HTMLElement>();
+
     const breadcrumbDispose = effect(() => {
       const drillId = this._drillId.value;
       const root = this._treeRoot.value;
       const showBc = this._configCell.value?.showBreadcrumb === true;
-      // Clear previous breadcrumb.
-      this._chromeLayer!.innerHTML = "";
-      if (!showBc || !drillId || !root) return;
 
-      // Walk ancestor path from drill focus to root.
-      const path: ChartNode[] = [];
-      let cur: ChartNode | null = findNode(root, drillId);
-      while (cur) {
-        path.unshift(cur);
-        cur = cur.parent;
-      }
-      if (path.length <= 1) return; // just root, no breadcrumb needed
-
-      const bar = document.createElement("nav");
-      bar.style.cssText = "display:flex;align-items:center;gap:2px;padding:4px 8px;font-size:11px;pointer-events:auto;";
-
-      // Root crumb (tree root — click to drill all the way out)
-      const rootBtn = document.createElement("button");
-      rootBtn.textContent = path[0].label;
-      rootBtn.style.cssText = "background:none;border:none;color:var(--muted,#888);cursor:pointer;font:inherit;padding:2px 4px;border-radius:3px;";
-      rootBtn.addEventListener("click", () => this.drill(null));
-      bar.appendChild(rootBtn);
-
-      // Path segments — include the current focus (last in path).
-      // When showRoot=false, the focus is hidden from tiles, so the
-      // breadcrumb is the only place it shows.
-      for (let i = 1; i < path.length; i++) {
-        const sep = document.createElement("span");
-        sep.textContent = "›";
-        sep.style.cssText = "color:var(--muted,#555);";
-        bar.appendChild(sep);
-
-        const isLast = i === path.length - 1;
-        const btn = document.createElement("button");
-        btn.textContent = path[i].label;
-        btn.style.cssText = isLast
-          ? "background:none;border:none;color:var(--ink,#ccc);cursor:default;font:inherit;padding:2px 4px;border-radius:3px;font-weight:600;"
-          : "background:none;border:none;color:var(--ink,#ccc);cursor:pointer;font:inherit;padding:2px 4px;border-radius:3px;";
-        if (!isLast) {
-          btn.addEventListener("click", () => this.drill(path[i].id));
+      // Resolve the path — empty if no drill, no root, or just root.
+      let path: ChartNode[] = [];
+      if (showBc && drillId && root) {
+        let cur: ChartNode | null = findNode(root, drillId);
+        while (cur) {
+          path.unshift(cur);
+          cur = cur.parent;
         }
-        bar.appendChild(btn);
+        if (path.length <= 1) path = []; // just root, no breadcrumb needed
       }
 
-      this._chromeLayer!.appendChild(bar);
+      const newPathIds = new Set(path.map((n) => n.id));
+
+      // Exit: crumbs no longer in path → fade out + remove.
+      for (const [id, el] of crumbEls) {
+        if (!newPathIds.has(id)) {
+          fadeOutEl(el);
+          crumbEls.delete(id);
+        }
+      }
+
+      if (path.length === 0) {
+        // No crumbs to show. If the bar is empty, remove it.
+        const bar = this._breadcrumbBar;
+        if (bar && crumbEls.size === 0) {
+          fadeOutEl(bar);
+          this._breadcrumbBar = undefined;
+        }
+        return;
+      }
+
+      // Ensure the bar exists.
+      let bar = this._breadcrumbBar;
+      if (!bar) {
+        bar = document.createElement("nav");
+        bar.className = "drill-breadcrumb";
+        bar.setAttribute("role", "navigation");
+        bar.setAttribute("aria-label", "Drill path");
+        bar.style.opacity = "1"; // bar itself stays opaque; crumbs fade
+        this._chromeLayer!.appendChild(bar);
+        this._breadcrumbBar = bar;
+      }
+
+      // Enter + update: walk path in order, create missing crumbs,
+      // and ensure DOM order matches path order.
+      for (let i = 0; i < path.length; i++) {
+        const node = path[i];
+        const id = node.id;
+        const isLast = i === path.length - 1;
+        let seg = crumbEls.get(id);
+
+        if (!seg) {
+          // Enter: build new segment, insert at the right DOM position.
+          seg = i === 0 ? buildRootSegment(node) : buildSegment(node, isLast);
+          crumbEls.set(id, seg);
+          // Insert before the first segment whose path index > i.
+          let insertBefore: Node | null = null;
+          for (let j = i + 1; j < path.length; j++) {
+            const after = crumbEls.get(path[j].id);
+            if (after) { insertBefore = after; break; }
+          }
+          bar.insertBefore(seg, insertBefore);
+          // Force reflow so opacity:0 takes effect, then fade in.
+          void seg.offsetHeight;
+          seg.style.opacity = "1";
+        } else {
+          // Update: refresh the current-marker class (last crumb changes
+          // when drilling deeper/out).
+          const btn = seg.querySelector("button");
+          if (btn) {
+            btn.className = isLast ? "drill-crumb drill-crumb--current" : "drill-crumb";
+            // Rebind click: last crumb is non-clickable; others drill to id.
+            const clone = btn.cloneNode(true) as HTMLButtonElement;
+            if (!isLast) {
+              clone.addEventListener("click", () => this.drill(node.id));
+            }
+            btn.replaceWith(clone);
+          }
+        }
+      }
     });
     this._setupDisposers.push(breadcrumbDispose);
 
