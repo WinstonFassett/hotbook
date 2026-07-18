@@ -410,7 +410,7 @@ export function makeAngularHandle(
     derive(() => -radialSpan.value / 2),
     derive(() => HANDLE_THICKNESS),
     derive(() => radialSpan.value),
-    { fill: "rgba(255,255,255,0.15)", stroke: "none" },
+    { fill: "rgba(0,0,0,0.15)", stroke: "none" },
   );
   handle.el.style.pointerEvents = "all";
   (handle as any)._edge = edge;

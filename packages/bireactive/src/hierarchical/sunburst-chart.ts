@@ -93,17 +93,22 @@ export class SunburstChart extends HierarchicalChartBase implements EdgeDragHand
     const bgDisc = circle(
       { x: derive(() => center.x.value), y: derive(() => center.y.value) },
       derive(() => {
-        // Root is the first node in allNodes (logical root). Its rOut is the
-        // innermost band's outer radius.
-        const root = allNodes.value[0];
-        if (!root) return 0;
-        const r = this._layout!.value.get(root.id);
+        // The disc fills the innermost band — the focus node when drilled,
+        // the root otherwise. Uses the layout's rOut for that node so the
+        // disc matches the band exactly.
+        const id = this._drillId.value ?? allNodes.value[0]?.id;
+        if (!id) return 0;
+        const r = this._layout!.value.get(id);
         return r?.rOut ?? 0;
       }),
       {
         fill: derive(() => {
-          const root = allNodes.value[0];
-          return root?.color ?? "#1a1d24";
+          // Match the center band's color: focus node when drilled, root
+          // otherwise. Stays green on finance after drill-in completes
+          // rather than snapping back to the dark root color.
+          const id = this._drillId.value ?? allNodes.value[0]?.id;
+          const node = allNodes.value.find((n) => n.id === id);
+          return node?.color ?? "#1a1d24";
         }),
         stroke: "none",
       },

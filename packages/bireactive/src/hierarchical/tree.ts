@@ -62,6 +62,15 @@ export function labelColorFor(bgColor: string): string {
   return c.l < 0.5 ? "#e8e8ec" : "#1a1d24";
 }
 
+/** Darken a color by reducing its HSL lightness. Used for divider handles
+ *  so they read as a darker shade of the parent's color rather than a
+ *  washed-out white overlay. */
+export function darkenColor(bgColor: string, amount = 0.18): string {
+  const c = hsl(bgColor);
+  c.l = Math.max(0, c.l - amount);
+  return c.formatHsl();
+}
+
 export function buildTree(root: DataNode, parent: ChartNode | null = null, depth = 0): ChartNode {
   const children = root.children.map((c) => buildTree(c, null, depth + 1));
   const value = children.length === 0 ? num(root.value) : total(children.map((c) => c.value));
