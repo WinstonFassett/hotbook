@@ -15,7 +15,9 @@ import type { ChartConfig } from "./types";
 import { setup } from "./gesture";
 import type { ChartNode } from "./tree";
 import { numberDrag } from "../lib/number-drag";
+import type { BiNode } from "../lib/tree";
 import { keyboardEdit } from "./behaviors/keyboard-edit";
+import { prefersReducedMotion, settleTransition } from "./behaviors/transition-on-updated";
 import { HierarchicalChartBase } from "./hierarchical-chart-base";
 
 const INDENT_WIDTH = 14;
@@ -88,6 +90,21 @@ export class TreetableChart extends HierarchicalChartBase {
   private _renderListeners = new Set<(allNodeIds: string[]) => void>();
   private _root?: HTMLDivElement;
   private _body?: HTMLDivElement;
+  /** Bumped by refresh()/columns writes to force a re-render. */
+  private _renderTick = cell(0);
+
+  // --- Legacy column API ---
+  private _columns?: ColumnDef[];
+  /** Explicit column set (legacy API). When unset, columns auto-detect from
+   *  the compat BiNode root's measures; fallback is a single Value column. */
+  get columns(): ColumnDef[] | undefined { return this._columns; }
+  set columns(v: ColumnDef[] | undefined) {
+    this._columns = v;
+    this._renderTick.value++;
+  }
+
+  /** Row enter animations on/off (legacy API). Default on. */
+  enableTransitions?: boolean;
 
   // Override _createSurface to build HTML surface instead of SVG
   protected _createSurface(): void {
@@ -106,6 +123,7 @@ export class TreetableChart extends HierarchicalChartBase {
         const config = this._configCell.value;
         const drillId = this._drillId.value;
         const collapsed = this._collapsedCell.value; // reactive dependency
+        this._renderTick.value; // reactive: refresh()/columns writes
 
         if (!root || !config) {
           if (this._body) this._body.innerHTML = "";
@@ -169,20 +187,49 @@ export class TreetableChart extends HierarchicalChartBase {
     }
 
     const fragment = document.createDocumentFragment();
+    const newRows: HTMLElement[] = [];
+    const animate = this.enableTransitions !== false && !prefersReducedMotion();
 
     for (const { node, depth, hasKids } of visible) {
-        const nodeId = node.id;
-        allNodeIds.push(nodeId);
+      const nodeId = node.id;
+      allNodeIds.push(nodeId);
 
-        let row = existing.get(nodeId);
-        existing.delete(nodeId);
+      let row = existing.get(nodeId);
+      existing.delete(nodeId);
 
-        if (!row) {
-          row = document.createElement("div");
-          row.dataset.id = nodeId;
-          row.style.cssText =
-            "display:flex;align-items:center;padding:3px 8px;cursor:default;transition:background 80ms;";
+      if (!row) {
+        row = document.createElement("div");
+        row.dataset.id = nodeId;
+        const baseTransition = animate
+          ? `${settleTransition(["opacity", "transform"])}, background 80ms`
+          : "background 80ms";
+        row.style.cssText = `display:flex;align-items:center;padding:3px 8px;cursor:default;transition:${baseTransition};`;
+        // Listeners attach ONCE per row element (rows are keyed and reused
+        // across renders — re-attaching per render leaks listeners). The
+        // click handler delegates: twisty toggles collapse, else focus.
+        const el = row;
+        el.addEventListener("mouseenter", () => { el.style.background = "oklch(0.22 0 0)"; });
+        el.addEventListener("mouseleave", () => { el.style.background = ""; });
+        el.addEventListener("click", (e) => {
+          const twist = (e.target as HTMLElement).closest?.("[data-twist]");
+          if (twist) {
+            e.stopPropagation();
+            const id = twist.getAttribute("data-twist")!;
+            const next = new Set(this._collapsedCell.value);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            this._collapsedCell.value = next;
+            return;
+          }
+          this.setFocus(el.dataset.id!);
+        });
+        // Enter animation: start faded/offset, settle after insertion.
+        if (animate) {
+          el.style.opacity = "0";
+          el.style.transform = "translateX(-8px)";
+          newRows.push(el);
         }
+      }
 
       const indent = (depth - 1) * INDENT_WIDTH;
       const isCollapsed = collapsed.has(nodeId);
@@ -190,100 +237,77 @@ export class TreetableChart extends HierarchicalChartBase {
       // Clear and rebuild row content
       row.innerHTML = this._buildRowContent(node, nodeId, depth, hasKids, isCollapsed, indent, visibleColumns, singleColumnMode);
 
-      // Hover effect
-      row.removeEventListener("mouseenter", row.onmouseenter as any);
-      row.removeEventListener("mouseleave", row.onmouseleave as any);
-      row.addEventListener("mouseenter", () => {
-        row!.style.background = "oklch(0.22 0 0)";
-      });
-      row.addEventListener("mouseleave", () => {
-        row!.style.background = "";
-      });
-
-      // Row click → focus
-      row.addEventListener("click", () => {
-        this.setFocus(nodeId);
-      });
-
-      // Attach expand/collapse handler
-      if (hasKids) {
-        const btn = row.querySelector<HTMLElement>(`[data-twist="${nodeId}"]`);
-        btn?.addEventListener("click", (e) => {
-          e.stopPropagation();
-          // Create a new Set to trigger reactivity
-          const next = new Set(this._collapsedCell.value);
-          if (next.has(nodeId)) {
-            next.delete(nodeId);
-          } else {
-            next.add(nodeId);
-          }
-          this._collapsedCell.value = next;
-        });
-      }
-
       // Set up reactive value display + editing for each column
-      for (const col of visibleColumns) {
+      for (let ci = 0; ci < visibleColumns.length; ci++) {
+        const col = visibleColumns[ci];
         const valueCell = row.querySelector<HTMLElement>(`[data-value-cell="${nodeId}:${col.key}"]`);
-        if (valueCell) {
-          // Clean up old effect if it exists
-          const effectKey = `${nodeId}:${col.key}`;
-          const oldDispose = this._valueEffectDisposers.get(effectKey);
-          oldDispose?.();
+        if (!valueCell) continue;
 
-          // Get the value cell (for primary column, it's node.value; for extras, it's measures[key])
-          const isExtraColumn = col.key !== "total" && node.value;
-          const measureValue = isExtraColumn
-            ? (node.value as any).measures?.[col.key]
-            : node.value;
+        const effectKey = `${nodeId}:${col.key}`;
+        this._valueEffectDisposers.get(effectKey)?.();
 
-          if (measureValue) {
-            // Create reactive effect to update value display
-            const dispose = effect(() => {
-              const value = measureValue.value;
-              valueCell.textContent = fmtNum(value);
-            });
-            this._valueEffectDisposers.set(effectKey, dispose);
+        const isPrimary = ci === 0;
+        const measureValue = this._valueSourceFor(node, col, isPrimary);
+        if (!measureValue) continue;
 
-            // Attach numberDrag for drag-to-edit
-            numberDrag(valueCell, {
-              get: () => measureValue.value,
-              set: (v: number) => {
-                measureValue.value = v;
-              },
-              pxPerUnit: 4,
-              onStart: () => {
-                this._dataView?.draft({
-                  nodeId,
-                  value: measureValue.value,
-                  source: "table-cell",
-                  intent: "edit",
-                });
-              },
-              onEnd: (canceled) => {
-                if (canceled) {
-                  this._dataView?.cancel();
-                } else {
-                  this._dataView?.commit();
-                }
-              },
-            });
-          }
-        }
+        const dispose = effect(() => {
+          valueCell.textContent = fmtNum(measureValue.value);
+        });
+        this._valueEffectDisposers.set(effectKey, dispose);
+
+        // Primary column edits route through the DataView draft/commit flow
+        // (cross-view previews); extra columns write BiNode measure cells
+        // directly (legacy behavior — the kernel only carries one measure).
+        numberDrag(valueCell, {
+          get: () => measureValue.value,
+          set: (v: number) => { measureValue.value = v; },
+          pxPerUnit: 4,
+          ...(isPrimary
+            ? {
+                onStart: () => {
+                  this._dataView?.draft({
+                    nodeId,
+                    value: measureValue.value,
+                    source: "table-cell",
+                    intent: "edit",
+                  });
+                },
+                onEnd: (canceled: boolean) => {
+                  if (canceled) this._dataView?.cancel();
+                  else this._dataView?.commit();
+                },
+              }
+            : {}),
+        });
       }
 
       fragment.appendChild(row);
     }
 
-    // Remove stale rows
+    // Remove stale rows (disposers are keyed `${nodeId}:${col.key}`).
     for (const [id, el] of existing.entries()) {
       el.remove();
-      const dispose = this._valueEffectDisposers.get(id);
-      dispose?.();
-      this._valueEffectDisposers.delete(id);
+      for (const [key, dispose] of this._valueEffectDisposers) {
+        if (key.startsWith(`${id}:`)) {
+          dispose();
+          this._valueEffectDisposers.delete(key);
+        }
+      }
     }
 
     this._body.innerHTML = "";
     this._body.appendChild(fragment);
+
+    // Trigger enter animations for newly created rows.
+    if (newRows.length > 0) {
+      newRows.forEach((r) => void r.offsetHeight); // flush initial state
+      requestAnimationFrame(() => {
+        newRows.forEach((r) => {
+          r.style.opacity = "1";
+          r.style.transform = "translateX(0)";
+        });
+      });
+    }
 
     // Notify render listeners
     for (const listener of this._renderListeners) {
@@ -444,9 +468,48 @@ export class TreetableChart extends HierarchicalChartBase {
     setTimeout(() => document.addEventListener("click", closeHandler), 0);
   }
 
-  private _getAvailableColumns(): ColumnDef[] {
-    // Subclasses can override this; default is [{ key: "total", label: "Value" }]
+  protected _getAvailableColumns(): ColumnDef[] {
+    // Explicit columns (legacy API) win.
+    if (this._columns && this._columns.length > 0) return this._columns;
+    // Auto-detect from the compat BiNode root's measures (old behavior).
+    const biRoot = (this as any).data as BiNode | null | undefined;
+    if (biRoot) {
+      const keys = new Set<string>();
+      const walk = (n: BiNode) => {
+        if (n.value.measures) for (const k of Object.keys(n.value.measures)) keys.add(k);
+        for (const c of n.children as BiNode[]) walk(c);
+      };
+      walk(biRoot);
+      if (keys.size > 0) {
+        return Array.from(keys).map((key) => ({
+          key,
+          label: key.charAt(0).toUpperCase() + key.slice(1),
+          width: 80,
+          visible: true,
+        }));
+      }
+    }
     return [{ key: "total", label: "Value", width: 80, visible: true }];
+  }
+
+  /** Resolve the reactive value source for a row+column. The FIRST visible
+   *  column is the primary measure and reads the shared ChartNode value cell
+   *  (kernel-backed → live cross-view draft previews). Extra columns read
+   *  the compat BiNode's measure cells directly (old behavior). */
+  private _valueSourceFor(node: ChartNode, col: ColumnDef, isPrimary: boolean): { value: number } | null {
+    if (isPrimary || col.key === "total") return node.value;
+    const biRoot = (this as any).data as BiNode | null | undefined;
+    if (!biRoot) return null;
+    const find = (n: BiNode): BiNode | null => {
+      if (n.value.id === node.id) return n;
+      for (const c of n.children as BiNode[]) {
+        const f = find(c);
+        if (f) return f;
+      }
+      return null;
+    };
+    const bn = find(biRoot);
+    return (bn?.value.measures?.[col.key] as { value: number } | undefined) ?? null;
   }
 
   private _getVisibleColumns(): ColumnDef[] {
@@ -468,6 +531,18 @@ export class TreetableChart extends HierarchicalChartBase {
   }
 
   // --- Legacy API ---
+
+  /** Re-render against the current root (legacy API). The reactive effects
+   *  make this largely redundant, but external mutations to the BiNode tree
+   *  structure (row adds/removes) aren't tracked — refresh() covers those. */
+  refresh(): void {
+    this._renderTick.value++;
+  }
+
+  /** Root scroll container (legacy API, used by React wrappers). */
+  getRoot(): HTMLElement {
+    return this._root!;
+  }
 
   onRender(listener: (allNodeIds: string[]) => void): () => void {
     this._renderListeners.add(listener);
