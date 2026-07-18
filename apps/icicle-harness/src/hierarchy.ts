@@ -338,6 +338,7 @@ export function makeTile(
     hoverCell: Cell<string | null>;
   },
   present?: Read<boolean>,
+  isHoriz?: Read<boolean>,
 ): Shape {
   const pad = 2;
 
@@ -391,28 +392,49 @@ export function makeTile(
     });
   }
 
-  // Label: upper-left of the tile with padding. Positioned via CSS transform
-  // on a wrapper <g> (not SVG x/y attributes) because CSS transitions animate
-  // transforms but NOT SVG x/y on <text> elements. Size-gated (hidden when
-  // tile too small) like D3's labelVisible — no clipPath needed.
+  // Label: positioned via CSS transform on a wrapper <g> (not SVG x/y
+  // attributes) because CSS transitions animate transforms but NOT SVG
+  // x/y on <text> elements. Size-gated (hidden when tile too small).
+  //
+  // Orientation-aware:
+  //   - Horizontal: top-left anchor, horizontal text.
+  //   - Vertical: center anchor, rotated -90° (reads bottom-to-top).
+  //     Narrow vertical tiles can't fit horizontal text.
   const LABEL_PAD = 3;
+  const horiz = isHoriz ? readNow(isHoriz) : true;
   const labelText = derive(() => {
-    if (rw.value <= 28 || rh.value <= 16) return "";
+    const w0 = rw.value, h0 = rh.value;
+    if (horiz) {
+      if (w0 <= 28 || h0 <= 16) return "";
+    } else {
+      if (w0 <= 16 || h0 <= 28) return "";
+    }
     return node.label;
   });
   const lbl = label(
     Vec.derive(() => ({ x: 0, y: 0 })),
     labelText,
-    { size: 10, align: Anchor.TopLeft, fill: "#fff" },
+    horiz
+      ? { size: 10, align: Anchor.TopLeft, fill: "#fff" }
+      : { size: 10, align: Anchor.Center, fill: "#fff" },
   );
   lbl.el.style.pointerEvents = "none";
+  if (!horiz) {
+    // Rotate -90° so text reads bottom-to-top in vertical orientation.
+    lbl.rotate.value = -90;
+  }
 
   // Wrapper <g> carries the label via CSS-transformable translate.
   const labelWrap = document.createElementNS("http://www.w3.org/2000/svg", "g");
   labelWrap.appendChild(lbl.el);
   labelWrap.style.transition = "transform 300ms ease-out";
   const labelDispose = effect(() => {
-    labelWrap.style.transform = `translate(${rx.value + LABEL_PAD}px, ${ry.value + LABEL_PAD}px)`;
+    if (horiz) {
+      labelWrap.style.transform = `translate(${rx.value + LABEL_PAD}px, ${ry.value + LABEL_PAD}px)`;
+    } else {
+      // Center the rotated label in the tile.
+      labelWrap.style.transform = `translate(${rx.value + rw.value / 2}px, ${ry.value + rh.value / 2}px)`;
+    }
   });
 
   const g = group({}, tile);
