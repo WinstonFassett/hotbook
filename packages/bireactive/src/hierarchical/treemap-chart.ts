@@ -14,6 +14,7 @@ import { tileBodyDrag } from "./behaviors/tile-body-drag";
 import { tileBodyReorder } from "./behaviors/tile-body-reorder";
 import { membershipCell } from "./behaviors/mark-lifecycle";
 import { HierarchicalChartBase } from "./hierarchical-chart-base";
+import { motion } from "../lib/runtime-config";
 import { findNode, sortedChildren, type ChartNode } from "./tree";
 
 export class TreemapChart extends HierarchicalChartBase implements ChartAccessors<LayoutRect> {
@@ -139,5 +140,14 @@ export class TreemapChart extends HierarchicalChartBase implements ChartAccessor
       });
 
     this._behaviorDispose = this._composeStandardBehaviors(dragBehaviors, this._transitionOpts(), [draftFreeze]);
+  }
+
+  // Treemap: tile rects (x/y/width/height) transition at drillMs so they
+  // slide in sync with the label group transform (also drillMs). Same
+  // rule as icicle — see wiki/transition-timing.md.
+  protected _transitionOpts() {
+    return {
+      durationMs: () => motion.drillMs.value,
+    };
   }
 }

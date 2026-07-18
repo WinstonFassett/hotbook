@@ -461,23 +461,23 @@ export abstract class HierarchicalChartBase extends HTMLElement {
 
   // --- Breadcrumb (shared) ---
   private _setupBreadcrumb() {
-    const CRUMB_FADE_MS = 160;
-
+    // Breadcrumb appear/disappear = mark enter/exit. Uses motion.enterMs.
     const fadeOutEl = (el: HTMLElement) => {
+      const exitMs = motion.exitMs.value;
       el.style.opacity = "0";
       el.addEventListener("transitionend", function onEnd(e: TransitionEvent) {
         if (e.propertyName !== "opacity") return;
         el.removeEventListener("transitionend", onEnd);
         el.remove();
       });
-      setTimeout(() => el.remove(), CRUMB_FADE_MS + 60);
+      setTimeout(() => el.remove(), exitMs + 60);
     };
 
     const buildSegment = (node: ChartNode, isLast: boolean): HTMLElement => {
       const seg = document.createElement("span");
       seg.className = "drill-segment";
       seg.dataset.crumbId = node.id;
-      seg.style.transition = `opacity ${CRUMB_FADE_MS}ms ease`;
+      seg.style.transition = `opacity ${motion.enterMs.value}ms ease`;
       seg.style.opacity = "0";
 
       const sep = document.createElement("span");
@@ -500,7 +500,7 @@ export abstract class HierarchicalChartBase extends HTMLElement {
       const seg = document.createElement("span");
       seg.className = "drill-segment";
       seg.dataset.crumbId = node.id;
-      seg.style.transition = `opacity ${CRUMB_FADE_MS}ms ease`;
+      seg.style.transition = `opacity ${motion.enterMs.value}ms ease`;
       seg.style.opacity = "0";
 
       const btn = document.createElement("button");
@@ -552,7 +552,7 @@ export abstract class HierarchicalChartBase extends HTMLElement {
       if (!this._breadcrumbBar) {
         const bar = document.createElement("div");
         bar.className = "drill-breadcrumb";
-        bar.style.transition = `opacity ${CRUMB_FADE_MS}ms ease`;
+        bar.style.transition = `opacity ${motion.enterMs.value}ms ease`;
         bar.style.opacity = "0";
         this._chromeLayer!.appendChild(bar);
         void bar.offsetHeight;

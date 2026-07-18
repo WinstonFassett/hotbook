@@ -1,39 +1,150 @@
 # Transition Timing
 
-Defines the categories of motion in hotbook charts, which tweak controls each, and how they relate.
+The canonical reference for chart motion in hotbook. Every transition in
+every chart maps to one of five motion categories. No multipliers, no
+magic numbers — five independent cells, full stop.
 
-## Categories
+## The five motion categories
 
-| Category | What it covers | Tweak | Default | How it's used |
-|----------|---------------|-------|---------|---------------|
-| **Settle** | Value change, resize, post-commit layout | `base (ms)` | 100 | `baseMs × 2.5` via `TRANSITION_DURATION.settle` |
-| **Hover** | Micro-feedback (stroke, opacity on hover/focus) | `base (ms)` | 100 | `baseMs × 1.0` via `TRANSITION_DURATION.hover` |
-| **Drill** | Drill in/out (hierarchical zoom) | `drill (ms)` | 800 | `drillMs` directly |
-| **Enter** | Mark appear (fade in on first render / filter) | `enter (ms)` | 400 | `enterMs` directly |
-| **Exit** | Mark disappear (fade out before eviction) | `exit (ms)` | 400 | `exitMs` directly |
-| **Sort** | Reorder / measure-swap tween (anim-clock charts) | `sort (s)` | 0.35 | `sortSec` directly |
+| Motion | What it is | Cell | Default | Justification |
+|---|---|---|---|---|
+| **Hover** | Micro-feedback — hover/focus stroke, opacity, highlight rect tracking cursor | `hoverMs` | 100 | Cross-system norm for micro-interactions (Carbon `fast-02` 110ms, Material `short3` 150ms). Direct manipulation feedback. |
+| **Settle** | Autonomous post-commit — value change after drag-release, sort reorder, layout reflow after edit | `settleMs` | 250 | Cross-system norm for state-confirmation (Carbon `moderate-02` 240ms, Material `medium2` 300ms). Post-commit reflow. |
+| **Drill** | Autonomous navigation — zooming into/out of hierarchy levels | `drillMs` | 300 | Hierarchical-specific. No design system has this as a named token; 300ms matches Material's "elements entering screen" (225ms) + tablet scaling. |
+| **Enter** | Mark appear — fade in on first render or filter-in | `enterMs` | 400 | Cross-system norm for entering UI (Carbon `slow-01` 400ms, Material `long2` 450ms). DOM lifecycle. |
+| **Exit** | Mark disappear — fade out before eviction | `exitMs` | 400 | Cross-system norm for leaving UI (Material 195-400ms). DOM lifecycle. |
 
-## Two models, one panel
+**That's it. Five cells. Zero multipliers.** Anything that doesn't map to
+one of these is a bug.
 
-- **Multiplier roles** (settle, hover): derive from `baseMs`. Dragging base retunes both. This is Interaction Principle 12 — coherent rhythm from one root.
-- **Independent roles** (drill, enter, exit, sort): have their own cell. These are conceptually different motions (not a "faster settle"), so they get their own knob.
+## What died (was slop)
 
-## What each tweak does
+These used to be treated as separate categories or magic constants. They
+collapse into the five above:
 
-- **base (ms)** — The rhythm root. Controls settle (×2.5) and hover (×1). Drag this to speed up or slow down value-change animations across all charts.
-- **drill (ms)** — Drill in/out duration. Independent because drilling is a navigation action, not a value settle. Drag this to control how long the zoom-in/out takes on hierarchical charts.
-- **enter (ms)** — How long a mark takes to fade in on first render or when filtered in.
-- **exit (ms)** — How long a mark lingers before being evicted from the DOM after it's been removed from the data.
-- **sort (s)** — Reorder/measure-swap tween for anim-clock charts (pie, etc.).
-- **separation (px)** — Visual gap between hierarchical marks (stroke width, padding, gaps). Not timing — geometry. But lives in the same panel for convenience.
+| Dead thing | Actually is | Why |
+|---|---|---|
+| `reorder` role | Settle | Same nature (post-commit slide), uses `settleMs`. |
+| `highlight` role | Hover | Tracks cursor — micro-feedback, uses `hoverMs`. |
+| `baseMs × 2.5` for settle | `settleMs` cell | Multiplier was magic. Now independent cell. |
+| `baseMs × 1.5` for highlight | `hoverMs` cell | Multiplier was magic. Now independent cell. |
+| `baseMs × 1.0` for hover | `hoverMs` cell | Identity multiplier was pointless indirection. |
+| `CRUMB_FADE_MS = 160` | `enterMs` | Breadcrumb appearing IS a mark entering. |
+| `background 80ms` (treetable) | `settleMs` | Row background change is post-commit. |
+| `transform 200ms` ghost fallback | `hoverMs` or instant | Ghost follows drag — micro-feedback. |
+| `TRANSITION_BASE_MS` re-export | gone | No more base rhythm root. |
+| `baseMs` cell | renamed `hoverMs` | Was the rhythm root; now just the hover duration. |
 
-## What's NOT a separate tweak
+## The one real overlap: settle vs drill in hierarchical
 
-- **Reorder** (drag-to-reorder slide) uses settle timing (`baseMs × 2.5`). Not its own knob.
-- **Highlight** (highlight rect sliding) uses `baseMs × 1.5`. Not its own knob.
+When you drill into a hierarchy, tiles move to new positions. Is that
+"settle" (post-commit reflow) or "drill" (navigation)?
+
+**Answer: drill.** Principle 17 says drill is animated zoom navigation —
+structurally bigger and more deliberate than a value tweak. So ALL motion
+during a drill uses `drillMs`:
+
+- Tile rect slide (x/y/width/height)
+- Label group transform
+- Circle radius grow
+- Arc angular tween
+- Peer slide-off-canvas
+
+Settle is ONLY for non-drill commits in hierarchical:
+- Drag-resize release (value change)
+- Sort reorder
+- Value edit commit
+
+**Rule: if the focus changes, it's drill. If only values change, it's settle.**
+
+## The present-gate question
+
+Peers leaving on drill: is that "exit" (enter/exit category) or "drill"
+(navigation)?
+
+**Answer: drill.** Peers slide off-canvas as part of the navigation
+motion. They ride the layout transform at `drillMs` until they're
+off-screen. Not a fade, not an exit-delay.
+
+**No fade on solid cards.** The solid-card physical metaphor requires
+peers to slide away, not dissolve. Opacity transitions on present-gate
+are forbidden in hierarchical charts. Peers stay at opacity 1 the entire
+slide; they're clipped by the SVG viewport when off-canvas.
+
+If peers blink instead of sliding, that's a layout bug (the transform
+isn't animating), not a timing category problem.
+
+## Per-chart transition map
+
+### Icicle
+| Transition | Motion | Cell |
+|---|---|---|
+| Tile rect x/y/w/h (drill) | Drill | `drillMs` |
+| Tile rect x/y/w/h (resize/sort) | Settle | `settleMs` |
+| Label group transform | Drill | `drillMs` |
+| Hover highlight | Hover | `hoverMs` |
+| Breadcrumb appear | Enter | `enterMs` |
+
+### Treemap
+| Transition | Motion | Cell |
+|---|---|---|
+| Tile rect x/y/w/h (drill) | Drill | `drillMs` |
+| Tile rect x/y/w/h (resize/sort) | Settle | `settleMs` |
+| Label group transform | Drill | `drillMs` |
+| Hover highlight | Hover | `hoverMs` |
+| Breadcrumb appear | Enter | `enterMs` |
+
+### Pack
+| Transition | Motion | Cell |
+|---|---|---|
+| Circle r (drill) | Drill | `drillMs` |
+| Circle r (resize) | Settle | `settleMs` |
+| wrapG transform (position) | Drill | `drillMs` |
+| Hover highlight | Hover | `hoverMs` |
+| Breadcrumb appear | Enter | `enterMs` |
+| Peer slide-off | Drill | `drillMs` (no fade — transform only) |
+
+### Sunburst
+| Transition | Motion | Cell |
+|---|---|---|
+| Arc path d (drill) | Drill | `drillMs` (JS tween — path d can't CSS-transition) |
+| Arc path d (resize) | Settle | `settleMs` |
+| Hover highlight | Hover | `hoverMs` |
+| Breadcrumb appear | Enter | `enterMs` |
+| Peer slide-off | Drill | `drillMs` (no fade — angular width collapses to 0) |
+
+## Principle 12 update
+
+Principle 12 currently says "all durations derive from one base rhythm...
+explicit multipliers of that base." Multipliers are magic numbers. The
+principle becomes:
+
+> **Single source of truth for timing.** All chart durations live as
+> configurable cells in `runtime-config.ts` (`hoverMs`, `settleMs`,
+> `drillMs`, `enterMs`, `exitMs`). No hardcoded ms values in gesture
+> handlers or chart code. No multipliers — each duration is independently
+> tunable. The tweaks pane exposes all of them.
+
+Defaults align with cross-design-system norms (Carbon, Material 3,
+Polaris, Tailwind): ~100ms micro, ~250ms state-confirmation, ~400ms
+entering/leaving. Drill is our only custom addition (hierarchical
+navigation).
 
 ## Files
 
-- `packages/bireactive/src/lib/runtime-config.ts` — the cells (`motion.baseMs`, `motion.drillMs`, etc.)
-- `packages/bireactive/src/lib/transitions.ts` — `TRANSITION_DURATION` getters (settle, hover, drill, reorder, highlight)
+- `packages/bireactive/src/lib/runtime-config.ts` — the cells (`motion.hoverMs`, `motion.settleMs`, `motion.drillMs`, `motion.enterMs`, `motion.exitMs`)
+- `packages/bireactive/src/lib/transitions.ts` — thin re-exports for ergonomic access
 - `packages/bireactive/src/lib/motion-tweaks-panel.ts` — the lil-gui panel
+
+## TODO (violations to fix)
+
+1. Add `settleMs` and `hoverMs` cells to `runtime-config.ts`; rename `baseMs` → `hoverMs`
+2. Replace `TRANSITION_DURATION` multiplier getters with direct cell reads
+3. Treemap tile rect → `drillMs` for drill (matches icicle)
+4. Remove sunburst arc opacity fade (no-fade rule)
+5. Remove treemap labelWrap opacity fade (no-fade rule)
+6. Replace `CRUMB_FADE_MS = 160` with `enterMs`
+7. Replace treetable `background 80ms` with `settleMs`
+8. Replace ghost `transform 200ms` fallback with `hoverMs` or instant
+9. Update principle 12 in `wiki/interaction-principles.md`
+10. Update `motion-tweaks-panel.ts` to expose all 5 cells

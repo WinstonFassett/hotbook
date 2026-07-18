@@ -34,12 +34,6 @@ export const GESTURE_ACTIVE_CLASS = "gesture-active";
 /** Host CSS class for reorder gestures — allows sibling transitions. */
 export const REORDER_ACTIVE_CLASS = "reorder-active";
 
-/** Base timing token (Interaction Principle 12): every duration is a multiple.
- *  Live via `motion.baseMs` (WIN-352 wave-1) — kept as a `let` re-export so
- *  legacy consumers that treated it as a raw number still see updates. */
-export let TRANSITION_BASE_MS = motion.baseMs.value;
-effect(() => { TRANSITION_BASE_MS = motion.baseMs.value; });
-
 const SETTLE_ATTRS = ["x", "y", "width", "height"] as const;
 
 export function prefersReducedMotion(): boolean {

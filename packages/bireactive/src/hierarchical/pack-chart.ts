@@ -13,6 +13,7 @@ import type { ChartAccessors } from "./gestures";
 import { tileBodyDrag } from "./behaviors/tile-body-drag";
 import { membershipCell, withExitDelay } from "./behaviors/mark-lifecycle";
 import { HierarchicalChartBase } from "./hierarchical-chart-base";
+import { motion } from "../lib/runtime-config";
 
 export class PackChart extends HierarchicalChartBase implements ChartAccessors<PackRect> {
   static tag = "v-pack";
@@ -96,14 +97,16 @@ export class PackChart extends HierarchicalChartBase implements ChartAccessors<P
   // The full-tree + affine approach means layout only changes on drill (not
   // every edit), so CSS transitions animate the slide without chasing.
   // Pack: group transform handles position (circle + labels slide together
-  // via wrapG transform). Behavior transitions r (radius) and opacity
-  // (enter/exit fade) on settle timing. NOT cx/cy — group transform handles
-  // position. Drill transitions on the group transform use drillMs (inline).
+  // via wrapG transform at drillMs). Behavior transitions r (radius) at
+  // drillMs so circles grow/shrink in sync with the slide. NOT cx/cy —
+  // group transform handles position. NOT opacity — peers don't fade
+  // (solid-card metaphor); they slide off-canvas via transform.
   protected _transitionOpts() {
     return {
-      attrs: ["r", "opacity"] as const,
+      attrs: ["r"] as const,
       selector: this.tagName.toLowerCase(),
-      elements: "circle, text",
+      elements: "circle",
+      durationMs: () => motion.drillMs.value,
     };
   }
 

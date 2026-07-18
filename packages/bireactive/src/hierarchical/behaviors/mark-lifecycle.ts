@@ -19,14 +19,6 @@ import { cell, derive, effect, readNow, untracked, type Read, type Val } from "b
 import { motion } from "../../lib/runtime-config";
 import { prefersReducedMotion } from "./transition-on-updated";
 
-/** Mark enter/exit fade windows. Live via `motion.enterMs` / `motion.exitMs`
- *  (WIN-352). Kept as `let` re-exports for legacy consumers; new callsites in
- *  this file read `motion.<key>.value` directly so a tweaks-pane bump takes
- *  effect on the next mount/unmount. */
-export let ENTER_MS = motion.enterMs.value;
-export let EXIT_MS = motion.exitMs.value;
-effect(() => { ENTER_MS = motion.enterMs.value; });
-effect(() => { EXIT_MS = motion.exitMs.value; });
 export const TRANSITION_EASING = "cubic-bezier(0.4, 0.0, 0.2, 1)"; // ease-in-out
 
 export interface WithExitDelayOptions<T> {

@@ -1,51 +1,30 @@
-// Single source of truth for in-view transition timing across all charts
-// (Interaction Principle 10). Role-specific durations are explicit multipliers
-// of the master rhythm — coherent rhythm from one tunable root.
-//
-// The rhythm root and enter/exit windows are LIVE cells (see runtime-config.ts,
-// WIN-352). `TRANSITION_BASE_MS` / `ENTER_MS` / `EXIT_MS` remain named exports
-// for callers that read a raw number at draw-time; they are `export let`
-// live bindings kept in sync with the underlying cells via `effect`.
+// Single source of truth for transition timing across all charts.
+// Five motion categories, five cells, zero multipliers. See
+// wiki/transition-timing.md for the canonical reference.
 //
 // Decision: CSS transitions over tween cells. See wiki/transitions-decision.md.
 
-import { effect } from "bireactive";
 import { motion } from "./runtime-config";
 
 export const TRANSITION_EASING = "cubic-bezier(0.4, 0.0, 0.2, 1)"; // ease-in-out
 
-/** Master rhythm (ms). Live-bound to `motion.baseMs`. */
-export let TRANSITION_BASE_MS = motion.baseMs.value;
-
-/** Mark enter/exit windows (WIN-155). Not multipliers — enter/exit is a fixed
- *  fade window, not a rhythm role. Charts fade marks in from opacity 0 on first
- *  render (CSS) and hold them visible for EXIT_MS on removal via
- *  `withExitDelay` before evicting. */
-export let ENTER_MS = motion.enterMs.value;
-export let EXIT_MS = motion.exitMs.value;
-
-effect(() => { TRANSITION_BASE_MS = motion.baseMs.value; });
-effect(() => { ENTER_MS = motion.enterMs.value; });
-effect(() => { EXIT_MS = motion.exitMs.value; });
-
-// Role multipliers — getters so any consumer sees the live base value.
-// Names match interaction-principles.md vocabulary.
+// Direct cell reads — no multipliers, no magic numbers. Each duration is
+// independently tunable via the tweaks pane.
 export const TRANSITION_DURATION = {
-  /** Value-change settle (Part 2): bar height, slice radius, etc. */
-  get settle()    { return 2.5 * motion.baseMs.value; },
-  /** Reorder slide (Part 3): item moves to new slot position. */
-  get reorder()   { return 2.5 * motion.baseMs.value; },
-  /** Hover/select micro-feedback (was inline 0.1s / 0.12s — kept identical). */
-  get hover()     { return 1.0 * motion.baseMs.value; },
-  /** Highlight rect sliding between columns/rows. */
-  get highlight() { return 1.5 * motion.baseMs.value; },
-  /** Drill in/out zoom — driven by motion.drillMs (configurable via tweaks
-   *  pane). Default 300ms matches the historical baseMs * 3 value. */
-  get drill()     { return motion.drillMs.value; },
+  /** Hover/focus micro-feedback. */
+  get hover()  { return motion.hoverMs.value; },
+  /** Post-commit settle (value change, resize, sort reorder). */
+  get settle() { return motion.settleMs.value; },
+  /** Hierarchical drill navigation. */
+  get drill()  { return motion.drillMs.value; },
+  /** Mark appear (fade in). */
+  get enter()  { return motion.enterMs.value; },
+  /** Mark disappear (fade out before eviction). */
+  get exit()   { return motion.exitMs.value; },
 } as const;
 
 /** True when the user has asked for reduced motion. Reactive (gesture-driven)
- *  motion ignores this; autonomous transitions (settle/reorder/drill) must
+ *  motion ignores this; autonomous transitions (settle/drill) must
  *  respect it (Interaction Principle 9). */
 export function prefersReducedMotion(): boolean {
   if (typeof window === "undefined" || !window.matchMedia) return false;

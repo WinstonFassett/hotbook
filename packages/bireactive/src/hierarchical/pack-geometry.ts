@@ -172,25 +172,23 @@ export function makeCircle(
 
   // Wrapper group — carries position via CSS transform transition.
   // Created early so the visibility gate can control the whole group
-  // (circle + labels) — depth changes hide everything together.
-  // Transitions both transform (position slide on drill) and opacity
-  // (fade for depth/present changes) so peers don't vanish instantly.
+  // (circle + labels).
+  // NO opacity fade: peers slide off-canvas via layout transform and are
+  // clipped by the SVG viewport. Fading breaks the solid-card metaphor.
   const wrapG = document.createElementNS("http://www.w3.org/2000/svg", "g");
   wrapG.appendChild(disc.el);
   effect(() => {
-    const ms = TRANSITION_DURATION.drill;
-    wrapG.style.transition = `transform ${ms}ms ease-out, opacity ${ms}ms ease-out`;
+    wrapG.style.transition = `transform ${TRANSITION_DURATION.drill}ms ease-out`;
   });
   effect(() => {
     wrapG.style.transform = `translate(${cx.value}px, ${cy.value}px)`;
   });
 
-  // Visibility gate: opacity + pointer-events on the entire group.
+  // Visibility gate: pointer-events only (no opacity). Off-canvas peers
+  // can't capture clicks but remain visible while sliding away.
   if (present) {
     effect(() => {
-      const vis = present.value;
-      wrapG.style.opacity = vis ? "" : "0";
-      disc.el.style.pointerEvents = vis ? "all" : "none";
+      disc.el.style.pointerEvents = present.value ? "all" : "none";
     });
   }
 

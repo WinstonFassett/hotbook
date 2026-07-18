@@ -354,13 +354,9 @@ export function makeTreemapTile(
   // by pushing it to the group's disposers if available, or just let it run.
   if ((g as any).disposers) (g as any).disposers.push(labelDispose);
 
-  // Visibility gate: off-window tiles fade out and can't capture clicks.
-  // Opacity transitions so peers fade (not vanish) during drill/depth changes.
+  // Visibility gate: off-window tiles hidden via opacity (instant, no
+  // fade — solid-card metaphor) and can't capture clicks.
   if (visible) {
-    effect(() => {
-      const ms = TRANSITION_DURATION.drill;
-      labelWrap.style.transition = `transform ${ms}ms ease-out, opacity ${ms}ms ease-out`;
-    });
     const visDispose = effect(() => {
       void layout.value; // force subscription
       const vis = visible.value;

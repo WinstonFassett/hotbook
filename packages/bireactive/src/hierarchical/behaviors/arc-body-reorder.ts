@@ -12,6 +12,7 @@
 
 import type { Gesture, Behavior, GestureGetter } from "../gesture";
 import type { ChartNode } from "../tree";
+import { motion } from "../../lib/runtime-config";
 
 const DRAG_THRESHOLD_PX = 3;
 const TWO_PI = Math.PI * 2;
@@ -250,7 +251,7 @@ export function arcBodyReorder(opts: ArcBodyReorderOptions): Behavior {
         // transitions from the dragged offset to 0 — one smooth motion.
         requestAnimationFrame(() => {
           if (ghost) {
-            ghost.style.transition = prevTrans || "transform 200ms ease-out";
+            ghost.style.transition = prevTrans || `transform ${motion.hoverMs.value}ms ease-out`;
             void (ghost as unknown as HTMLElement).offsetWidth;
             ghost.style.transform = "";
             ghost.removeAttribute("data-reordering");

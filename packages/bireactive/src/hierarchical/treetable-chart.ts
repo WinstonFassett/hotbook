@@ -19,6 +19,7 @@ import { numberDrag } from "../lib/number-drag";
 import type { BiNode } from "../lib/tree";
 import { keyboardEdit } from "./behaviors/keyboard-edit";
 import { prefersReducedMotion, settleTransition } from "./behaviors/transition-on-updated";
+import { motion } from "../lib/runtime-config";
 import { HierarchicalChartBase } from "./hierarchical-chart-base";
 
 const INDENT_WIDTH = 14;
@@ -209,8 +210,8 @@ export class TreetableChart extends HierarchicalChartBase {
         row = document.createElement("div");
         row.dataset.id = nodeId;
         const baseTransition = animate
-          ? `${settleTransition(["opacity", "transform"])}, background 80ms`
-          : "background 80ms";
+          ? `${settleTransition(["opacity", "transform"])}, background ${motion.settleMs.value}ms ease-out`
+          : `background ${motion.settleMs.value}ms ease-out`;
         row.style.cssText = `display:flex;align-items:center;padding:3px 8px;cursor:default;transition:${baseTransition};`;
         // Listeners attach ONCE per row element (rows are keyed and reused
         // across renders — re-attaching per render leaks listeners). The
@@ -348,7 +349,7 @@ export class TreetableChart extends HierarchicalChartBase {
     if (allColumns.length > 0) {
       const pickerBtn = document.createElement("button");
       pickerBtn.style.cssText =
-        "all:unset;cursor:pointer;padding:2px 6px;font-size:10px;color:oklch(0.5 0 0);background:oklch(0.18 0 0);border-radius:3px;transition:background 80ms;";
+        `all:unset;cursor:pointer;padding:2px 6px;font-size:10px;color:oklch(0.5 0 0);background:oklch(0.18 0 0);border-radius:3px;transition:background ${motion.hoverMs.value}ms ease-out;`;
       pickerBtn.textContent = "⚙";
       pickerBtn.title = "Column picker";
 
@@ -438,7 +439,7 @@ export class TreetableChart extends HierarchicalChartBase {
 
       const item = document.createElement("label");
       item.style.cssText =
-        "display:flex;align-items:center;gap:6px;padding:4px;cursor:pointer;color:oklch(0.8 0 0);transition:background 80ms;";
+        `display:flex;align-items:center;gap:6px;padding:4px;cursor:pointer;color:oklch(0.8 0 0);transition:background ${motion.hoverMs.value}ms ease-out;`;
       if (isOnlyVisible) {
         item.style.opacity = "0.5";
         item.style.cursor = "not-allowed";

@@ -52,7 +52,7 @@ Honor `prefers-reduced-motion`. The distinction:
 Under reduced-motion: suppress autonomous, keep reactive.
 
 ### 12. Single source of truth for timing
-All durations and easing curves derive from one base rhythm — a design token or CSS variable. Role-specific durations (post-commit, enter/exit, reorder) are explicit multipliers of that base, not independent magic numbers. The system has a coherent rhythm that shakes out fractionally from one tunable root. Avoid hardcoded ms values scattered through gesture handlers.
+All chart durations live as configurable cells in `runtime-config.ts` (`hoverMs`, `settleMs`, `drillMs`, `enterMs`, `exitMs`). No hardcoded ms values in gesture handlers or chart code. No multipliers — each duration is independently tunable. The tweaks pane exposes all of them. See `wiki/transition-timing.md` for the canonical reference and per-chart mapping.
 
 ### 13. Transitions are interruptible at any time
 Any autonomous transition (post-commit, reorder, mode-change morph) can be interrupted by user input without snapping, flashing, or corrupting state. Transition effects are disposable. When a new state arrives, the effect can be disposed and the frontend can decide to let it finish or jump to the new state. When interrupted, the element should stay at its current visual position and the new transition should start from there. The system should be in a coherent visual state, not mid-commit.

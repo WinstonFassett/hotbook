@@ -24,6 +24,7 @@ import { tileBodyDrag } from "./behaviors/tile-body-drag";
 import { tileBodyReorder } from "./behaviors/tile-body-reorder";
 import { membershipCell } from "./behaviors/mark-lifecycle";
 import { HierarchicalChartBase } from "./hierarchical-chart-base";
+import { motion } from "../lib/runtime-config";
 
 export class IcicleChart extends HierarchicalChartBase implements EdgeDragHandler<LayoutRect> {
   static tag = "v-icicle";
@@ -110,6 +111,16 @@ export class IcicleChart extends HierarchicalChartBase implements EdgeDragHandle
       }),
     );
     this._behaviorDispose = this._composeStandardBehaviors(dragBehaviors, this._transitionOpts());
+  }
+
+  // Icicle: tile rects (x/y/width/height) transition at drillMs so they
+  // slide in sync with the label group transform (also drillMs). Using
+  // settle (baseMs*2.5) here caused tiles to snap while labels slid —
+  // visible speed mismatch on drill.
+  protected _transitionOpts() {
+    return {
+      durationMs: () => motion.drillMs.value,
+    };
   }
 
   // --- GestureContext: edge handle drag lifecycle (icicle-specific) ---
