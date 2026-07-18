@@ -158,12 +158,24 @@ export class SunburstChart extends HierarchicalChartBase implements EdgeDragHand
 
     // Angular handles: forEach over ALL adjacent sibling pairs.
     // makeAngularHandle reads from per-arc cells (same source as arcs).
+    // Present gate also checks that both arcs have non-zero angular span —
+    // off-subtree arcs collapse to zero width on drill, and a handle between
+    // zero-width siblings is a meaningless artifact (the "phantom splitter").
+    const ANGULAR_EPSILON = 0.001; // radians — below this, arc is effectively zero-width
     const edgesResult = forEach(edgesLayer, this._edges, (edge) => {
       const handle = makeAngularHandle(
         edge,
         arcCellsMap,
         center,
-        derive(() => membership.value.has(edge.leftId) && membership.value.has(edge.rightId)),
+        derive(() => {
+          if (!membership.value.has(edge.leftId) || !membership.value.has(edge.rightId)) return false;
+          const lc = arcCellsMap.get(edge.leftId);
+          const rc = arcCellsMap.get(edge.rightId);
+          if (!lc || !rc) return false;
+          const lSpan = lc.la1.value - lc.la0.value;
+          const rSpan = rc.la1.value - rc.la0.value;
+          return lSpan > ANGULAR_EPSILON && rSpan > ANGULAR_EPSILON;
+        }),
         this._layout!,
       );
       const off = attachEdgeHandleDrag(handle, this, "grabbing");
