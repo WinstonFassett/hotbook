@@ -200,7 +200,8 @@ export function makeTreemapTile(
     _colorModeCell?: Cell<"flat" | "depth" | "mono" | undefined>;
   },
   present?: Read<boolean>,
-  _defs?: SVGDefsElement,
+  defs?: SVGDefsElement,
+  instanceId?: string,
 ): Shape {
   // No drawn inset — d3.treemap's paddingInner/paddingOuter already
   // creates the gaps in the layout. Drawing the rect at the full layout
@@ -239,9 +240,15 @@ export function makeTreemapTile(
   // in lockstep with the label (which transitions its transform). Without
   // this, the rect jumps instantly while the label animates, breaking the
   // physical metaphor. Duration matches the label's transform transition.
+  // Suppress the transition on the first run so the tile renders in place
+  // on initial load instead of sliding in from (0,0).
+  let tileFirstRun = true;
   effect(() => {
     const ms = motion.baseMs.value * 3;
-    tile.el.style.transition = `x ${ms}ms ease-out, y ${ms}ms ease-out, width ${ms}ms ease-out, height ${ms}ms ease-out`;
+    tile.el.style.transition = tileFirstRun
+      ? "none"
+      : `x ${ms}ms ease-out, y ${ms}ms ease-out, width ${ms}ms ease-out, height ${ms}ms ease-out`;
+    tileFirstRun = false;
   });
 
   // Group tiles: cursor pointer + click to drill in.
@@ -312,18 +319,46 @@ export function makeTreemapTile(
   labelWrap.appendChild(nameLbl.el);
   labelWrap.appendChild(valueLbl.el);
   // Live-timed via motion.baseMs (WIN-352). 3× baseMs = settle role duration.
+  // Suppress the transition on the first run so the label renders in place
+  // on initial load instead of sliding in from (0,0).
+  let labelFirstRun = true;
   effect(() => {
-    labelWrap.style.transition = `transform ${motion.baseMs.value * 3}ms ease-out`;
+    labelWrap.style.transition = labelFirstRun
+      ? "none"
+      : `transform ${motion.baseMs.value * 3}ms ease-out`;
+    labelFirstRun = false;
   });
+
+  // Per-tile clipPath — clips the label to the tile's rect dimensions so
+  // long labels don't overflow small tiles. Applied to the outer <g> (no
+  // CSS transform) so clipPath coordinates are in SVG user space directly.
+  let clipId: string | null = null;
+  let clipRect: SVGRectElement | null = null;
+  if (defs) {
+    clipId = `${instanceId ?? "c"}-tile-clip-${node.id}`;
+    const clipPath = document.createElementNS("http://www.w3.org/2000/svg", "clipPath");
+    clipPath.setAttribute("id", clipId);
+    clipRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    clipPath.appendChild(clipRect);
+    defs.appendChild(clipPath);
+  }
 
   // Position the label. Top-left for both leaves and groups now.
   const labelDispose = effect(() => {
     const r = layout.value.get(node.id) ?? { x: 0, y: 0, width: 0, height: 0 };
     labelWrap.style.transform = `translate(${r.x + 4}px, ${r.y + 4}px)`;
+    // Update clip rect to match tile dimensions (reactive — tiles move on drill).
+    if (clipRect) {
+      clipRect.setAttribute("x", String(r.x));
+      clipRect.setAttribute("y", String(r.y));
+      clipRect.setAttribute("width", String(Math.max(0, r.width)));
+      clipRect.setAttribute("height", String(Math.max(0, r.height)));
+    }
   });
 
   const g = group({}, tile);
   g.el.appendChild(labelWrap);
+  if (clipId) g.el.style.clipPath = `url(#${clipId})`;
   // Don't use track() — it may not exist on group. Keep the disposer alive
   // by pushing it to the group's disposers if available, or just let it run.
   if ((g as any).disposers) (g as any).disposers.push(labelDispose);

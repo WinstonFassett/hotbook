@@ -312,7 +312,7 @@ export function makeTile(
   const lbl = label(
     Vec.derive(() => ({ x: 0, y: 0 })),
     labelText,
-    { size: 10, align: Anchor.TopLeft, fill: labelColorFor(node.color) },
+    { size: 11, align: Anchor.TopLeft, fill: labelColorFor(node.color) },
   );
   lbl.el.style.pointerEvents = "none";
 
@@ -322,8 +322,14 @@ export function makeTile(
   const labelWrap = document.createElementNS("http://www.w3.org/2000/svg", "g");
   labelWrap.appendChild(lbl.el);
   // Live-timed via motion.baseMs (WIN-352). 3× baseMs = settle role duration.
+  // Suppress the transition on the first run so the label renders in place
+  // on initial load instead of sliding in from (0,0).
+  let labelFirstRun = true;
   effect(() => {
-    labelWrap.style.transition = `transform ${motion.baseMs.value * 3}ms ease-out`;
+    labelWrap.style.transition = labelFirstRun
+      ? "none"
+      : `transform ${motion.baseMs.value * 3}ms ease-out`;
+    labelFirstRun = false;
   });
 
   // Per-tile clipPath — clips the label to the tile's rect dimensions.

@@ -95,6 +95,7 @@ export class TreemapChart extends HierarchicalChartBase implements ChartAccessor
           this, // chart (has setHover, setFocus, drill, focusCell, hoverCell)
           derive(() => membership.value.has(node.id)),
           this._defs,
+          this._instanceId,
         ),
       { key: (node) => node.id },
     );

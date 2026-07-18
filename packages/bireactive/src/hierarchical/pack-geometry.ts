@@ -192,9 +192,13 @@ export function makeCircle(
   wrapG.appendChild(disc.el);
   // CSS transition on transform — animates the whole group (circle + labels)
   // together on drill. Duration matches the chart's transition rhythm.
+  // Suppress the transition on the first run so the group renders in place
+  // on initial load instead of sliding in from (0,0).
+  let firstRun = true;
   effect(() => {
     const ms = motion.baseMs.value * 3;
-    wrapG.style.transition = `transform ${ms}ms ease-out`;
+    wrapG.style.transition = firstRun ? "none" : `transform ${ms}ms ease-out`;
+    firstRun = false;
   });
   // Position the group — reactive to layout, animated via CSS transition.
   effect(() => {
