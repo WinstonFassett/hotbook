@@ -1,7 +1,8 @@
 import { effect, type Mount, cell, tween, easeOut, untracked } from "bireactive";
 import { Diagram } from "../lib/diagram";
 import { interpolateWarm, interpolateRainbow } from "d3-scale-chromatic";
-import { sankeyScene, renderColorControls, type LinkDef, SORT_SEC } from "../lib/sankey";
+import { sankeyScene, renderColorControls, type LinkDef } from "../lib/sankey";
+import { motion } from "../lib/runtime-config";
 
 // ---------------------------------------------------------------------------
 // Take 1: Simple editable graph
@@ -61,7 +62,7 @@ export class MdSankeySimple extends Diagram {
         const target = targets[i]!;
         const current = untracked(() => linkValues[i]!.value.value);
         if (Math.abs(current - target) < 0.001) continue;
-        this.anim.start(tween(linkValues[i]!.value, target, SORT_SEC, easeOut));
+        this.anim.start(tween(linkValues[i]!.value, target, motion.sortSec.value, easeOut));
       }
       prevData = next;
     });

@@ -18,6 +18,7 @@ import {
   untracked,
 } from "bireactive";
 import type { Diagram } from "./diagram";
+import { motion } from "./runtime-config";
 import { scaleSequential } from "d3-scale";
 import { interpolateCool } from "d3-scale-chromatic";
 import { wheelController, dynamicWheelStep, realModifierDown } from "./interaction";
@@ -140,7 +141,6 @@ export interface SankeySceneOptions {
 }
 
 export const LINK_MIN = 0.5; // floor so a flow never collapses to an ungrabbable sliver
-export const SORT_SEC = 0.35; // Sort/reorder tween duration in seconds (matching Gantt)
 
 /**
  * Pick the constant px-per-unit ONCE from the initial values so the diagram opens
@@ -318,7 +318,7 @@ export function sankeyScene(
         entry.cancel?.();
         entry.offsetCell.value = initialOffset; // Start at old position
         // Tween offset back to 0 (so actual position becomes newY)
-        entry.cancel = host.anim.start(tween(entry.offsetCell, 0, SORT_SEC, easeOut));
+        entry.cancel = host.anim.start(tween(entry.offsetCell, 0, motion.sortSec.value, easeOut));
         prevNodeY.set(i, newY);
       }
     } else if (!sortChanged) {

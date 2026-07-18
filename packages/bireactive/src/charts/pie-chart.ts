@@ -7,12 +7,12 @@ import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { dragCancelable } from "../lib/esc-contract";
 import { GESTURE_ACTIVE_CLASS } from "../lib/transitions";
+import { motion } from "../lib/runtime-config";
 import { PALETTE } from "@hotbook/core";
 
 const W = 640;
 const H = 640;
 const R_INNER = 0;
-const SORT_SEC = 0.35; // s — measure-swap tween duration
 
 interface Slice {
   id?: string;
@@ -109,7 +109,7 @@ export class MdPieChartLC extends Diagram {
         seenMeasureKey = measureKey;
         if (measureSwapped && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
           tvCancel?.();
-          tvCancel = this.anim.start(tween(tv, target, SORT_SEC, easeOut));
+          tvCancel = this.anim.start(tween(tv, target, motion.sortSec.value, easeOut));
         } else {
           tvCancel?.(); tvCancel = null;
           tv.value = target;
@@ -170,8 +170,8 @@ export class MdPieChartLC extends Diagram {
         if (structural && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
           aCancel?.();
           aCancel = this.anim.start(
-            tween(a0, t0, SORT_SEC, easeOut) as any,
-            tween(a1, t1, SORT_SEC, easeOut) as any,
+            tween(a0, t0, motion.sortSec.value, easeOut) as any,
+            tween(a1, t1, motion.sortSec.value, easeOut) as any,
           );
         } else {
           aCancel?.(); aCancel = null;

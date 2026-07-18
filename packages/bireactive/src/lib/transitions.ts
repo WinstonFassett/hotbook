@@ -1,32 +1,46 @@
 // Single source of truth for in-view transition timing across all charts
 // (Interaction Principle 10). Role-specific durations are explicit multipliers
-// of TRANSITION_BASE_MS — coherent rhythm from one tunable root.
+// of the master rhythm — coherent rhythm from one tunable root.
+//
+// The rhythm root and enter/exit windows are LIVE cells (see runtime-config.ts,
+// WIN-352). `TRANSITION_BASE_MS` / `ENTER_MS` / `EXIT_MS` remain named exports
+// for callers that read a raw number at draw-time; they are `export let`
+// live bindings kept in sync with the underlying cells via `effect`.
 //
 // Decision: CSS transitions over tween cells. See wiki/transitions-decision.md.
 
-export const TRANSITION_BASE_MS = 100;
+import { effect } from "bireactive";
+import { motion } from "./runtime-config";
+
 export const TRANSITION_EASING = "cubic-bezier(0.4, 0.0, 0.2, 1)"; // ease-in-out
+
+/** Master rhythm (ms). Live-bound to `motion.baseMs`. */
+export let TRANSITION_BASE_MS = motion.baseMs.value;
 
 /** Mark enter/exit windows (WIN-155). Not multipliers — enter/exit is a fixed
  *  fade window, not a rhythm role. Charts fade marks in from opacity 0 on first
  *  render (CSS) and hold them visible for EXIT_MS on removal via
  *  `withExitDelay` before evicting. */
-export const ENTER_MS = 400;
-export const EXIT_MS = 400;
+export let ENTER_MS = motion.enterMs.value;
+export let EXIT_MS = motion.exitMs.value;
 
-// Role multipliers. Keep these as multipliers (not raw ms) so the base rhythm
-// can be tuned in one place. Names match interaction-principles.md vocabulary.
+effect(() => { TRANSITION_BASE_MS = motion.baseMs.value; });
+effect(() => { ENTER_MS = motion.enterMs.value; });
+effect(() => { EXIT_MS = motion.exitMs.value; });
+
+// Role multipliers — getters so any consumer sees the live base value.
+// Names match interaction-principles.md vocabulary.
 export const TRANSITION_DURATION = {
   /** Value-change settle (Part 2): bar height, slice radius, etc. */
-  settle: 2.5 * TRANSITION_BASE_MS,        // 250ms
+  get settle()    { return 2.5 * motion.baseMs.value; },
   /** Reorder slide (Part 3): item moves to new slot position. */
-  reorder: 2.5 * TRANSITION_BASE_MS,       // 250ms
+  get reorder()   { return 2.5 * motion.baseMs.value; },
   /** Hover/select micro-feedback (was inline 0.1s / 0.12s — kept identical). */
-  hover: 1.0 * TRANSITION_BASE_MS,          // 100ms
+  get hover()     { return 1.0 * motion.baseMs.value; },
   /** Highlight rect sliding between columns/rows. */
-  highlight: 1.5 * TRANSITION_BASE_MS,      // 150ms
+  get highlight() { return 1.5 * motion.baseMs.value; },
   /** Drill in/out zoom (Part 5 placeholder). */
-  drill: 3.0 * TRANSITION_BASE_MS,          // 300ms
+  get drill()     { return 3.0 * motion.baseMs.value; },
 } as const;
 
 /** True when the user has asked for reduced motion. Reactive (gesture-driven)
