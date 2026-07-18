@@ -28,6 +28,7 @@ import type { ConservationMode } from "./behaviors/keyboard-edit";
 import type { TileBodyDragOptions } from "./behaviors/tile-body-drag";
 import { makeBridge, type BrSyncBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { transitionOnUpdated } from "./behaviors/transition-on-updated";
+import { motion } from "../lib/runtime-config";
 import { previewFullRender, captureOrderFromWindow } from "./behaviors/preview-full-render";
 import { wheelEdit } from "./behaviors/wheel-edit";
 import { keyboardEdit } from "./behaviors/keyboard-edit";
