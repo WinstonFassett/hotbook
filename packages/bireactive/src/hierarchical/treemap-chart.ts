@@ -19,8 +19,8 @@ import { findNode, sortedChildren, type ChartNode } from "./tree";
 export class TreemapChart extends HierarchicalChartBase implements ChartAccessors<LayoutRect> {
   static tag = "v-treemap";
 
-  private _window?: Cell<RenderNode[]>;
-  private _layout?: Cell<Map<string, LayoutRect>>;
+  protected declare _window: Cell<RenderNode[]> | undefined;
+  protected declare _layout: Cell<Map<string, LayoutRect>> | undefined;
   private _liveLayout?: Cell<Map<string, LayoutRect>>;
   /** Layout snapshot captured at edit-gesture start (spec §5 draft freeze). */
   private _frozenLayout = cell<Map<string, LayoutRect> | null>(null);

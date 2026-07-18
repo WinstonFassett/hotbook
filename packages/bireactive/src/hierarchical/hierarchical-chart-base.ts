@@ -98,6 +98,11 @@ export abstract class HierarchicalChartBase extends HTMLElement {
   /** Color mode cell — read by makeTile/makeArc for reactive fill changes. */
   protected _colorModeCell = cell<"flat" | "depth" | "mono" | undefined>(undefined);
 
+  // --- Rendered window + layout (set by subclass _setupRendering, read by
+  //     base behavior composition for frozen-order capture) ---
+  protected _window?: Cell<unknown>;
+  protected _layout?: Cell<unknown>;
+
   // --- Shared infrastructure ---
   protected _gesture: Gesture | null = null;
   protected _dataView: DataView | null = null;

@@ -17,8 +17,8 @@ import { HierarchicalChartBase } from "./hierarchical-chart-base";
 export class PackChart extends HierarchicalChartBase implements ChartAccessors<PackRect> {
   static tag = "v-pack";
 
-  private _window?: Cell<RenderNode[]>;
-  private _layout?: Cell<Map<string, PackRect>>;
+  protected declare _window: Cell<RenderNode[]> | undefined;
+  protected declare _layout: Cell<Map<string, PackRect>> | undefined;
 
   // GestureContext: layout accessor.
   layout() {

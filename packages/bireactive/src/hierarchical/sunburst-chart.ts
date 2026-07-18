@@ -36,8 +36,8 @@ import { HierarchicalChartBase } from "./hierarchical-chart-base";
 export class SunburstChart extends HierarchicalChartBase implements EdgeDragHandler<RadialRect> {
   static tag = "v-sunburst";
 
-  private _window?: Cell<RenderNode[]>;
-  private _layout?: Cell<Map<string, RadialRect>>;
+  protected declare _window: Cell<RenderNode[]> | undefined;
+  protected declare _layout: Cell<Map<string, RadialRect>> | undefined;
   private _edges?: Cell<Edge[]>;
 
   // Drag state for angular edge handle (two-sibling reapportion).

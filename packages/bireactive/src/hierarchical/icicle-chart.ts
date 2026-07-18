@@ -28,8 +28,8 @@ import { HierarchicalChartBase } from "./hierarchical-chart-base";
 export class IcicleChart extends HierarchicalChartBase implements EdgeDragHandler<LayoutRect> {
   static tag = "v-icicle";
 
-  private _window?: Cell<RenderNode[]>;
-  private _layout?: Cell<Map<string, LayoutRect>>;
+  protected declare _window: Cell<RenderNode[]> | undefined;
+  protected declare _layout: Cell<Map<string, LayoutRect>> | undefined;
   private _edges?: Cell<Edge[]>;
   private _dragBoundary = 0; // pixel position of the boundary at gesture start
   private _dragPairSize = 0; // pixel size of the pair at gesture start
