@@ -32,8 +32,8 @@ Port all hierarchical charts (icicle, sunburst, treemap, treetable, pack) from s
 - [x] **Tile body drag** — resize (additive for treemap/pack, proportional-siblings for icicle/sunburst)
 - [x] **Tile body reorder** — sort="index" only, icicle/sunburst/treemap
 - [x] **Edge handle drag** — two-sibling reapportion, icicle (rectilinear) + sunburst (angular)
-- [x] **Playwright drag tests** — 10 tests, all passing (HierDragHarness reusable harness)
-- [x] **Specs remediated** — icicle.md, sunburst.md, treemap.md, treetable.md, pack.md, gesture-architecture.md
+- [x] **Playwright drag tests** — 12 tests, all passing (10 original + 2 pack tests added Phase 6)
+- [x] **Specs remediated** — icicle.md, sunburst.md, treemap.md, treetable.md, pack.md, gesture-architecture.md, enter-exit.md (new, Phase 5)
 
 ### Commits (24 on feat/gesture-transition-contract)
 b65d5db8 → 39b00fbe: ports, fixes, refactors, tests, docs, colorMode, cursor, handle visibility, pack port
@@ -43,16 +43,16 @@ b65d5db8 → 39b00fbe: ports, fixes, refactors, tests, docs, colorMode, cursor, 
 - `lib/motion-tweaks-panel.ts` — lil-gui panel with sliders, mounted in both apps
 - `lib/transitions.ts` — `TRANSITION_BASE_MS`/`ENTER_MS`/`EXIT_MS` → live bindings synced from motion cells
 - Per-chart (bar/pie/gantt/radar/tree/concentric-arc/sankey) — read `motion.*.value` at tween-start
-- **GAP**: hierarchical charts have their OWN `TRANSITION_BASE_MS` in `behaviors/transition-on-updated.ts` — tweaks panel does NOT yet control hierarchical charts. Unifying is in Phase 2.
+- **GAP (RESOLVED)**: hierarchical charts had their OWN `TRANSITION_BASE_MS` in `behaviors/transition-on-updated.ts` — now unified with `motion.baseMs` (Phase 2 + remote merge 78ce3a87). Tweaks panel controls all charts.
 
 ## 3. What REMAINS
 
 ### Known gaps
-- [ ] **Pack dead code** — `tileBodyReorder` configured but discarded by `_selectDragBehaviors` override
-- [ ] **Sunburst type cast** — `renderedNodes as Cell<RenderNode[]>` unsafe cast (withExitDelay returns `Read<readonly T[]>`)
-- [ ] **Unused enter-exit-lifecycle.ts** — `enterExitForEach` defined but no chart uses it
-- [ ] **Type safety** — ~20 `(g: any)` casts in behavior configs across all charts
-- [ ] **Schema gap** — chart-schemas.ts exists (valibot-based, WIN-258) and registers all charts including hierarchical, but the hierarchical schemas don't wire new config fields (`colorMode`, `dragBehavior`, `conservationMode`) through `mountProps` to the chart elements. The schemas drive the demo/hotbook config UI but don't pass through all the new hierarchical chart config fields added during the rewrite.
+- [x] **Pack dead code** — `tileBodyReorder` removed (Phase 1)
+- [x] **Sunburst type cast** — fixed, `withExitDelay` return type now correct (Phase 1)
+- [x] **Unused enter-exit-lifecycle.ts** — deleted from both locations (Phase 1)
+- [x] **Type safety** — all `(g: any)` casts replaced with `(g: Gesture)` (Phase 2)
+- [x] **Schema gap** — `colorMode`, `dragBehavior`, `conservationMode`, `exitFade` wired through `hierMountProps` → `mountProps` → chart elements (Phase 2 + Phase 3)
 
 ### Enter/exit fade — design decision (RESOLVED)
 The fade/no-fade split is about the **visual metaphor** and whether solid things can be laid out off-screen before transitioning into place:
@@ -97,16 +97,16 @@ No chart should be left behind on the old `Diagram`-based architecture. The `cha
 This is a large effort — deferred to a separate plan/ticket, but acknowledged as required work. The app will also need migration.
 
 ### Refactor opportunities (from subagent analysis)
-- [ ] **HIGH: Extract common behavior config factory** — eliminate ~100 lines of duplicated tileBodyDrag/tileBodyReorder config
-- [ ] **HIGH: Fix type safety in behavior getters** — replace `(g: any)` with proper `GestureGetter<T>` types
-- [ ] **HIGH: Chart config schemas** — formal schema validation for chart configs
-- [ ] **MED: Extract _setupRendering template** — common pattern: deriveWindow → deriveLayout → membership → forEach
-- [ ] **MED: Unify transition config** — per-chart transition options via override hook
-- [ ] **MED: Split GestureContext** — treemap/pack shouldn't need stub implementations
-- [ ] **MED: Make enter/exit fade configurable** — per-chart default + config override
-- [ ] **LOW: Extract center computation** for radial charts
-- [ ] **LOW: Consolidate duplicate angle logic** in sunburst startGesture/updateGesture
-- [ ] **LOW: colorMode validation** in config setter
+- [x] **HIGH: Extract common behavior config factory** — `_tileBodyDragDefaults()`, `_writeReorder()` on base (Phase 4)
+- [x] **HIGH: Fix type safety in behavior getters** — all `(g: any)` → `(g: Gesture)` (Phase 2)
+- [x] **HIGH: Chart config schemas** — `hierMountProps` wires all new fields (Phase 2)
+- [ ] **MED: Extract _setupRendering template** — deferred; pattern shared via `_deriveWindow`/`_deriveLayout`, remaining code is genuinely chart-specific
+- [x] **MED: Unify transition config** — `_transitionOpts()` override hook on base (Phase 4)
+- [x] **MED: Split GestureContext** — split into `ChartAccessors` + `EdgeDragHandler`; treemap/pack no longer implement no-op stubs (Phase 4)
+- [x] **MED: Make enter/exit fade configurable** — `exitFade` config field, per-chart defaults (Phase 3)
+- [x] **LOW: Extract center computation** — `_center` cell on base, shared by sunburst rendering + gesture + reorder (Phase 6)
+- [ ] **LOW: Consolidate duplicate angle logic** in sunburst startGesture/updateGesture — deferred, low value
+- [ ] **LOW: colorMode validation** — skipped; `resolveFill` already degrades unknown values to "flat"
 
 ## 4. Feature Matrix — Charts × Capabilities
 
@@ -124,16 +124,16 @@ This is a large effort — deferred to a separate plan/ticket, but acknowledged 
 | **Wheel edit** | yes | yes | yes | no | yes |
 | **Keyboard edit** | yes | yes | yes | yes | yes |
 | **colorMode** | yes (resolveFill) | yes (resolveFill) | yes (resolveFill) | no | yes (resolveFill) |
-| **Enter/exit fade** | no (off-screen) | yes (circular frame) | no on drill, fade on level change | row transitions | no on drill, fade on level change |
+| **Enter/exit fade** | no (off-screen) | yes (configurable, default on) | no (off-screen) | row transitions | no (off-screen) |
 | **Transition-on-updated** | default (x/y/w/h) | custom (opacity) | default + draftFreeze | manual | custom (opacity) |
 | **Cross-tile sync** | yes (Kernel) | yes (Kernel) | yes (Kernel) | yes (Kernel) | yes (Kernel) |
 | **Breadcrumb** | yes | yes | yes | yes | yes |
-| **GestureContext** | full | full | stubs | no | stubs |
+| **Drag interface** | EdgeDragHandler | EdgeDragHandler | ChartAccessors | n/a | ChartAccessors |
 | **_deriveWindow** | yes | yes | yes | no | yes |
 | **_deriveLayout** | yes | yes | yes | no | yes |
 | **_composeStandardBehaviors** | yes | yes (custom opts) | yes (+ draftFreeze) | no | yes (custom opts) |
 | **Spec written** | yes | yes | yes | yes | yes |
-| **Playwright tests** | yes | yes | yes | yes | no |
+| **Playwright tests** | yes | yes | yes | yes | yes |
 
 ## 5. Code Size
 
@@ -168,37 +168,40 @@ This is a large effort — deferred to a separate plan/ticket, but acknowledged 
 
 ## 6. Plan — Next Steps (Ranked)
 
-### Phase 1: Correctness fixes (low risk, high value)
-1. **Remove pack dead code** — delete unused tileBodyReorder config in pack-chart.ts
-2. **Fix sunburst type cast** — `renderedNodes as Cell<RenderNode[]>` → proper `Read<readonly RenderNode[]>`
-3. **Remove unused enter-exit-lifecycle.ts** — or document intended use
+### Phase 1: Correctness fixes ✅ DONE (commit a01e0b05)
+1. ~~Remove pack dead code~~ — deleted unused tileBodyReorder config + noopBehavior placeholder
+2. ~~Fix sunburst type cast~~ — `withExitDelay` return type now correct, no cast
+3. ~~Remove unused enter-exit-lifecycle.ts~~ — deleted from both packages
 
-### Phase 2: Type safety + schema wiring (medium risk, high value)
-4. **Replace `(g: any)` with `Gesture` type** — ~20 casts across all charts + base class
-5. **Add proper types to behavior option getters** — use `GestureGetter<T>` consistently
-6. **Wire new hierarchical config fields through chart-schemas.ts** — `colorMode`, `dragBehavior`, `conservationMode` need `mountProps` entries for icicle/sunburst/treemap/pack schemas so they flow from config UI → chart element. Schemas already exist (valibot, WIN-258); this is filling in the new fields added during the rewrite.
-7. **Wire hierarchical charts to `motion` cells** — hierarchical charts have their own `TRANSITION_BASE_MS` in `behaviors/transition-on-updated.ts`, separate from `lib/transitions.ts` that Opus made live (WIN-352). Unify so the tweaks panel controls hierarchical charts too.
+### Phase 2: Type safety + schema wiring ✅ DONE (commit 64b43f0f)
+4. ~~Replace `(g: any)` with `Gesture` type~~ — all 32 casts replaced across 5 chart files
+5. ~~Add proper types to behavior option getters~~ — done as part of #4
+6. ~~Wire new hierarchical config fields through chart-schemas.ts~~ — `hierMountProps` helper wires `colorMode`, `dragBehavior`, `conservationMode` to pack/treemap/treetable/sunburst/icicle schemas
+7. ~~Wire hierarchical charts to `motion` cells~~ — `TRANSITION_BASE_MS` live-bound to `motion.baseMs`; CSS re-injected on tweaks panel change. **Note**: remote commit 78ce3a87 also wired `motion.enterMs`/`motion.exitMs` directly (merged, see Phase 2 merge below).
 
-### Phase 3: Enter/exit fade verification (low risk, medium value)
-8. **Verify level-change fade on treemap/pack** — when changing displayed levels, new levels should fade in/out. This may already work via transition-on-updated's CSS opacity on enter. Check, don't assume.
-9. **Confirm icicle/treemap/pack drill = no fade** — correct per visual metaphor (content moves off-screen). Only sunburst needs fade on drill (circular frame, can't move off-screen).
-10. **Make fade configurable** — per-chart default + config override, so consumers can choose. Components shouldn't be opinionated beyond sane defaults.
+### Phase 3: Enter/exit fade verification ✅ DONE (commit fcf5491b)
+8. ~~Verify level-change fade~~ — confirmed: sunburst fades in place, others evict immediately (content moves off-screen)
+9. ~~Confirm drill = no fade~~ — confirmed for icicle/treemap/pack; sunburst fades (circular frame)
+10. ~~Make fade configurable~~ — `exitFade` config field added; default `true` for sunburst, `false` for others; wired through bi-adapter, schemas, persistence
 
-### Phase 4: DRY extraction (medium risk, medium value)
-10. **Extract common behavior config factory** — `configureTileBehaviors()` helper
-11. **Extract _setupRendering template** — common derive→membership→forEach pattern
-12. **Add transition config override hook** — `_getTransitionOptions()` in base class
-13. **Split GestureContext interface** — treemap/pack don't need stub methods
+### Phase 4: DRY extraction ✅ DONE (commit afb25fdd)
+10. ~~Extract common behavior config factory~~ — `_tileBodyDragDefaults()`, `_writeReorder()` on base
+11. ~~Extract _setupRendering template~~ — deferred (remaining code is genuinely chart-specific)
+12. ~~Add transition config override hook~~ — `_transitionOpts()` on base; pack/sunburst override
+13. ~~Split GestureContext interface~~ — split into `ChartAccessors` (all) + `EdgeDragHandler` (icicle/sunburst); treemap/pack no longer implement no-op stubs
 
-### Phase 5: Spec updates (low risk)
-14. **Update pack spec** — drill = relayout (not viewport zoom); relayout is correct because scale axes would redraw ticks/labels, not transform-scale them
-15. **Update enter/exit spec** — fade is configurable, defaults match visual metaphor (solid vs translucent)
+### Phase 5: Spec updates ✅ DONE (commit 5676dd83)
+14. ~~Update pack spec~~ — drill = relayout (not viewport zoom); added §7 for configurable exitFade
+15. ~~Update enter/exit spec~~ — created `wiki/specs/enter-exit.md` documenting the full contract
 
-### Phase 6: Polish (low priority)
-16. **Extract center computation** for radial charts
-17. **Consolidate angle logic** in sunburst
-18. **colorMode validation** in config setter
-19. **Add Playwright tests for pack** — drag, drill, cross-tile
+### Phase 6: Polish ✅ DONE (commit a5a7f2de)
+16. ~~Extract center computation~~ — `_center` cell on base, shared by sunburst rendering + gesture + reorder
+17. ~~Consolidate angle logic~~ — deferred, low value
+18. ~~colorMode validation~~ — skipped; `resolveFill` degrades unknown values to "flat"
+19. ~~Add Playwright tests for pack~~ — tile-count + tile-drag; generalized `get_tile_bbox` for rect OR circle
+
+### Post-merge: WIN-352 hierarchical timing ✅ DONE (commit 128a087f)
+- Merged remote commit 78ce3a87: wired hierarchical timing to `motion.*` cells. Resolved conflicts in `transition-on-updated.ts` (took remote's `settleTransition()` reuse) and `mark-lifecycle.ts` (took remote's `motion.enterMs`/`motion.exitMs` direct read).
 
 ### Phase 7: Non-hierarchical chart migration (deferred, large effort)
 20. **Design `BaseChart`** — shared base for all charts (config, DataView, Kernel, Editor, Gesture, behaviors, transitions) without hierarchical features
