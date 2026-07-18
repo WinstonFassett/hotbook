@@ -121,8 +121,12 @@ export function tileBodyReorder(opts: TileBodyReorderOptions): Behavior {
           initialMids.set(id, isHoriz ? (r.y + r.height / 2) : (r.x + r.width / 2));
         }
 
-        // Elevate the ghost.
-        ghostEl = host.querySelector(`g[data-id="${targetId}"]`) as SVGGraphicsElement | null;
+        // Elevate the ghost: the <g> that contains BOTH the tile rect
+        // and its label. data-id is on tile.el (a <g> wrapping the <rect>),
+        // but the label is a SIBLING of tile.el inside the outer group.
+        // So go up one level from the data-id <g> to the parent <g>.
+        const tileG = host.querySelector(`g[data-id="${targetId}"]`);
+        ghostEl = (tileG?.parentElement as SVGGraphicsElement) ?? null;
         if (ghostEl) {
           prevGhostTransition = ghostEl.style.transition;
           ghostEl.style.transition = "none";
