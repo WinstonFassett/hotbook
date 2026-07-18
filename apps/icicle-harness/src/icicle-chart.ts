@@ -548,6 +548,7 @@ export class IcicleChart extends HTMLElement implements GestureContext {
           if (k && cfg) k.writeReorder(cfg.datasetId, parentId, orderedIds);
         },
         bumpReorder: () => this.bumpReorder(),
+        frozenOrderCell: this._frozenOrder,
       }));
     }
 
