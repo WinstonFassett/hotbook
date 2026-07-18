@@ -24,6 +24,8 @@
 //
 // `prefers-reduced-motion` collapses to `transition: none` in one place.
 
+import { effect } from "bireactive";
+import { motion } from "../../lib/runtime-config";
 import type { Gesture, Behavior } from "../gesture";
 
 /** Host CSS class toggled while a gesture is live. */
@@ -31,8 +33,12 @@ export const GESTURE_ACTIVE_CLASS = "gesture-active";
 /** Host CSS class for reorder gestures — allows sibling transitions. */
 export const REORDER_ACTIVE_CLASS = "reorder-active";
 
-/** Base timing token (Interaction Principle 12): every duration is a multiple. */
-export const TRANSITION_BASE_MS = 100;
+/** Base timing token (Interaction Principle 12): every duration is a multiple.
+ *  Live-bound to `motion.baseMs` (WIN-352) so the tweaks panel controls
+ *  hierarchical charts. Kept as an `export let` so callers that read a raw
+ *  number at draw-time see the live value. */
+export let TRANSITION_BASE_MS = motion.baseMs.value;
+effect(() => { TRANSITION_BASE_MS = motion.baseMs.value; });
 
 const SETTLE_ATTRS = ["x", "y", "width", "height"] as const;
 
@@ -83,11 +89,22 @@ export function transitionOnUpdated(opts: TransitionOnUpdatedOptions = {}): Beha
     const selector = opts.selector ?? host.tagName.toLowerCase();
     const elements = opts.elements ?? "rect, text";
 
-    const transitionValue = settleTransition(attrs, durationMult);
-    // Scope the suppression to the host carrying the class so multiple charts
-    // on the page don't clobber each other.
-    const elemSel = elements.split(", ").map((e) => `${selector} ${e}`).join(", ");
-    const css = `
+    const styleEl = document.createElement("style");
+    styleEl.setAttribute("data-vf-transitions", selector);
+    host.prepend(styleEl);
+
+    // Re-inject the CSS whenever motion.baseMs changes (WIN-352 tweaks panel).
+    // Read the cell directly (tracked) — the export-let TRANSITION_BASE_MS is
+    // a plain variable, not a cell, so effects can't track it. The cell read
+    // here is what makes the tweaks panel live-control hierarchical settle.
+    const rebuildCss = effect(() => {
+      const base = motion.baseMs.value; // tracked — re-runs on tweaks panel change
+      const dur = base * durationMult;
+      const transitionValue = prefersReducedMotion()
+        ? "none"
+        : attrs.map((a) => `${a} ${dur}ms ease-out`).join(", ");
+      const elemSel = elements.split(", ").map((e) => `${selector} ${e}`).join(", ");
+      styleEl.textContent = `
 ${elemSel} { transition: ${transitionValue}; }
 ${selector}.${GESTURE_ACTIVE_CLASS} * { transition: none !important; }
 ${selector}.${REORDER_ACTIVE_CLASS} [data-reordering],
@@ -96,11 +113,7 @@ ${selector}.${REORDER_ACTIVE_CLASS} [data-reordering] * { transition: none !impo
   ${elemSel} { transition: none !important; }
 }
 `;
-
-    const styleEl = document.createElement("style");
-    styleEl.setAttribute("data-vf-transitions", selector);
-    styleEl.textContent = css;
-    host.prepend(styleEl);
+    });
 
     // Single owner of the suppression class. Input behaviors call
     // gesture.draft/commit/cancel; this subscriber reacts. No other site
@@ -124,6 +137,7 @@ ${selector}.${REORDER_ACTIVE_CLASS} [data-reordering] * { transition: none !impo
 
     return () => {
       unsub();
+      rebuildCss();
       styleEl.remove();
       // Defensive: ensure the class is not left on the host if the behavior
       // is torn down mid-gesture (e.g. config change rebuilds the chart).

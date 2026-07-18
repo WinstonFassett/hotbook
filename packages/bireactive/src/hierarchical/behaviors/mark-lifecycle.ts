@@ -19,9 +19,13 @@ import { cell, derive, effect, readNow, untracked, type Read, type Val } from "b
 import { prefersReducedMotion, TRANSITION_BASE_MS } from "./transition-on-updated";
 
 /** Mark enter/exit fade windows. Not multipliers — enter/exit is a fixed
- *  fade window, not a rhythm role. Matches the reference (ENTER_MS / EXIT_MS). */
-export const ENTER_MS = 4 * TRANSITION_BASE_MS; // 400ms
-export const EXIT_MS = 4 * TRANSITION_BASE_MS; // 400ms
+ *  fade window, not a rhythm role. Live `export let` bindings synced from
+ *  TRANSITION_BASE_MS (which is itself live-bound to motion.baseMs, WIN-352)
+ *  so the tweaks panel controls hierarchical enter/exit timing too. */
+export let ENTER_MS = 4 * TRANSITION_BASE_MS; // 400ms at default base 100
+export let EXIT_MS = 4 * TRANSITION_BASE_MS; // 400ms
+effect(() => { ENTER_MS = 4 * TRANSITION_BASE_MS; });
+effect(() => { EXIT_MS = 4 * TRANSITION_BASE_MS; });
 export const TRANSITION_EASING = "cubic-bezier(0.4, 0.0, 0.2, 1)"; // ease-in-out
 
 export interface WithExitDelayOptions<T> {

@@ -6,7 +6,7 @@
 
 import { cell, derive, forEach, group, type Cell } from "bireactive";
 import type { PackRect, RenderNode } from "./types";
-import { type Behavior, noopBehavior } from "./gesture";
+import { type Behavior, type Gesture, noopBehavior } from "./gesture";
 import { buildAllDescendants, type Edge } from "./hierarchy";
 import { computePackLayout, makeCircle } from "./pack-geometry";
 import type { GestureContext } from "./gestures";
@@ -87,10 +87,10 @@ export class PackChart extends HierarchicalChartBase implements GestureContext<P
     // sort="index" reorder path applies to circles), so the reorder slot is
     // a placeholder that's never installed.
     const resizeBehavior = tileBodyDrag({
-      target: (g: any) => g.store.hover.value ?? g.store.focus.value,
-      valueOf: (g: any) => this.valueOf,
+      target: (g: Gesture) => g.store.hover.value ?? g.store.focus.value,
+      valueOf: (g: Gesture) => this.valueOf,
       writeValue: this.writeValue,
-      siblings: (g: any) => this.siblings,
+      siblings: (g: Gesture) => this.siblings,
       frozenOrder: () => this._frozenOrder.value,
       windowGetter: () => this._window?.value ?? null,
       frozenOrderCell: this._frozenOrder,

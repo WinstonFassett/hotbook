@@ -387,6 +387,10 @@ export interface HierSpec {
     selector: string  // CSS selector prefix for editable elements, e.g., '[data-editable-value'
     pxPerUnit?: number
   }
+  /** Optional prop-applier called on mount and on applyData, for wiring
+   *  schema-driven config fields (colorMode, dragBehavior, conservationMode)
+   *  to the chart element's setters. */
+  mountProps?: (el: HTMLElement) => void
 }
 
 export function makeHierSource(spec: HierSpec): TileSource {
@@ -402,6 +406,7 @@ export function makeHierSource(spec: HierSpec): TileSource {
   const orientationRef = { current: spec.orientation }
   const enableNumberDragRef = { current: spec.enableNumberDrag }
   const depthRef = { current: spec.depth }
+  const mountPropsRef = { current: spec.mountProps }
 
   const source: TileSource = {
     tag: spec.tag,
@@ -421,6 +426,8 @@ export function makeHierSource(spec: HierSpec): TileSource {
       typedEl.sortBy = sortByRef.current
       delete (typedEl as any).orientation;
       if (orientationRef.current !== undefined) typedEl.orientation = orientationRef.current
+      // Schema-driven config fields (colorMode, dragBehavior, conservationMode).
+      mountPropsRef.current?.(el)
 
       // Attach numberDrag if configured (for treetable and similar)
       if (enableNumberDragRef.current && typeof (typedEl as any).onRender === 'function') {
@@ -517,6 +524,9 @@ export function makeHierSource(spec: HierSpec): TileSource {
       if (drillNodeIdRef.current !== undefined && typedEl.drillNodeId !== drillNodeIdRef.current) {
         typedEl.drillNodeId = drillNodeIdRef.current
       }
+      // Re-apply schema-driven config fields (colorMode, dragBehavior,
+      // conservationMode) so config-UI changes propagate without a remount.
+      mountPropsRef.current?.(el)
     },
 
     bindEditOut(_el: HTMLElement, lastRef: Map<string, number>): () => void {
@@ -558,6 +568,7 @@ export function makeHierSource(spec: HierSpec): TileSource {
       sortByRef.current = nextSpec.sortBy ?? 'index'
       orientationRef.current = nextSpec.orientation
       depthRef.current = nextSpec.depth
+      mountPropsRef.current = nextSpec.mountProps
     },
   }
 

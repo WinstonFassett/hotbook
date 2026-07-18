@@ -143,10 +143,10 @@ export class SunburstChart extends HierarchicalChartBase implements GestureConte
   protected _composeBehaviors(): void {
     const dragBehaviors = this._selectDragBehaviors(
       tileBodyDrag({
-        target: (g: any) => g.store.hover.value ?? g.store.focus.value,
-        valueOf: (g: any) => this.valueOf,
+        target: (g: Gesture) => g.store.hover.value ?? g.store.focus.value,
+        valueOf: (g: Gesture) => this.valueOf,
         writeValue: this.writeValue,
-        siblings: (g: any) => this.siblings,
+        siblings: (g: Gesture) => this.siblings,
         frozenOrder: () => this._frozenOrder.value,
         windowGetter: () => this._window?.value ?? null,
         frozenOrderCell: this._frozenOrder,
@@ -154,11 +154,11 @@ export class SunburstChart extends HierarchicalChartBase implements GestureConte
         focusTile: (id) => this.setFocus(id),
       }),
       arcBodyReorder({
-        target: (g: any) => g.store.hover.value ?? g.store.focus.value,
-        treeRoot: (g: any) => this._treeRoot.value,
-        layout: (g: any) => this._layout!.value,
-        centerX: (g: any) => this._hostSize!.w.value / 2,
-        centerY: (g: any) => this._hostSize!.h.value / 2,
+        target: (g: Gesture) => g.store.hover.value ?? g.store.focus.value,
+        treeRoot: (g: Gesture) => this._treeRoot.value,
+        layout: (g: Gesture) => this._layout!.value,
+        centerX: (g: Gesture) => this._hostSize!.w.value / 2,
+        centerY: (g: Gesture) => this._hostSize!.h.value / 2,
         focusArc: (id) => this.setFocus(id),
         writeReorder: (parentId, orderedIds) => {
           const k = this._kernelCell.value;

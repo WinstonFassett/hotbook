@@ -19,6 +19,7 @@ import {
   attachEdgeHandleDrag,
   type GestureContext,
 } from "./gestures";
+import type { Gesture } from "./gesture";
 import { tileBodyDrag } from "./behaviors/tile-body-drag";
 import { tileBodyReorder } from "./behaviors/tile-body-reorder";
 import { membershipCell } from "./behaviors/mark-lifecycle";
@@ -98,10 +99,10 @@ export class IcicleChart extends HierarchicalChartBase implements GestureContext
   protected _composeBehaviors(): void {
     const dragBehaviors = this._selectDragBehaviors(
       tileBodyDrag({
-        target: (g: any) => g.store.hover.value ?? g.store.focus.value,
-        valueOf: (_g: any) => this.valueOf,
+        target: (g: Gesture) => g.store.hover.value ?? g.store.focus.value,
+        valueOf: (_g: Gesture) => this.valueOf,
         writeValue: this.writeValue,
-        siblings: (_g: any) => this.siblings,
+        siblings: (_g: Gesture) => this.siblings,
         frozenOrder: () => this._frozenOrder.value,
         windowGetter: () => this._window?.value ?? null,
         frozenOrderCell: this._frozenOrder,
@@ -109,9 +110,9 @@ export class IcicleChart extends HierarchicalChartBase implements GestureContext
         focusTile: (id) => this.setFocus(id),
       }),
       tileBodyReorder({
-        target: (g: any) => g.store.hover.value ?? g.store.focus.value,
-        treeRoot: (_g: any) => this._treeRoot.value,
-        layout: (_g: any) => this._layout!.value,
+        target: (g: Gesture) => g.store.hover.value ?? g.store.focus.value,
+        treeRoot: (_g: Gesture) => this._treeRoot.value,
+        layout: (_g: Gesture) => this._layout!.value,
         focusTile: (id) => this.setFocus(id),
         writeReorder: (parentId, orderedIds) => {
           const k = this._kernelCell.value;

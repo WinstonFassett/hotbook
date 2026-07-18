@@ -192,6 +192,8 @@ function findBiNode(root: BiNode, id: string): BiNode | null {
 type SortBy = "index" | "value";
 type Orientation = "horizontal" | "vertical";
 type Conservation = "additive" | "proportional-neighbor" | "proportional-siblings";
+type ColorMode = "flat" | "depth" | "mono";
+type DragBehavior = "none" | "resize" | "reorder";
 
 /** Mixin adding the legacy MdXxxLC element API on top of a
  *  HierarchicalChartBase subclass. Every prop write recomputes the
@@ -211,6 +213,8 @@ export function withBiCompat<
       conservationMode: (defaults.conservationMode ?? "additive") as Conservation,
       showBreadcrumb: defaults.showBreadcrumb ?? false,
       showRoot: defaults.showRoot ?? true,
+      colorMode: defaults.colorMode as ColorMode | undefined,
+      dragBehavior: defaults.dragBehavior as DragBehavior | undefined,
     };
     private _kernelSet = false;
     private _offReorder: (() => void) | null = null;
@@ -240,6 +244,12 @@ export function withBiCompat<
 
     get conservationMode(): Conservation { return this._c.conservationMode; }
     set conservationMode(v: Conservation) { this._c.conservationMode = v; this._push(); }
+
+    get colorMode(): ColorMode | undefined { return this._c.colorMode; }
+    set colorMode(v: ColorMode | undefined) { this._c.colorMode = v; this._push(); }
+
+    get dragBehavior(): DragBehavior | undefined { return this._c.dragBehavior; }
+    set dragBehavior(v: DragBehavior | undefined) { this._c.dragBehavior = v; this._push(); }
 
     get showBreadcrumb(): boolean { return this._c.showBreadcrumb; }
     set showBreadcrumb(v: boolean) { this._c.showBreadcrumb = v; this._push(); }
@@ -295,10 +305,14 @@ export function withBiCompat<
         // of the DataView query key, so passing it is harmless.
         orientation: c.orientation,
         canReorder: c.canReorder,
-        dragBehavior: c.canReorder && c.sortBy === "index" ? "reorder" : "resize",
+        // If dragBehavior is explicitly set, use it; otherwise derive from
+        // canReorder + sortBy (legacy default).
+        dragBehavior: c.dragBehavior
+          ?? (c.canReorder && c.sortBy === "index" ? "reorder" : "resize"),
         conservationMode: c.conservationMode,
         showRoot: c.showRoot,
         showBreadcrumb: c.showBreadcrumb,
+        colorMode: c.colorMode,
       };
     }
 

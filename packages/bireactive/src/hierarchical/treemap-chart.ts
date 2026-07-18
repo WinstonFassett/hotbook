@@ -6,7 +6,7 @@
 
 import { cell, derive, forEach, group, type Cell } from "bireactive";
 import type { LayoutRect, RenderNode } from "./types";
-import { type Behavior } from "./gesture";
+import { type Behavior, type Gesture } from "./gesture";
 import { buildAllDescendants, type Edge } from "./hierarchy";
 import { computeTreemapLayout, makeTreemapTile } from "./treemap-geometry";
 import type { GestureContext } from "./gestures";
@@ -110,10 +110,10 @@ export class TreemapChart extends HierarchicalChartBase implements GestureContex
   protected _composeBehaviors(): void {
     const dragBehaviors = this._selectDragBehaviors(
       tileBodyDrag({
-        target: (g: any) => g.store.hover.value ?? g.store.focus.value,
-        valueOf: (g: any) => this.valueOf,
+        target: (g: Gesture) => g.store.hover.value ?? g.store.focus.value,
+        valueOf: (g: Gesture) => this.valueOf,
         writeValue: this.writeValue,
-        siblings: (g: any) => this.siblings,
+        siblings: (g: Gesture) => this.siblings,
         frozenOrder: () => this._frozenOrder.value,
         windowGetter: () => this._window?.value ?? null,
         frozenOrderCell: this._frozenOrder,
@@ -123,9 +123,9 @@ export class TreemapChart extends HierarchicalChartBase implements GestureContex
         axis: "x",
       }),
       tileBodyReorder({
-        target: (g: any) => g.store.hover.value ?? g.store.focus.value,
-        treeRoot: (g: any) => this._treeRoot.value,
-        layout: (g: any) => this._layout!.value,
+        target: (g: Gesture) => g.store.hover.value ?? g.store.focus.value,
+        treeRoot: (g: Gesture) => this._treeRoot.value,
+        layout: (g: Gesture) => this._layout!.value,
         focusTile: (id) => this.setFocus(id),
         writeReorder: (parentId, orderedIds) => {
           const k = this._kernelCell.value;
@@ -139,8 +139,8 @@ export class TreemapChart extends HierarchicalChartBase implements GestureContex
 
     // Treemap-specific: freeze sibling layout during own edit-drafts so
     // only the edited tile scales in place (spec §5 draft freeze).
-    const draftFreeze: Behavior = (g: any) =>
-      g.editor.subscribe((t: any) => {
+    const draftFreeze: Behavior = (g: Gesture) =>
+      g.editor.subscribe((t) => {
         if (t.type === "draft" && t.draft?.intent === "edit") {
           if (!this._frozenLayout.value) {
             this._frozenLayout.value = new Map(this._liveLayout!.value);
