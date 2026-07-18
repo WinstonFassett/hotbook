@@ -107,12 +107,9 @@ export function tileBodyReorder(opts: TileBodyReorderOptions): Behavior {
         gesture.store.activeTarget = targetId;
         gesture.store.takeSnapshot?.();
 
-        // Set provisional order = initial order (frozen so siblings don't
-        // re-sort mid-drag; the layout uses this order for partition).
-        const order = new Map<string, string[]>();
-        order.set(parentId!, initialOrder.slice());
-        opts.frozenOrderCell.value = order;
-        gesture.store.frozenOrder = order;
+        // Don't set frozenOrder yet — only when the order actually changes
+        // (on the first real reorder). Setting it to the initial order here
+        // would be a no-op for sort=index but causes a re-derive for sort=value.
 
         gesture.draft({
           nodeId: targetId,
@@ -173,13 +170,22 @@ export function tileBodyReorder(opts: TileBodyReorderOptions): Behavior {
         opts.bumpReorder();
       }
 
-      // Ghost: follow pointer directly via CSS transform.
+      // Ghost: position so the tile's visual center is under the pointer.
+      // The layout puts the tile's rect at a provisional slot; we compensate
+      // with a transform so the visual position = pointer, not slot + delta.
+      // transform = pointerPos - currentLayoutPos (along sibling axis).
       if (ghostEl) {
-        const delta = pointerAxis - startPointer;
-        // Transform along the sibling axis only.
-        const dx = isHoriz ? 0 : delta;
-        const dy = isHoriz ? delta : 0;
-        ghostEl.style.transform = `translate(${dx}px, ${dy}px)`;
+        const freshLayout = opts.layout(gesture);
+        const r = freshLayout.get(targetId);
+        if (r) {
+          const slotPos = isHoriz ? r.y : r.x;
+          const slotSize = isHoriz ? r.height : r.width;
+          const slotMid = slotPos + slotSize / 2;
+          const offset = pointerAxis - slotMid;
+          const dx = isHoriz ? 0 : offset;
+          const dy = isHoriz ? offset : 0;
+          ghostEl.style.transform = `translate(${dx}px, ${dy}px)`;
+        }
       }
 
       gesture.updateDraft({
