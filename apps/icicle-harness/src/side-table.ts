@@ -38,9 +38,22 @@ export class SideTable extends HTMLElement {
   private _unsub: (() => void) | null = null;
   private _disposers: (() => void)[] = [];
   private _container: HTMLDivElement | null = null;
+  private _drillId: string | null = null;
+  private _drillUnsub: (() => void) | null = null;
+
+  /** Drill channel key — matches the icicle's drillKey to sync drill state. */
+  drillKey = "default";
 
   set kernel(k: Kernel) {
     this._kernel = k;
+    // Subscribe to drill changes on our channel.
+    this._drillUnsub?.();
+    this._drillUnsub = k.subscribeDrill((datasetId, drillKey, nodeId) => {
+      if (!this._config || this._config.datasetId !== datasetId) return;
+      if (drillKey !== this.drillKey) return;
+      this._drillId = nodeId;
+      this._render();
+    });
     this._rebuild();
   }
 
@@ -96,6 +109,7 @@ export class SideTable extends HTMLElement {
     this._disposers.forEach((d) => d());
     this._disposers = [];
     this._unsub?.();
+    this._drillUnsub?.();
     this._dataView?.dispose();
     this._gesture?.dispose();
   }
@@ -115,12 +129,18 @@ export class SideTable extends HTMLElement {
   }
 
   private _collectRows(root: ChartNode): Row[] {
+    // If drilled into a node, filter to that node's subtree.
+    let startNode: ChartNode = root;
+    if (this._drillId) {
+      const found = findNode(root, this._drillId);
+      if (found) startNode = found;
+    }
     const rows: Row[] = [];
     const walk = (node: ChartNode, depth: number) => {
       rows.push({ node, depth });
       for (const child of node.children) walk(child, depth + 1);
     };
-    walk(root, 0);
+    walk(startNode, 0);
     return rows;
   }
 

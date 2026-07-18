@@ -50,10 +50,15 @@ export type KernelListener = (datasetId: string) => void;
 /** Listener for draft events broadcast to all DataViews on the same dataset. */
 export type DraftBroadcastListener = (draft: DraftEvent, phase: "draft" | "commit" | "cancel") => void;
 
+/** Listener for drill-state changes on a dataset+drillKey channel. */
+export type DrillListener = (datasetId: string, drillKey: string, nodeId: string | null) => void;
+
 export class Kernel {
   private _datasets = new Map<string, Dataset>();
   private _listeners = new Set<KernelListener>();
   private _draftListeners = new Set<DraftBroadcastListener>();
+  private _drillState = new Map<string, string | null>(); // key: `${datasetId}:${drillKey}`
+  private _drillListeners = new Set<DrillListener>();
   readonly drafts = new Drafts();
 
   /** Register a dataset by id. Computes group sums from leaves. */
@@ -123,6 +128,28 @@ export class Kernel {
     this._draftListeners.add(fn);
     return () => {
       this._draftListeners.delete(fn);
+    };
+  }
+
+  /** Set the drill focus for a dataset+drillKey channel. Publishes to all
+   *  subscribers on that channel. `null` = drill out to root. */
+  setDrill(datasetId: string, drillKey: string, nodeId: string | null): void {
+    const key = `${datasetId}:${drillKey}`;
+    this._drillState.set(key, nodeId);
+    for (const fn of this._drillListeners) fn(datasetId, drillKey, nodeId);
+  }
+
+  /** Get the current drill focus for a dataset+drillKey channel. */
+  getDrill(datasetId: string, drillKey: string): string | null {
+    return this._drillState.get(`${datasetId}:${drillKey}`) ?? null;
+  }
+
+  /** Subscribe to drill-state changes. Listener fires for every channel;
+   *  filter by datasetId + drillKey in the callback. */
+  subscribeDrill(fn: DrillListener): () => void {
+    this._drillListeners.add(fn);
+    return () => {
+      this._drillListeners.delete(fn);
     };
   }
 

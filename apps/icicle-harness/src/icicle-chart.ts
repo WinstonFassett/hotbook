@@ -84,6 +84,9 @@ export class IcicleChart extends HTMLElement implements GestureContext {
   private _dragGroupSize = 0; // pixel size of the entire sibling group at gesture start
 
   set kernel(k: Kernel) { this._kernelCell.value = k; }
+  /** Drill channel key — components with the same datasetId + drillKey
+   *  share drill state via the Kernel. Default: "default". */
+  drillKey = "default";
   set config(c: ChartConfig) {
     const prev = this._configCell.value;
     const prevKey = prev ? configKey(prev) : "";
@@ -113,24 +116,31 @@ export class IcicleChart extends HTMLElement implements GestureContext {
 
   // D3-style drill: dblclick a node to drill in; dblclick the current
   // focus to drill out to its parent. The layout transform re-roots at
-  // the focus; CSS transitions animate the slide.
+  // the focus; CSS transitions animate the slide. Emits to the Kernel's
+  // drill channel so subscribers (side table, etc.) can sync.
   drill = (id: string | null) => {
+    let nextId: string | null;
     if (id === null) {
-      this._drillId.value = null;
-      return;
-    }
-    // Drilling to the current focus → drill out to parent.
-    if (this._drillId.value === id) {
+      nextId = null;
+    } else if (this._drillId.value === id) {
+      // Drilling to the current focus → drill out to parent.
       const root = this._treeRoot.value;
       if (root) {
         const node = findNode(root, id);
         const parentId = node?.parent?.id ?? null;
         // Drilling out to the tree root = no drill (show full tree).
-        this._drillId.value = parentId === root.id ? null : parentId;
+        nextId = parentId === root.id ? null : parentId;
+      } else {
+        nextId = null;
       }
-      return;
+    } else {
+      nextId = id;
     }
-    this._drillId.value = id;
+    this._drillId.value = nextId;
+    // Emit to the Kernel's drill channel for cross-component sync.
+    const k = this._kernelCell.value;
+    const cfg = this._configCell.value;
+    if (k && cfg) k.setDrill(cfg.datasetId, this.drillKey, nextId);
   };
 
   // GestureContext value accessors
