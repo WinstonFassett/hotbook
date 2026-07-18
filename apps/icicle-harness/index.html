@@ -133,6 +133,8 @@
       /* Grab cursor when reorder mode is active */
       v-icicle.reorder-active rect { cursor: grab !important; }
       v-icicle.reorder-active [data-reordering] rect { cursor: grabbing !important; }
+      /* Hide edge handles during reorder — they paint above tiles and break the metaphor */
+      v-icicle.reorder-active g[data-edge] { display: none; }
     </style>
   </head>
   <body>

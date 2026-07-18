@@ -466,6 +466,7 @@ export function makeHandle(
   });
 
   const handle = rect(hx, hy, hw, hh, { fill: "rgba(255,255,255,0.08)", stroke: "none" });
+  handle.el.setAttribute("data-edge", edge.id);
   handle.effect(() => {
     handle.el.style.cursor = isHoriz.value ? "row-resize" : "col-resize";
   });
