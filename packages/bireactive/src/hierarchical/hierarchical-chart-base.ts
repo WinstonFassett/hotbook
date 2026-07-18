@@ -99,9 +99,11 @@ export abstract class HierarchicalChartBase extends HTMLElement {
   protected _colorModeCell = cell<"flat" | "depth" | "mono" | undefined>(undefined);
 
   // --- Rendered window + layout (set by subclass _setupRendering, read by
-  //     base behavior composition for frozen-order capture) ---
-  protected _window?: Cell<unknown>;
-  protected _layout?: Cell<unknown>;
+  //     base behavior composition for frozen-order capture). Typed as
+  //     Cell<any> because Cell is invariant in its type parameter; subclasses
+  //     redeclare with `protected declare` + a specific type annotation. ---
+  protected _window?: Cell<any>;
+  protected _layout?: Cell<any>;
 
   // --- Shared infrastructure ---
   protected _gesture: Gesture | null = null;
