@@ -277,13 +277,19 @@ export function makeArc(
   // white/light-gray. The stroke IS the divider — no separate handle
   // rects needed for the clean rendering. Stroke width is driven by the
   // shared `motion.separation` cell so the tweaks pane retunes it live.
+  // Innermost arc (full circle): no stroke — it's a solid disc, not a
+  // slice, so a separator border is meaningless.
   const stroke = derive(() => {
+    const span = a1Effective.value - a0Effective.value;
+    if (span >= 2 * Math.PI - 0.01) return "none";
     if (!chart) return "#0b0d12";
     if (chart.focusCell.value === node.id) return "#fff";
     if (chart.hoverCell.value === node.id) return "#c8cdd6";
     return "#0b0d12";
   });
   const strokeWidth = derive(() => {
+    const span = a1Effective.value - a0Effective.value;
+    if (span >= 2 * Math.PI - 0.01) return 0;
     const sep = motion.separation.value;
     if (!chart) return sep;
     if (chart.focusCell.value === node.id || chart.hoverCell.value === node.id) return Math.max(2, sep * 2);
@@ -311,12 +317,16 @@ export function makeArc(
   // rotate(midAngle - 90) translate(midRadius, 0) rotate(flip)
   // with text-anchor: middle, dy: 0.35em.
   // flip = midAngleDeg < 180 ? 0 : 180 — right half upright, left half flipped.
+  // Innermost arc (full circle, span ≈ 2π): label renders at center, no rotation.
   const LABEL_MIN_SPAN = 0.08; // radians ~4.6°
   const LABEL_MIN_RADIAL = 18; // pixels
+  const FULL_CIRCLE_SPAN = 2 * Math.PI - 0.01; // tolerance for float comparison
   const labelText = derive(() => {
     const span = a1Effective.value - a0Effective.value;
     const radial = rOutEffective.value - rInEffective.value;
-    if (span < LABEL_MIN_SPAN || radial < LABEL_MIN_RADIAL) return "";
+    // Full-circle arc: always show label (it's the center disc).
+    const isFullCircle = span >= FULL_CIRCLE_SPAN;
+    if (!isFullCircle && (span < LABEL_MIN_SPAN || radial < LABEL_MIN_RADIAL)) return "";
     return node.label;
   });
   const lbl = label(
@@ -333,19 +343,23 @@ export function makeArc(
   labelWrap.setAttribute("data-label-wrap", "");
 
   const labelDispose = effect(() => {
+    const span = a1Effective.value - a0Effective.value;
+    const isFullCircle = span >= FULL_CIRCLE_SPAN;
+    const cx = center.x.value;
+    const cy = center.y.value;
+    if (isFullCircle) {
+      // Innermost disc: label at center, no rotation.
+      labelWrap.setAttribute("transform", `translate(${cx},${cy})`);
+      return;
+    }
     const midA = (a0Effective.value + a1Effective.value) / 2;
     const midR = (rInEffective.value + rOutEffective.value) / 2;
     const midDeg = (midA * 180) / Math.PI;
-    const cx = center.x.value;
-    const cy = center.y.value;
     // annularSector uses standard math angles (cos/sin, 0 = right, clockwise
     // in SVG). The label transform must match: rotate(midDeg) places the label
     // at the arc's mid-angle. No -90 offset (that's the d3 convention where
     // 0 = top, but our arcs use 0 = right).
     // Flip labels on the left half (90°–270°) so they're not upside down.
-    // Use the SVG transform attribute (not CSS style.transform) — CSS transforms
-    // on SVG <g> elements get normalized to matrix() by the browser and can
-    // lose the original transform string.
     const flip = midDeg > 90 && midDeg < 270 ? 180 : 0;
     labelWrap.setAttribute(
       "transform",

@@ -6,7 +6,7 @@
 // (wheelEdit, keyboardEdit, transitionOnUpdated, previewFullRender) are
 // composed identically to the icicle.
 
-import { circle, derive, effect, forEach, group, label, readNow, Anchor, type Cell } from "bireactive";
+import { circle, derive, effect, forEach, group, readNow, type Cell } from "bireactive";
 import type { ChartConfig, RadialRect, RenderNode } from "./types";
 import { Kernel } from "./kernel";
 import { Gesture, type Behavior } from "./gesture";
@@ -15,7 +15,6 @@ import {
   type Edge,
   findNode,
   buildEdges,
-  labelColorFor,
 } from "./tree";
 import {
   computeRadialLayout,
@@ -116,31 +115,6 @@ export class SunburstChart extends HierarchicalChartBase implements EdgeDragHand
     );
     bgDisc.el.style.pointerEvents = "none";
     tilesLayer.add(bgDisc);
-
-    // Center label: shows the focus node's name (or root when not drilled),
-    // centered in the disc. Reads the same id logic as bgDisc so it always
-    // matches the center band.
-    const centerLabel = label(
-      { x: derive(() => center.x.value), y: derive(() => center.y.value) },
-      derive(() => {
-        const id = this._drillId.value ?? allNodes.value[0]?.id;
-        if (!id) return "";
-        const node = allNodes.value.find((n) => n.id === id);
-        return node?.label ?? "";
-      }),
-      {
-        size: 11,
-        align: Anchor.Center,
-        fill: derive(() => {
-          const id = this._drillId.value ?? allNodes.value[0]?.id;
-          const node = allNodes.value.find((n) => n.id === id);
-          return labelColorFor(node?.color ?? "#1a1d24");
-        }),
-      },
-    );
-    centerLabel.el.style.pointerEvents = "none";
-    centerLabel.el.style.textAnchor = "middle";
-    tilesLayer.add(centerLabel);
 
     // Per-arc cells map — shared between makeArc (writer) and
     // makeAngularHandle (reader) so handles stay in sync with arcs.
