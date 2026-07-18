@@ -1,7 +1,7 @@
 // treemap-geometry.ts — zoomable treemap layout and tile rendering.
 // Uses d3-hierarchy's treemap/treemapSquarify for the squarify algorithm.
-// Rendering model: one level at a time (focus.children tile the canvas).
-// Drill = zoom (scale interpolation), not nested-box relayout.
+// Rendering model: full-tree layout + 2D affine drill transform (mirrors
+// icicle's pattern). Drill = zoom (2D scale interpolation), not relayout.
 // Spec: wiki/specs/treemap.md
 
 import {
@@ -25,7 +25,7 @@ import {
 } from "bireactive";
 import type { LayoutRect, RenderNode } from "./types";
 import type { ChartNode } from "./tree";
-import { findNode, sortedChildren, resolveFill } from "./tree";
+import { sortedChildren, resolveFill } from "./tree";
 import { motion } from "../lib/runtime-config";
 
 const PAD_INNER = 2;
@@ -41,13 +41,21 @@ function subtreeValue(n: ChartNode): number {
 }
 
 /**
- * Compute squarified treemap layout for ONE level: the immediate children
- * of the focus node. The focus node itself is NOT in the returned map —
- * it is the invisible container. Only focus.children are laid out.
+ * Compute squarified treemap layout for the FULL tree, then (when drilling)
+ * apply a D3-style 2D affine transform so the focus node fills the canvas.
+ *
+ * Mirrors icicle's `computeLayout` (hierarchy.ts) affine pattern, extended
+ * to 2D: d3.treemap is run on the FULL root (not the drill target), so
+ * every node — including the drill target, its siblings, and off-subtree
+ * nodes — gets a layout entry. When `drillId` is set, the focus rect is
+ * scaled up to fill [0,W]×[0,H] and every other rect is transformed by the
+ * same 2D affine, sliding siblings off-canvas via CSS transitions.
  *
  * Uses d3.treemapSquarify — we do not originate the squarify algorithm.
  *
- * Returns Map<nodeId, LayoutRect> for the focus node's children only.
+ * Returns Map<nodeId, LayoutRect> for ALL nodes (including root). The
+ * chart's `present` filter (`_deriveWindow` / `buildAllDescendants`)
+ * decides which nodes render; geometry just positions them.
  */
 export function computeTreemapLayout(
   root: ChartNode,
@@ -59,23 +67,14 @@ export function computeTreemapLayout(
 ): Map<string, LayoutRect> {
   const map = new Map<string, LayoutRect>();
 
-  // Determine effective root: drill target if drilling, else tree root.
-  // The effective root is the CONTAINER — it is NOT rendered as a tile.
-  // Its descendants are laid out nested inside it.
-  let effectiveRoot = root;
-  if (drillId) {
-    const found = findNode(root, drillId);
-    if (found) effectiveRoot = found;
-  }
-
   // No children → empty layout.
-  if (effectiveRoot.children.length === 0) return map;
+  if (root.children.length === 0) return map;
 
-  // Build d3 hierarchy from the effective root, descending through ALL
-  // levels. d3.treemap with paddingTop creates nested group headers;
-  // paddingInner creates gaps between siblings. This is the classic
-  // nested treemap — groups contain their children, recursively.
-  const h = hierarchy(effectiveRoot, (d: ChartNode) => {
+  // Build d3 hierarchy from the FULL root, descending through ALL levels.
+  // d3.treemap with paddingTop creates nested group headers; paddingInner
+  // creates gaps between siblings. This is the classic nested treemap —
+  // groups contain their children, recursively.
+  const h = hierarchy(root, (d: ChartNode) => {
     if (d.children.length === 0) return null;
     return sortedChildren(d, config, frozenOrder ?? undefined);
   }).sum((d) => {
@@ -93,24 +92,81 @@ export function computeTreemapLayout(
     .paddingTop(PAD_TOP)
     .round(true)(h);
 
-  // Extract rects for ALL nodes EXCEPT the effective root (which is the
-  // invisible container). The root's children and all their descendants
-  // are rendered as nested tiles.
+  // Extract rects for ALL nodes (including root). The chart's `present`
+  // filter gates visibility; geometry positions everything so off-subtree
+  // nodes can slide off-canvas via the affine transform + CSS transitions.
   const rootNode = h as HierarchyRectangularNode<ChartNode>;
   const walk = (node: HierarchyRectangularNode<ChartNode>) => {
-    if (node.data.id !== effectiveRoot.id) {
-      map.set(node.data.id, {
-        x: node.x0,
-        y: node.y0,
-        width: node.x1 - node.x0,
-        height: node.y1 - node.y0,
-      });
-    }
+    map.set(node.data.id, {
+      x: node.x0,
+      y: node.y0,
+      width: node.x1 - node.x0,
+      height: node.y1 - node.y0,
+    });
     for (const child of node.children ?? []) {
       walk(child as HierarchyRectangularNode<ChartNode>);
     }
   };
   walk(rootNode);
+
+  // D3-style drill transform: 2D affine so the focus node's rect fills the
+  // canvas. Siblings and off-subtree nodes scale up + translate off-screen
+  // (preserving relative layout), sliding there via CSS transitions. This
+  // mirrors icicle's 1D value-axis affine, extended to both x and y.
+  if (drillId) {
+    const focusRect = map.get(drillId);
+    if (focusRect && focusRect.width > 0 && focusRect.height > 0) {
+      const scaleX = W / focusRect.width;
+      const scaleY = H / focusRect.height;
+      const fx = focusRect.x;
+      const fy = focusRect.y;
+      for (const [id, r] of map) {
+        map.set(id, {
+          x: (r.x - fx) * scaleX,
+          y: (r.y - fy) * scaleY,
+          width: r.width * scaleX,
+          height: r.height * scaleY,
+        });
+      }
+
+      // Re-apply fixed-pixel paddingTop. d3's paddingTop (PAD_TOP=16) was
+      // applied at every level BEFORE the affine, so it got scaled by scaleY.
+      // For small focus tiles (large scaleY), the header gap becomes huge
+      // (e.g. 16 * 5 = 80px). Collapse it back to 16px screen-space by
+      // shifting each group's children up by the reclaimed space and growing
+      // their heights to fill it. Only the focus subtree is visible, so only
+      // fix nodes within it.
+      const reclaim = PAD_TOP * (scaleY - 1);
+      if (reclaim > 0) {
+        const findFocus = (node: HierarchyRectangularNode<ChartNode>): HierarchyRectangularNode<ChartNode> | null => {
+          if (node.data.id === drillId) return node;
+          for (const child of node.children ?? []) {
+            const found = findFocus(child as HierarchyRectangularNode<ChartNode>);
+            if (found) return found;
+          }
+          return null;
+        };
+        const fixPadding = (node: HierarchyRectangularNode<ChartNode>) => {
+          const children = node.children;
+          if (!children || children.length === 0) return;
+          for (const child of children) {
+            const cr = map.get(child.data.id);
+            if (cr) {
+              map.set(child.data.id, {
+                x: cr.x,
+                y: cr.y - reclaim,
+                width: cr.width,
+                height: cr.height + reclaim,
+              });
+            }
+            fixPadding(child as HierarchyRectangularNode<ChartNode>);
+          }
+        };
+        const focusD3Node = findFocus(rootNode);
+        if (focusD3Node) fixPadding(focusD3Node);
+      }
+    }
+  }
 
   return map;
 }

@@ -588,6 +588,10 @@ if (app) {
       wireReorder(el, treetable, dataModel);
       // Wire reactive sort (effective = per-chart override ?? global default).
       wireSort(el, treetable, dataModel, kind);
+      // Enable breadcrumb on all hierarchical charts (the base class wires it
+      // but the demo config must opt in via showBreadcrumb). Without this,
+      // drilling into pack/treemap/icicle/sunburst leaves the user stuck.
+      if ('showBreadcrumb' in el) (el as any).showBreadcrumb = true;
     }
   }
 }
