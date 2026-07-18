@@ -285,7 +285,11 @@ export function makeArc(
   const FULL_CIRCLE_SPAN = TWO_PI_EPS - 0.01;
   const isInnermost = derive(() => {
     const span = a1Effective.value - a0Effective.value;
-    return span >= FULL_CIRCLE_SPAN;
+    if (span < FULL_CIRCLE_SPAN) return false;
+    // When showRoot=false, the focus node gets rOut=0 (invisible) but still
+    // has 2π span. Don't treat it as innermost — its children are the first
+    // visible ring.
+    return rOutEffective.value > 0;
   });
 
   // Production sunburst look (matches main): every arc gets a thin
