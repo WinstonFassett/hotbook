@@ -55,6 +55,10 @@ export interface GestureStore {
 
 export type Behavior = (gesture: Gesture) => () => void;
 
+/** A behavior that does nothing and disposes cleanly. Useful as a placeholder
+ *  for drag-behavior slots a chart never selects (e.g. pack has no reorder). */
+export const noopBehavior: Behavior = () => () => {};
+
 export class Gesture {
   readonly editor: Editor;
   readonly store: GestureStore;

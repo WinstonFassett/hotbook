@@ -92,7 +92,9 @@ export class SunburstChart extends HierarchicalChartBase implements GestureConte
     // Arcs: forEach over ALL descendants. Keyed by id → stable DOM.
     // makeArc creates per-arc num() cells, effect writes layout targets,
     // annularSector reads from cells (spec §5).
-    const tilesResult = forEach(tilesLayer, renderedNodes as Cell<RenderNode[]>, (node) =>
+    // `withExitDelay` returns `Read<readonly RenderNode[]>`, which satisfies
+    // forEach's `Val<readonly T[]>` source — no cast needed.
+    const tilesResult = forEach(tilesLayer, renderedNodes, (node) =>
       makeArc(node, this._layout!, center, arcCellsMap, this, derive(() => membership.value.has(node.id)), this._defs),
       { key: (node) => node.id },
     );
