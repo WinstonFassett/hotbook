@@ -12,7 +12,7 @@ import { computeTreemapLayout, makeTreemapTile } from "./treemap-geometry";
 import type { ChartAccessors } from "./gestures";
 import { tileBodyDrag } from "./behaviors/tile-body-drag";
 import { tileBodyReorder } from "./behaviors/tile-body-reorder";
-import { membershipCell } from "./behaviors/mark-lifecycle";
+import { membershipCell, withExitDelay } from "./behaviors/mark-lifecycle";
 import { HierarchicalChartBase } from "./hierarchical-chart-base";
 import { motion } from "../lib/runtime-config";
 import { findNode, sortedChildren, type ChartNode } from "./tree";
@@ -86,9 +86,12 @@ export class TreemapChart extends HierarchicalChartBase implements ChartAccessor
     this._rootShape!.add(tilesLayer);
 
     // Tiles: forEach over ALL descendants. Keyed by id → stable DOM.
+    // withExitDelay keeps exiting tiles mounted long enough for the exit
+    // fade to complete (level remove / depth config change).
+    const renderedNodes = withExitDelay(allNodes, { key: (n) => n.id });
     const tilesResult = forEach(
       tilesLayer,
-      allNodes,
+      renderedNodes,
       (node) =>
         makeTreemapTile(
           node,

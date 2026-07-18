@@ -241,6 +241,16 @@ export function makeTreemapTile(
   // Tile rect transitions are handled by the transitionOnUpdated behavior's
   // injected <style> (x/y/width/height on rect elements). No inline
   // transition here — the behavior's CSS is the single source of truth.
+  // Enter fade: new tiles start at opacity 0 and fade in. Without this,
+  // adding levels (depth config change) blinks tiles in at full opacity.
+  // The exit fade is handled by the visibility gate below (delayed hide).
+  tile.el.style.opacity = "0";
+  tile.el.style.transition = `opacity ${TRANSITION_DURATION.enter}ms ease-out`;
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      tile.el.style.opacity = "";
+    });
+  });
 
   // Group tiles: cursor pointer + click to drill in.
   // Leaf tiles: cursor grab (drag to resize) — set on the tile element,

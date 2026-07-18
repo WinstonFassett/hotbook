@@ -500,7 +500,7 @@ export abstract class HierarchicalChartBase extends HTMLElement {
       return seg;
     };
 
-    const buildRootSegment = (node: ChartNode): HTMLElement => {
+    const buildRootSegment = (node: ChartNode, isLast: boolean): HTMLElement => {
       const seg = document.createElement("span");
       seg.className = "drill-segment";
       seg.dataset.crumbId = node.id;
@@ -509,9 +509,12 @@ export abstract class HierarchicalChartBase extends HTMLElement {
 
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "drill-crumb";
+      btn.className = isLast ? "drill-crumb drill-crumb--current" : "drill-crumb";
       btn.textContent = node.label;
-      btn.addEventListener("click", () => this.drill(null));
+      // Only clickable when not at root (drilled in → click to drill out).
+      if (!isLast) {
+        btn.addEventListener("click", () => this.drill(null));
+      }
       seg.appendChild(btn);
       return seg;
     };
@@ -524,13 +527,20 @@ export abstract class HierarchicalChartBase extends HTMLElement {
       const showBc = this._configCell.value?.showBreadcrumb === true;
 
       let path: ChartNode[] = [];
-      if (showBc && drillId && root) {
-        let cur: ChartNode | null = findNode(root, drillId);
-        while (cur) {
-          path.unshift(cur);
-          cur = cur.parent;
+      if (showBc && root) {
+        // Always include the root as the first crumb (non-clickable when at
+        // root, clickable to drill out when drilled in). Then append the
+        // ancestor chain from root down to the drill target.
+        path.unshift(root);
+        if (drillId) {
+          let cur: ChartNode | null = findNode(root, drillId);
+          const chain: ChartNode[] = [];
+          while (cur && cur.id !== root.id) {
+            chain.unshift(cur);
+            cur = cur.parent;
+          }
+          path.push(...chain);
         }
-        if (path.length <= 1) path = [];
       }
 
       const newPathIds = new Set(path.map((n) => n.id));
@@ -543,10 +553,8 @@ export abstract class HierarchicalChartBase extends HTMLElement {
       }
 
       if (path.length === 0) {
-        // Keep the bar mounted but empty (opacity 0) so the chart area doesn't
-        // jump when drilling in. The bar's space is reserved via min-height on
-        // the chrome layer (set when showBreadcrumb is enabled). Only fade out
-        // the crumb segments, not the bar itself.
+        // Breadcrumb disabled — keep bar mounted but empty so chart area
+        // doesn't jump. Only fade out crumb segments, not the bar.
         if (this._breadcrumbBar) {
           this._breadcrumbBar.style.opacity = "0";
         }
@@ -572,7 +580,7 @@ export abstract class HierarchicalChartBase extends HTMLElement {
         const isLast = i === path.length - 1;
         let seg = crumbEls.get(node.id);
         if (!seg) {
-          seg = i === 0 ? buildRootSegment(node) : buildSegment(node, isLast);
+          seg = i === 0 ? buildRootSegment(node, isLast) : buildSegment(node, isLast);
           crumbEls.set(node.id, seg);
           let insertBefore: Node | null = null;
           for (let j = i + 1; j < path.length; j++) {
