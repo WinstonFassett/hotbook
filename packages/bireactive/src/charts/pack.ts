@@ -24,15 +24,13 @@ import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { mountDrillBreadcrumb } from "../lib/drill-breadcrumb";
 import { GESTURE_SUPPRESSION_CSS, GESTURE_ACTIVE_CLASS, ENTER_MS } from "../lib/transitions";
+import { motion } from "../lib/runtime-config";
 import { withExitDelay, membershipCell } from "../lib/mark-lifecycle";
 import { numberDrag } from "../lib/number-drag";
 
 const W = 480;
 const H = 480;
 const PAD = 2;
-const DRILL_DURATION = 800; // ms — leave-timer / CSS settle window
-const DRILL_SEC = DRILL_DURATION / 1000; // s — bireactive anim clock runs in seconds
-const SORT_SEC = 0.35; // s — sort/reorder tween duration
 
 export class MdPack extends Diagram {
   static styles = `:host { overflow: hidden; }text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}[data-focusable]:focus { outline: 2px solid #4a9eff; outline-offset: 2px; } [data-focusable]:focus:not(:focus-visible) { outline: none; }`
@@ -166,10 +164,10 @@ export class MdPack extends Diagram {
         // Resize-only (e.g. breadcrumb appeared): re-tween from current to new target.
         drillCancel?.();
         drillCancel = this.anim.start(
-          tween(vx0, tx0, DRILL_SEC, easeOut),
-          tween(vy0, ty0, DRILL_SEC, easeOut),
-          tween(vx1, tx1, DRILL_SEC, easeOut),
-          tween(vy1, ty1, DRILL_SEC, easeOut),
+          tween(vx0, tx0, (motion.drillMs.value / 1000), easeOut),
+          tween(vy0, ty0, (motion.drillMs.value / 1000), easeOut),
+          tween(vx1, tx1, (motion.drillMs.value / 1000), easeOut),
+          tween(vy1, ty1, (motion.drillMs.value / 1000), easeOut),
         );
         return;
       }
@@ -179,17 +177,17 @@ export class MdPack extends Diagram {
       // Drive the viewport tween on this Diagram's anim clock — `tween()` alone
       // only builds a generator; it must be started to advance per frame.
       drillCancel = this.anim.start(
-        tween(vx0, tx0, DRILL_SEC, easeOut),
-        tween(vy0, ty0, DRILL_SEC, easeOut),
-        tween(vx1, tx1, DRILL_SEC, easeOut),
-        tween(vy1, ty1, DRILL_SEC, easeOut),
+        tween(vx0, tx0, (motion.drillMs.value / 1000), easeOut),
+        tween(vy0, ty0, (motion.drillMs.value / 1000), easeOut),
+        tween(vx1, tx1, (motion.drillMs.value / 1000), easeOut),
+        tween(vy1, ty1, (motion.drillMs.value / 1000), easeOut),
       );
       if (drillClassTimer) { clearTimeout(drillClassTimer); drillClassTimer = null; }
       this.classList.add(GESTURE_ACTIVE_CLASS);
       drillClassTimer = setTimeout(() => {
         drillClassTimer = null;
         this.classList.remove(GESTURE_ACTIVE_CLASS);
-      }, DRILL_DURATION + 60);
+      }, motion.drillMs.value + 60);
     });
 
     // Window: when drilled (fd > 0) include focus node as context circle + descendants.
@@ -257,9 +255,9 @@ export class MdPack extends Diagram {
         if ((reordered || measureSwapped) && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
           lcancel?.();
           lcancel = this.anim.start(
-            tween(lx, t.x, SORT_SEC, easeOut),
-            tween(ly, t.y, SORT_SEC, easeOut),
-            tween(lr, t.r, SORT_SEC, easeOut),
+            tween(lx, t.x, motion.sortSec.value, easeOut),
+            tween(ly, t.y, motion.sortSec.value, easeOut),
+            tween(lr, t.r, motion.sortSec.value, easeOut),
           );
         } else {
           lcancel?.(); lcancel = null;

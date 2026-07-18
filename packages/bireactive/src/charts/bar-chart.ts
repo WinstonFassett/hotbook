@@ -17,6 +17,7 @@ import {
   REORDER_ELEVATION_CSS,
   hoverTransition,
 } from "../lib/transitions";
+import { motion } from "../lib/runtime-config";
 import { lightenHex } from "../lib/color-utils";
 import { attachReorderGesture } from "../lib/reorder-gesture";
 import { PALETTE, type ColorStrategy, getColorByStrategy } from "@hotbook/core";
@@ -24,7 +25,6 @@ import { PALETTE, type ColorStrategy, getColorByStrategy } from "@hotbook/core";
 const W = 720;
 const H = 360;
 const SINGLE_COLOR = "#7aaae8";
-const SORT_SEC = 0.35; // s — orientation/measure swap tween duration
 
 interface Bar { id?: string; label: string; value: number; }
 
@@ -516,7 +516,7 @@ export class MdBarChartLC extends Diagram {
       // snapped instantly otherwise. Returns the two tweens to run, if any.
       const applyPair = (a: ReturnType<typeof num>, b: ReturnType<typeof num>, at: number, bt: number, animate: boolean) => {
         if (!animate) { a.value = at; b.value = bt; return []; }
-        return [tween(a, at, SORT_SEC, easeInOut), tween(b, bt, SORT_SEC, easeInOut)];
+        return [tween(a, at, motion.sortSec.value, easeInOut), tween(b, bt, motion.sortSec.value, easeInOut)];
       };
       biEffect(() => {
         const xt = barXTarget.value, yt = barYTarget.value, wt = barWTarget.value, ht = barHTarget.value;
@@ -723,7 +723,6 @@ export class MdBarChartLC extends Diagram {
     // Bar-body drag moves along the band axis; siblings tween to their new
     // slots; commit fires onReorder. Value-drag on the bar end still wins in
     // its narrow hit tolerance (filter yields to the resize gesture there).
-    const REORDER_SEC = 0.25;
     const reorderDetachers: Array<() => void> = [];
     const detachAllReorder = () => { while (reorderDetachers.length) reorderDetachers.pop()!(); };
     biEffect(() => {
@@ -810,7 +809,7 @@ export class MdBarChartLC extends Diagram {
               siblingTweenCancels.get(id)?.();
               const target = bs(String(i)) ?? 0;
               const bandCell = isV ? sc.barX : sc.barY;
-              const cancel = this.anim.start(tween(bandCell, target, REORDER_SEC, easeOut) as any);
+              const cancel = this.anim.start(tween(bandCell, target, motion.sortSec.value, easeOut) as any);
               if (cancel) siblingTweenCancels.set(id, cancel);
             }
 
@@ -848,7 +847,7 @@ export class MdBarChartLC extends Diagram {
               if (!sc) return;
               const target = bs(String(i)) ?? 0;
               const bandCell = isV ? sc.barX : sc.barY;
-              this.anim.start(tween(bandCell, target, REORDER_SEC, easeOut) as any);
+              this.anim.start(tween(bandCell, target, motion.sortSec.value, easeOut) as any);
               // Return dragged bar's value-axis to its live target too.
               if (id === datumId) {
                 const valTarget = isV ? (valueScale.peek() as any)(d.value) : (valueScale.peek() as any)(d.value);

@@ -24,10 +24,10 @@ import { attachChartGestures, type SelectionState } from "../lib/gestures";
 import { useHostSize } from "../lib/host-size";
 import { FILL_STYLE } from "../lib/host-size";
 import { GESTURE_ACTIVE_CLASS } from "../lib/transitions";
+import { motion } from "../lib/runtime-config";
 
 const W = 560;
 const H = 400;
-const SORT_SEC = 0.35;
 
 // Rounded-rect node style: rectangle encloses the label (big hit target).
 const NODE_H = 24;
@@ -305,8 +305,8 @@ export class MdTreeChart extends Diagram {
         if (structural && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
           lcancel?.();
           lcancel = this.anim.start(
-            tween(lx, t.x, SORT_SEC, easeOut) as any,
-            tween(ly, t.y, SORT_SEC, easeOut) as any,
+            tween(lx, t.x, motion.sortSec.value, easeOut) as any,
+            tween(ly, t.y, motion.sortSec.value, easeOut) as any,
           );
         } else {
           lcancel?.(); lcancel = null;
@@ -341,7 +341,7 @@ export class MdTreeChart extends Diagram {
         const target = opTarget.value;
         if (!opInited) { opInited = true; op.value = target; return; }
         opCancel?.();
-        opCancel = this.anim.start(tween(op, target, SORT_SEC, easeOut) as any);
+        opCancel = this.anim.start(tween(op, target, motion.sortSec.value, easeOut) as any);
       });
     }
 

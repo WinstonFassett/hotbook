@@ -19,6 +19,7 @@ import {
   MdBudgetTree,
   MdTreetableLC,
   MdGanttChartLC,
+  mountMotionTweaks,
 } from "@hotbook/bireactive";
 import { MdNestedLayered } from "@hotbook/layout";
 import { dataModelFor, type DemoDataModel } from "./data-models";
@@ -540,6 +541,9 @@ window.addEventListener('hashchange', () => {
   updateSortLabel();
   for (const { el, treetable, model, kind } of mounted) applySort(el, treetable, model, kind);
 });
+
+// WIN-352: live design-tweaks pane. Ephemeral, unconditional in dev + preview.
+mountMotionTweaks({ position: { top: 8, right: 8 } });
 
 function dedentFn(s: string): string {
   const lines = s.split("\n");

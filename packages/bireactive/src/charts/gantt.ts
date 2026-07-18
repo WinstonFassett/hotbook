@@ -48,6 +48,7 @@ import {
   REORDER_ELEVATION_CSS,
   hoverTransition,
 } from "../lib/transitions";
+import { motion } from "../lib/runtime-config";
 import { lightenHex } from "../lib/color-utils";
 import { PALETTE } from "@hotbook/core";
 import { attachReorderGesture } from "../lib/reorder-gesture";
@@ -61,7 +62,6 @@ const DAY_MS = 86400 * 1000;
 const ROW_H = 32;      // Row height
 const ROW_GAP = 8;     // Gap between rows
 const ROW_STEP = ROW_H + ROW_GAP; // Total step per row
-const SORT_SEC = 0.35; // Sort/reorder tween duration in seconds
 
 export interface GanttDependency {
   from: string;  // predecessor task ID
@@ -250,7 +250,7 @@ export class MdGanttChartLC extends Diagram {
           if (!entry) continue;
           const targetY = getTargetY(task.id);
           entry.cancel?.();
-          entry.cancel = this.anim.start(tween(entry.yCell, targetY, SORT_SEC, easeOut) as any);
+          entry.cancel = this.anim.start(tween(entry.yCell, targetY, motion.sortSec.value, easeOut) as any);
         }
       } else if (!sortChanged && !reorderCommitted) {
         // Data or size changed but sort/reorder didn't: snap to new positions
