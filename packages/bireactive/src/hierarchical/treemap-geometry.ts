@@ -167,14 +167,14 @@ export function makeTreemapTile(
   tile.el.setAttribute("data-id", node.id);
 
   // Group tiles: cursor pointer + click to drill in.
-  // Leaf tiles: cursor ew-resize (drag to resize) — set on the tile element,
+  // Leaf tiles: cursor grab (drag to resize) — set on the tile element,
   // NOT on the host, so dead areas (gaps, SVG background) keep default cursor.
   // This matches icicle's pattern: cursor on tiles/handles, not host.
   if (chart) {
     if (!node.isLeaf) {
       tile.el.style.cursor = "pointer";
     } else {
-      tile.el.style.cursor = "ew-resize";
+      tile.el.style.cursor = "grab";
     }
     tile.el.addEventListener("pointerenter", () => chart.setHover(node.id));
     tile.el.addEventListener("pointerleave", () => chart.setHover(null));

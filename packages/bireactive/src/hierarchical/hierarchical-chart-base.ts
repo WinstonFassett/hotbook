@@ -75,6 +75,7 @@ ${tag}.reorder-active rect, ${tag}.reorder-active path { cursor: grab !important
 ${tag}.reorder-active [data-reordering] rect,
 ${tag}.reorder-active [data-reordering] path { cursor: grabbing !important; }
 ${tag}.reorder-active g[data-edge] { display: none; }
+${tag}.gesture-active [data-id] { cursor: grabbing !important; }
 `;
     document.head.appendChild(style);
   }

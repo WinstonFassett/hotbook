@@ -265,7 +265,7 @@ export function makeTile(
   });
 
   const tile = rect(rx, ry, rw, rh, { fill: node.color, stroke, strokeWidth });
-  tile.el.style.cursor = "pointer";
+  tile.el.style.cursor = "grab";
   tile.el.setAttribute("data-id", node.id);
 
   // Wire focus/selection and hover if chart is provided.

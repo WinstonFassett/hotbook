@@ -29,14 +29,19 @@ export interface GestureContext<L = LayoutRect> {
   endGesture(edge: Edge): void;
 }
 
-export function attachEdgeHandleDrag(handle: any, ctx: GestureContext<any>): () => void {
+export function attachEdgeHandleDrag(handle: any, ctx: GestureContext<any>, activeCursor?: string): () => void {
   const edge: Edge = handle._edge;
   if (!edge) return () => {};
 
   return draggable(handle, (local) => {
     ctx.updateGesture(edge, { x: local.x, y: local.y });
   }, (active) => {
-    if (active) ctx.startGesture(edge);
-    else ctx.endGesture(edge);
+    if (active) {
+      ctx.startGesture(edge);
+      if (activeCursor) handle.el.style.cursor = activeCursor;
+    } else {
+      ctx.endGesture(edge);
+      if (activeCursor) handle.el.style.cursor = "";
+    }
   });
 }

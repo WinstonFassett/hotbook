@@ -291,7 +291,7 @@ export function makeArc(
     stroke,
     strokeWidth,
   });
-  arc.el.style.cursor = "pointer";
+  arc.el.style.cursor = "grab";
   arc.el.setAttribute("data-id", node.id);
 
   if (chart) {
@@ -398,7 +398,7 @@ export function makeAngularHandle(
   const wrapG = document.createElementNS("http://www.w3.org/2000/svg", "g");
   wrapG.appendChild(handle.el);
   wrapG.setAttribute("data-edge", edge.id);
-  wrapG.style.cursor = "ew-resize";
+  wrapG.style.cursor = "grab";
 
   const transformDispose = effect(() => {
     const ang = boundaryAngle.value;
