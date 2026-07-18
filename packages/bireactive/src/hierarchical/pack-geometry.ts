@@ -27,8 +27,13 @@ import {
 import type { ChartConfig, PackRect, RenderNode } from "./types";
 import type { ChartNode } from "./tree";
 import { sortedChildren, resolveFill, labelColorFor } from "./tree";
+import { motion } from "../lib/runtime-config";
 
-const PAD = 2;
+/** Pack padding — driven by the shared `motion.separation` cell so the
+ *  tweaks pane retunes it live. Sampled at layout time. */
+function pad(): number {
+  return Math.max(0, motion.separation.value * 2);
+}
 
 /** Compute circle-packing layout for the FULL tree, then (when drilling)
  *  apply a 2D affine transform so the focus circle fills the canvas.
@@ -67,7 +72,7 @@ export function computePackLayout(
   const size = Math.min(W, H);
   d3pack<ChartNode>()
     .size([size, size])
-    .padding(PAD)(h);
+    .padding(pad())(h);
 
   // Extract circles for ALL nodes (including root). Offset to center.
   const offsetX = (W - size) / 2;
@@ -136,9 +141,11 @@ export function makeCircle(
     : chart.hoverCell.value === node.id ? "#c8cdd6"
     : node.depth === 0 ? "#444" : "#0b0d12",
   );
-  const strokeWidth = derive(() =>
-    (chart.focusCell.value === node.id || chart.hoverCell.value === node.id) ? 2 : 1,
-  );
+  const strokeWidth = derive(() => {
+    const sep = motion.separation.value;
+    return (chart.focusCell.value === node.id || chart.hoverCell.value === node.id)
+      ? Math.max(2, sep * 2) : sep;
+  });
 
   const disc = circle(Vec.derive(() => ({ x: cx.value, y: cy.value })), r, {
     fill,

@@ -32,6 +32,7 @@ import {
 import type { ChartConfig, RadialRect, RenderNode } from "./types";
 import type { Gesture } from "./gesture";
 import { TRANSITION_DURATION } from "../lib/transitions";
+import { motion } from "../lib/runtime-config";
 import {
   type ChartNode,
   type Edge,
@@ -274,7 +275,8 @@ export function makeArc(
   // Production sunburst look (matches main): every arc gets a thin
   // near-black stroke as the separator. Focus/hover bumps to 2px with
   // white/light-gray. The stroke IS the divider — no separate handle
-  // rects needed for the clean rendering.
+  // rects needed for the clean rendering. Stroke width is driven by the
+  // shared `motion.separation` cell so the tweaks pane retunes it live.
   const stroke = derive(() => {
     if (!chart) return "#0b0d12";
     if (chart.focusCell.value === node.id) return "#fff";
@@ -282,9 +284,10 @@ export function makeArc(
     return "#0b0d12";
   });
   const strokeWidth = derive(() => {
-    if (!chart) return 1;
-    if (chart.focusCell.value === node.id || chart.hoverCell.value === node.id) return 2;
-    return 1;
+    const sep = motion.separation.value;
+    if (!chart) return sep;
+    if (chart.focusCell.value === node.id || chart.hoverCell.value === node.id) return Math.max(2, sep * 2);
+    return sep;
   });
 
   const arc = annularSector(center, rOutEffective, rInEffective, a0Effective, a1Effective, {

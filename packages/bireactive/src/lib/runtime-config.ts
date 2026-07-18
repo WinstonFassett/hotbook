@@ -19,6 +19,10 @@ export interface MotionCells {
   sortSec: Writable<Cell<number>>;
   /** Drill-in/out leave-timer for hierarchical charts. */
   drillMs: Writable<Cell<number>>;
+  /** Visual separation between hierarchical marks (px). Drives sunburst
+   *  arc stroke width, treemap paddingInner/Outer, pack border thickness,
+   *  icicle gaps. One value, all hierarchical charts. */
+  separation: Writable<Cell<number>>;
 }
 
 export const MOTION_DEFAULTS = {
@@ -27,6 +31,7 @@ export const MOTION_DEFAULTS = {
   exitMs: 400,
   sortSec: 0.35,
   drillMs: 800,
+  separation: 1,
 } as const;
 
 export const motion: MotionCells = {
@@ -35,6 +40,7 @@ export const motion: MotionCells = {
   exitMs: cell<number>(MOTION_DEFAULTS.exitMs),
   sortSec: cell<number>(MOTION_DEFAULTS.sortSec),
   drillMs: cell<number>(MOTION_DEFAULTS.drillMs),
+  separation: cell<number>(MOTION_DEFAULTS.separation),
 };
 
 export function resetMotionToDefaults(): void {
@@ -43,4 +49,5 @@ export function resetMotionToDefaults(): void {
   motion.exitMs.value = MOTION_DEFAULTS.exitMs;
   motion.sortSec.value = MOTION_DEFAULTS.sortSec;
   motion.drillMs.value = MOTION_DEFAULTS.drillMs;
+  motion.separation.value = MOTION_DEFAULTS.separation;
 }

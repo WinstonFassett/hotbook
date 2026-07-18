@@ -47,6 +47,7 @@ export function mountMotionTweaks(opts: MountMotionTweaksOptions = {}): MountedM
     exitMs:  motion.exitMs.value,
     sortSec: motion.sortSec.value,
     drillMs: motion.drillMs.value,
+    separation: motion.separation.value,
     reset: () => resetMotionToDefaults(),
   };
 
@@ -71,6 +72,8 @@ export function mountMotionTweaks(opts: MountMotionTweaksOptions = {}): MountedM
     .onChange((v: number) => { motion.sortSec.value = v; });
   gui.add(mirror, "drillMs", 50, 3000, 50).name("drill (ms)")
     .onChange((v: number) => { motion.drillMs.value = v; });
+  gui.add(mirror, "separation", 0, 6, 0.5).name("separation (px)")
+    .onChange((v: number) => { motion.separation.value = v; });
   gui.add(mirror, "reset").name(`reset to defaults`);
 
   const syncEffects = [
@@ -79,6 +82,7 @@ export function mountMotionTweaks(opts: MountMotionTweaksOptions = {}): MountedM
     effect(() => { mirror.exitMs  = motion.exitMs.value;  gui.controllersRecursive().forEach(c => c.updateDisplay()); }),
     effect(() => { mirror.sortSec = motion.sortSec.value; gui.controllersRecursive().forEach(c => c.updateDisplay()); }),
     effect(() => { mirror.drillMs = motion.drillMs.value; gui.controllersRecursive().forEach(c => c.updateDisplay()); }),
+    effect(() => { mirror.separation = motion.separation.value; gui.controllersRecursive().forEach(c => c.updateDisplay()); }),
   ];
 
   return {

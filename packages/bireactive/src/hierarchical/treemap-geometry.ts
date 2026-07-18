@@ -28,8 +28,15 @@ import type { ChartNode } from "./tree";
 import { sortedChildren, resolveFill, labelColorFor } from "./tree";
 import { motion } from "../lib/runtime-config";
 
-const PAD_INNER = 2;
 const PAD_TOP = 16; // Fixed-pixel group header space
+
+/** Treemap padding (inner + outer) — driven by the shared `motion.separation`
+ *  cell so the tweaks pane retunes it live. Sampled at layout time. */
+function padInner(): number {
+  // Use separation * 2 for treemap since 1px reads as too tight in a
+  // nested squarified layout (gaps need to be visible at the default).
+  return Math.max(0, motion.separation.value * 2);
+}
 
 /** Leaf-sum of a subtree. Group value cells normally hold the sum already,
  *  but during drafts leaf writes can make them stale — recompute from leaves. */
@@ -84,11 +91,12 @@ export function computeTreemapLayout(
     return 0;
   });
 
+  const pad = padInner();
   treemap<ChartNode>()
     .tile(treemapSquarify)
     .size([Math.max(1, W), Math.max(1, H)])
-    .paddingInner(PAD_INNER)
-    .paddingOuter(PAD_INNER) // gap between parent edge and children — matches
+    .paddingInner(pad)
+    .paddingOuter(pad) // gap between parent edge and children — matches
     // sibling separation so nested blocks don't go flush against their
     // container. Without this, children touch all 4 walls of their parent,
     // which looks wrong compared to the clean gaps between siblings.

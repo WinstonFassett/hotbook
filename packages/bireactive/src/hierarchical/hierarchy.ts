@@ -25,6 +25,7 @@ import {
   findNode,
   sortedChildren,
   treeDepth,
+  labelColorFor,
 } from "./tree";
 
 // Re-export geometry-neutral tree ops so existing consumers are unaffected.
@@ -231,7 +232,11 @@ export function makeTile(
   defs?: SVGDefsElement,
   instanceId?: string,
 ): Shape {
-  const pad = 2;
+  // Inset pad — driven by the shared `motion.separation` cell so the
+  // tweaks pane retunes it live. Icicle uses an inset rect (shrink each
+  // tile by pad on all sides) to create the gap, unlike sunburst/pack
+  // which use stroke. Sampled reactively so the slider retunes live.
+  const pad = derive(() => motion.separation.value);
 
   // D3-style: every node always has a layout rect (computeLayout walks
   // the full tree). Off-window nodes have rects beyond the canvas edge.
@@ -242,10 +247,10 @@ export function makeTile(
     return layout.value.get(node.id) ?? { x: 0, y: 0, width: 0, height: 0 };
   });
 
-  const rx = derive(() => liveRect.value.x + pad);
-  const ry = derive(() => liveRect.value.y + pad);
-  const rw = derive(() => Math.max(0, liveRect.value.width - pad * 2));
-  const rh = derive(() => Math.max(0, liveRect.value.height - pad * 2));
+  const rx = derive(() => liveRect.value.x + pad.value);
+  const ry = derive(() => liveRect.value.y + pad.value);
+  const rw = derive(() => Math.max(0, liveRect.value.width - pad.value * 2));
+  const rh = derive(() => Math.max(0, liveRect.value.height - pad.value * 2));
 
   // Present gates visibility: in-window → opacity 1 + pointer-events auto;
   // off-window → opacity 0 + pointer-events none. The opacity transition
