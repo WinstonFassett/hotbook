@@ -139,7 +139,11 @@ export function computeRadialLayout(
       const focusA0 = focusArc.a0;
       const focusSpan = focusArc.a1 - focusArc.a0;
       const angleScale = focusSpan > 0 ? TWO_PI_EPS / focusSpan : 1;
-      const focusRIn = focusArc.rIn;
+      // showRoot=true: shift by rIn so focus node's inner edge → 0 (focus
+      // becomes the center disc). showRoot=false: shift by rOut so focus
+      // node stays invisible (rOut=0) and its children start at the center
+      // (pie slices, no disc) — consistent with the un-drilled view.
+      const shift = showRoot ? focusArc.rIn : focusArc.rOut;
 
       for (const [id, r] of map) {
         const rawA0 = (r.a0 - focusA0) * angleScale;
@@ -150,8 +154,8 @@ export function computeRadialLayout(
         map.set(id, {
           a0: clampedA0,
           a1: clampedA1,
-          rIn: Math.max(0, r.rIn - focusRIn),
-          rOut: Math.max(0, r.rOut - focusRIn),
+          rIn: Math.max(0, r.rIn - shift),
+          rOut: Math.max(0, r.rOut - shift),
         });
       }
     }
