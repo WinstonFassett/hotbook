@@ -14,6 +14,7 @@ import { cell, effect } from "bireactive";
 import type { ChartConfig } from "./types";
 import { setup } from "./gesture";
 import type { ChartNode } from "./tree";
+import { findNode } from "./tree";
 import { numberDrag } from "../lib/number-drag";
 import type { BiNode } from "../lib/tree";
 import { keyboardEdit } from "./behaviors/keyboard-edit";
@@ -46,8 +47,13 @@ function computeVisible(
   collapsed: Set<string>,
   maxDepth?: number,
   sortBy?: "index" | "value",
+  drillId?: string | null,
 ): VisibleRow[] {
   const out: VisibleRow[] = [];
+
+  // When drilled, the effective root is the drilled node — only its
+  // subtree is shown. Depth is relative to the drilled node.
+  const effectiveRoot = drillId ? findNode(root, drillId) ?? root : root;
 
   function walk(node: ChartNode, depth: number) {
     let children = node.children;
@@ -56,7 +62,7 @@ function computeVisible(
       children = children.slice().sort((a, b) => subtreeValue(b) - subtreeValue(a));
     }
 
-    // Add node (skip root at depth 0)
+    // Add node (skip effective root at depth 0)
     if (depth > 0) {
       out.push({ node, depth, hasKids });
     }
@@ -70,7 +76,7 @@ function computeVisible(
     }
   }
 
-  walk(root, 0);
+  walk(effectiveRoot, 0);
   return out;
 }
 
@@ -87,6 +93,7 @@ export class TreetableChart extends HierarchicalChartBase {
   private _collapsedCell = cell(new Set<string>());
   private _columnVisibility = new Map<string, boolean>();
   private _valueEffectDisposers = new Map<string, () => void>();
+  private _numberDragDisposers = new Map<string, () => void>();
   private _renderListeners = new Set<(allNodeIds: string[]) => void>();
   private _root?: HTMLDivElement;
   private _body?: HTMLDivElement;
@@ -176,6 +183,7 @@ export class TreetableChart extends HierarchicalChartBase {
       collapsed,
       config.depth,
       config.sort === "value" ? "value" : "index",
+      drillId,
     );
     const allNodeIds: string[] = [];
 
@@ -208,8 +216,8 @@ export class TreetableChart extends HierarchicalChartBase {
         // across renders — re-attaching per render leaks listeners). The
         // click handler delegates: twisty toggles collapse, else focus.
         const el = row;
-        el.addEventListener("mouseenter", () => { el.style.background = "oklch(0.22 0 0)"; });
-        el.addEventListener("mouseleave", () => { el.style.background = ""; });
+        el.addEventListener("mouseenter", () => { el.style.background = "oklch(0.22 0 0)"; this.setHover(el.dataset.id!); });
+        el.addEventListener("mouseleave", () => { el.style.background = ""; this.setHover(null); });
         el.addEventListener("click", (e) => {
           const twist = (e.target as HTMLElement).closest?.("[data-twist]");
           if (twist) {
@@ -245,6 +253,7 @@ export class TreetableChart extends HierarchicalChartBase {
 
         const effectKey = `${nodeId}:${col.key}`;
         this._valueEffectDisposers.get(effectKey)?.();
+        this._numberDragDisposers.get(effectKey)?.();
 
         const isPrimary = ci === 0;
         const measureValue = this._valueSourceFor(node, col, isPrimary);
@@ -258,7 +267,7 @@ export class TreetableChart extends HierarchicalChartBase {
         // Primary column edits route through the DataView draft/commit flow
         // (cross-view previews); extra columns write BiNode measure cells
         // directly (legacy behavior — the kernel only carries one measure).
-        numberDrag(valueCell, {
+        const dragDispose = numberDrag(valueCell, {
           get: () => measureValue.value,
           set: (v: number) => { measureValue.value = v; },
           pxPerUnit: 4,
@@ -279,6 +288,7 @@ export class TreetableChart extends HierarchicalChartBase {
               }
             : {}),
         });
+        this._numberDragDisposers.set(effectKey, dragDispose);
       }
 
       fragment.appendChild(row);
@@ -291,6 +301,12 @@ export class TreetableChart extends HierarchicalChartBase {
         if (key.startsWith(`${id}:`)) {
           dispose();
           this._valueEffectDisposers.delete(key);
+        }
+      }
+      for (const [key, dispose] of this._numberDragDisposers) {
+        if (key.startsWith(`${id}:`)) {
+          dispose();
+          this._numberDragDisposers.delete(key);
         }
       }
     }
