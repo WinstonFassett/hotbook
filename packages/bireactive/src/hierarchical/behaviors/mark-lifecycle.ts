@@ -16,16 +16,17 @@
 // sort/orientation/value settle; enter/exit is CSS too — consistent.
 
 import { cell, derive, effect, readNow, untracked, type Read, type Val } from "bireactive";
-import { prefersReducedMotion, TRANSITION_BASE_MS } from "./transition-on-updated";
+import { motion } from "../../lib/runtime-config";
+import { prefersReducedMotion } from "./transition-on-updated";
 
-/** Mark enter/exit fade windows. Not multipliers — enter/exit is a fixed
- *  fade window, not a rhythm role. Live `export let` bindings synced from
- *  TRANSITION_BASE_MS (which is itself live-bound to motion.baseMs, WIN-352)
- *  so the tweaks panel controls hierarchical enter/exit timing too. */
-export let ENTER_MS = 4 * TRANSITION_BASE_MS; // 400ms at default base 100
-export let EXIT_MS = 4 * TRANSITION_BASE_MS; // 400ms
-effect(() => { ENTER_MS = 4 * TRANSITION_BASE_MS; });
-effect(() => { EXIT_MS = 4 * TRANSITION_BASE_MS; });
+/** Mark enter/exit fade windows. Live via `motion.enterMs` / `motion.exitMs`
+ *  (WIN-352). Kept as `let` re-exports for legacy consumers; new callsites in
+ *  this file read `motion.<key>.value` directly so a tweaks-pane bump takes
+ *  effect on the next mount/unmount. */
+export let ENTER_MS = motion.enterMs.value;
+export let EXIT_MS = motion.exitMs.value;
+effect(() => { ENTER_MS = motion.enterMs.value; });
+effect(() => { EXIT_MS = motion.exitMs.value; });
 export const TRANSITION_EASING = "cubic-bezier(0.4, 0.0, 0.2, 1)"; // ease-in-out
 
 export interface WithExitDelayOptions<T> {
@@ -46,7 +47,7 @@ export function withExitDelay<T>(
   source: Val<readonly T[]>,
   opts: WithExitDelayOptions<T>,
 ): Read<readonly T[]> {
-  const { key, exitMs = EXIT_MS, immediate } = opts;
+  const { key, exitMs = motion.exitMs.value, immediate } = opts;
   const rendered = cell<readonly T[]>(readNow(source));
   let timer: ReturnType<typeof setTimeout> | null = null;
 
@@ -97,8 +98,8 @@ export function enterExitFade(
   el: SVGElement | HTMLElement,
   opts: EnterExitFadeOptions,
 ): void {
-  const enterMs = opts.enterMs ?? ENTER_MS;
-  const exitMs = opts.exitMs ?? EXIT_MS;
+  const enterMs = opts.enterMs ?? motion.enterMs.value;
+  const exitMs = opts.exitMs ?? motion.exitMs.value;
   const reduced = prefersReducedMotion();
 
   if (reduced) {

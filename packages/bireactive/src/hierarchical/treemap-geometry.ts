@@ -26,6 +26,7 @@ import {
 import type { LayoutRect, RenderNode } from "./types";
 import type { ChartNode } from "./tree";
 import { findNode, sortedChildren, resolveFill } from "./tree";
+import { motion } from "../lib/runtime-config";
 
 const PAD_INNER = 2;
 const PAD_TOP = 16; // Fixed-pixel group header space
@@ -211,7 +212,10 @@ export function makeTreemapTile(
   // Wrapper <g> carries the label via CSS transform.
   const labelWrap = document.createElementNS("http://www.w3.org/2000/svg", "g");
   labelWrap.appendChild(lbl.el);
-  labelWrap.style.transition = "transform 300ms ease-out";
+  // Live-timed via motion.baseMs (WIN-352). 3× baseMs = settle role duration.
+  effect(() => {
+    labelWrap.style.transition = `transform ${motion.baseMs.value * 3}ms ease-out`;
+  });
 
   // Position the label. This effect reads from derive cells that are created
   // inside forEach's untracked context. To ensure it re-runs when the layout

@@ -34,9 +34,8 @@ export const GESTURE_ACTIVE_CLASS = "gesture-active";
 export const REORDER_ACTIVE_CLASS = "reorder-active";
 
 /** Base timing token (Interaction Principle 12): every duration is a multiple.
- *  Live-bound to `motion.baseMs` (WIN-352) so the tweaks panel controls
- *  hierarchical charts. Kept as an `export let` so callers that read a raw
- *  number at draw-time see the live value. */
+ *  Live via `motion.baseMs` (WIN-352 wave-1) — kept as a `let` re-export so
+ *  legacy consumers that treated it as a raw number still see updates. */
 export let TRANSITION_BASE_MS = motion.baseMs.value;
 effect(() => { TRANSITION_BASE_MS = motion.baseMs.value; });
 
@@ -48,13 +47,15 @@ export function prefersReducedMotion(): boolean {
     && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-/** Build a CSS transition string for the given SVG attributes. */
+/** Build a CSS transition string for the given SVG attributes. Reads the
+ *  master rhythm at call-time so a tweaks-pane bump is picked up on the next
+ *  `<style>` emission (see `transitionOnUpdated`, which re-emits on cell change). */
 export function settleTransition(
   attrs: readonly string[] = SETTLE_ATTRS,
   durationMult = 3,
 ): string {
   if (prefersReducedMotion()) return "none";
-  const dur = TRANSITION_BASE_MS * durationMult;
+  const dur = motion.baseMs.value * durationMult;
   return attrs.map((a) => `${a} ${dur}ms ease-out`).join(", ");
 }
 
@@ -89,21 +90,19 @@ export function transitionOnUpdated(opts: TransitionOnUpdatedOptions = {}): Beha
     const selector = opts.selector ?? host.tagName.toLowerCase();
     const elements = opts.elements ?? "rect, text";
 
+    // Scope the suppression to the host carrying the class so multiple charts
+    // on the page don't clobber each other.
+    const elemSel = elements.split(", ").map((e) => `${selector} ${e}`).join(", ");
+
     const styleEl = document.createElement("style");
     styleEl.setAttribute("data-vf-transitions", selector);
     host.prepend(styleEl);
 
-    // Re-inject the CSS whenever motion.baseMs changes (WIN-352 tweaks panel).
-    // Read the cell directly (tracked) — the export-let TRANSITION_BASE_MS is
-    // a plain variable, not a cell, so effects can't track it. The cell read
-    // here is what makes the tweaks panel live-control hierarchical settle.
-    const rebuildCss = effect(() => {
-      const base = motion.baseMs.value; // tracked — re-runs on tweaks panel change
-      const dur = base * durationMult;
-      const transitionValue = prefersReducedMotion()
-        ? "none"
-        : attrs.map((a) => `${a} ${dur}ms ease-out`).join(", ");
-      const elemSel = elements.split(", ").map((e) => `${selector} ${e}`).join(", ");
+    // Re-emit the settle CSS whenever the master rhythm changes so the tweaks
+    // pane retimes settle live (WIN-352). settleTransition reads motion.baseMs
+    // at call-time; the effect subscribes via that read.
+    const styleDispose = effect(() => {
+      const transitionValue = settleTransition(attrs, durationMult);
       styleEl.textContent = `
 ${elemSel} { transition: ${transitionValue}; }
 ${selector}.${GESTURE_ACTIVE_CLASS} * { transition: none !important; }
@@ -137,7 +136,7 @@ ${selector}.${REORDER_ACTIVE_CLASS} [data-reordering] * { transition: none !impo
 
     return () => {
       unsub();
-      rebuildCss();
+      styleDispose();
       styleEl.remove();
       // Defensive: ensure the class is not left on the host if the behavior
       // is torn down mid-gesture (e.g. config change rebuilds the chart).
