@@ -122,3 +122,14 @@ export interface RadialRect {
   /** Outer radius (pixels). */
   rOut: number;
 }
+
+/** Pack layout result: each node mapped to its circle in canvas space.
+ *  This is the circular analog of LayoutRect. */
+export interface PackRect {
+  /** Center X. */
+  cx: number;
+  /** Center Y. */
+  cy: number;
+  /** Radius. */
+  r: number;
+}

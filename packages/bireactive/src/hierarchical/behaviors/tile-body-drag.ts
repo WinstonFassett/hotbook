@@ -201,7 +201,8 @@ export function tileBodyDrag(opts: TileBodyDragOptions): Behavior {
       // This makes the drag proportional: dragging by the tile's full span doubles
       // its value, matching the visual exactly (same approach as the splitter).
       const tileG = host.querySelector(`g[data-id="${id}"]`);
-      const tileRect = tileG?.querySelector("rect")?.getBoundingClientRect();
+      const tileEl = tileG?.querySelector("rect") ?? tileG?.querySelector("circle");
+      const tileRect = tileEl?.getBoundingClientRect();
       if (!tileRect) return;
       const pixelSpan = isHoriz ? tileRect.height : tileRect.width;
       if (pixelSpan <= 0) return;
