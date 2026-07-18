@@ -52,6 +52,9 @@ export class IcicleChart extends HTMLElement implements GestureContext {
   private _focusCell = cell<string | null>(null);
   private _hoverCell = cell<string | null>(null);
   private _drillId = cell<string | null>(null);
+  /** Tick cell — incremented on each reorder move to force layout
+   *  re-derivation (children array mutation isn't reactive on its own). */
+  private _reorderTick = cell(0);
 
   private _gesture: Gesture | null = null;
   private _dataView: DataView | null = null;
@@ -110,6 +113,9 @@ export class IcicleChart extends HTMLElement implements GestureContext {
   }
   get dataView() { return this._dataView; }
   get gesture() { return this._gesture; }
+  /** Bump the reorder tick — forces layout re-derivation after a
+   *  children-array mutation (reorder gestures). */
+  bumpReorder() { this._reorderTick.value++; }
 
   setFocus(id: string | null) { this._focusCell.value = id; }
   setHover(id: string | null) { this._hoverCell.value = id; }
@@ -213,6 +219,7 @@ export class IcicleChart extends HTMLElement implements GestureContext {
       const frozen = this._frozenOrder.value;
       const config = this._configCell.value;
       const drill = this._drillId.value;
+      this._reorderTick.value; // re-derive on reorder mutations
       if (!root || !config) return [];
       return buildAllDescendants(root, config, frozen ?? undefined, drill);
     });
@@ -223,6 +230,7 @@ export class IcicleChart extends HTMLElement implements GestureContext {
       const frozen = this._frozenOrder.value;
       const config = this._configCell.value;
       const drill = this._drillId.value;
+      this._reorderTick.value; // re-derive on reorder mutations
       if (!root || !config) return new Map<string, LayoutRect>();
       // Hc is the SVG's actual size (measured by ResizeObserver on the SVG),
       // which already excludes the breadcrumb height because of flexbox.
@@ -539,6 +547,7 @@ export class IcicleChart extends HTMLElement implements GestureContext {
           const cfg = this._configCell.value;
           if (k && cfg) k.writeReorder(cfg.datasetId, parentId, orderedIds);
         },
+        bumpReorder: () => this.bumpReorder(),
       }));
     }
 

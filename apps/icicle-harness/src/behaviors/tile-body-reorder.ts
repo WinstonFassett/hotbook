@@ -30,6 +30,9 @@ export interface TileBodyReorderOptions {
   focusTile: (id: string) => void;
   /** Write the reorder to the Kernel on commit. */
   writeReorder: (parentId: string, orderedIds: string[]) => void;
+  /** Bump the chart's reorder tick cell to force layout re-derivation
+   *  after a children-array mutation. Called on every reorder move. */
+  bumpReorder: () => void;
 }
 
 export function tileBodyReorder(opts: TileBodyReorderOptions): Behavior {
@@ -47,6 +50,19 @@ export function tileBodyReorder(opts: TileBodyReorderOptions): Behavior {
 
     const unsubCancel = gesture.editor.subscribe((t) => {
       if (t.type === "cancel") {
+        // Restore original children order (snapshot only covers leaf values).
+        if (parentId && startSiblingIds.length > 0) {
+          const root = opts.treeRoot(gesture);
+          if (root) {
+            const parent = findNodeById(root, parentId);
+            if (parent) {
+              const byId = new Map(parent.children.map((c) => [c.id, c]));
+              const restored = startSiblingIds.map((id) => byId.get(id)).filter((c): c is ChartNode => !!c);
+              parent.children.splice(0, parent.children.length, ...restored);
+              opts.bumpReorder();
+            }
+          }
+        }
         active = false;
         moved = false;
         pointerId = -1;
@@ -120,6 +136,7 @@ export function tileBodyReorder(opts: TileBodyReorderOptions): Behavior {
       const byId = new Map(parent.children.map((c) => [c.id, c]));
       const newChildren = newOrder.map((id) => byId.get(id)).filter((c): c is ChartNode => !!c);
       parent.children.splice(0, parent.children.length, ...newChildren);
+      opts.bumpReorder(); // force layout re-derivation
 
       gesture.updateDraft({
         nodeId: targetId,

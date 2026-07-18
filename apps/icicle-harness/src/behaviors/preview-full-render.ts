@@ -76,6 +76,8 @@ export function previewFullRender(opts: PreviewFullRenderOptions): Behavior {
 
     const unsub = gesture.editor.subscribe((t) => {
       if (t.type === "draft" && t.from === "Idle") {
+        // Reorder gestures change sibling order live — never freeze.
+        if (t.draft?.intent === "reorder") return;
         // Gesture start — read deferSort once, capture if true.
         // If frozenOrder is already set (e.g. startGesture captured it
         // before dispatching the draft), use that — don't re-capture.
