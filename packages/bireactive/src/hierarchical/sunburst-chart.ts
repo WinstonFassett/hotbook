@@ -128,7 +128,10 @@ export class SunburstChart extends HierarchicalChartBase implements EdgeDragHand
     // Present gate also checks that both arcs have non-zero angular span —
     // off-subtree arcs collapse to zero width on drill, and a handle between
     // zero-width siblings is a meaningless artifact (the "phantom splitter").
-    const ANGULAR_EPSILON = 0.001; // radians — below this, arc is effectively zero-width
+    // Wraparound edges (seam at 0°/2π) only show when the parent is a full
+    // circle — on slices, the 0°/2π boundary is the parent's own edge.
+    const ANGULAR_EPSILON = 0.001;
+    const FULL_CIRCLE = 2 * Math.PI - 0.01;
     const edgesResult = forEach(edgesLayer, this._edges, (edge) => {
       const handle = makeAngularHandle(
         edge,
@@ -141,7 +144,15 @@ export class SunburstChart extends HierarchicalChartBase implements EdgeDragHand
           if (!lc || !rc) return false;
           const lSpan = lc.la1.value - lc.la0.value;
           const rSpan = rc.la1.value - rc.la0.value;
-          return lSpan > ANGULAR_EPSILON && rSpan > ANGULAR_EPSILON;
+          if (lSpan <= ANGULAR_EPSILON || rSpan <= ANGULAR_EPSILON) return false;
+          // Wraparound edges only visible when parent is full circle.
+          if (edge.wraparound) {
+            const pc = arcCellsMap.get(edge.parentId);
+            if (!pc) return false;
+            const pSpan = pc.la1.value - pc.la0.value;
+            if (pSpan < FULL_CIRCLE) return false;
+          }
+          return true;
         }),
         this._layout!,
       );
@@ -214,7 +225,8 @@ export class SunburstChart extends HierarchicalChartBase implements EdgeDragHand
     const layout = this._layout!.value;
     const lr = layout.get(edge.leftId)!;
     const rr = layout.get(edge.rightId)!;
-    this._dragBoundaryAngle = lr.a1;
+    // Wraparound edge: boundary is at 0° (right child's a0), not left's a1.
+    this._dragBoundaryAngle = edge.wraparound ? rr.a0 : lr.a1;
     this._dragPairSpan = (lr.a1 - lr.a0) + (rr.a1 - rr.a0);
   }
 

@@ -451,11 +451,21 @@ export function makeAngularHandle(
   // so derive() tracks them. If the arc isn't mounted yet (no cell entry),
   // fall back to the layout target so the handle has a sane initial position.
   const leftCells = () => arcCellsMap.get(edge.leftId);
+  const rightCells = () => arcCellsMap.get(edge.rightId);
+  // Wraparound edge: boundary is at 0°/2π (the seam). Use the right child's
+  // a0 (which is 0° for a full-circle parent) as the boundary angle.
+  // Normal edge: boundary is at left child's a1.
   const boundaryAngle = derive(() => {
+    if (edge.wraparound) {
+      const rc = rightCells();
+      if (rc) return rc.la0.value;
+      return layout?.value.get(edge.rightId)?.a0 ?? 0;
+    }
     const c = leftCells();
     if (c) return c.la1.value;
     return layout?.value.get(edge.leftId)?.a1 ?? 0;
   });
+  // Radial span: both siblings share the same band, so use either.
   const rIn = derive(() => {
     const c = leftCells();
     if (c) return Math.max(0, c.lrIn.value);

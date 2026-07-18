@@ -25,6 +25,10 @@ export interface Edge {
   parentId: string;
   depth: number;
   index: number;
+  /** Wraparound edge: the seam at 0°/2π between the last and first child
+   *  of a full-circle parent. Sunburst-only; requires rotation-counter-
+   *  rotation drag mechanics. See wiki/2026-07-18-sunburst-wraparound-divider.md */
+  wraparound?: boolean;
 }
 
 const HUES = [240, 120, 40, 200, 160, 80, 0, 300];
@@ -183,6 +187,22 @@ export function buildEdges(allNodes: RenderNode[]): Edge[] {
         parentId: node.id,
         depth: node.depth + 1,
         index: i,
+      });
+    }
+    // Wraparound edge: seam between last and first child. Only meaningful
+    // on full-circle parents (sunburst innermost). Handle visibility is
+    // gated by angular span in the chart — invisible on non-full-circle parents.
+    if (children.length >= 2) {
+      const last = children[children.length - 1];
+      const first = children[0];
+      edges.push({
+        id: `${last.id}..${first.id}#wrap`,
+        leftId: last.id,
+        rightId: first.id,
+        parentId: node.id,
+        depth: node.depth + 1,
+        index: children.length - 1,
+        wraparound: true,
       });
     }
   }
