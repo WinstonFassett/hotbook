@@ -29,6 +29,9 @@ export interface ChartConfig {
   depth?: number;
   orientation: "horizontal" | "vertical";
   canReorder?: boolean;
+  /** What dragging a tile body does: nothing, resize its value, or
+   *  reorder it among siblings. Default: "resize". */
+  dragBehavior?: "none" | "resize" | "reorder";
   conservationMode?: "additive" | "proportional-neighbor" | "proportional-siblings";
   /** Show the root node as a tile. When false, depth counts from the
    *  root's children (depth 1 = first visible row). Default: true. */

@@ -140,6 +140,7 @@ const config: ChartConfig = {
   depth: 3,
   orientation: "vertical",
   canReorder: false,
+  dragBehavior: "resize",
   conservationMode: "proportional-neighbor",
   showRoot: false,
   showBreadcrumb: true,
@@ -178,24 +179,11 @@ document.querySelectorAll("#config-bar button").forEach((btn) => {
     btn.classList.add("active");
     // Parse value
     if (cfg === "depth") updateConfig(cfg, parseInt(val!));
-    else if (cfg === "canReorder" || cfg === "showRoot" || cfg === "showBreadcrumb") updateConfig(cfg, val === "true");
+    else if (cfg === "showRoot" || cfg === "showBreadcrumb") updateConfig(cfg, val === "true");
+    else if (cfg === "dragBehavior") updateConfig(cfg, val);
     else updateConfig(cfg, val);
   });
 });
-
-// Initialize reorder button active state based on config
-const initReorderButtons = () => {
-  const enableBtn = document.getElementById("btn-reorder-enable");
-  const disableBtn = document.getElementById("btn-reorder-disable");
-  if (config.canReorder) {
-    enableBtn?.classList.add("active");
-    disableBtn?.classList.remove("active");
-  } else {
-    enableBtn?.classList.remove("active");
-    disableBtn?.classList.add("active");
-  }
-};
-initReorderButtons();
 
 // Global Esc handler — cancel any active draft.
 // Per-component Esc is handled inside each chart/table (they check editor

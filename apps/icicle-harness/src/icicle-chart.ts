@@ -8,7 +8,7 @@ import { cell, derive, effect, forEach, group, type Cell } from "bireactive";
 import type { ChartConfig, LayoutRect, RenderNode } from "./types";
 import { Kernel, configKey } from "./kernel";
 import { DataView } from "./data-view";
-import { Gesture, setup } from "./gesture";
+import { Gesture, setup, type Behavior } from "./gesture";
 import {
   buildAllDescendants,
   buildEdges,
@@ -31,6 +31,7 @@ import { wheelEdit } from "./behaviors/wheel-edit";
 import { keyboardEdit, type ConservationMode } from "./behaviors/keyboard-edit";
 import { applyConservedDelta, effectiveMode, type ConservationContext } from "./behaviors/conservation";
 import { tileBodyDrag } from "./behaviors/tile-body-drag";
+import { tileBodyReorder } from "./behaviors/tile-body-reorder";
 import { transitionOnUpdated } from "./behaviors/transition-on-updated";
 import { previewFullRender, captureOrderFromWindow } from "./behaviors/preview-full-render";
 import { membershipCell } from "./behaviors/mark-lifecycle";
@@ -91,12 +92,15 @@ export class IcicleChart extends HTMLElement implements GestureContext {
     const prev = this._configCell.value;
     const prevKey = prev ? configKey(prev) : "";
     const nextKey = configKey(c);
+    const dragChanged = prev?.dragBehavior !== c.dragBehavior;
     this._configCell.value = { ...c };
     if (this._gesture) this._gesture.store.config.value = { ...c };
-    // Query key change → rebuild data layer (new DataView). Render-field-only
-    // change → same DataView, derivers re-run on existing DOM → transition.
-    if (prevKey !== nextKey) {
-      this._queryKeyCell.value = nextKey;
+    // Query key change OR dragBehavior change → rebuild (behaviors are
+    // composed in _build, so a dragBehavior switch needs a rebuild to
+    // re-compose). Render-field-only change → same DataView, derivers
+    // re-run on existing DOM → transition.
+    if (prevKey !== nextKey || dragChanged) {
+      this._queryKeyCell.value = nextKey + (dragChanged ? `:drag=${c.dragBehavior}` : "");
     } else if (this._dataView) {
       // Render field change: update the DataView's config in place and fire
       // an `updated` so the chart re-derives and transitions.
@@ -508,6 +512,36 @@ export class IcicleChart extends HTMLElement implements GestureContext {
     rebuildTree(this._dataView, this._treeRoot);
 
     // Compose shared input + render behaviors onto the gesture.
+    // Tile-body drag behavior: resize, reorder, or none, per config.
+    // Default is "resize" (drag tile body to change its value).
+    const dragBehavior = config.dragBehavior ?? "resize";
+    const dragBehaviors: Behavior[] = [];
+    if (dragBehavior === "resize") {
+      dragBehaviors.push(tileBodyDrag({
+        target: (g) => g.store.hover.value ?? g.store.focus.value,
+        valueOf: (g) => this.valueOf,
+        writeValue: this.writeValue,
+        siblings: (g) => this.siblings,
+        frozenOrder: () => this._frozenOrder.value,
+        windowGetter: () => this._window?.value ?? null,
+        frozenOrderCell: this._frozenOrder,
+        deferSort: () => this.config.sort !== "index",
+        focusTile: (id) => this.setFocus(id),
+      }));
+    } else if (dragBehavior === "reorder") {
+      dragBehaviors.push(tileBodyReorder({
+        target: (g) => g.store.hover.value ?? g.store.focus.value,
+        treeRoot: (g) => this._treeRoot.value,
+        layout: (g) => this._layout!.value,
+        focusTile: (id) => this.setFocus(id),
+        writeReorder: (parentId, orderedIds) => {
+          const k = this._kernelCell.value;
+          const cfg = this._configCell.value;
+          if (k && cfg) k.writeReorder(cfg.datasetId, parentId, orderedIds);
+        },
+      }));
+    }
+
     this._behaviorDispose = setup(this._gesture)(
       // Render behaviors.
       // Settle CSS on commit/cancel/updated; suppression class toggled
@@ -538,20 +572,7 @@ export class IcicleChart extends HTMLElement implements GestureContext {
         siblings: (g) => this.siblings,
         frozenOrder: () => this._frozenOrder.value,
       }),
-      // Tile-body drag: drag anywhere on a tile to resize its value.
-      // Both axes (up/right = grow, down/left = shrink). Click (no move) =
-      // focus. conservationMode governs distribution (same as keyboard).
-      tileBodyDrag({
-        target: (g) => g.store.hover.value ?? g.store.focus.value,
-        valueOf: (g) => this.valueOf,
-        writeValue: this.writeValue,
-        siblings: (g) => this.siblings,
-        frozenOrder: () => this._frozenOrder.value,
-        windowGetter: () => this._window?.value ?? null,
-        frozenOrderCell: this._frozenOrder,
-        deferSort: () => this.config.sort !== "index",
-        focusTile: (id) => this.setFocus(id),
-      }),
+      ...dragBehaviors,
     );
   }
 
