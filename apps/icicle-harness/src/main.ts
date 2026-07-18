@@ -5,6 +5,7 @@
 import type { ChartConfig, Dataset, DataNode } from "./types";
 import { Kernel } from "./kernel";
 import "./icicle-chart.ts";
+import "./sunburst-chart.ts";
 import "./side-table.ts";
 
 // ─── Sample hierarchical data ──────────────────────────────────────────────
@@ -154,17 +155,23 @@ const kernel = new Kernel();
 kernel.registerDataset(dataset);
 
 const icicle = document.querySelector("v-icicle") as any;
+const sunburst = document.querySelector("v-sunburst") as any;
 const table = document.querySelector("v-side-table") as any;
 
 icicle.kernel = kernel;
 icicle.config = config;
+sunburst.kernel = kernel;
+// Sunburst shares the same config minus orientation (radial has no orientation).
+// It uses the same drillKey so drill state syncs across all three views.
+sunburst.config = { ...config, orientation: undefined };
 table.kernel = kernel;
 table.config = config;
 
-// Config bar: push config changes to both components (recreates DataView → animated transition).
+// Config bar: push config changes to all components.
 function updateConfig(key: keyof ChartConfig, value: any) {
   (config as any)[key] = value;
   icicle.config = config;
+  sunburst.config = { ...config, orientation: undefined };
   table.config = config;
 }
 
@@ -185,18 +192,13 @@ document.querySelectorAll("#config-bar button").forEach((btn) => {
 });
 
 // Global Esc handler — cancel any active draft.
-// Per-component Esc is handled inside each chart/table (they check editor
-// state on their own keyup/cancel paths); this is the fallback for the case
-// where focus is outside both surfaces.
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     const active = kernel.drafts.activeEditor;
     if (active && active.state === "Drafting") {
-      const dv = icicle._dataView;
-      if (dv && dv.editor === active) dv.cancel();
-      else {
-        const tDv = table._dataView;
-        if (tDv && tDv.editor === active) tDv.cancel();
+      for (const chart of [icicle, sunburst, table]) {
+        const dv = chart._dataView;
+        if (dv && dv.editor === active) { dv.cancel(); break; }
       }
     }
   }
@@ -204,17 +206,16 @@ document.addEventListener("keydown", (e) => {
 
 // Status display
 const icicleStatus = document.getElementById("icicle-status")!;
+const sunburstStatus = document.getElementById("sunburst-status")!;
 const tableStatus = document.getElementById("table-status")!;
 kernel.drafts.subscribe((isDrafting, activeEditor) => {
   const label = isDrafting ? "drafting" : "idle";
   icicleStatus.textContent = label;
+  sunburstStatus.textContent = label;
   tableStatus.textContent = label;
-  if (isDrafting) {
-    icicleStatus.classList.add("drafting");
-    tableStatus.classList.add("drafting");
-  } else {
-    icicleStatus.classList.remove("drafting");
-    tableStatus.classList.remove("drafting");
+  for (const el of [icicleStatus, sunburstStatus, tableStatus]) {
+    if (isDrafting) el.classList.add("drafting");
+    else el.classList.remove("drafting");
   }
 });
 

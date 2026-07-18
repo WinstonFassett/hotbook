@@ -59,6 +59,8 @@ export interface TransitionOnUpdatedOptions {
   durationMult?: number;
   /** CSS selector scope for the transition rule. Defaults to the host tag. */
   selector?: string;
+  /** SVG element selectors to apply the transition to. Defaults to "rect, text". */
+  elements?: string;
 }
 
 /** Render behavior: own the gesture-suppression class + install settle CSS.
@@ -79,18 +81,19 @@ export function transitionOnUpdated(opts: TransitionOnUpdatedOptions = {}): Beha
     const attrs = opts.attrs ?? SETTLE_ATTRS;
     const durationMult = opts.durationMult ?? 3;
     const selector = opts.selector ?? host.tagName.toLowerCase();
+    const elements = opts.elements ?? "rect, text";
 
     const transitionValue = settleTransition(attrs, durationMult);
     // Scope the suppression to the host carrying the class so multiple charts
     // on the page don't clobber each other.
+    const elemSel = elements.split(", ").map((e) => `${selector} ${e}`).join(", ");
     const css = `
-${selector} rect, ${selector} text { transition: ${transitionValue}; }
-${selector}.${GESTURE_ACTIVE_CLASS} rect, ${selector}.${GESTURE_ACTIVE_CLASS} text { transition: none !important; }
+${elemSel} { transition: ${transitionValue}; }
 ${selector}.${GESTURE_ACTIVE_CLASS} * { transition: none !important; }
 ${selector}.${REORDER_ACTIVE_CLASS} [data-reordering],
 ${selector}.${REORDER_ACTIVE_CLASS} [data-reordering] * { transition: none !important; }
 @media (prefers-reduced-motion: reduce) {
-  ${selector} rect, ${selector} text { transition: none !important; }
+  ${elemSel} { transition: none !important; }
 }
 `;
 

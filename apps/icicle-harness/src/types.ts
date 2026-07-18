@@ -27,7 +27,9 @@ export interface ChartConfig {
   measure: string;
   sort: "index" | "value";
   depth?: number;
-  orientation: "horizontal" | "vertical";
+  /** Icicle-only: depth-axis assignment. Sunburst has no orientation
+   *  (depth is always radial). Not part of the DataView query key. */
+  orientation?: "horizontal" | "vertical";
   canReorder?: boolean;
   /** What dragging a tile body does: nothing, resize its value, or
    *  reorder it among siblings. Default: "resize". */
@@ -99,4 +101,19 @@ export interface LayoutRect {
   y: number;
   width: number;
   height: number;
+}
+
+/** Radial layout result: each node mapped to its angular + radial span.
+ *  Angles are in radians [0, 2π]; radii are in pixels from the center.
+ *  This is the radial analog of LayoutRect — same partition walk, but
+ *  the sibling axis is angular and the depth axis is radial. */
+export interface RadialRect {
+  /** Start angle (radians). */
+  a0: number;
+  /** End angle (radians). */
+  a1: number;
+  /** Inner radius (pixels). */
+  rIn: number;
+  /** Outer radius (pixels). */
+  rOut: number;
 }
