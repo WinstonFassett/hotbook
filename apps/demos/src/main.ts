@@ -595,20 +595,15 @@ if (app) {
 
     const h2 = document.createElement("h2");
     h2.textContent = e.title;
+    if (e.underConstruction) {
+      const badge = document.createElement("span");
+      badge.textContent = "under construction";
+      badge.style.cssText = 'margin-left:8px;font-size:11px;font-weight:400;color:var(--text-muted,#999);border:1px solid var(--border,#333);border-radius:3px;padding:1px 6px;vertical-align:middle;';
+      h2.appendChild(badge);
+    }
 
     const demo = document.createElement("div");
     demo.className = "demo";
-
-    if (e.underConstruction) {
-      const placeholder = document.createElement("div");
-      placeholder.style.cssText = 'display:flex;align-items:center;justify-content:center;height:200px;color:var(--text-muted,#999);font-size:14px;border:1px dashed var(--border,#333);border-radius:4px;';
-      placeholder.textContent = 'Under construction';
-      demo.appendChild(placeholder);
-      section.appendChild(h2);
-      section.appendChild(demo);
-      app.appendChild(section);
-      continue;
-    }
 
     const el = document.createElement(e.tag) as HTMLElement;
     el.setAttribute("no-source", "");

@@ -327,7 +327,6 @@ const packSchema: ChartSchema = {
       { type: 'measure', label: 'Measure', path: 'valueBinding' },
       { type: 'sort', label: 'Sort', path: 'orderBinding' },
       { type: 'depth', label: 'Depth', path: 'depth' },
-      { type: 'toggle', label: 'Root', path: 'showRoot' },
       { type: 'toggle', label: 'Breadcrumb', path: 'showBreadcrumb' },
     ],
   },
