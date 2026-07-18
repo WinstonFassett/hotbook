@@ -428,6 +428,8 @@ export function makeTile(
   labelWrap.style.transition = "transform 300ms ease-out";
 
   // Per-tile clipPath — clips the label to the tile's rect dimensions.
+  // Applied to the outer <g> (no CSS transform) so clipPath coordinates
+  // are in SVG user space directly.
   let clipId: string | null = null;
   let clipRect: SVGRectElement | null = null;
   if (defs) {
@@ -437,7 +439,6 @@ export function makeTile(
     clipRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
     clipPath.appendChild(clipRect);
     defs.appendChild(clipPath);
-    labelWrap.style.clipPath = `url(#${clipId})`;
   }
   const labelDispose = effect(() => {
     const h = isHoriz ? readNow(isHoriz) : true;
@@ -457,6 +458,7 @@ export function makeTile(
 
   const g = group({}, tile);
   g.el.appendChild(labelWrap);
+  if (clipId) g.el.style.clipPath = `url(#${clipId})`;
   (g as any).track?.(labelDispose);
 
   // Pointer-events gate: off-window nodes can't capture clicks. No opacity
