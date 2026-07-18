@@ -28,6 +28,7 @@ import type { ChartConfig, PackRect, RenderNode } from "./types";
 import type { ChartNode } from "./tree";
 import { sortedChildren, resolveFill, labelColorFor } from "./tree";
 import { motion } from "../lib/runtime-config";
+import { TRANSITION_DURATION } from "../lib/transitions";
 
 /** Pack padding — driven by the shared `motion.separation` cell so the
  *  tweaks pane retunes it live. Sampled at layout time. d3.pack padding
@@ -169,11 +170,26 @@ export function makeCircle(
     disc.el.style.pointerEvents = "all";
   }
 
-  // Visibility gate: opacity + pointer-events.
+  // Wrapper group — carries position via CSS transform transition.
+  // Created early so the visibility gate can control the whole group
+  // (circle + labels) — depth changes hide everything together.
+  // Transitions both transform (position slide on drill) and opacity
+  // (fade for depth/present changes) so peers don't vanish instantly.
+  const wrapG = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  wrapG.appendChild(disc.el);
+  effect(() => {
+    const ms = TRANSITION_DURATION.drill;
+    wrapG.style.transition = `transform ${ms}ms ease-out, opacity ${ms}ms ease-out`;
+  });
+  effect(() => {
+    wrapG.style.transform = `translate(${cx.value}px, ${cy.value}px)`;
+  });
+
+  // Visibility gate: opacity + pointer-events on the entire group.
   if (present) {
     effect(() => {
       const vis = present.value;
-      disc.el.style.opacity = vis ? "" : "0";
+      wrapG.style.opacity = vis ? "" : "0";
       disc.el.style.pointerEvents = vis ? "all" : "none";
     });
   }
@@ -184,16 +200,6 @@ export function makeCircle(
   disc.el.addEventListener("click", () => {
     chart.setFocus(node.id);
     (disc.el as SVGElement).focus?.();
-  });
-
-  // Wrapper group — carries position via CSS transform transition.
-  const wrapG = document.createElementNS("http://www.w3.org/2000/svg", "g");
-  wrapG.appendChild(disc.el);
-  effect(() => {
-    wrapG.style.transition = `transform ${motion.drillMs.value}ms ease-out`;
-  });
-  effect(() => {
-    wrapG.style.transform = `translate(${cx.value}px, ${cy.value}px)`;
   });
 
   // Label for leaf nodes with enough room. Two-line center (Budget tree

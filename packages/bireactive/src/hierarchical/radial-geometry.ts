@@ -366,10 +366,16 @@ export function makeArc(
   if (visible) {
     const visDispose = effect(() => {
       const vis = visible.value;
+      arc.el.style.opacity = vis ? "" : "0";
       arc.el.style.pointerEvents = vis ? "auto" : "none";
     });
     (g as any).track?.(visDispose);
   }
+
+  // Opacity transition so arcs fade (not vanish) on depth/drill changes.
+  effect(() => {
+    arc.el.style.transition = `opacity ${TRANSITION_DURATION.drill}ms ease-out`;
+  });
 
   return g;
 }

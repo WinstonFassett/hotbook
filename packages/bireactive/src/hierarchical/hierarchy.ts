@@ -6,6 +6,7 @@
 
 import type { ChartConfig, LayoutRect, RenderNode } from "./types";
 import { motion } from "../lib/runtime-config";
+import { TRANSITION_DURATION } from "../lib/transitions";
 import {
   Anchor,
   derive,
@@ -326,7 +327,7 @@ export function makeTile(
   // transform property, not SVG attribute), so it needs its own inline
   // transition. Reads drillMs so it stays in sync with the behavior.
   effect(() => {
-    labelWrap.style.transition = `transform ${motion.drillMs.value}ms ease-out`;
+    labelWrap.style.transition = `transform ${TRANSITION_DURATION.drill}ms ease-out`;
   });
 
   // Per-tile clipPath — clips the label to the tile's rect dimensions.

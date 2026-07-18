@@ -30,7 +30,7 @@ export const MOTION_DEFAULTS = {
   enterMs: 400,
   exitMs: 400,
   sortSec: 0.35,
-  drillMs: 800,
+  drillMs: 300,
   separation: 1,
 } as const;
 

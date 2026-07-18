@@ -27,6 +27,7 @@ import type { LayoutRect, RenderNode } from "./types";
 import type { ChartNode } from "./tree";
 import { sortedChildren, resolveFill, labelColorFor } from "./tree";
 import { motion } from "../lib/runtime-config";
+import { TRANSITION_DURATION } from "../lib/transitions";
 
 const PAD_TOP = 16; // Fixed-pixel group header space
 
@@ -316,7 +317,7 @@ export function makeTreemapTile(
   // transform property, not SVG attribute), so it needs its own inline
   // transition. Reads drillMs so it stays in sync with the behavior.
   effect(() => {
-    labelWrap.style.transition = `transform ${motion.drillMs.value}ms ease-out`;
+    labelWrap.style.transition = `transform ${TRANSITION_DURATION.drill}ms ease-out`;
   });
 
   // Per-tile clipPath — clips the label to the tile's rect dimensions so
@@ -353,11 +354,19 @@ export function makeTreemapTile(
   // by pushing it to the group's disposers if available, or just let it run.
   if ((g as any).disposers) (g as any).disposers.push(labelDispose);
 
-  // Pointer-events gate: off-window tiles can't capture clicks.
+  // Visibility gate: off-window tiles fade out and can't capture clicks.
+  // Opacity transitions so peers fade (not vanish) during drill/depth changes.
   if (visible) {
+    effect(() => {
+      const ms = TRANSITION_DURATION.drill;
+      labelWrap.style.transition = `transform ${ms}ms ease-out, opacity ${ms}ms ease-out`;
+    });
     const visDispose = effect(() => {
       void layout.value; // force subscription
-      tile.el.style.pointerEvents = visible.value ? "auto" : "none";
+      const vis = visible.value;
+      tile.el.style.opacity = vis ? "" : "0";
+      tile.el.style.pointerEvents = vis ? "auto" : "none";
+      labelWrap.style.opacity = vis ? "" : "0";
     });
     (g as any).track?.(visDispose);
   }

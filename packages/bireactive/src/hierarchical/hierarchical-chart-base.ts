@@ -28,7 +28,6 @@ import type { ConservationMode } from "./behaviors/keyboard-edit";
 import type { TileBodyDragOptions } from "./behaviors/tile-body-drag";
 import { makeBridge, type BrSyncBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { transitionOnUpdated } from "./behaviors/transition-on-updated";
-import { motion } from "../lib/runtime-config";
 import { previewFullRender, captureOrderFromWindow } from "./behaviors/preview-full-render";
 import { wheelEdit } from "./behaviors/wheel-edit";
 import { keyboardEdit } from "./behaviors/keyboard-edit";
@@ -720,9 +719,12 @@ export abstract class HierarchicalChartBase extends HTMLElement {
    *  customize which attributes/elements get CSS settle transitions. Default:
    *  x/y/width/height on rect, text (icicle/treemap). */
   protected _transitionOpts(): Parameters<typeof transitionOnUpdated>[0] | undefined {
-    // Hierarchical charts use drillMs for their CSS transitions (drill is
-    // the dominant motion). Flat charts override this to use baseMs.
-    return { durationMs: () => motion.drillMs.value };
+    // Default: no override. The behavior uses TRANSITION_DURATION.settle
+    // (baseMs * 2.5) for CSS transitions on x/y/width/height. This covers
+    // value-change settle and resize. Drill transitions are handled
+    // separately (inline transform transitions on label groups, JS tweens
+    // for sunburst) which DO use drillMs.
+    return undefined;
   }
 
   /** Shared startGesture setup: captures snapshot, finds left/right nodes,

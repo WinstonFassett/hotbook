@@ -39,8 +39,8 @@ export const TRANSITION_DURATION = {
   get hover()     { return 1.0 * motion.baseMs.value; },
   /** Highlight rect sliding between columns/rows. */
   get highlight() { return 1.5 * motion.baseMs.value; },
-  /** Drill in/out zoom — independent of baseMs (navigation, not settle).
-   *  Driven by motion.drillMs directly so the tweaks pane knob works. */
+  /** Drill in/out zoom — driven by motion.drillMs (configurable via tweaks
+   *  pane). Default 300ms matches the historical baseMs * 3 value. */
   get drill()     { return motion.drillMs.value; },
 } as const;
 
