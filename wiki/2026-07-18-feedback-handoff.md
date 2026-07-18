@@ -39,6 +39,29 @@ Dev servers: `hotbook-demos.localhost:1355` (demos) + `icicle-harness.localhost:
    - Treemap: top-level separation is good, but nested blocks go flush against their container edges. Need `paddingOuter` (gap between parent edge and children) matching the separation amount, so nested blocks don't look like they're touching the container wall.
    - Standardize one `paddingInner` value across all hierarchical charts for consistent separation feel.
 
+### Round 4 feedback (slow-motion audit, 2026-07-18)
+
+**20. Treemap paddingOuter — 2px is too small.** The 2px `paddingOuter` fix was the right idea but wrong value. Needs to be larger to create visible breathing room between nested blocks and their container. Winston wants to review visually and discuss the right amount.
+
+**21. Text styles audit needed.** Text is differently sized/formatted across the 4 hierarchical charts. Need to audit and standardize text styles across all charts (font size, weight, formatting).
+
+**22. Treemap labels overflow their nodes.** Labels spill out of their tile into the parent container. Need proper clipping. LayerChart likely has this solved — check their approach.
+
+**23. Two-line label format (name + value).** Budget tree is the reference: bold name on first line, dollar-formatted value on second line (lighter weight). Apply to:
+   - Pack: split name from value, separate lines, bold name
+   - Treemap: upper-left positioning, amount on new line below
+   - Sunburst: name then dollar underneath
+   - Container vs leaf labeling may differ — needs design discussion
+   - Dollar-format the value when appropriate
+
+**24. Font color — STILL not addressed.** White text on light oklch backgrounds is hard to read. Need near-black/dark text on all hierarchical charts. This has been raised multiple times and remains unfixed. **Priority.**
+
+**25. Circle pack borders look sharp.** Whatever border style pack is using looks good. Consider applying the same to other charts (sunburst, treemap).
+
+**26. Transition timing — base vs drill.** Charts are using "base" transition timing for drill transitions, not "drill" timing. Drill transitions should use drill-specific timing. The 1000ms base slowdown reveals disparities between charts.
+
+**27. Visual consistency strategy needed.** With all 4 hierarchical charts side by side, the disparities are clear. Need a strategy session to align: separation, borders, labels, text styles, transition feel.
+
 ### Round 1 regressions (fix first)
 
 1. **Pack not transitioning** — likely caused by Phase 3/4 changes (`exitFade` default, `_transitionOpts()` extraction). Pack drill has no transition animation at all. Investigate `pack-chart.ts` `_setupRendering` + `_transitionOpts()` + the `transitionOnUpdated` behavior wiring. **Root cause found:** pack never wired `withExitDelay` (unlike sunburst), so exiting circles are evicted immediately — the opacity CSS transition fires but is invisible. Also pack uses the same "recompute on effective root" pattern as treemap (see #5 above) — needs the same D3-style affine transform fix.
