@@ -120,6 +120,9 @@ Reordering can be a gesture. The chart can support drag-to-reorder and keyboard 
 ### Cross-tile selection
 Selection is a cross-tile concept. If a mark is selected in one chart, other charts bound to the same data should reflect that selection by default. They can opt out or render selection differently. Linked zoom could be anchored on selection, but there is no plan for independent linked zoom.
 
+### Cursor affordances
+Cursors must be set on the **interactive element** (tile, handle, cell), never on the chart host or SVG container. Setting cursor on the host bleeds into dead areas (gaps between tiles, SVG background, padding) and misleads the user into thinking those areas are interactive. The icicle is the reference: tiles get `pointer`, edge handles get `row-resize`/`col-resize`, and the host has no cursor set — dead areas inherit the default. All hierarchical charts follow the same pattern.
+
 ### Testing and verification
 Gesture effects and transitions must be testable. The `Editor` state machine should expose observable transitions. The chart's effect callbacks should be unit-testable. Transitions should be deterministic and interruptible. The test checklist in `wiki/gesture-test-checklist.md` should be the source of truth for coverage.
 

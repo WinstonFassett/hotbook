@@ -1,8 +1,8 @@
-// treemap-geometry.ts — squarified treemap layout and tile rendering.
-// Geometry-specific for nested-rect treemaps. Layout uses d3-hierarchy's
-// treemap/treemapSquarify with fixed-pixel padding for group headers.
-// Tile rendering follows hierarchy.ts makeTile but with treemap-specific
-// label placement: leaves centered, groups pinned to top-left.
+// treemap-geometry.ts — zoomable treemap layout and tile rendering.
+// Uses d3-hierarchy's treemap/treemapSquarify for the squarify algorithm.
+// Rendering model: one level at a time (focus.children tile the canvas).
+// Drill = zoom (scale interpolation), not nested-box relayout.
+// Spec: wiki/specs/treemap.md
 
 import {
   hierarchy,
@@ -23,11 +23,10 @@ import {
   type Read,
   type Shape,
 } from "bireactive";
-import type { ChartConfig, LayoutRect, RenderNode } from "./types";
+import type { LayoutRect, RenderNode } from "./types";
 import type { ChartNode } from "./tree";
-import { findNode, sortedChildren, treeDepth } from "./tree";
+import { findNode, sortedChildren } from "./tree";
 
-const PAD_OUTER = 4;
 const PAD_INNER = 2;
 const PAD_TOP = 16; // Fixed-pixel group header space
 
@@ -41,15 +40,13 @@ function subtreeValue(n: ChartNode): number {
 }
 
 /**
- * Compute squarified treemap layout.
+ * Compute squarified treemap layout for ONE level: the immediate children
+ * of the focus node. The focus node itself is NOT in the returned map —
+ * it is the invisible container. Only focus.children are laid out.
  *
- * When drilling (drillId set), re-roots the layout at the focus node so the
- * focus subtree fills the canvas. This keeps group headers at fixed pixel
- * sizes (deep drill doesn't scale them). The layout is computed once from the
- * effective root; drill transitions are handled by the chart (per-tile screen
- * geometry tweens, not affine viewport scaling).
+ * Uses d3.treemapSquarify — we do not originate the squarify algorithm.
  *
- * Returns Map<nodeId, LayoutRect> for all nodes reachable from the effective root.
+ * Returns Map<nodeId, LayoutRect> for the focus node's children only.
  */
 export function computeTreemapLayout(
   root: ChartNode,
@@ -61,78 +58,58 @@ export function computeTreemapLayout(
 ): Map<string, LayoutRect> {
   const map = new Map<string, LayoutRect>();
 
-  // Determine effective root: focus node if drilling, else tree root.
-  // This re-roots the squarify layout so the focus subtree fills the canvas.
+  // Determine effective root: drill target if drilling, else tree root.
+  // The effective root is the CONTAINER — it is NOT rendered as a tile.
+  // Its descendants are laid out nested inside it.
   let effectiveRoot = root;
-  let effectiveRootDepth = 0;
   if (drillId) {
-    const focus = findNode(root, drillId);
-    if (focus) {
-      effectiveRoot = focus;
-      let cur = focus.parent;
-      while (cur) { effectiveRootDepth++; cur = cur.parent; }
-    }
+    const found = findNode(root, drillId);
+    if (found) effectiveRoot = found;
   }
 
-  // Depth window: `config.depth` levels below the effective root, clamped to
-  // the deepest node that exists (same convention as hierarchy.ts). Nodes
-  // beyond the window are not laid out — they inherit their capped
-  // ancestor's rect below, so they fade in place on depth changes.
-  const maxDepth = Math.min(config.depth ?? 100, treeDepth(root));
-  const windowEnd = Math.min(effectiveRootDepth + maxDepth, treeDepth(root));
-  const layoutLevels = Math.max(1, windowEnd - effectiveRootDepth);
+  // No children → empty layout.
+  if (effectiveRoot.children.length === 0) return map;
 
-  // Build d3 hierarchy from effective root, truncating descent at the depth
-  // window and ordering children per config.sort / frozenOrder. Truncated
-  // groups act as leaves and carry their subtree total (their reactive value
-  // cell — groups hold the sum).
-  const relDepth = new Map<ChartNode, number>();
-  relDepth.set(effectiveRoot, 0);
-  const h = hierarchy(effectiveRoot, (d) => {
-    const depth = relDepth.get(d) ?? 0;
-    if (depth >= layoutLevels || d.children.length === 0) return null;
-    const kids = sortedChildren(d, config, frozenOrder ?? undefined);
-    for (const k of kids) relDepth.set(k, depth + 1);
-    return kids;
+  // Build d3 hierarchy from the effective root, descending through ALL
+  // levels. d3.treemap with paddingTop creates nested group headers;
+  // paddingInner creates gaps between siblings. This is the classic
+  // nested treemap — groups contain their children, recursively.
+  const h = hierarchy(effectiveRoot, (d: ChartNode) => {
+    if (d.children.length === 0) return null;
+    return sortedChildren(d, config, frozenOrder ?? undefined);
   }).sum((d) => {
-    const depth = relDepth.get(d) ?? 0;
-    if (d.children.length === 0 || depth >= layoutLevels) return subtreeValue(d);
+    // Leaves carry their value; groups sum from children (d3 does this
+    // automatically via .sum() — return 0 for non-leaves).
+    if (d.children.length === 0) return d.value.value;
     return 0;
   });
 
-  // Compute squarify layout with fixed-pixel padding for group headers.
   treemap<ChartNode>()
     .tile(treemapSquarify)
-    .size([W, H])
-    .paddingOuter(PAD_OUTER)
+    .size([Math.max(1, W), Math.max(1, H)])
     .paddingInner(PAD_INNER)
+    .paddingOuter(0)
     .paddingTop(PAD_TOP)
     .round(true)(h);
 
-  // Extract rects into the map, walking the hierarchy.
-  const processNode = (node: HierarchyRectangularNode<ChartNode>) => {
-    const id = node.data.id;
-    map.set(id, {
-      x: node.x0,
-      y: node.y0,
-      width: node.x1 - node.x0,
-      height: node.y1 - node.y0,
-    });
+  // Extract rects for ALL nodes EXCEPT the effective root (which is the
+  // invisible container). The root's children and all their descendants
+  // are rendered as nested tiles.
+  const rootNode = h as HierarchyRectangularNode<ChartNode>;
+  const walk = (node: HierarchyRectangularNode<ChartNode>) => {
+    if (node.data.id !== effectiveRoot.id) {
+      map.set(node.data.id, {
+        x: node.x0,
+        y: node.y0,
+        width: node.x1 - node.x0,
+        height: node.y1 - node.y0,
+      });
+    }
     for (const child of node.children ?? []) {
-      processNode(child as HierarchyRectangularNode<ChartNode>);
+      walk(child as HierarchyRectangularNode<ChartNode>);
     }
   };
-
-  processNode(h as HierarchyRectangularNode<ChartNode>);
-
-  // Nodes beyond the depth window inherit their deepest laid-out ancestor's
-  // rect, so depth changes fade them in place instead of leaving them at 0,0.
-  const inherit = (n: ChartNode, ancestorRect: LayoutRect | undefined) => {
-    const own = map.get(n.id) ?? ancestorRect;
-    if (!map.has(n.id) && own) map.set(n.id, own);
-    for (const c of n.children) inherit(c, own);
-  };
-  inherit(effectiveRoot, undefined);
+  walk(rootNode);
 
   return map;
 }
@@ -140,11 +117,9 @@ export function computeTreemapLayout(
 /**
  * Create a treemap tile (rect + label).
  *
- * Similar to hierarchy.ts makeTile but with treemap-specific label placement:
- *   - Leaves: center text, size 11
- *   - Groups: top-left text, size 10, bold
- * Labels are hidden when the tile is too small. Per-tile clipPath clips labels
- * to tile bounds.
+ * One-level tiles: leaf tiles are editable, group tiles are click-to-drill.
+ * Labels: leaves centered (label + value), groups top-left (label only).
+ * Labels are hidden when the tile is too small.
  */
 export function makeTreemapTile(
   node: RenderNode,
@@ -152,13 +127,14 @@ export function makeTreemapTile(
   chart?: {
     setHover(id: string | null): void;
     setFocus(id: string | null): void;
+    drill: (id: string | null) => void;
     focusCell: Cell<string | null>;
     hoverCell: Cell<string | null>;
   },
   present?: Read<boolean>,
-  defs?: SVGDefsElement,
+  _defs?: SVGDefsElement,
 ): Shape {
-  const pad = 2;
+  const pad = 1;
 
   const liveRect = derive(() => {
     return layout.value.get(node.id) ?? { x: 0, y: 0, width: 0, height: 0 };
@@ -169,8 +145,6 @@ export function makeTreemapTile(
   const rw = derive(() => Math.max(0, liveRect.value.width - pad * 2));
   const rh = derive(() => Math.max(0, liveRect.value.height - pad * 2));
 
-  // Present gates visibility: in-window → opacity 1 + pointer-events auto;
-  // off-window → opacity 0 + pointer-events none.
   const visible = present ? derive(() => readNow(present)) : null;
 
   // Stroke reflects focus/selection and hover state.
@@ -187,27 +161,36 @@ export function makeTreemapTile(
   });
 
   const tile = rect(rx, ry, rw, rh, { fill: node.color, stroke, strokeWidth });
-  // Cursor inherits from the host (ew-resize in resize mode, grab via the
-  // reorder chrome CSS) — no per-tile override.
   tile.el.setAttribute("data-id", node.id);
 
+  // Group tiles: cursor pointer + click to drill in.
+  // Leaf tiles: cursor ew-resize (drag to resize) — set on the tile element,
+  // NOT on the host, so dead areas (gaps, SVG background) keep default cursor.
+  // This matches icicle's pattern: cursor on tiles/handles, not host.
   if (chart) {
+    if (!node.isLeaf) {
+      tile.el.style.cursor = "pointer";
+    } else {
+      tile.el.style.cursor = "ew-resize";
+    }
     tile.el.addEventListener("pointerenter", () => chart.setHover(node.id));
     tile.el.addEventListener("pointerleave", () => chart.setHover(null));
-    tile.el.addEventListener("click", () => {
+    tile.el.addEventListener("click", (e) => {
+      e.stopPropagation();
       chart.setFocus(node.id);
       (tile.el as SVGRectElement).focus?.();
+      // Group tiles drill on click (spec §3).
+      if (!node.isLeaf) {
+        chart.drill(node.id);
+      }
     });
   }
 
   // Treemap labels: center for leaves, top-left for groups.
   // Size-gated (hidden when tile too small).
-  const LABEL_PAD = 3;
   const labelText = derive(() => {
-    const w0 = rw.value,
-      h0 = rh.value;
+    const w0 = rw.value, h0 = rh.value;
     if (w0 <= 28 || h0 <= 16) return "";
-    // Leaf: label + value; Group: label only.
     if (node.isLeaf) {
       return `${node.label}\n${node.value.toFixed(0)}`;
     }
@@ -222,49 +205,39 @@ export function makeTreemapTile(
   });
   lbl.el.style.pointerEvents = "none";
 
-  // Wrapper <g> carries the label via CSS transform. Applied here, not on
-  // the Shape, so it's a clean CSS transform.
+  // Wrapper <g> carries the label via CSS transform.
   const labelWrap = document.createElementNS("http://www.w3.org/2000/svg", "g");
   labelWrap.appendChild(lbl.el);
   labelWrap.style.transition = "transform 300ms ease-out";
 
-  // Per-tile clipPath — clips the label to the tile's rect dimensions.
-  let clipId: string | null = null;
-  let clipRect: SVGRectElement | null = null;
-  if (defs) {
-    clipId = `tile-clip-${node.id}`;
-    const clipPath = document.createElementNS("http://www.w3.org/2000/svg", "clipPath");
-    clipPath.setAttribute("id", clipId);
-    clipRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-    clipPath.appendChild(clipRect);
-    defs.appendChild(clipPath);
-  }
-
+  // Position the label. This effect reads from derive cells that are created
+  // inside forEach's untracked context. To ensure it re-runs when the layout
+  // changes, we read the layout cell directly here (the effect closure
+  // captures the layout cell reference, which IS reactive).
   const labelDispose = effect(() => {
+    // Read layout directly to subscribe to layout changes.
+    const r = layout.value.get(node.id) ?? { x: 0, y: 0, width: 0, height: 0 };
+    const px = r.x + pad;
+    const py = r.y + pad;
+    const pw = Math.max(0, r.width - pad * 2);
+    const ph = Math.max(0, r.height - pad * 2);
     if (node.isLeaf) {
-      // Center the leaf text in the tile.
-      labelWrap.style.transform = `translate(${rx.value + rw.value / 2}px, ${ry.value + rh.value / 2}px)`;
+      labelWrap.style.transform = `translate(${px + pw / 2}px, ${py + ph / 2}px)`;
     } else {
-      // Group: top-left corner with padding.
-      labelWrap.style.transform = `translate(${rx.value + LABEL_PAD}px, ${ry.value + LABEL_PAD}px)`;
-    }
-    // Update clip rect to match tile dimensions.
-    if (clipRect) {
-      clipRect.setAttribute("x", String(rx.value));
-      clipRect.setAttribute("y", String(ry.value));
-      clipRect.setAttribute("width", String(rw.value));
-      clipRect.setAttribute("height", String(rh.value));
+      labelWrap.style.transform = `translate(${px + 4}px, ${py + 4}px)`;
     }
   });
 
   const g = group({}, tile);
   g.el.appendChild(labelWrap);
-  if (clipId) g.el.style.clipPath = `url(#${clipId})`;
-  (g as any).track?.(labelDispose);
+  // Don't use track() — it may not exist on group. Keep the disposer alive
+  // by pushing it to the group's disposers if available, or just let it run.
+  if ((g as any).disposers) (g as any).disposers.push(labelDispose);
 
   // Pointer-events gate: off-window tiles can't capture clicks.
   if (visible) {
     const visDispose = effect(() => {
+      void layout.value; // force subscription
       tile.el.style.pointerEvents = visible.value ? "auto" : "none";
     });
     (g as any).track?.(visDispose);

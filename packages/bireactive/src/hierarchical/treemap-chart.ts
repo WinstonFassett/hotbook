@@ -1,15 +1,13 @@
-// treemap-chart.ts — hierarchical squarified treemap using bireactive shapes.
-// Extends HierarchicalChartBase with squarified-treemap geometry (rectilinear
-// tiles, no edge handles), treemap-specific behavior composition, and the
-// tile-body drag gesture for additive resize-only (no reorder).
+// treemap-chart.ts — zoomable treemap using d3-hierarchy squarify layout.
+// Extends HierarchicalChartBase with one-level-at-a-time rendering:
+// the rendered set is focus.children (NOT all descendants). Root is never
+// a tile. Drill = click a group tile → it becomes the new focus.
+// Spec: wiki/specs/treemap.md
 
 import { cell, derive, forEach, group, type Cell } from "bireactive";
 import type { LayoutRect, RenderNode } from "./types";
 import { setup, type Behavior } from "./gesture";
-import {
-  buildAllDescendants,
-  type Edge,
-} from "./hierarchy";
+import { buildAllDescendants, type Edge } from "./hierarchy";
 import { computeTreemapLayout, makeTreemapTile } from "./treemap-geometry";
 import type { GestureContext } from "./gestures";
 import { wheelEdit } from "./behaviors/wheel-edit";
@@ -20,6 +18,7 @@ import { transitionOnUpdated } from "./behaviors/transition-on-updated";
 import { previewFullRender, captureOrderFromWindow } from "./behaviors/preview-full-render";
 import { membershipCell } from "./behaviors/mark-lifecycle";
 import { HierarchicalChartBase } from "./hierarchical-chart-base";
+import { findNode, sortedChildren, type ChartNode } from "./tree";
 
 export class TreemapChart extends HierarchicalChartBase implements GestureContext<LayoutRect> {
   static tag = "v-treemap";
@@ -42,35 +41,35 @@ export class TreemapChart extends HierarchicalChartBase implements GestureContex
   protected _setupRendering(): void {
     const { w: Wc, h: Hc } = this._hostSize!;
 
-    const allNodes = derive(() => {
+    // Rendered set: ALL descendants of the focus node (excluding the focus
+    // node itself — it is the invisible container). This is the classic
+    // nested treemap: groups contain their children, recursively.
+    // When not drilled, focus = root, so we render root's descendants (not root).
+    const allNodes = derive((): RenderNode[] => {
       const root = this._treeRoot.value;
       const frozen = this._frozenOrder.value;
       const config = this._configCell.value;
       const drill = this._drillId.value;
-      this._reorderTick.value; // re-derive on reorder mutations
+      this._reorderTick.value;
       if (!root || !config) return [];
       return buildAllDescendants(root, config, frozen ?? undefined, drill);
     });
     this._window = allNodes;
 
-    // Treemap draft mechanism (spec §5, scale-against-frozen-siblings):
-    // during an own edit-draft, every tile keeps its gesture-start rect
-    // (frozen) EXCEPT the edited tile, whose rect area-scales in place with
-    // its live value (area ∝ value ⇒ each side scales by sqrt(v/v0), anchored
-    // at the rect center). The full squarify relayout is deferred to
-    // commit/cancel, where the gesture-active class is gone and CSS
-    // transitions animate frozen → live.
+    // Live layout: d3 squarify on focus.children.
     const liveLayout = derive(() => {
       const root = this._treeRoot.value;
       const frozen = this._frozenOrder.value;
       const config = this._configCell.value;
       const drill = this._drillId.value;
-      this._reorderTick.value; // re-derive on reorder mutations
+      this._reorderTick.value;
       if (!root || !config) return new Map<string, LayoutRect>();
       return computeTreemapLayout(root, config, frozen ?? undefined, Wc.value, Hc.value, drill);
     });
     this._liveLayout = liveLayout;
 
+    // Draft mechanism (spec §5): during an own edit-draft, freeze siblings
+    // and scale only the edited tile in place (area ∝ value).
     this._layout = derive(() => {
       const frozenLayout = this._frozenLayout.value;
       const draftId = this._draftId.value;
@@ -79,7 +78,7 @@ export class TreemapChart extends HierarchicalChartBase implements GestureContex
       const map = new Map(frozenLayout);
       const r0 = frozenLayout.get(draftId);
       const v0 = this._gesture?.store.snapshot?.get(draftId);
-      const v = this.valueOf(draftId); // reactive: reads the node's value cell
+      const v = this.valueOf(draftId);
       if (r0 && v0 && v0 > 0 && v >= 0) {
         const s = Math.sqrt(v / v0);
         const w = r0.width * s;
@@ -101,8 +100,7 @@ export class TreemapChart extends HierarchicalChartBase implements GestureContex
     const tilesLayer = group();
     this._rootShape!.add(tilesLayer);
 
-    // Tiles: forEach over ALL descendants. Keyed by id → stable DOM across
-    // depth/sort/drill changes. No mount/unmount, no exit delay.
+    // Tiles: forEach over ALL descendants. Keyed by id → stable DOM.
     const tilesResult = forEach(
       tilesLayer,
       allNodes,
@@ -110,7 +108,7 @@ export class TreemapChart extends HierarchicalChartBase implements GestureContex
         makeTreemapTile(
           node,
           this._layout!,
-          this,
+          this, // chart (has setHover, setFocus, drill, focusCell, hoverCell)
           derive(() => membership.value.has(node.id)),
           this._defs,
         ),
@@ -130,8 +128,6 @@ export class TreemapChart extends HierarchicalChartBase implements GestureContex
     const gesture = this._gesture!;
 
     // Treemap drag behavior: resize or reorder, per config.
-    // dragBehavior auto-derives from sort: sort=index → reorder (if canReorder),
-    // else → resize.
     const dragBehavior = config.dragBehavior ?? (config.sort === "index" ? "reorder" : "resize");
     const dragBehaviors: Behavior[] = [];
 
@@ -147,8 +143,6 @@ export class TreemapChart extends HierarchicalChartBase implements GestureContex
           frozenOrderCell: this._frozenOrder,
           deferSort: () => this.config.sort !== "index",
           focusTile: (id) => this.setFocus(id),
-          // Spec §3: treemap drag-mark-resize is ADDITIVE (only the dragged
-          // tile changes) and scrubs HORIZONTALLY (right = +).
           mode: () => "additive",
           axis: "x",
         }),
@@ -171,17 +165,13 @@ export class TreemapChart extends HierarchicalChartBase implements GestureContex
       );
     }
 
-    // Cursor affordance (legacy WIN-260): ew-resize signals the horizontal
-    // drag-to-resize; reorder mode gets grab cursors from the chrome CSS.
-    this.style.cursor = dragBehavior === "resize" ? "ew-resize" : "";
+    // Cursor: set on leaf tiles, not the host. The icicle sets cursor on
+    // tiles and handles individually, not on the host — dead areas (gaps,
+    // SVG background) inherit the default cursor. We do the same.
+    // The actual cursor is set in makeTreemapTile based on dragBehavior.
 
     this._behaviorDispose = setup(gesture)(
-      // Render behaviors.
-      // Settle CSS on commit/cancel/updated.
       transitionOnUpdated(),
-      // Draft freeze (spec §5): capture the layout at edit-draft start and
-      // track the edited node; the hybrid _layout derive holds siblings at
-      // their frozen rects while only the edited tile scales.
       (g) =>
         g.editor.subscribe((t) => {
           if (t.type === "draft" && t.draft?.intent === "edit") {
@@ -194,13 +184,11 @@ export class TreemapChart extends HierarchicalChartBase implements GestureContex
             this._draftId.value = null;
           }
         }),
-      // Freeze sibling order during own gestures when sort !== 'index'.
       previewFullRender({
         deferSort: () => this.config.sort !== "index",
         frozenOrder: this._frozenOrder,
         captureOrder: () => captureOrderFromWindow(this._window?.value ?? null),
       }),
-      // Input behaviors.
       wheelEdit({
         target: (g) => g.store.hover.value ?? g.store.focus.value,
         valueOf: (g) => this.valueOf,

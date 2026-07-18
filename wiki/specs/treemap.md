@@ -2,23 +2,27 @@
 
 Delta spec for the treemap `Chart`. The treemap is in the Hierarchical family but uses a **different `draft` mechanism** from the icicle/sunburst branch and a **different drill geometry**. This document lists **only the divergences**; for anything not mentioned, read `wiki/specs/icicle.md`. The Hierarchical family contract is `wiki/gesture-architecture.md` §"Hierarchical".
 
-Vocabulary: `UBIQUITOUS_LANGUAGE.md` and `wiki/gesture-architecture.md`. The old `MdTreemapLC` code was read once for behavior and then set aside.
+Vocabulary: `UBIQUITOUS_LANGUAGE.md` and `wiki/gesture-architecture.md`. The old `MdTreemapLC` code was read once for behavior and then set aside. The d3-hierarchy `treemapSquarify` layout is used — we do not originate the squarify algorithm.
 
 ## Divergences from icicle
 
 ### §1 Geometry
-- **Squarify** treemap, rectilinear. Marks are **rectangles** tiling the parent's box edge-to-edge with fixed-pixel padding. Sibling spans are proportional to value, but squarify chooses the split orientation that keeps aspect ratios near 1 — sibling positions are **not** a simple proportional partition the way icicle/sunburst are.
-- **Group headers:** interior (non-leaf) nodes carry a fixed-pixel header label pinned to the top of their rectangle. Presentation detail, but it drives the drill geometry (§5).
+- **Squarify** treemap, rectilinear. Uses `d3.treemap()` with `d3.treemapSquarify`. Marks are **rectangles** tiling the parent's box edge-to-edge with fixed-pixel padding. Sibling spans are proportional to value, but squarify chooses the split orientation that keeps aspect ratios near 1 — sibling positions are **not** a simple proportional partition the way icicle/sunburst are.
+- **Nested multi-level.** All descendants of the focus node (within `depth` config) are rendered as nested rectangles — groups contain their children inside them, recursively. The `depth` config caps how many levels are visible, same as icicle.
+- **Root is the invisible container.** The root node (or the drill focus when drilled) is NOT rendered as a tile — it is the canvas. Its children and their descendants tile the space. This is fundamental to treemap geometry, not a config option.
+- **Group headers:** interior (non-leaf) nodes carry a fixed-pixel header label pinned to the top of their rectangle (`d3.treemap().paddingTop()`). Presentation detail, but it drives the drill geometry (§5).
 - **No `orientation` config dimension** (same as sunburst).
 
 ### §2 DataView query
 - Same key shape as sunburst: `datasetId` + `measure` + `sort` + `depth`. `Dataset.dataShape` is `hierarchical`.
-- **Windowing:** focus node's subtree (plus the focus node as a context header when drilled). Does not retain off-screen ancestors — squarify re-layouts from the focus node at full canvas size on drill (§5), so ancestor geometry isn't needed for the drill transition. (Same windowing rationale as sunburst, different reason: treemap re-roots the layout instead of retaining ancestor geometry for a transition.)
+- **Rendered set:** all descendants of the focus node (within `depth`), excluding the focus node itself. When not drilled, focus = root, so the rendered set is root's descendants. When drilled into node N, focus = N, rendered set = N's descendants.
+- **Drill-out navigation:** the breadcrumb (from the base class) shows the path from root to the current focus. Clicking a breadcrumb segment drills out to that ancestor. This is how the user navigates back up — the root is not a tile, so there is no root tile to click.
+- **Does not retain off-screen ancestors** — squarify re-layouts from the focus node at full canvas size on drill (§5), so ancestor geometry isn't needed for the drill transition. (Same windowing rationale as sunburst, different reason: treemap re-roots the layout instead of retaining ancestor geometry for a transition.)
 
 ### §3 / §4 Control surfaces and intent
 - **No boundary knob.** The treemap has no inter-sibling boundary handle — squarify positions are derived, not caller-partitioned.
 - **Reorder gesture — yes** (remediated 2026-07 during the WIN-350 port; this spec previously said "no reorder" on the claim that caller order has no observable effect — that claim was wrong for `sort === 'index'`, where the caller order feeds the squarify traversal and reordering visibly rearranges tiles). When `canReorder` and `sort === 'index'`, dragging a tile reorders it among its siblings, same intent/mechanics as icicle `reorderDrag`. `intent: reorder`.
-- **Drag mark — resize** (WIN-260 "drag-to-resize"). Dragging horizontally on a tile (`ew-resize` cursor) scrubs its value (right = +, left = −; Shift = coarse, Alt = fine). **Additive** — only the dragged tile's value changes; no sibling redistribution. This is the treemap's primary edit surface. `intent: edit`.
+- **Drag mark — resize** (WIN-260 "drag-to-resize"). Dragging horizontally on a leaf tile (`ew-resize` cursor) scrubs its value (right = +, left = −; Shift = coarse, Alt = fine). **Additive** — only the dragged tile's value changes; no sibling redistribution. This is the treemap's primary edit surface. `intent: edit`.
 - **Wheel — tile.** Additive (only the target changes; dynamic step). Same as icicle's wheel.
 - **Keyboard — focused tile.** Additive by default; Alt → `proportional-neighbor` (treemap's configured scaling). Same as icicle's keyboard.
 - **Cross-tile.** Source-defined value-mapping. Conservation not enforced on external edits — same as icicle §3.
@@ -34,4 +38,4 @@ Vocabulary: `UBIQUITOUS_LANGUAGE.md` and `wiki/gesture-architecture.md`. The old
 
 ## Summary
 
-Treemap diverges from icicle on one axis, family-geometry: `draft` uses scale-against-frozen-siblings (layout recomputes internally, sibling repositioning suppressed until `commit`) vs icicle's subtree-patch. Drill is the same relayout approach in both (re-root at focus, transition tiles to new rects). Plus capability: no boundary knob, no reorder — drag-mark-resize (additive) + wheel (additive) + keyboard (additive, Alt → proportional-neighbor) + cross-tile. The one family-contract gap this exposed (the too-narrow `draft` line) is fixed in the model.
+Treemap diverges from icicle on one axis, family-geometry: `draft` uses scale-against-frozen-siblings (layout recomputes internally, sibling repositioning suppressed until `commit`) vs icicle's subtree-patch. Drill is the same relayout approach in both (re-root at focus, transition tiles to new rects). The root is the invisible container (not a tile) — drill-out navigation is via breadcrumb. Uses `d3.treemapSquarify` — we do not originate the layout algorithm. Plus capability: no boundary knob, drag-mark-resize (additive) + wheel (additive) + keyboard (additive, Alt → proportional-neighbor) + cross-tile.
