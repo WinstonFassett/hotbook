@@ -327,6 +327,8 @@ const packSchema: ChartSchema = {
       { type: 'measure', label: 'Measure', path: 'valueBinding' },
       { type: 'sort', label: 'Sort', path: 'orderBinding' },
       { type: 'depth', label: 'Depth', path: 'depth' },
+      { type: 'toggle', label: 'Root', path: 'showRoot' },
+      { type: 'toggle', label: 'Breadcrumb', path: 'showBreadcrumb' },
     ],
   },
   capabilities: {
@@ -347,6 +349,8 @@ const treemapSchema: ChartSchema = {
       { type: 'measure', label: 'Measure', path: 'valueBinding' },
       { type: 'sort', label: 'Sort', path: 'orderBinding' },
       { type: 'depth', label: 'Depth', path: 'depth' },
+      { type: 'toggle', label: 'Root', path: 'showRoot' },
+      { type: 'toggle', label: 'Breadcrumb', path: 'showBreadcrumb' },
     ],
   },
   capabilities: {
@@ -367,6 +371,8 @@ const treetableSchema: ChartSchema = {
       { type: 'measure', label: 'Measure', path: 'valueBinding' },
       { type: 'sort', label: 'Sort', path: 'orderBinding' },
       { type: 'depth', label: 'Depth', path: 'depth' },
+      { type: 'toggle', label: 'Root', path: 'showRoot' },
+      { type: 'toggle', label: 'Breadcrumb', path: 'showBreadcrumb' },
     ],
   },
   capabilities: {
@@ -387,6 +393,8 @@ const sunburstSchema: ChartSchema = {
       { type: 'measure', label: 'Measure', path: 'valueBinding' },
       { type: 'sort', label: 'Sort', path: 'orderBinding' },
       { type: 'depth', label: 'Depth', path: 'depth' },
+      { type: 'toggle', label: 'Root', path: 'showRoot' },
+      { type: 'toggle', label: 'Breadcrumb', path: 'showBreadcrumb' },
     ],
   },
   capabilities: {
@@ -409,6 +417,8 @@ const icicleSchema: ChartSchema = {
       { type: 'measure', label: 'Measure', path: 'valueBinding' },
       { type: 'sort', label: 'Sort', path: 'orderBinding' },
       { type: 'depth', label: 'Depth', path: 'depth' },
+      { type: 'toggle', label: 'Root', path: 'showRoot' },
+      { type: 'toggle', label: 'Breadcrumb', path: 'showBreadcrumb' },
       { type: 'orientation', label: 'Orientation', path: 'orientation' },
     ],
   },
@@ -430,6 +440,8 @@ const treeSchema: ChartSchema = {
       { type: 'measure', label: 'Measure', path: 'valueBinding' },
       { type: 'sort', label: 'Sort', path: 'orderBinding' },
       { type: 'depth', label: 'Depth', path: 'depth' },
+      { type: 'toggle', label: 'Root', path: 'showRoot' },
+      { type: 'toggle', label: 'Breadcrumb', path: 'showBreadcrumb' },
       { type: 'orientation', label: 'Orientation', path: 'orientation' },
     ],
   },

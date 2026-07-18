@@ -68,6 +68,7 @@ const experiments: Array<{
   tag: string;
   ctor: CustomElementConstructor;
   custom?: (section: HTMLElement, demo: HTMLElement, el: HTMLElement) => void;
+  underConstruction?: boolean;
 }> = [
   { id: "viewer-demo", title: "Viewer (pan/zoom/show demo)", tag: "md-viewer-demo", ctor: MdViewerDemo as unknown as CustomElementConstructor },
   { id: "cartesian-viewer", title: "CartesianViewer (zoomable scatterplot with axes)", tag: "md-cartesian-viewer", ctor: MdCartesianViewerDemo as unknown as CustomElementConstructor },
@@ -76,7 +77,7 @@ const experiments: Array<{
   { id: "bar-chart", title: "BarChart (vertical)", tag: "v-bar-chart", ctor: MdBarChartLC },
   { id: "bands-chart", title: "Bands (horizontal, palette, inside labels)", tag: "v-bands-chart", ctor: MdBandsChartLC },
   { id: "scatter-chart", title: "ScatterChart", tag: "v-scatter-chart", ctor: MdScatterChartLC },
-  { id: "pie-chart", title: "PieChart", tag: "v-pie-chart", ctor: MdPieChartLC },
+  { id: "pie-chart", title: "PieChart (under construction)", tag: "v-pie-chart", ctor: MdPieChartLC, underConstruction: true },
   { id: "radar-chart", title: "RadarChart (Radial Line)", tag: "v-radar-chart", ctor: MdRadarChartLC },
   { id: "concentric-arc", title: "ConcentricArc", tag: "v-concentric-arc", ctor: MdConcentricArcLC },
   { id: "gauge", title: "Gauge (single 270° arc, draggable endpoint + center scrub)", tag: "v-gauge", ctor: MdGaugeLC },
@@ -469,6 +470,28 @@ function buildChartConfigUI(demoId: string, chartEl: HTMLElement, dataModel?: De
         controls.appendChild(sel);
         break;
       }
+
+      case 'toggle': {
+        const lbl = document.createElement('label');
+        lbl.style.cssText = 'font-size:12px;color:var(--text-muted,#999);margin-left:8px;display:flex;align-items:center;gap:4px;cursor:pointer;';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.style.cssText = 'cursor:pointer;';
+        // Read current value from config (hierarchical charts read these
+        // from the config object, not as direct element properties).
+        const cfg = (chartEl as any).config ?? {};
+        cb.checked = !!cfg[field.path];
+        cb.addEventListener('change', () => {
+          // Update the config object and re-set it on the chart element.
+          const newCfg = { ...(chartEl as any).config, [field.path]: cb.checked };
+          (chartEl as any).config = newCfg;
+          chartEl.dispatchEvent(new CustomEvent('chartconfigchange', { bubbles: true }));
+        });
+        lbl.appendChild(cb);
+        lbl.appendChild(document.createTextNode(field.label));
+        controls.appendChild(lbl);
+        break;
+      }
     }
   }
 
@@ -511,6 +534,18 @@ if (app) {
 
     const demo = document.createElement("div");
     demo.className = "demo";
+
+    if (e.underConstruction) {
+      const placeholder = document.createElement("div");
+      placeholder.style.cssText = 'display:flex;align-items:center;justify-content:center;height:200px;color:var(--text-muted,#999);font-size:14px;border:1px dashed var(--border,#333);border-radius:4px;';
+      placeholder.textContent = 'Under construction';
+      demo.appendChild(placeholder);
+      section.appendChild(h2);
+      section.appendChild(demo);
+      app.appendChild(section);
+      continue;
+    }
+
     const el = document.createElement(e.tag) as HTMLElement;
     el.setAttribute("no-source", "");
 

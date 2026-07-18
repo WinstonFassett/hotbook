@@ -446,6 +446,7 @@ export function makeAngularHandle(
     const visDispose = effect(() => {
       const vis = readNow(present);
       handle.el.style.pointerEvents = vis ? "all" : "none";
+      handle.el.style.opacity = vis ? "" : "0";
     });
     (handle as any).track?.(visDispose);
   }
