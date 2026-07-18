@@ -5,8 +5,6 @@
 
 import { derive, forEach, group, type Cell } from "bireactive";
 import type { ChartConfig, LayoutRect, RenderNode } from "./types";
-import { Kernel } from "./kernel";
-import { Gesture, type Behavior } from "./gesture";
 import {
   buildAllDescendants,
   buildEdges,
@@ -21,14 +19,10 @@ import {
   attachEdgeHandleDrag,
   type GestureContext,
 } from "./gestures";
-import { useHostSize } from "./host-size";
 import { tileBodyDrag } from "./behaviors/tile-body-drag";
 import { tileBodyReorder } from "./behaviors/tile-body-reorder";
 import { membershipCell } from "./behaviors/mark-lifecycle";
 import { HierarchicalChartBase } from "./hierarchical-chart-base";
-
-const FALLBACK_W = 720;
-const FALLBACK_H = 360;
 
 export class IcicleChart extends HierarchicalChartBase implements GestureContext<LayoutRect> {
   static tag = "v-icicle";
@@ -38,7 +32,6 @@ export class IcicleChart extends HierarchicalChartBase implements GestureContext
   private _edges?: Cell<Edge[]>;
   private _dragBoundary = 0; // pixel position of the boundary at gesture start
   private _dragPairSize = 0; // pixel size of the pair at gesture start
-  private _dragGroupSize = 0; // pixel size of the entire sibling group at gesture start
 
   // GestureContext: layout accessor (icicle-specific — rectilinear layout).
   layout() { return this._layout!.value; }
@@ -46,8 +39,6 @@ export class IcicleChart extends HierarchicalChartBase implements GestureContext
   // --- Hook: chart-specific rendering ---
 
   protected _setupRendering(): void {
-    const { w: Wc, h: Hc } = this._hostSize!;
-
     const allNodes = this._deriveWindow(
       (root, config, frozen, drill) => buildAllDescendants(root, config, frozen, drill),
       [] as RenderNode[],
