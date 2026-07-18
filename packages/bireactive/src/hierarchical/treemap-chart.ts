@@ -12,7 +12,7 @@ import { computeTreemapLayout, makeTreemapTile } from "./treemap-geometry";
 import type { ChartAccessors } from "./gestures";
 import { tileBodyDrag } from "./behaviors/tile-body-drag";
 import { tileBodyReorder } from "./behaviors/tile-body-reorder";
-import { membershipCell, withExitDelay } from "./behaviors/mark-lifecycle";
+import { membershipCell } from "./behaviors/mark-lifecycle";
 import { HierarchicalChartBase } from "./hierarchical-chart-base";
 import { motion } from "../lib/runtime-config";
 import { findNode, sortedChildren, type ChartNode } from "./tree";
