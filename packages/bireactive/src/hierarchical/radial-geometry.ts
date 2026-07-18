@@ -273,13 +273,24 @@ export function makeArc(
   const rInEffective = derive(() => cells.lrIn.value);
   const rOutEffective = derive(() => cells.lrOut.value);
 
+  // Innermost arc (current focus/root, full circle): no stroke, no rotation
+  // on label, label always shows. Must be declared before stroke/label blocks.
+  // Only the CURRENT drill target (or root when not drilled) is "innermost" —
+  // prevents the old root's label/border from showing while it collapses.
+  const FULL_CIRCLE_SPAN = 2 * Math.PI - 0.01;
+  const isInnermost = derive(() => {
+    const span = a1Effective.value - a0Effective.value;
+    if (span < FULL_CIRCLE_SPAN) return false;
+    const drillId = chart?.drillCell?.value ?? null;
+    return drillId === node.id || (drillId === null && node.parentId === null);
+  });
+
   // Production sunburst look (matches main): every arc gets a thin
   // near-black stroke as the separator. Focus/hover bumps to 2px with
   // white/light-gray. The stroke IS the divider — no separate handle
   // rects needed for the clean rendering. Stroke width is driven by the
   // shared `motion.separation` cell so the tweaks pane retunes it live.
-  // Innermost arc (current focus/root, full circle): no stroke — it's a
-  // solid disc, not a slice, so a separator border is meaningless.
+  // Innermost arc: no stroke — it's a solid disc, not a slice.
   const stroke = derive(() => {
     if (isInnermost.value) return "none";
     if (!chart) return "#0b0d12";
@@ -316,20 +327,9 @@ export function makeArc(
   // rotate(midAngle - 90) translate(midRadius, 0) rotate(flip)
   // with text-anchor: middle, dy: 0.35em.
   // flip = midAngleDeg < 180 ? 0 : 180 — right half upright, left half flipped.
-  // Innermost arc (full circle, span ≈ 2π): label renders at center, no rotation.
-  // Only the CURRENT focus/root gets the center label — prevents duplicate
-  // labels during drill transitions (old root shrinking + new focus expanding).
+  // Innermost arc: label renders at center, no rotation.
   const LABEL_MIN_SPAN = 0.08; // radians ~4.6°
   const LABEL_MIN_RADIAL = 18; // pixels
-  const FULL_CIRCLE_SPAN = 2 * Math.PI - 0.01;
-  const isInnermost = derive(() => {
-    const span = a1Effective.value - a0Effective.value;
-    if (span < FULL_CIRCLE_SPAN) return false;
-    // Only the current drill target (or root when not drilled) is "innermost".
-    // This prevents the old root's label from showing while it collapses.
-    const drillId = chart?.drillCell?.value ?? null;
-    return drillId === node.id || (drillId === null && node.parentId === null);
-  });
   const labelText = derive(() => {
     const span = a1Effective.value - a0Effective.value;
     const radial = rOutEffective.value - rInEffective.value;
