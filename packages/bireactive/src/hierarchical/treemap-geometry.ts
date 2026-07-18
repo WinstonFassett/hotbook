@@ -88,7 +88,10 @@ export function computeTreemapLayout(
     .tile(treemapSquarify)
     .size([Math.max(1, W), Math.max(1, H)])
     .paddingInner(PAD_INNER)
-    .paddingOuter(0)
+    .paddingOuter(PAD_INNER) // gap between parent edge and children — matches
+    // sibling separation so nested blocks don't go flush against their
+    // container. Without this, children touch all 4 walls of their parent,
+    // which looks wrong compared to the clean gaps between siblings.
     .paddingTop(PAD_TOP)
     .round(true)(h);
 
