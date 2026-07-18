@@ -396,15 +396,16 @@ export function makeTile(
   // attributes) because CSS transitions animate transforms but NOT SVG
   // x/y on <text> elements. Size-gated (hidden when tile too small).
   //
-  // Orientation-aware:
+  // Orientation-aware (reactive — updates when orientation changes):
   //   - Horizontal: top-left anchor, horizontal text.
-  //   - Vertical: center anchor, rotated -90° (reads bottom-to-top).
-  //     Narrow vertical tiles can't fit horizontal text.
+  //   - Vertical: top-left anchor + rotate -90° around top-left, then
+  //     translate to center of tile. Reads bottom-to-top.
+  // Uses Anchor.TopLeft for both so the anchor doesn't need to change.
   const LABEL_PAD = 3;
-  const horiz = isHoriz ? readNow(isHoriz) : true;
   const labelText = derive(() => {
     const w0 = rw.value, h0 = rh.value;
-    if (horiz) {
+    const h = isHoriz ? readNow(isHoriz) : true;
+    if (h) {
       if (w0 <= 28 || h0 <= 16) return "";
     } else {
       if (w0 <= 16 || h0 <= 28) return "";
@@ -414,14 +415,13 @@ export function makeTile(
   const lbl = label(
     Vec.derive(() => ({ x: 0, y: 0 })),
     labelText,
-    horiz
-      ? { size: 10, align: Anchor.TopLeft, fill: "#fff" }
-      : { size: 10, align: Anchor.Center, fill: "#fff" },
+    { size: 10, align: Anchor.TopLeft, fill: "#fff" },
   );
   lbl.el.style.pointerEvents = "none";
-  if (!horiz) {
-    // Rotate -90° so text reads bottom-to-top in vertical orientation.
-    lbl.rotate.value = -90;
+
+  // Rotation: reactive to orientation.
+  if (isHoriz) {
+    lbl.effect(() => { lbl.rotate.value = readNow(isHoriz) ? 0 : -90; });
   }
 
   // Wrapper <g> carries the label via CSS-transformable translate.
@@ -429,11 +429,14 @@ export function makeTile(
   labelWrap.appendChild(lbl.el);
   labelWrap.style.transition = "transform 300ms ease-out";
   const labelDispose = effect(() => {
-    if (horiz) {
+    const h = isHoriz ? readNow(isHoriz) : true;
+    if (h) {
       labelWrap.style.transform = `translate(${rx.value + LABEL_PAD}px, ${ry.value + LABEL_PAD}px)`;
     } else {
-      // Center the rotated label in the tile.
-      labelWrap.style.transform = `translate(${rx.value + rw.value / 2}px, ${ry.value + rh.value / 2}px)`;
+      // Vertical: rotate -90° around the label's top-left origin, then
+      // position at the tile's center. After -90° rotation, the text
+      // extends upward from the origin. Shift so it's centered.
+      labelWrap.style.transform = `translate(${rx.value + rw.value / 2}px, ${ry.value + rh.value - LABEL_PAD}px)`;
     }
   });
 
