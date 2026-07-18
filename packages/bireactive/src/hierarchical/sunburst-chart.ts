@@ -120,6 +120,7 @@ export class SunburstChart extends HierarchicalChartBase implements GestureConte
         arcCellsMap,
         center,
         derive(() => membership.value.has(edge.leftId) && membership.value.has(edge.rightId)),
+        this._layout!,
       );
       const off = attachEdgeHandleDrag(handle, this);
       handle.track(off);

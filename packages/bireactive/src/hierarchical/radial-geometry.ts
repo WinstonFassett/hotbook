@@ -369,14 +369,16 @@ export function makeAngularHandle(
   arcCellsMap: ArcCellsMap,
   center: Vec,
   present?: Read<boolean>,
+  layout?: Cell<Map<string, RadialRect>>,
 ): Shape {
-  // Read from per-arc cells — same source as the arcs.
-  const leftCells = derive(() => arcCellsMap.get(edge.leftId));
-  const rightCells = derive(() => arcCellsMap.get(edge.rightId));
-
-  const boundaryAngle = derive(() => leftCells.value?.la1.value ?? 0);
-  const rIn = derive(() => Math.max(0, leftCells.value?.lrIn.value ?? 0));
-  const rOut = derive(() => Math.max(0, leftCells.value?.lrOut.value ?? 0));
+  // Read geometry from the LAYOUT cell (reactive) rather than arcCellsMap
+  // (plain Map, not reactive). The arcCellsMap is populated lazily by
+  // makeArc inside forEach, which may not have run yet when handles are
+  // created. The layout cell is always available and reactive.
+  const leftRect = derive(() => layout?.value.get(edge.leftId) ?? null);
+  const boundaryAngle = derive(() => leftRect.value?.a1 ?? 0);
+  const rIn = derive(() => Math.max(0, leftRect.value?.rIn ?? 0));
+  const rOut = derive(() => Math.max(0, leftRect.value?.rOut ?? 0));
   const radialSpan = derive(() => rOut.value - rIn.value);
 
   // Handle is a thin rect centered at origin. Wrapper <g> carries the
@@ -394,7 +396,7 @@ export function makeAngularHandle(
   const wrapG = document.createElementNS("http://www.w3.org/2000/svg", "g");
   wrapG.appendChild(handle.el);
   wrapG.setAttribute("data-edge", edge.id);
-  wrapG.style.cursor = "move";
+  wrapG.style.cursor = "ew-resize";
 
   const transformDispose = effect(() => {
     const ang = boundaryAngle.value;
