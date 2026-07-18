@@ -58,29 +58,19 @@ export class SunburstChart extends HierarchicalChartBase implements GestureConte
 
     // All descendants of the logical root (drill focus or tree root).
     // Sunburst discards ancestors (unlike icicle) — sunburst.md §2.
-    const allNodes = derive(() => {
-      const root = this._treeRoot.value;
-      const frozen = this._frozenOrder.value;
-      const config = this._configCell.value;
-      const drill = this._drillId.value;
-      this._reorderTick.value;
-      if (!root || !config) return [];
-      return buildAllDescendantsRadial(root, config, frozen ?? undefined, drill);
-    });
+    const allNodes = this._deriveWindow(
+      (root, config, frozen, drill) => buildAllDescendantsRadial(root, config, frozen, drill),
+      [] as RenderNode[],
+    );
     this._window = allNodes;
 
     // Radial layout — direct reactive derive, same pattern as icicle's
     // computeLayout. The drill transform is built into computeRadialLayout
     // (angular scaling + radial shift), same as the icicle's computeLayout.
-    this._layout = derive(() => {
-      const root = this._treeRoot.value;
-      const frozen = this._frozenOrder.value;
-      const config = this._configCell.value;
-      const drill = this._drillId.value;
-      this._reorderTick.value;
-      if (!root || !config) return new Map<string, RadialRect>();
-      return computeRadialLayout(root, config, frozen ?? undefined, Wc.value, Hc.value, drill);
-    });
+    this._layout = this._deriveLayout(
+      (root, config, frozen, w, h, drill) => computeRadialLayout(root, config, frozen, w, h, drill),
+      new Map<string, RadialRect>(),
+    );
 
     // Present-filtered subset for membership. Membership is computed from the
     // FRESH node list, while the forEach below renders the exit-DELAYED list:

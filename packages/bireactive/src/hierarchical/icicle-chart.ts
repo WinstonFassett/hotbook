@@ -49,28 +49,16 @@ export class IcicleChart extends HierarchicalChartBase implements GestureContext
   protected _setupRendering(): void {
     const { w: Wc, h: Hc } = this._hostSize!;
 
-    const allNodes = derive(() => {
-      const root = this._treeRoot.value;
-      const frozen = this._frozenOrder.value;
-      const config = this._configCell.value;
-      const drill = this._drillId.value;
-      this._reorderTick.value; // re-derive on reorder mutations
-      if (!root || !config) return [];
-      return buildAllDescendants(root, config, frozen ?? undefined, drill);
-    });
+    const allNodes = this._deriveWindow(
+      (root, config, frozen, drill) => buildAllDescendants(root, config, frozen, drill),
+      [] as RenderNode[],
+    );
     this._window = allNodes;
 
-    this._layout = derive(() => {
-      const root = this._treeRoot.value;
-      const frozen = this._frozenOrder.value;
-      const config = this._configCell.value;
-      const drill = this._drillId.value;
-      this._reorderTick.value; // re-derive on reorder mutations
-      if (!root || !config) return new Map<string, LayoutRect>();
-      // Hc is the SVG's actual size (measured by ResizeObserver on the SVG),
-      // which already excludes the breadcrumb height because of flexbox.
-      return computeLayout(root, config, frozen ?? undefined, Wc.value, Hc.value, drill);
-    });
+    this._layout = this._deriveLayout(
+      (root, config, frozen, w, h, drill) => computeLayout(root, config, frozen, w, h, drill),
+      new Map<string, LayoutRect>(),
+    );
 
     // Present-filtered subset for membership (per-tile/per-handle visibility).
     const presentNodes = derive(() => allNodes.value.filter((n) => n.present));

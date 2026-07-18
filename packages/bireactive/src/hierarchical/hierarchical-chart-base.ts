@@ -16,7 +16,7 @@
 // interface, not a deep hierarchy. Per CLAUDE.md: prefer decoupling through
 // interfaces; the base owns cells + lifecycle, the chart owns geometry composition.
 
-import { cell, effect, group, type Cell } from "bireactive";
+import { cell, derive, effect, group, type Cell } from "bireactive";
 import type { ChartConfig } from "./types";
 import { Kernel, configKey } from "./kernel";
 import { DataView } from "./data-view";
@@ -546,6 +546,36 @@ export abstract class HierarchicalChartBase extends HTMLElement {
   }
 
   // --- Hooks for the chart subclass ---
+
+  /** Derive the visible-node window, tracking the common dependencies
+   *  (root, frozenOrder, config, drillId, reorderTick). The chart passes
+   *  its geometry-specific build function. */
+  protected _deriveWindow<T>(build: (root: ChartNode, config: ChartConfig, frozen: Map<string, string[]> | undefined, drill: string | null) => T, empty: T): Cell<T> {
+    return derive(() => {
+      const root = this._treeRoot.value;
+      const frozen = this._frozenOrder.value;
+      const config = this._configCell.value;
+      const drill = this._drillId.value;
+      this._reorderTick.value;
+      if (!root || !config) return empty;
+      return build(root, config, frozen ?? undefined, drill);
+    });
+  }
+
+  /** Derive the layout, tracking the common dependencies + host size.
+   *  The chart passes its geometry-specific compute function. */
+  protected _deriveLayout<T>(compute: (root: ChartNode, config: ChartConfig, frozen: Map<string, string[]> | undefined, w: number, h: number, drill: string | null) => T, empty: T): Cell<T> {
+    const { w: Wc, h: Hc } = this._hostSize!;
+    return derive(() => {
+      const root = this._treeRoot.value;
+      const frozen = this._frozenOrder.value;
+      const config = this._configCell.value;
+      const drill = this._drillId.value;
+      this._reorderTick.value;
+      if (!root || !config) return empty;
+      return compute(root, config, frozen ?? undefined, Wc.value, Hc.value, drill);
+    });
+  }
 
   /** Chart-specific rendering: create derivers (allNodes, layout) and forEach
    *  layers (tiles/arcs, edges/handles) with chart-specific shape makers +

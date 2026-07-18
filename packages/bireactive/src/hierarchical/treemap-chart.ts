@@ -41,27 +41,17 @@ export class TreemapChart extends HierarchicalChartBase implements GestureContex
     // node itself — it is the invisible container). This is the classic
     // nested treemap: groups contain their children, recursively.
     // When not drilled, focus = root, so we render root's descendants (not root).
-    const allNodes = derive((): RenderNode[] => {
-      const root = this._treeRoot.value;
-      const frozen = this._frozenOrder.value;
-      const config = this._configCell.value;
-      const drill = this._drillId.value;
-      this._reorderTick.value;
-      if (!root || !config) return [];
-      return buildAllDescendants(root, config, frozen ?? undefined, drill);
-    });
+    const allNodes = this._deriveWindow(
+      (root, config, frozen, drill) => buildAllDescendants(root, config, frozen, drill),
+      [] as RenderNode[],
+    );
     this._window = allNodes;
 
     // Live layout: d3 squarify on focus.children.
-    const liveLayout = derive(() => {
-      const root = this._treeRoot.value;
-      const frozen = this._frozenOrder.value;
-      const config = this._configCell.value;
-      const drill = this._drillId.value;
-      this._reorderTick.value;
-      if (!root || !config) return new Map<string, LayoutRect>();
-      return computeTreemapLayout(root, config, frozen ?? undefined, Wc.value, Hc.value, drill);
-    });
+    const liveLayout = this._deriveLayout(
+      (root, config, frozen, w, h, drill) => computeTreemapLayout(root, config, frozen, w, h, drill),
+      new Map<string, LayoutRect>(),
+    );
     this._liveLayout = liveLayout;
 
     // Draft mechanism (spec §5): during an own edit-draft, freeze siblings
