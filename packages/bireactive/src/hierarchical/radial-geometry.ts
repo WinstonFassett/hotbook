@@ -19,6 +19,7 @@ import {
   num,
   rect,
   readNow,
+  untracked,
   Vec,
   type Cell,
   type Num,
@@ -27,6 +28,7 @@ import {
   type Writable,
 } from "bireactive";
 import type { ChartConfig, RadialRect, RenderNode } from "./types";
+import type { Gesture } from "./gesture";
 import {
   type ChartNode,
   type Edge,
@@ -89,7 +91,11 @@ export function computeRadialLayout(
     logicalRootDepth = findDepth(root, 0);
   }
   const visDepthStart = logicalRootDepth + (showRoot ? 0 : 1);
-  const numBands = maxDepth;
+  // Visible window = [visDepthStart, windowEnd] (same convention as
+  // hierarchy.ts): `config.depth` levels below the logical root, clamped to
+  // the deepest node that exists. showRoot=true adds the root band.
+  const windowEnd = Math.min(logicalRootDepth + maxDepth, treeDepth(root));
+  const numBands = Math.max(1, windowEnd - visDepthStart + 1);
   const band = numBands > 0 ? Rfull / numBands : Rfull;
 
   function setArc(id: string, a0: number, a1: number, d: number) {
@@ -238,6 +244,33 @@ export function makeArc(
   arcCellsMap.set(node.id, cells);
 
   const visible = present ? derive(() => readNow(present)) : null;
+  // Cells are settle-driver targets only while this arc is mounted.
+  // (Disposal happens after the exit-delay window, so exiting arcs keep
+  // their frozen cells until the fade completes.)
+  const cellCleanup = () => { arcCellsMap.delete(node.id); };
+
+  // Exit freeze (spec §5): when arc becomes not present, freeze its geometry
+  // at the last visible position. As the layout tweens (e.g., during drill),
+  // the frozen arc stays in place and fades out (not sliding through the tween).
+  let frozenGeom: { a0: number; a1: number; rIn: number; rOut: number } | null = null;
+  const a0Effective = derive(() => {
+    if (present && readNow(present)) {
+      frozenGeom = null;
+      return cells.la0.value;
+    }
+    if (!frozenGeom) {
+      frozenGeom = {
+        a0: cells.la0.peek(),
+        a1: cells.la1.peek(),
+        rIn: cells.lrIn.peek(),
+        rOut: cells.lrOut.peek(),
+      };
+    }
+    return frozenGeom.a0;
+  });
+  const a1Effective = derive(() => (frozenGeom ? frozenGeom.a1 : cells.la1.value));
+  const rInEffective = derive(() => (frozenGeom ? frozenGeom.rIn : cells.lrIn.value));
+  const rOutEffective = derive(() => (frozenGeom ? frozenGeom.rOut : cells.lrOut.value));
 
   const stroke = derive(() => {
     if (!chart) return "none";
@@ -251,7 +284,7 @@ export function makeArc(
     return 0;
   });
 
-  const arc = annularSector(center, cells.lrOut, cells.lrIn, cells.la0, cells.la1, {
+  const arc = annularSector(center, rOutEffective, rInEffective, a0Effective, a1Effective, {
     fill: node.color,
     stroke,
     strokeWidth,
@@ -275,8 +308,8 @@ export function makeArc(
   const LABEL_MIN_SPAN = 0.08; // radians ~4.6°
   const LABEL_MIN_RADIAL = 18; // pixels
   const labelText = derive(() => {
-    const span = cells.la1.value - cells.la0.value;
-    const radial = cells.lrOut.value - cells.lrIn.value;
+    const span = a1Effective.value - a0Effective.value;
+    const radial = rOutEffective.value - rInEffective.value;
     if (span < LABEL_MIN_SPAN || radial < LABEL_MIN_RADIAL) return "";
     return node.label;
   });
@@ -293,8 +326,8 @@ export function makeArc(
   labelWrap.appendChild(lbl.el);
 
   const labelDispose = effect(() => {
-    const midA = (cells.la0.value + cells.la1.value) / 2;
-    const midR = (cells.lrIn.value + cells.lrOut.value) / 2;
+    const midA = (a0Effective.value + a1Effective.value) / 2;
+    const midR = (rInEffective.value + rOutEffective.value) / 2;
     const midDeg = (midA * 180) / Math.PI;
     const cx = center.x.value;
     const cy = center.y.value;
@@ -307,6 +340,7 @@ export function makeArc(
   const g = group({}, arc);
   g.el.appendChild(labelWrap);
   (g as any).track?.(labelDispose);
+  (g as any).track?.(cellCleanup);
 
   // Visibility gate: opacity + pointer-events. The transitionOnUpdated
   // behavior injects CSS that transitions opacity on path elements for
@@ -387,27 +421,98 @@ export function makeAngularHandle(
   return g;
 }
 
+/** Ease-out-quad easing function (matches d3.easeQuadOut). */
+function easeOutQuad(t: number): number {
+  return 1 - (1 - t) * (1 - t);
+}
+
+const SETTLE_MS = 300; // 3× TRANSITION_BASE_MS
+
 /**
- * Chart-level settle effect: watches the layout cell and writes targets
- * to all per-arc cells. Created OUTSIDE forEach's untracked context so
- * the effect properly subscribes to the layout cell. Snap mode for now
- * (no tween). The spec §5 two-lane snap/tween split will be wired here.
+ * Chart-level settle driver: watches the layout cell and moves the per-arc
+ * cells toward their targets. Spec §5: SNAP during draft (gesture-active),
+ * TWEEN on commit/cancel/updated (~300ms ease-out). Interruptible: a new
+ * layout change retargets from the arcs' current values, so an interrupted
+ * settle/drill restarts cleanly from the current visual position.
+ *
+ * Architecture note: the reactive effect tracks ONLY the layout cell (and
+ * calls the plain isDrafting getter). All reads of the per-arc cells are
+ * untracked, and the animation runs in a single shared RAF loop OUTSIDE the
+ * effect graph — the RAF's cell writes therefore never re-trigger the
+ * effect. (The previous implementation read the cells inside the effect,
+ * so every animation frame re-ran the effect and cancelled the in-flight
+ * tweens — a livelock that froze drill transitions.)
  */
 export function settleArcCells(
   layout: Cell<Map<string, RadialRect>>,
   arcCellsMap: ArcCellsMap,
+  isDrafting: () => boolean,
 ): () => void {
-  return effect(() => {
-    const map = layout.value;
-    let count = 0;
-    for (const [id, cells] of arcCellsMap) {
-      const target = map.get(id);
-      if (!target) continue;
-      cells.la0.value = target.a0;
-      cells.la1.value = target.a1;
-      cells.lrIn.value = target.rIn;
-      cells.lrOut.value = target.rOut;
-      count++;
+  const anims = new Map<string, { from: RadialRect; to: RadialRect; start: number }>();
+  let raf: number | null = null;
+
+  const writeCells = (cells: ArcCells, r: RadialRect) => {
+    cells.la0.value = r.a0;
+    cells.la1.value = r.a1;
+    cells.lrIn.value = r.rIn;
+    cells.lrOut.value = r.rOut;
+  };
+
+  const step = (now: number) => {
+    raf = null;
+    let live = false;
+    for (const [id, a] of anims) {
+      const cells = arcCellsMap.get(id);
+      if (!cells) { anims.delete(id); continue; }
+      const t = Math.min(1, (now - a.start) / SETTLE_MS);
+      const e = easeOutQuad(t);
+      writeCells(cells, {
+        a0: a.from.a0 + (a.to.a0 - a.from.a0) * e,
+        a1: a.from.a1 + (a.to.a1 - a.from.a1) * e,
+        rIn: a.from.rIn + (a.to.rIn - a.from.rIn) * e,
+        rOut: a.from.rOut + (a.to.rOut - a.from.rOut) * e,
+      });
+      if (t < 1) live = true;
+      else anims.delete(id);
     }
+    if (live) raf = requestAnimationFrame(step);
+  };
+
+  const dispose = effect(() => {
+    const map = layout.value; // the ONLY tracked read
+    const drafting = isDrafting();
+    untracked(() => {
+      const start = performance.now();
+      for (const [id, cells] of arcCellsMap) {
+        const target = map.get(id);
+        if (!target) { anims.delete(id); continue; } // exiting arc: freeze where it is
+        if (drafting) {
+          anims.delete(id);
+          writeCells(cells, target); // SNAP — immediate preview
+          continue;
+        }
+        const from: RadialRect = {
+          a0: cells.la0.value,
+          a1: cells.la1.value,
+          rIn: cells.lrIn.value,
+          rOut: cells.lrOut.value,
+        };
+        if (
+          from.a0 === target.a0 && from.a1 === target.a1 &&
+          from.rIn === target.rIn && from.rOut === target.rOut
+        ) {
+          anims.delete(id);
+          continue;
+        }
+        anims.set(id, { from, to: target, start });
+      }
+      if (anims.size > 0 && raf === null) raf = requestAnimationFrame(step);
+    });
   });
+
+  return () => {
+    if (raf !== null) cancelAnimationFrame(raf);
+    anims.clear();
+    dispose();
+  };
 }

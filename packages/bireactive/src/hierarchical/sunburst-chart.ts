@@ -32,9 +32,10 @@ import {
 import { wheelEdit } from "./behaviors/wheel-edit";
 import { keyboardEdit } from "./behaviors/keyboard-edit";
 import { tileBodyDrag } from "./behaviors/tile-body-drag";
+import { arcBodyReorder } from "./behaviors/arc-body-reorder";
 import { transitionOnUpdated } from "./behaviors/transition-on-updated";
 import { previewFullRender, captureOrderFromWindow } from "./behaviors/preview-full-render";
-import { membershipCell } from "./behaviors/mark-lifecycle";
+import { membershipCell, withExitDelay } from "./behaviors/mark-lifecycle";
 import { HierarchicalChartBase } from "./hierarchical-chart-base";
 
 export class SunburstChart extends HierarchicalChartBase implements GestureContext<RadialRect> {
@@ -85,10 +86,15 @@ export class SunburstChart extends HierarchicalChartBase implements GestureConte
       return computeRadialLayout(root, config, frozen ?? undefined, Wc.value, Hc.value, drill);
     });
 
-    // Present-filtered subset for membership.
+    // Present-filtered subset for membership. Membership is computed from the
+    // FRESH node list, while the forEach below renders the exit-DELAYED list:
+    // a node dropped on drill stays mounted for the exit window with
+    // membership=false, so it freezes geometry (makeArc) and fades out in
+    // place (spec §5 exit freeze) before its DOM is disposed.
     const presentNodes = derive(() => allNodes.value.filter((n) => n.present));
     this._edges = derive(() => buildEdges(allNodes.value));
     const membership = membershipCell(presentNodes, (n) => n.id);
+    const renderedNodes = withExitDelay(allNodes, { key: (n: RenderNode) => n.id });
 
     const tilesLayer = group();
     const edgesLayer = group();
@@ -101,7 +107,7 @@ export class SunburstChart extends HierarchicalChartBase implements GestureConte
     // Arcs: forEach over ALL descendants. Keyed by id → stable DOM.
     // makeArc creates per-arc num() cells, effect writes layout targets,
     // annularSector reads from cells (spec §5).
-    const tilesResult = forEach(tilesLayer, allNodes, (node) =>
+    const tilesResult = forEach(tilesLayer, renderedNodes as Cell<RenderNode[]>, (node) =>
       makeArc(node, this._layout!, center, arcCellsMap, this, derive(() => membership.value.has(node.id)), this._defs),
       { key: (node) => node.id },
     );
@@ -122,8 +128,18 @@ export class SunburstChart extends HierarchicalChartBase implements GestureConte
 
     // Chart-level settle effect: writes layout targets to per-arc cells.
     // Created OUTSIDE forEach's untracked context so it properly subscribes
-    // to the layout cell. Snap mode for now (spec §5 tween wired later).
-    const settleDispose = settleArcCells(this._layout!, arcCellsMap);
+    // to the layout cell. Spec §5: snap during draft (gesture-active), tween
+    // on commit/cancel/updated. Interruptible: new layout changes cancel
+    // in-flight tweens and restart from current cell values.
+    // isDrafting is a live getter: _gesture is assigned in _build(), which
+    // runs after _setupRendering — capturing it by value here would pin it
+    // to null forever (the exact bug that broke the snap-during-draft
+    // contract in the first pass of this port).
+    const settleDispose = settleArcCells(
+      this._layout!,
+      arcCellsMap,
+      () => this._gesture?.state === "Drafting",
+    );
 
     this._setupDisposers.push(() => {
       settleDispose();
@@ -140,8 +156,9 @@ export class SunburstChart extends HierarchicalChartBase implements GestureConte
     const config = this._configCell.value!;
     const gesture = this._gesture!;
 
-    // Tile-body drag behavior: resize only for now. Reorder needs angular
-    // slot computation (pointer → angle → slot) — a follow-up.
+    // Arc-body drag behavior: resize or reorder, per config.
+    // When sort=index and dragBehavior not explicitly set, auto-enable
+    // reorder (matches production demo). Default otherwise: resize.
     const dragBehavior = config.dragBehavior
       ?? (config.sort === "index" ? "reorder" : "resize");
     const dragBehaviors: Behavior[] = [];
@@ -157,8 +174,23 @@ export class SunburstChart extends HierarchicalChartBase implements GestureConte
         deferSort: () => this.config.sort !== "index",
         focusTile: (id) => this.setFocus(id),
       }));
+    } else if (dragBehavior === "reorder") {
+      dragBehaviors.push(arcBodyReorder({
+        target: (g) => g.store.hover.value ?? g.store.focus.value,
+        treeRoot: (g) => this._treeRoot.value,
+        layout: (g) => this._layout!.value,
+        centerX: (g) => this._hostSize!.w.value / 2,
+        centerY: (g) => this._hostSize!.h.value / 2,
+        focusArc: (id) => this.setFocus(id),
+        writeReorder: (parentId, orderedIds) => {
+          const k = this._kernelCell.value;
+          const cfg = this._configCell.value;
+          if (k && cfg) k.writeReorder(cfg.datasetId, parentId, orderedIds);
+        },
+        bumpReorder: () => this.bumpReorder(),
+        frozenOrderCell: this._frozenOrder,
+      }));
     }
-    // TODO: arc-body-reorder with angular slot computation.
 
     this._behaviorDispose = setup(gesture)(
       // Sunburst: transition opacity on paths (enter/exit fade) + transform
@@ -166,8 +198,10 @@ export class SunburstChart extends HierarchicalChartBase implements GestureConte
       // flips mid-tween), so geometry settles via per-arc tween cells (spec §5).
       transitionOnUpdated({
         attrs: ["opacity"],
-        selector: "v-sunburst",
-        elements: "path, text",
+        selector: this.tagName.toLowerCase(),
+        // Opacity is toggled on the arc's g[data-id] wrapper (makeArc), so
+        // the fade transition must target the group, not the path.
+        elements: "g[data-id], text",
       }),
       previewFullRender({
         deferSort: () => this.config.sort !== "index",
