@@ -321,15 +321,12 @@ export function makeTile(
   // Clipped to the tile rect so labels don't overflow.
   const labelWrap = document.createElementNS("http://www.w3.org/2000/svg", "g");
   labelWrap.appendChild(lbl.el);
-  // Live-timed via motion.baseMs (WIN-352). 3× baseMs = settle role duration.
-  // Suppress the transition on the first run so the label renders in place
-  // on initial load instead of sliding in from (0,0).
-  let labelFirstRun = true;
+  // Label group transform transition — timed by drillMs. The behavior's
+  // CSS handles x/y on <text>, but the group transform is separate (CSS
+  // transform property, not SVG attribute), so it needs its own inline
+  // transition. Reads drillMs so it stays in sync with the behavior.
   effect(() => {
-    labelWrap.style.transition = labelFirstRun
-      ? "none"
-      : `transform ${motion.drillMs.value}ms ease-out`;
-    labelFirstRun = false;
+    labelWrap.style.transition = `transform ${motion.drillMs.value}ms ease-out`;
   });
 
   // Per-tile clipPath — clips the label to the tile's rect dimensions.

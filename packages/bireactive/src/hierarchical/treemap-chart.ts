@@ -137,6 +137,6 @@ export class TreemapChart extends HierarchicalChartBase implements ChartAccessor
         }
       });
 
-    this._behaviorDispose = this._composeStandardBehaviors(dragBehaviors, undefined, [draftFreeze]);
+    this._behaviorDispose = this._composeStandardBehaviors(dragBehaviors, this._transitionOpts(), [draftFreeze]);
   }
 }

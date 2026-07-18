@@ -26,6 +26,7 @@
 
 import { effect } from "bireactive";
 import { motion } from "../../lib/runtime-config";
+import { TRANSITION_DURATION } from "../../lib/transitions";
 import type { Gesture, Behavior } from "../gesture";
 
 /** Host CSS class toggled while a gesture is live. */
@@ -50,24 +51,21 @@ export function prefersReducedMotion(): boolean {
 /** Build a CSS transition string for the given SVG attributes. Reads the
  *  master rhythm at call-time so a tweaks-pane bump is picked up on the next
  *  `<style>` emission (see `transitionOnUpdated`, which re-emits on cell change).
- *  If `durationMs` is provided, it overrides the multiplier — use this for
- *  charts that have their own timing cell (e.g. drillMs for hierarchical). */
+ *  If `durationMs` is provided, it overrides the settle duration — use this
+ *  for charts that have their own timing cell (e.g. drillMs for hierarchical). */
 export function settleTransition(
   attrs: readonly string[] = SETTLE_ATTRS,
-  durationMult = 3,
   durationMs?: () => number,
 ): string {
   if (prefersReducedMotion()) return "none";
-  const dur = durationMs ? durationMs() : motion.baseMs.value * durationMult;
+  const dur = durationMs ? durationMs() : TRANSITION_DURATION.settle;
   return attrs.map((a) => `${a} ${dur}ms ease-out`).join(", ");
 }
 
 export interface TransitionOnUpdatedOptions {
   /** SVG attributes to transition. Defaults to x/y/width/height. */
   attrs?: readonly string[];
-  /** Settle duration as a multiplier of TRANSITION_BASE_MS (default 3 = 300ms). */
-  durationMult?: number;
-  /** Direct duration in ms (overrides durationMult). Use for charts that
+  /** Direct duration in ms (overrides settle default). Use for charts that
    *  have their own timing cell (e.g. drillMs for hierarchical charts). */
   durationMs?: () => number;
   /** CSS selector scope for the transition rule. Defaults to the host tag. */
@@ -92,7 +90,6 @@ export function transitionOnUpdated(opts: TransitionOnUpdatedOptions = {}): Beha
     if (!host) return () => {};
 
     const attrs = opts.attrs ?? SETTLE_ATTRS;
-    const durationMult = opts.durationMult ?? 3;
     const durationMs = opts.durationMs;
     const selector = opts.selector ?? host.tagName.toLowerCase();
     const elements = opts.elements ?? "rect, text";
@@ -106,10 +103,10 @@ export function transitionOnUpdated(opts: TransitionOnUpdatedOptions = {}): Beha
     host.prepend(styleEl);
 
     // Re-emit the settle CSS whenever the master rhythm changes so the tweaks
-    // pane retimes settle live (WIN-352). settleTransition reads motion.baseMs
-    // (or durationMs) at call-time; the effect subscribes via that read.
+    // pane retimes settle live (WIN-352). settleTransition reads the timing
+    // cell (or durationMs) at call-time; the effect subscribes via that read.
     const styleDispose = effect(() => {
-      const transitionValue = settleTransition(attrs, durationMult, durationMs);
+      const transitionValue = settleTransition(attrs, durationMs);
       styleEl.textContent = `
 ${elemSel} { transition: ${transitionValue}; }
 ${selector}.${GESTURE_ACTIVE_CLASS} * { transition: none !important; }

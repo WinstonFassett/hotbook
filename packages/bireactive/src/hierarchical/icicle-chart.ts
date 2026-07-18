@@ -109,7 +109,7 @@ export class IcicleChart extends HierarchicalChartBase implements EdgeDragHandle
         frozenOrderCell: this._frozenOrder,
       }),
     );
-    this._behaviorDispose = this._composeStandardBehaviors(dragBehaviors);
+    this._behaviorDispose = this._composeStandardBehaviors(dragBehaviors, this._transitionOpts());
   }
 
   // --- GestureContext: edge handle drag lifecycle (icicle-specific) ---
