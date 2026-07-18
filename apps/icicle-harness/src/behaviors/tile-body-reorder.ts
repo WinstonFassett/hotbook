@@ -150,6 +150,13 @@ export function tileBodyReorder(opts: TileBodyReorderOptions): Behavior {
       if (changed) {
         currentOrder = next;
         setFrozenOrder(currentOrder);
+        // forEach re-orders DOM elements after the re-derive (microtask).
+        // Re-raise the ghost after that flush so it stays on top.
+        requestAnimationFrame(() => {
+          if (ghostEl && ghostEl.parentElement) {
+            ghostEl.parentElement.appendChild(ghostEl);
+          }
+        });
       }
 
       // Ghost: transform so visual center tracks pointer.
