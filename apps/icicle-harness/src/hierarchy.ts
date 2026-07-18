@@ -159,14 +159,14 @@ export function buildAllDescendants(
 ): RenderNode[] {
   const maxDepth = Math.min(config.depth ?? 100, treeDepth(root));
   const showRoot = config.showRoot !== false; // default true
-  // First visible depth: 0 if showRoot, 1 if not (skip root tile).
-  const visDepthStart = showRoot ? 0 : 1;
   const result: RenderNode[] = [];
 
-  // Compute the set of ids in the drill focus's subtree + the focus's
-  // tree depth (for relative-depth present check).
+  // Logical root = drill focus (if drilling) or tree root.
+  // visDepthStart = logical root's tree depth + (showRoot ? 0 : 1).
+  // When showRoot=false, the logical root is hidden and its children
+  // are the first visible row.
   let focusSubtreeIds: Set<string> | null = null;
-  let focusTreeDepth = 0;
+  let logicalRootDepth = 0;
   if (drillId) {
     const focus = findNode(root, drillId);
     if (focus) {
@@ -176,7 +176,6 @@ export function buildAllDescendants(
         for (const c of n.children) collect(c);
       }
       collect(focus);
-      // Find focus tree depth by walking from root.
       function findDepth(n: ChartNode, d: number): number {
         if (n.id === drillId) return d;
         for (const c of n.children) {
@@ -185,19 +184,18 @@ export function buildAllDescendants(
         }
         return -1;
       }
-      focusTreeDepth = findDepth(root, 0);
+      logicalRootDepth = findDepth(root, 0);
     }
   }
+  const visDepthStart = logicalRootDepth + (showRoot ? 0 : 1);
 
   function build(n: ChartNode, depth: number, parentId: string | null): RenderNode {
     const children: RenderNode[] = [];
     const isLeaf = n.children.length === 0;
-    // present: within the visible depth window.
-    // - No drill: depth in [visDepthStart, maxDepth] (skip root if !showRoot).
-    // - Drill: focus is the view root (relDepth 0, always present);
-    //   descendants up to maxDepth relative levels.
+    // present: in the logical root's subtree (if drilling) AND within
+    // the visible depth window [visDepthStart, logicalRootDepth + maxDepth].
     const present = focusSubtreeIds
-      ? focusSubtreeIds.has(n.id) && (depth - focusTreeDepth) <= maxDepth
+      ? focusSubtreeIds.has(n.id) && depth >= visDepthStart && depth <= logicalRootDepth + maxDepth
       : depth >= visDepthStart && depth <= maxDepth;
     const rn: RenderNode = {
       id: n.id,
@@ -231,16 +229,30 @@ export function computeLayout(
 ): Map<string, LayoutRect> {
   const maxDepth = Math.min(config.depth ?? 100, treeDepth(root));
   const showRoot = config.showRoot !== false; // default true
-  const visDepthStart = showRoot ? 0 : 1;
-  // Number of visible depth bands = maxDepth - visDepthStart + 1.
-  const numBands = maxDepth - visDepthStart + 1;
   const isHoriz = config.orientation === "horizontal";
-  const band = isHoriz ? W / numBands : H / numBands;
   const valueSpan = isHoriz ? H : W;
   const map = new Map<string, LayoutRect>();
 
+  // Logical root = drill focus (if drilling) or tree root.
+  let logicalRootDepth = 0;
+  if (drillId) {
+    function findDepth(n: ChartNode, d: number): number {
+      if (n.id === drillId) return d;
+      for (const c of n.children) {
+        const r = findDepth(c, d + 1);
+        if (r >= 0) return r;
+      }
+      return -1;
+    }
+    logicalRootDepth = findDepth(root, 0);
+  }
+  const visDepthStart = logicalRootDepth + (showRoot ? 0 : 1);
+  // Number of visible depth bands = maxDepth (config.depth visible levels).
+  const numBands = maxDepth;
+  const band = isHoriz ? W / numBands : H / numBands;
+
   function setRect(id: string, v0: number, v1: number, d: number) {
-    // Shift depth position so visDepthStart maps to position 0.
+    // Depth position relative to visDepthStart (first visible row = 0).
     const depthPos = (d - visDepthStart) * band;
     const size = v1 - v0;
     if (isHoriz) {
@@ -252,8 +264,6 @@ export function computeLayout(
 
   function partition(n: ChartNode, v0: number, v1: number, d: number) {
     setRect(n.id, v0, v1, d);
-    // Don't stop at maxDepth — compute rects for ALL descendants so
-    // off-window nodes have geometry to transition from/to.
     const children = sortedChildren(n, config, frozenOrder);
     const totalValue = children.reduce((s, c) => s + c.value.value, 0);
     const span = v1 - v0;
@@ -267,31 +277,26 @@ export function computeLayout(
 
   partition(root, 0, valueSpan, 0);
 
-  // D3-style drill transform: affine transform on the partition coords.
-  // Scale the value axis so the focus node's span fills the canvas;
-  // shift the depth axis so the focus is at position 0. Off-subtree nodes
-  // get pushed off-canvas — they slide there via CSS transitions.
+  // D3-style drill transform: scale the value axis so the focus node's
+  // span fills the canvas. Depth positions are already correct (relative
+  // to the logical root via visDepthStart). Off-subtree nodes get pushed
+  // off-canvas by the value scaling — they slide there via CSS transitions.
   if (drillId) {
     const focusRect = map.get(drillId);
     if (focusRect) {
-      const focusDepthPos = isHoriz ? focusRect.x : focusRect.y;
       const focusV0 = isHoriz ? focusRect.y : focusRect.x;
       const focusSpan = isHoriz ? focusRect.height : focusRect.width;
       const scale = focusSpan > 0 ? valueSpan / focusSpan : 1;
 
       for (const [id, r] of map) {
         if (isHoriz) {
-          // x = depth axis, y = value axis
-          const newDepthPos = r.x - focusDepthPos;
           const newV0 = (r.y - focusV0) * scale;
           const newSize = r.height * scale;
-          map.set(id, { x: newDepthPos, y: newV0, width: r.width, height: newSize });
+          map.set(id, { x: r.x, y: newV0, width: r.width, height: newSize });
         } else {
-          // y = depth axis, x = value axis
-          const newDepthPos = r.y - focusDepthPos;
           const newV0 = (r.x - focusV0) * scale;
           const newSize = r.width * scale;
-          map.set(id, { x: newV0, y: newDepthPos, width: newSize, height: r.height });
+          map.set(id, { x: newV0, y: r.y, width: newSize, height: r.height });
         }
       }
     }

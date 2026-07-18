@@ -258,6 +258,12 @@ export class IcicleChart extends HTMLElement implements GestureContext {
     const onDblClick = () => {
       const id = this._hoverCell.value ?? this._focusCell.value;
       if (!id) return;
+      // Don't drill into leaves — they have no children to show.
+      const root = this._treeRoot.value;
+      if (root) {
+        const node = findNode(root, id);
+        if (node && node.children.length === 0) return;
+      }
       this.drill(id);
     };
     this.addEventListener("dblclick", onDblClick);
@@ -286,24 +292,31 @@ export class IcicleChart extends HTMLElement implements GestureContext {
       const bar = document.createElement("nav");
       bar.style.cssText = "display:flex;align-items:center;gap:2px;padding:4px 8px;font-size:11px;pointer-events:auto;";
 
-      // Root crumb
+      // Root crumb (tree root — click to drill all the way out)
       const rootBtn = document.createElement("button");
       rootBtn.textContent = path[0].label;
       rootBtn.style.cssText = "background:none;border:none;color:var(--muted,#888);cursor:pointer;font:inherit;padding:2px 4px;border-radius:3px;";
       rootBtn.addEventListener("click", () => this.drill(null));
       bar.appendChild(rootBtn);
 
-      // Path segments (skip root, skip current focus — it's the last tile)
-      for (let i = 1; i < path.length - 1; i++) {
+      // Path segments — include the current focus (last in path).
+      // When showRoot=false, the focus is hidden from tiles, so the
+      // breadcrumb is the only place it shows.
+      for (let i = 1; i < path.length; i++) {
         const sep = document.createElement("span");
         sep.textContent = "›";
         sep.style.cssText = "color:var(--muted,#555);";
         bar.appendChild(sep);
 
+        const isLast = i === path.length - 1;
         const btn = document.createElement("button");
         btn.textContent = path[i].label;
-        btn.style.cssText = "background:none;border:none;color:var(--ink,#ccc);cursor:pointer;font:inherit;padding:2px 4px;border-radius:3px;";
-        btn.addEventListener("click", () => this.drill(path[i].id));
+        btn.style.cssText = isLast
+          ? "background:none;border:none;color:var(--ink,#ccc);cursor:default;font:inherit;padding:2px 4px;border-radius:3px;font-weight:600;"
+          : "background:none;border:none;color:var(--ink,#ccc);cursor:pointer;font:inherit;padding:2px 4px;border-radius:3px;";
+        if (!isLast) {
+          btn.addEventListener("click", () => this.drill(path[i].id));
+        }
         bar.appendChild(btn);
       }
 
