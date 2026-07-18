@@ -17,12 +17,12 @@ Vocabulary: `UBIQUITOUS_LANGUAGE.md` and `wiki/gesture-architecture.md`. The old
 
 ### §3 / §4 Control surfaces and intent
 - **No boundary knob.** The treemap has no inter-sibling boundary handle — squarify positions are derived, not caller-partitioned.
-- **No reorder gesture.** Squarify positions are derived from value, not caller order; reordering caller-supplied order has no observable effect. (When `sort === 'index'` the order feeds the squarify traversal, but the chart doesn't surface a reorder control.) Capability difference from icicle, not a model difference.
+- **Reorder gesture — yes** (remediated 2026-07 during the WIN-350 port; this spec previously said "no reorder" on the claim that caller order has no observable effect — that claim was wrong for `sort === 'index'`, where the caller order feeds the squarify traversal and reordering visibly rearranges tiles). When `canReorder` and `sort === 'index'`, dragging a tile reorders it among its siblings, same intent/mechanics as icicle `reorderDrag`. `intent: reorder`.
 - **Drag mark — resize** (WIN-260 "drag-to-resize"). Dragging horizontally on a tile (`ew-resize` cursor) scrubs its value (right = +, left = −; Shift = coarse, Alt = fine). **Additive** — only the dragged tile's value changes; no sibling redistribution. This is the treemap's primary edit surface. `intent: edit`.
 - **Wheel — tile.** Additive (only the target changes; dynamic step). Same as icicle's wheel.
 - **Keyboard — focused tile.** Additive by default; Alt → `proportional-neighbor` (treemap's configured scaling). Same as icicle's keyboard.
 - **Cross-tile.** Source-defined value-mapping. Conservation not enforced on external edits — same as icicle §3.
-- All `edit`; no `reorder` intent on this chart.
+- Drag-mark-resize and reorder are mutually exclusive on the tile body (same rule as icicle): reorder when `canReorder && sort === 'index'`, resize otherwise.
 
 ### §5 Effects
 - **`draft` (`edit`): scale-against-frozen-siblings, NOT subtree-patch.** This is the treemap's headline divergence. The edited tile reflects its new value live; sibling tiles hold their pre-gesture positions (frozen); no relayout *transition* runs until `commit` (rule 8). **Mechanism:** the squarify layout re-derives reactively as the value writes through, but the chart suppresses sibling repositioning while `Drafting` — only the edited mark moves. Children of the edited tile may be faded or hidden (chart-specific option, interaction-principles §"Hierarchical marks"). The observable invariant matches the icicle (edited mark moves, siblings frozen, relayout deferred) — the *mechanism* differs. Per-surface value-mappings: drag-mark and wheel are additive; keyboard is additive by default, Alt → proportional-neighbor. See icicle §5 for `commit`/`cancel`/`updated` (identical, including enter/exit on every rendered-set change and no settling).

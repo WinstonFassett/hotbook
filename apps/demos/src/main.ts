@@ -80,6 +80,7 @@ const experiments: Array<{
   { id: "gauge", title: "Gauge (single 270° arc, draggable endpoint + center scrub)", tag: "v-gauge", ctor: MdGaugeLC },
   { id: "gauge-segmented", title: "Gauge (segmented, draggable boundaries)", tag: "v-gauge-segmented", ctor: MdGaugeSegmentedLC },
   { id: "pack", title: "Pack (circle packing)", tag: "v-pack", ctor: MdPack },
+  { id: "hier-family", title: "Hierarchical family (shared dataset, cross-view sync)", tag: "v-icicle", ctor: MdIcicleLC, custom: mountHierFamily },
   { id: "treemap", title: "Treemap (squarified)", tag: "v-treemap", ctor: MdTreemapLC },
   { id: "icicle", title: "Icicle (Partition vertical)", tag: "v-icicle", ctor: MdIcicleLC },
   { id: "sunburst", title: "Sunburst (Partition polar)", tag: "v-sunburst", ctor: MdSunburstLC },
@@ -168,6 +169,35 @@ function wireReorder(el: HTMLElement, treetable: HTMLElement | null, model: Demo
       (treetable as any).refresh?.();
     }
   };
+}
+
+// All four hierarchical charts on ONE dataset (same BiNode root → shared
+// Kernel dataset via the bi-adapter). Edits preview live everywhere; drill
+// syncs across views via the kernel drill channel.
+function mountHierFamily(section: HTMLElement, demo: HTMLElement, el: HTMLElement): void {
+  const model = dataModelFor("icicle");
+  if (!model?.root) return;
+
+  demo.style.cssText += "display:grid;grid-template-columns:1fr 1fr 1fr 240px;gap:8px;height:480px;overflow:hidden;";
+
+  const sunburst = document.createElement("v-sunburst") as any;
+  const treemap = document.createElement("v-treemap") as any;
+  const table = document.createElement("v-treetable") as any;
+
+  for (const c of [el, sunburst, treemap] as any[]) {
+    c.externalRoot = model.root;
+    c.showBreadcrumb = true;
+    const wrap = document.createElement("div");
+    wrap.style.cssText = "min-width:0;overflow:hidden;border:1px solid var(--border);border-radius:6px;";
+    wrap.appendChild(c);
+    demo.appendChild(wrap);
+  }
+  table.externalRoot = model.root;
+  if (model.columns) table.columns = model.columns;
+  const tw = document.createElement("div");
+  tw.style.cssText = "overflow:hidden;border:1px solid var(--border);border-radius:6px;";
+  tw.appendChild(table);
+  demo.appendChild(tw);
 }
 
 function mountLayoutSection(section: HTMLElement, demo: HTMLElement, el: HTMLElement): void {
