@@ -3,19 +3,17 @@
 // Production-style reorder (wiki/interaction-principles.md):
 //   - Dragged tile follows the pointer (ghost) via an imperative CSS transform.
 //     Its transition is disabled so it tracks instantly. Elevated with
-//     drop-shadow via [data-reordering]. Re-raised in the DOM on every move
+//     drop-shadow via [data-reordering]. Raised in the DOM once on activation
 //     so it paints above siblings (SVG paint order = document order).
-//   - Siblings slide to their new slots via CSS transitions. The children
-//     array is mutated directly (the bireactive tree IS the preview — the
-//     Kernel data is only touched on commit). The layout re-derives, and
-//     rect transitions animate the slide. The `reorder-active` class on the
-//     host allows transitions during the gesture (unlike `gesture-active`
-//     which suppresses them for value edits).
-//   - On commit, the final order is written to the Kernel. On cancel, the
-//     original order is restored and siblings slide back.
-//
-// Click-vs-drag: a pointerdown that doesn't move past a 3px threshold is a
-// click (focus the tile), not a drag.
+//   - Siblings slide to their new slots via CSS transitions. The provisional
+//     order lives in frozenOrder — the layout re-derives with it, rect
+//     transitions animate the slide. The `reorder-active` class on the host
+//     allows transitions during the gesture (unlike `gesture-active` which
+//     suppresses them for value edits). The tree's children array is NOT
+//     mutated during the drag — forEach DOM order stays stable, so the ghost
+//     stays raised.
+//   - On commit, the tree's children array is reordered + written to the
+//     Kernel. On cancel, frozenOrder is cleared and siblings slide back.
 
 import type { Gesture, Behavior, GestureGetter } from "../gesture";
 import type { ChartNode } from "../hierarchy";
@@ -23,18 +21,13 @@ import type { ChartNode } from "../hierarchy";
 const DRAG_THRESHOLD_PX = 3;
 
 export interface TileBodyReorderOptions {
-  /** Getter for the hovered or focused node id (drag target). */
   target: GestureGetter<string | null>;
-  /** Getter for the tree root (to find nodes + parents). */
   treeRoot: GestureGetter<ChartNode | null>;
-  /** Getter for the layout map (to read sibling positions). */
   layout: GestureGetter<Map<string, { x: number; y: number; width: number; height: number }>>;
-  /** Focus the tile on click (no-drag pointerup). */
   focusTile: (id: string) => void;
-  /** Write the reorder to the Kernel on commit. */
   writeReorder: (parentId: string, orderedIds: string[]) => void;
-  /** Bump the chart's reorder tick — forces layout re-derivation. */
   bumpReorder: () => void;
+  frozenOrderCell: { value: Map<string, string[]> | null };
 }
 
 export function tileBodyReorder(opts: TileBodyReorderOptions): Behavior {
@@ -49,38 +42,25 @@ export function tileBodyReorder(opts: TileBodyReorderOptions): Behavior {
     let isHoriz = false;
     let parentId: string | null = null;
     let initialOrder: string[] = [];
+    let currentOrder: string[] = [];
     let startPointer = 0;
+    let startTileMid = 0;
     let ghostEl: SVGGraphicsElement | null = null;
-    let ghostLabelWrap: HTMLElement | null = null;
     let prevGhostTransition = "";
 
-    const unsubCancel = gesture.editor.subscribe((t) => {
-      if (t.type === "cancel") {
-        // Restore original children order.
-        if (parentId && initialOrder.length > 0) {
-          const root = opts.treeRoot(gesture);
-          if (root) {
-            const parent = findNodeById(root, parentId);
-            if (parent) {
-              const byId = new Map(parent.children.map((c) => [c.id, c]));
-              const restored = initialOrder.map((id) => byId.get(id)).filter((c): c is ChartNode => !!c);
-              parent.children.splice(0, parent.children.length, ...restored);
-              opts.bumpReorder();
-            }
-          }
-        }
-        restoreGhost();
-        active = false;
-        moved = false;
-        pointerId = -1;
-        targetId = null;
-        initialOrder = [];
-        parentId = null;
-        ghostEl = null;
-        ghostLabelWrap = null;
-        gesture.store.activeTarget = null;
-      }
-    });
+    const setFrozenOrder = (order: string[]) => {
+      const map = new Map<string, string[]>();
+      map.set(parentId!, order.slice());
+      opts.frozenOrderCell.value = map;
+      gesture.store.frozenOrder = map;
+      opts.bumpReorder();
+    };
+
+    const clearFrozenOrder = () => {
+      opts.frozenOrderCell.value = null;
+      gesture.store.frozenOrder = null;
+      opts.bumpReorder();
+    };
 
     const restoreGhost = () => {
       if (ghostEl) {
@@ -88,10 +68,23 @@ export function tileBodyReorder(opts: TileBodyReorderOptions): Behavior {
         ghostEl.style.transition = prevGhostTransition;
         ghostEl.removeAttribute("data-reordering");
       }
-      if (ghostLabelWrap) {
-        ghostLabelWrap.style.opacity = "";
-      }
     };
+
+    const unsubCancel = gesture.editor.subscribe((t) => {
+      if (t.type === "cancel") {
+        clearFrozenOrder();
+        restoreGhost();
+        active = false;
+        moved = false;
+        pointerId = -1;
+        targetId = null;
+        initialOrder = [];
+        currentOrder = [];
+        parentId = null;
+        ghostEl = null;
+        gesture.store.activeTarget = null;
+      }
+    });
 
     const onMove = (e: PointerEvent) => {
       if (pointerId === -1 || e.pointerId !== pointerId) return;
@@ -106,7 +99,6 @@ export function tileBodyReorder(opts: TileBodyReorderOptions): Behavior {
         const travel = Math.abs(pointerAxis - startPointer);
         if (travel < DRAG_THRESHOLD_PX) return;
 
-        // Activation — start the gesture.
         moved = true;
         gesture.store.activeTarget = targetId;
         gesture.store.takeSnapshot?.();
@@ -117,31 +109,23 @@ export function tileBodyReorder(opts: TileBodyReorderOptions): Behavior {
           intent: "reorder",
         });
 
-        // Elevate the dragged tile.
+        // Freeze initial order so siblings don't re-sort (for sort=value).
+        setFrozenOrder(initialOrder);
+
+        // Elevate the ghost: disable transition, raise in DOM, mark.
         ghostEl = host.querySelector(`g[data-id="${targetId}"]`) as SVGGraphicsElement | null;
         if (ghostEl) {
           prevGhostTransition = ghostEl.style.transition;
           ghostEl.style.transition = "none";
           ghostEl.setAttribute("data-reordering", "");
           ghostEl.parentElement?.appendChild(ghostEl);
-          ghostLabelWrap = ghostEl.querySelector("g[style*='transform']") as HTMLElement | null;
-          if (ghostLabelWrap) ghostLabelWrap.style.opacity = "0.5";
         }
       }
 
-      const root = opts.treeRoot(gesture);
-      if (!root || !parentId) return;
-      const parent = findNodeById(root, parentId);
-      if (!parent) return;
-
-      // Current order of siblings (including dragged tile).
-      const currentSibIds = parent.children.map((c) => c.id);
-      const without = currentSibIds.filter((id) => id !== targetId);
-
-      // Target index: count siblings whose center is before the ghost center.
-      // This is the insertion point for the dragged tile.
+      // Compute target index: count siblings whose center is before the ghost.
       const layout = opts.layout(gesture);
       const ghostCenter = startTileMid + (pointerAxis - startPointer);
+      const without = initialOrder.filter((id) => id !== targetId);
 
       let targetIdx = 0;
       for (const id of without) {
@@ -151,30 +135,17 @@ export function tileBodyReorder(opts: TileBodyReorderOptions): Behavior {
         if (mid < ghostCenter) targetIdx++;
       }
 
-      // Build the new order.
-      const newOrder = [...without.slice(0, targetIdx), targetId, ...without.slice(targetIdx)];
-
-      // Check if order changed.
-      let changed = newOrder.length !== currentSibIds.length;
-      for (let i = 0; !changed && i < newOrder.length; i++) {
-        if (newOrder[i] !== currentSibIds[i]) changed = true;
-      }
+      const next = [...without.slice(0, targetIdx), targetId, ...without.slice(targetIdx)];
+      let changed = next.length !== currentOrder.length;
+      for (let i = 0; !changed && i < next.length; i++) if (next[i] !== currentOrder[i]) changed = true;
 
       if (changed) {
-        // Mutate the children array directly — the tree IS the preview.
-        const byId = new Map(parent.children.map((c) => [c.id, c]));
-        const newChildren = newOrder.map((id) => byId.get(id)).filter((c): c is ChartNode => !!c);
-        parent.children.splice(0, parent.children.length, ...newChildren);
-        opts.bumpReorder();
+        currentOrder = next;
+        setFrozenOrder(currentOrder);
       }
 
-      // Re-raise ghost in DOM (forEach may have re-ordered elements).
-      if (ghostEl && ghostEl.parentElement) {
-        ghostEl.parentElement.appendChild(ghostEl);
-      }
-
-      // Ghost: position so the tile's visual center is under the pointer.
-      // Transform = pointerPos - currentLayoutMid (along sibling axis).
+      // Ghost: transform so visual center tracks pointer.
+      // transform = pointerPos - currentLayoutMid (along sibling axis).
       if (ghostEl) {
         const freshLayout = opts.layout(gesture);
         const r = freshLayout.get(targetId);
@@ -192,7 +163,7 @@ export function tileBodyReorder(opts: TileBodyReorderOptions): Behavior {
         value: 0,
         source: "reorder",
         intent: "reorder",
-        reorderOrder: newOrder,
+        reorderOrder: currentOrder,
         parentId: parentId ?? undefined,
       });
     };
@@ -209,15 +180,23 @@ export function tileBodyReorder(opts: TileBodyReorderOptions): Behavior {
 
       if (wasClick && targetId) {
         opts.focusTile(targetId);
+        clearFrozenOrder();
       } else if (active && gesture.state === "Drafting") {
-        // Commit: write the final order to the Kernel.
+        // Commit: mutate the tree to match the provisional order.
         const root = opts.treeRoot(gesture);
         if (root && parentId) {
           const parent = findNodeById(root, parentId);
           if (parent) {
-            opts.writeReorder(parentId, parent.children.map((c) => c.id));
+            const byId = new Map(parent.children.map((c) => [c.id, c]));
+            const newChildren = currentOrder.map((id) => byId.get(id)).filter((c): c is ChartNode => !!c);
+            parent.children.splice(0, parent.children.length, ...newChildren);
+            opts.writeReorder(parentId, currentOrder.slice());
           }
         }
+        // Clear frozenOrder + restore ghost, then commit. The tree mutation
+        // + frozenOrder clear happen together; the layout re-derives from
+        // the real tree order (which now matches the provisional order).
+        clearFrozenOrder();
         restoreGhost();
         gesture.commit();
       }
@@ -225,15 +204,14 @@ export function tileBodyReorder(opts: TileBodyReorderOptions): Behavior {
       moved = false;
       targetId = null;
       initialOrder = [];
+      currentOrder = [];
       parentId = null;
       ghostEl = null;
-      ghostLabelWrap = null;
       gesture.store.activeTarget = null;
     };
 
     let startX = 0;
     let startY = 0;
-    let startTileMid = 0;
 
     const onDown = (e: PointerEvent) => {
       if (e.button !== 0) return;
@@ -258,10 +236,10 @@ export function tileBodyReorder(opts: TileBodyReorderOptions): Behavior {
       targetId = id;
       parentId = node.parent.id;
       initialOrder = node.parent.children.map((c) => c.id);
+      currentOrder = initialOrder.slice();
       moved = false;
       active = true;
 
-      // Capture the dragged tile's starting midpoint.
       const layout = opts.layout(gesture);
       const r = layout.get(id);
       if (r) {
