@@ -150,9 +150,14 @@ export function tileBodyReorder(opts: TileBodyReorderOptions): Behavior {
 
       if (changed) {
         currentOrder = next;
-        setFrozenOrder(currentOrder);
-        // forEach re-orders DOM elements after the re-derive (microtask).
-        // Re-raise the ghost after that flush so it stays on top.
+        // Keep the dragged tile at its INITIAL position in frozenOrder.
+        // Siblings reorder around it, but the dragged tile's layout slot
+        // never changes — so the ghost transform is just pointerDelta.
+        const sibOrder = currentOrder.filter((id) => id !== targetId);
+        // Insert dragged tile at its initial index.
+        const initialIdx = initialOrder.indexOf(targetId);
+        const fullOrder = [...sibOrder.slice(0, initialIdx), targetId, ...sibOrder.slice(initialIdx)];
+        setFrozenOrder(fullOrder);
         requestAnimationFrame(() => {
           if (ghostEl && ghostEl.parentElement) {
             ghostEl.parentElement.appendChild(ghostEl);
@@ -160,25 +165,13 @@ export function tileBodyReorder(opts: TileBodyReorderOptions): Behavior {
         });
       }
 
-      // Ghost: transform so the tile's visual center tracks the pointer.
-      // The layout position changes when frozenOrder changes (microtask),
-      // so we need to compensate: transform = pointerPos - layoutMid.
-      // Set immediately from the current layout (may be stale by one frame
-      // on order-change), then correct in rAF after the re-derive flushes.
-      const updateGhostTransform = () => {
-        if (!ghostEl) return;
-        const l = opts.layout(gesture);
-        const r = l.get(targetId);
-        if (!r) return;
-        const slotMid = isHoriz ? (r.y + r.height / 2) : (r.x + r.width / 2);
-        const offset = pointerAxis - slotMid;
+      // Ghost: simple pointer delta. The dragged tile's layout position
+      // is frozen at its initial slot, so transform = pointerDelta.
+      if (ghostEl) {
+        const offset = pointerAxis - startPointer;
         const dx = isHoriz ? 0 : offset;
         const dy = isHoriz ? offset : 0;
         ghostEl.style.transform = `translate(${dx}px, ${dy}px)`;
-      };
-      updateGhostTransform();
-      if (changed) {
-        requestAnimationFrame(updateGhostTransform);
       }
 
       gesture.updateDraft({
