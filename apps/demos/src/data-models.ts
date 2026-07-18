@@ -564,21 +564,44 @@ function hierarchicalData(kind: string): DemoDataModel {
     color: "#222",
     children: [
       { id: "tech", label: "Tech", color: "#5b8def", children: [
-        { id: "aapl", label: "AAPL", value: 35, color: "#86acf5" },
-        { id: "msft", label: "MSFT", value: 28, color: "#86acf5" },
-        { id: "nvda", label: "NVDA", value: 22, color: "#86acf5" },
+        { id: "tech-software", label: "Software", color: "#7ba3f0", children: [
+          { id: "aapl", label: "AAPL", value: 35, color: "#86acf5" },
+          { id: "msft", label: "MSFT", value: 28, color: "#86acf5" },
+        ]},
+        { id: "tech-chips", label: "Chips", color: "#7ba3f0", children: [
+          { id: "nvda", label: "NVDA", value: 22, color: "#86acf5" },
+          { id: "amd", label: "AMD", value: 12, color: "#86acf5" },
+        ]},
       ]},
       { id: "finance", label: "Finance", color: "#7ed321", children: [
-        { id: "jpm", label: "JPM", value: 18, color: "#a6df5e" },
-        { id: "brk", label: "BRK", value: 14, color: "#a6df5e" },
+        { id: "finance-banks", label: "Banks", color: "#9ed44a", children: [
+          { id: "jpm", label: "JPM", value: 18, color: "#a6df5e" },
+          { id: "bac", label: "BAC", value: 9, color: "#a6df5e" },
+        ]},
+        { id: "finance-insure", label: "Insurance", color: "#9ed44a", children: [
+          { id: "brk", label: "BRK", value: 14, color: "#a6df5e" },
+          { id: "aig", label: "AIG", value: 6, color: "#a6df5e" },
+        ]},
       ]},
       { id: "energy", label: "Energy", color: "#f5a623", children: [
-        { id: "xom", label: "XOM", value: 10, color: "#f7be5a" },
-        { id: "shel", label: "SHEL", value: 8, color: "#f7be5a" },
+        { id: "energy-oil", label: "Oil", color: "#f7be5a", children: [
+          { id: "xom", label: "XOM", value: 10, color: "#f7be5a" },
+          { id: "cvx", label: "CVX", value: 7, color: "#f7be5a" },
+        ]},
+        { id: "energy-gas", label: "Gas", color: "#f7be5a", children: [
+          { id: "shel", label: "SHEL", value: 8, color: "#f7be5a" },
+          { id: "cop", label: "COP", value: 5, color: "#f7be5a" },
+        ]},
       ]},
       { id: "health", label: "Health", color: "#e25c5c", children: [
-        { id: "jnj", label: "JNJ", value: 9, color: "#ec8a8a" },
-        { id: "pfe", label: "PFE", value: 6, color: "#ec8a8a" },
+        { id: "health-pharma", label: "Pharma", color: "#ec8a8a", children: [
+          { id: "jnj", label: "JNJ", value: 9, color: "#ec8a8a" },
+          { id: "pfe", label: "PFE", value: 6, color: "#ec8a8a" },
+        ]},
+        { id: "health-devices", label: "Devices", color: "#ec8a8a", children: [
+          { id: "medtronic", label: "MDT", value: 5, color: "#ec8a8a" },
+          { id: "abt", label: "ABT", value: 4, color: "#ec8a8a" },
+        ]},
       ]},
     ],
   };
