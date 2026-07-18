@@ -354,17 +354,43 @@ export function makeTreemapTile(
   // by pushing it to the group's disposers if available, or just let it run.
   if ((g as any).disposers) (g as any).disposers.push(labelDispose);
 
-  // Visibility gate: off-window tiles hidden via opacity (instant, no
-  // fade — solid-card metaphor) and can't capture clicks.
+  // Visibility gate: off-window tiles can't capture clicks. The opacity
+  // hide is DELAYED to the end of the drill transition so surrounding tiles
+  // slide off-canvas first (via the 2D affine transform + SVG clipping),
+  // then vanish — not instant. Coming back (drilling up) restores opacity
+  // immediately so tiles slide back into view. Asymmetric:
+  // hide-after-drillMs, show-instant. Initial mount hides immediately.
   if (visible) {
+    let hideTimer: ReturnType<typeof setTimeout> | null = null;
+    let firstRun = true;
     const visDispose = effect(() => {
       void layout.value; // force subscription
       const vis = visible.value;
-      tile.el.style.opacity = vis ? "" : "0";
-      tile.el.style.pointerEvents = vis ? "auto" : "none";
-      labelWrap.style.opacity = vis ? "" : "0";
+      if (vis) {
+        if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+        tile.el.style.opacity = "";
+        tile.el.style.pointerEvents = "auto";
+        labelWrap.style.opacity = "";
+      } else {
+        tile.el.style.pointerEvents = "none";
+        if (firstRun) {
+          tile.el.style.opacity = "0";
+          labelWrap.style.opacity = "0";
+        } else {
+          if (hideTimer) clearTimeout(hideTimer);
+          hideTimer = setTimeout(() => {
+            hideTimer = null;
+            tile.el.style.opacity = "0";
+            labelWrap.style.opacity = "0";
+          }, TRANSITION_DURATION.drill);
+        }
+      }
+      firstRun = false;
     });
     (g as any).track?.(visDispose);
+    if ((g as any).disposers) {
+      (g as any).disposers.push(() => { if (hideTimer) clearTimeout(hideTimer); });
+    }
   }
 
   return g;

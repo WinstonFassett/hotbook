@@ -551,6 +551,7 @@ export function settleArcCells(
   layout: Cell<Map<string, RadialRect>>,
   arcCellsMap: ArcCellsMap,
   isDrafting: () => boolean,
+  originOffset?: Cell<number>,
 ): () => void {
   const anims = new Map<string, { from: RadialRect; to: RadialRect; start: number; duration: number }>();
   let raf: number | null = null;
@@ -583,7 +584,8 @@ export function settleArcCells(
   };
 
   const dispose = effect(() => {
-    const map = layout.value; // the ONLY tracked read
+    const map = layout.value; // tracked read — re-runs on layout change
+    const offset = originOffset?.value ?? 0; // tracked read — re-runs on offset change
     const drafting = isDrafting();
     untracked(() => {
       const start = performance.now();
@@ -592,7 +594,18 @@ export function settleArcCells(
         if (!target) { anims.delete(id); continue; } // exiting arc: freeze where it is
         if (drafting) {
           anims.delete(id);
-          writeCells(cells, target); // SNAP — immediate preview
+          // Apply origin offset during wraparound drag — rotates all arcs
+          // so the seam follows the cursor. Offset is 0 for normal drags.
+          if (offset !== 0) {
+            writeCells(cells, {
+              a0: target.a0 + offset,
+              a1: target.a1 + offset,
+              rIn: target.rIn,
+              rOut: target.rOut,
+            });
+          } else {
+            writeCells(cells, target); // SNAP — immediate preview
+          }
           continue;
         }
         const from: RadialRect = {

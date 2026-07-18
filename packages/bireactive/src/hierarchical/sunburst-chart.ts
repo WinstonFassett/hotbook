@@ -6,7 +6,7 @@
 // (wheelEdit, keyboardEdit, transitionOnUpdated, previewFullRender) are
 // composed identically to the icicle.
 
-import { circle, derive, effect, forEach, group, readNow, type Cell } from "bireactive";
+import { cell, circle, derive, effect, forEach, group, readNow, type Cell } from "bireactive";
 import type { ChartConfig, RadialRect, RenderNode } from "./types";
 import { Kernel } from "./kernel";
 import { Gesture, type Behavior } from "./gesture";
@@ -43,6 +43,11 @@ export class SunburstChart extends HierarchicalChartBase implements EdgeDragHand
   // Drag state for angular edge handle (two-sibling reapportion).
   private _dragBoundaryAngle = 0;
   private _dragPairSpan = 0;
+  /** Live angular offset applied to all arcs during a wraparound drag.
+   *  Makes the seam follow the cursor (visual rotation). Reset to 0 on
+   *  release — the layout snaps to canonical with new values (counter-
+   *  rotation). See wiki/2026-07-18-sunburst-wraparound-divider.md */
+  private _dragOriginOffset = cell(0);
 
   // GestureContext: layout accessor (radial layout).
   layout() { return this._layout!.value; }
@@ -174,6 +179,7 @@ export class SunburstChart extends HierarchicalChartBase implements EdgeDragHand
       this._layout!,
       arcCellsMap,
       () => this._gesture?.state === "Drafting",
+      this._dragOriginOffset,
     );
 
     this._setupDisposers.push(() => {
@@ -264,6 +270,16 @@ export class SunburstChart extends HierarchicalChartBase implements EdgeDragHand
     this.writeValue(edge.leftId, snapLeft + cappedDelta);
     this.writeValue(edge.rightId, snapRight - cappedDelta);
 
+    // Wraparound: apply live origin offset so the seam follows the cursor.
+    // The offset = the angular delta (capped to the pair span so it doesn't
+    // overrun). On release, endGesture resets it to 0 — the layout snaps
+    // to canonical (child[0] at 0°) with the new values baked in.
+    if (edge.wraparound) {
+      // Convert the capped value delta back to angular delta for the offset.
+      const offsetRad = cappedDelta / valueScale;
+      this._dragOriginOffset.value = offsetRad;
+    }
+
     this._dataView!.updateDraft({
       nodeId: edge.leftId,
       value: this.valueOf(edge.leftId),
@@ -275,7 +291,13 @@ export class SunburstChart extends HierarchicalChartBase implements EdgeDragHand
     });
   }
 
-  endGesture(_edge: Edge) {
+  endGesture(edge: Edge) {
+    // Reset the wraparound origin offset — the layout snaps to canonical
+    // (child[0] at 0°) with the new values. The settle tween animates the
+    // counter-rotation back to 0°.
+    if (edge.wraparound) {
+      this._dragOriginOffset.value = 0;
+    }
     this._endGestureCommon();
   }
 }
