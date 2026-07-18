@@ -44,8 +44,27 @@ export function tileBodyReorder(opts: TileBodyReorderOptions): Behavior {
     let startPointer = 0;
     let startTileMid = 0;
     let initialMids = new Map<string, number>();
+    let initialSlots = new Map<string, { pos: number; size: number }>();
+    let parentStart = 0;
+    let parentSpan = 0;
+    let totalSize = 0;
     let ghostEl: SVGGraphicsElement | null = null;
     let prevGhostTransition = "";
+
+    // Compute a tile's slot midpoint for a given order, synchronously.
+    // No layout cell read — avoids microtask lag.
+    const computeSlotMid = (order: string[], id: string): number => {
+      let cursor = parentStart;
+      for (const oid of order) {
+        const s = initialSlots.get(oid);
+        if (!s) continue;
+        const proportion = totalSize > 0 ? s.size / totalSize : 0;
+        const newSize = proportion * parentSpan;
+        if (oid === id) return cursor + newSize / 2;
+        cursor += newSize;
+      }
+      return startTileMid;
+    };
 
     const setFrozenOrder = (order: string[]) => {
       const map = new Map<string, string[]>();
@@ -81,6 +100,7 @@ export function tileBodyReorder(opts: TileBodyReorderOptions): Behavior {
         currentOrder = [];
         parentId = null;
         initialMids.clear();
+        initialSlots.clear();
         ghostEl = null;
         gesture.store.activeTarget = null;
       }
@@ -109,17 +129,26 @@ export function tileBodyReorder(opts: TileBodyReorderOptions): Behavior {
           intent: "reorder",
         });
 
-        // Freeze initial order + capture sibling midpoints (FROZEN — don't
-        // re-read as siblings move; that's circular and causes jank).
-        setFrozenOrder(initialOrder);
+        // Freeze initial order + capture sibling midpoints + slots.
+        // All FROZEN at activation — never re-read during drag (causes lag).
         const layout = opts.layout(gesture);
         initialMids.clear();
+        initialSlots.clear();
+        totalSize = 0;
         for (const id of initialOrder) {
-          if (id === targetId) continue;
           const r = layout.get(id);
           if (!r) continue;
-          initialMids.set(id, isHoriz ? (r.y + r.height / 2) : (r.x + r.width / 2));
+          const pos = isHoriz ? r.y : r.x;
+          const size = isHoriz ? r.height : r.width;
+          initialSlots.set(id, { pos, size });
+          totalSize += size;
+          if (id !== targetId) {
+            initialMids.set(id, pos + size / 2);
+          }
         }
+        parentStart = Math.min(...[...initialSlots.values()].map((s) => s.pos));
+        parentSpan = Math.max(...[...initialSlots.values()].map((s) => s.pos + s.size)) - parentStart;
+        setFrozenOrder(initialOrder);
 
         // Elevate the ghost: find the tile's <g> (parent of the <rect> with data-id).
         const tileRect = host.querySelector(`rect[data-id="${targetId}"]`);
@@ -161,16 +190,14 @@ export function tileBodyReorder(opts: TileBodyReorderOptions): Behavior {
       }
 
       // Ghost: transform so visual center tracks pointer.
+      // Compute slot midpoint synchronously from currentOrder + initialSlots
+      // — NO layout cell read (that was causing the lag).
       if (ghostEl) {
-        const freshLayout = opts.layout(gesture);
-        const r = freshLayout.get(targetId);
-        if (r) {
-          const slotMid = isHoriz ? (r.y + r.height / 2) : (r.x + r.width / 2);
-          const offset = pointerAxis - slotMid;
-          const dx = isHoriz ? 0 : offset;
-          const dy = isHoriz ? offset : 0;
-          ghostEl.style.transform = `translate(${dx}px, ${dy}px)`;
-        }
+        const slotMid = computeSlotMid(currentOrder, targetId);
+        const offset = pointerAxis - slotMid;
+        const dx = isHoriz ? 0 : offset;
+        const dy = isHoriz ? offset : 0;
+        ghostEl.style.transform = `translate(${dx}px, ${dy}px)`;
       }
 
       gesture.updateDraft({
@@ -219,6 +246,7 @@ export function tileBodyReorder(opts: TileBodyReorderOptions): Behavior {
       currentOrder = [];
       parentId = null;
       initialMids.clear();
+      initialSlots.clear();
       ghostEl = null;
       gesture.store.activeTarget = null;
     };
