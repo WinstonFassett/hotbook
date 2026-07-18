@@ -196,7 +196,7 @@ export function makeCircle(
   // on initial load instead of sliding in from (0,0).
   let firstRun = true;
   effect(() => {
-    const ms = motion.baseMs.value * 3;
+    const ms = motion.drillMs.value;
     wrapG.style.transition = firstRun ? "none" : `transform ${ms}ms ease-out`;
     firstRun = false;
   });

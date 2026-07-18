@@ -328,7 +328,7 @@ export function makeTile(
   effect(() => {
     labelWrap.style.transition = labelFirstRun
       ? "none"
-      : `transform ${motion.baseMs.value * 3}ms ease-out`;
+      : `transform ${motion.drillMs.value}ms ease-out`;
     labelFirstRun = false;
   });
 

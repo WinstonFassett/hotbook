@@ -460,7 +460,7 @@ function easeOutQuad(t: number): number {
 // Settle duration is now a live cell read (WIN-352). Sampled at each anim's
 // start below and stored on the per-arc anim state so an in-flight tween keeps
 // its original duration but the next commit picks up the new value from the
-// tweaks pane. `TRANSITION_DURATION.drill` is a getter on `motion.baseMs`
+// tweaks pane. `TRANSITION_DURATION.drill` is a getter on `motion.drillMs`
 // (3× base by default = 300ms) — bumping base or drill retimes this.
 
 /**

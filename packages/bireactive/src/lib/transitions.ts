@@ -39,8 +39,9 @@ export const TRANSITION_DURATION = {
   get hover()     { return 1.0 * motion.baseMs.value; },
   /** Highlight rect sliding between columns/rows. */
   get highlight() { return 1.5 * motion.baseMs.value; },
-  /** Drill in/out zoom (Part 5 placeholder). */
-  get drill()     { return 3.0 * motion.baseMs.value; },
+  /** Drill in/out zoom — independent of baseMs (navigation, not settle).
+   *  Driven by motion.drillMs directly so the tweaks pane knob works. */
+  get drill()     { return motion.drillMs.value; },
 } as const;
 
 /** True when the user has asked for reduced motion. Reactive (gesture-driven)

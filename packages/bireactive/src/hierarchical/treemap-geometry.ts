@@ -244,7 +244,7 @@ export function makeTreemapTile(
   // on initial load instead of sliding in from (0,0).
   let tileFirstRun = true;
   effect(() => {
-    const ms = motion.baseMs.value * 3;
+    const ms = motion.drillMs.value;
     tile.el.style.transition = tileFirstRun
       ? "none"
       : `x ${ms}ms ease-out, y ${ms}ms ease-out, width ${ms}ms ease-out, height ${ms}ms ease-out`;
@@ -325,7 +325,7 @@ export function makeTreemapTile(
   effect(() => {
     labelWrap.style.transition = labelFirstRun
       ? "none"
-      : `transform ${motion.baseMs.value * 3}ms ease-out`;
+      : `transform ${motion.drillMs.value}ms ease-out`;
     labelFirstRun = false;
   });
 
