@@ -35,8 +35,6 @@ export class TreemapChart extends HierarchicalChartBase implements GestureContex
   // --- Hook: chart-specific rendering ---
 
   protected _setupRendering(): void {
-    const { w: Wc, h: Hc } = this._hostSize!;
-
     // Rendered set: ALL descendants of the focus node (excluding the focus
     // node itself — it is the invisible container). This is the classic
     // nested treemap: groups contain their children, recursively.
@@ -50,7 +48,7 @@ export class TreemapChart extends HierarchicalChartBase implements GestureContex
     // Live layout: d3 squarify on focus.children.
     const liveLayout = this._deriveLayout(
       (root, config, frozen, w, h, drill) => computeTreemapLayout(root, config, frozen, w, h, drill),
-      () => new Map<string, LayoutRect>(),
+      new Map<string, LayoutRect>(),
     );
     this._liveLayout = liveLayout;
 

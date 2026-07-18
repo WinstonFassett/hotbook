@@ -99,9 +99,9 @@ export class IcicleChart extends HierarchicalChartBase implements GestureContext
     const dragBehaviors = this._selectDragBehaviors(
       tileBodyDrag({
         target: (g: any) => g.store.hover.value ?? g.store.focus.value,
-        valueOf: (g: any) => this.valueOf,
+        valueOf: (_g: any) => this.valueOf,
         writeValue: this.writeValue,
-        siblings: (g: any) => this.siblings,
+        siblings: (_g: any) => this.siblings,
         frozenOrder: () => this._frozenOrder.value,
         windowGetter: () => this._window?.value ?? null,
         frozenOrderCell: this._frozenOrder,
@@ -110,8 +110,8 @@ export class IcicleChart extends HierarchicalChartBase implements GestureContext
       }),
       tileBodyReorder({
         target: (g: any) => g.store.hover.value ?? g.store.focus.value,
-        treeRoot: (g: any) => this._treeRoot.value,
-        layout: (g: any) => this._layout!.value,
+        treeRoot: (_g: any) => this._treeRoot.value,
+        layout: (_g: any) => this._layout!.value,
         focusTile: (id) => this.setFocus(id),
         writeReorder: (parentId, orderedIds) => {
           const k = this._kernelCell.value;
@@ -128,7 +128,7 @@ export class IcicleChart extends HierarchicalChartBase implements GestureContext
   // --- GestureContext: edge handle drag lifecycle (icicle-specific) ---
 
   startGesture(edge: Edge) {
-    const { left, g } = this._startGestureCommon(edge);
+    this._startGestureCommon(edge);
 
     // Capture boundary position and sizes at gesture start.
     const layout = this.layout();
@@ -137,29 +137,6 @@ export class IcicleChart extends HierarchicalChartBase implements GestureContext
     const isHoriz = this.config.orientation === "horizontal";
     this._dragBoundary = isHoriz ? lr.y + lr.height : lr.x + lr.width;
     this._dragPairSize = isHoriz ? lr.height + rr.height : lr.width + rr.width;
-
-    // Group size = full span of all siblings (for proportional-siblings mode).
-    // Siblings may be in any order (sort="value" reorders them), so compute
-    // the span from min/max positions, not first/last index.
-    if (left.parent) {
-      const sibs = left.parent.children;
-      let minStart = Infinity;
-      let maxEnd = -Infinity;
-      for (const s of sibs) {
-        const r = layout.get(s.id);
-        if (!r) continue;
-        if (isHoriz) {
-          minStart = Math.min(minStart, r.y);
-          maxEnd = Math.max(maxEnd, r.y + r.height);
-        } else {
-          minStart = Math.min(minStart, r.x);
-          maxEnd = Math.max(maxEnd, r.x + r.width);
-        }
-      }
-      this._dragGroupSize = maxEnd > minStart ? maxEnd - minStart : this._dragPairSize;
-    } else {
-      this._dragGroupSize = this._dragPairSize;
-    }
   }
 
   updateGesture(edge: Edge, point: { x: number; y: number }) {
