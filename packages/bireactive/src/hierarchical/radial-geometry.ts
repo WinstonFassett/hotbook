@@ -14,6 +14,7 @@
 import {
   Anchor,
   annularSector,
+  circle,
   derive,
   effect,
   group,
@@ -316,7 +317,28 @@ export function makeArc(
   arc.el.style.cursor = "grab";
   arc.el.setAttribute("data-id", node.id);
 
+  // True circle overlay for the innermost disc. SVG arc paths can't render
+  // a perfect full circle (start = end → degenerate), and the epsilon fix
+  // leaves a 0.06° sliver. When isInnermost, hide the path and show a real
+  // <circle> instead — no gap, no sliver, perfect disc.
+  const disc = circle(
+    { x: derive(() => center.x.value), y: derive(() => center.y.value) },
+    rOutEffective,
+    { fill: node.color, stroke: "none" },
+  );
+  disc.el.style.cursor = "grab";
+  disc.el.setAttribute("data-id", node.id);
+  disc.el.style.pointerEvents = "none"; // arc handles pointer events
+
+  // Toggle visibility: path hidden when innermost, circle shown when innermost.
+  const visDispose = effect(() => {
+    const inner = isInnermost.value;
+    arc.el.style.visibility = inner ? "hidden" : "";
+    disc.el.style.visibility = inner ? "" : "hidden";
+  });
+
   if (chart) {
+    // Pointer handlers on arc (it stays in the DOM, just hidden).
     arc.el.addEventListener("pointerenter", () => chart.setHover(node.id));
     arc.el.addEventListener("pointerleave", () => chart.setHover(null));
     arc.el.addEventListener("click", () => {
@@ -376,9 +398,11 @@ export function makeArc(
   });
 
   const g = group({}, arc);
+  g.el.appendChild(disc.el);
   g.el.appendChild(labelWrap);
   (g as any).track?.(labelDispose);
   (g as any).track?.(cellCleanup);
+  (g as any).track?.(visDispose);
 
   // Visibility gate: pointer-events only. No opacity fade on exit — arcs
   // collapse to zero angular width (D3 zoomable sunburst metaphor), which
