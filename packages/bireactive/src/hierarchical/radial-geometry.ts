@@ -44,6 +44,10 @@ import {
 } from "./tree";
 
 const TWO_PI = Math.PI * 2;
+/** SVG arc commands can't draw a full circle (start = end point → degenerate
+ *  path → invisible). Clamp the max angle to just under 2π so full-circle
+ *  arcs always have two distinct endpoints. Visually indistinguishable. */
+const TWO_PI_EPS = TWO_PI - 0.001;
 
 /** Per-arc writable cells. Created in makeArc, registered in a Map so
  *  makeAngularHandle can read from the same cells. annularSector reads
@@ -122,7 +126,7 @@ export function computeRadialLayout(
     }
   }
 
-  partition(root, 0, TWO_PI, 0);
+  partition(root, 0, TWO_PI_EPS, 0);
 
   // D3-style drill transform: scale the angular domain so the focus node's
   // angular span fills [0, 2π], shift radial so focus inner radius → 0.
@@ -133,15 +137,15 @@ export function computeRadialLayout(
     if (focusArc) {
       const focusA0 = focusArc.a0;
       const focusSpan = focusArc.a1 - focusArc.a0;
-      const angleScale = focusSpan > 0 ? TWO_PI / focusSpan : 1;
+      const angleScale = focusSpan > 0 ? TWO_PI_EPS / focusSpan : 1;
       const focusRIn = focusArc.rIn;
 
       for (const [id, r] of map) {
         const rawA0 = (r.a0 - focusA0) * angleScale;
         const rawA1 = (r.a1 - focusA0) * angleScale;
         // d3-style clamp: Math.max(0, Math.min(1, ...)) * 2π
-        const clampedA0 = Math.max(0, Math.min(1, rawA0 / TWO_PI)) * TWO_PI;
-        const clampedA1 = Math.max(0, Math.min(1, rawA1 / TWO_PI)) * TWO_PI;
+        const clampedA0 = Math.max(0, Math.min(1, rawA0 / TWO_PI)) * TWO_PI_EPS;
+        const clampedA1 = Math.max(0, Math.min(1, rawA1 / TWO_PI)) * TWO_PI_EPS;
         map.set(id, {
           a0: clampedA0,
           a1: clampedA1,
@@ -233,7 +237,6 @@ export function makeArc(
     setFocus(id: string | null): void;
     focusCell: Cell<string | null>;
     hoverCell: Cell<string | null>;
-    drillCell?: Cell<string | null>;
     _colorModeCell?: Cell<"flat" | "depth" | "mono" | undefined>;
   },
   present?: Read<boolean>,
@@ -273,16 +276,15 @@ export function makeArc(
   const rInEffective = derive(() => cells.lrIn.value);
   const rOutEffective = derive(() => cells.lrOut.value);
 
-  // Innermost arc (current focus/root, full circle): no stroke, no rotation
-  // on label, label always shows. Must be declared before stroke/label blocks.
-  // Only the CURRENT drill target (or root when not drilled) is "innermost" —
-  // prevents the old root's label/border from showing while it collapses.
-  const FULL_CIRCLE_SPAN = 2 * Math.PI - 0.01;
+  // Innermost arc = full circle (span ≈ 2π). Only happens when showRoot=true
+  // (root or drill target fills the center disc). When showRoot=false, no arc
+  // is a full circle — all are slices, no innermost disc exists.
+  // During drill transitions, old root collapses (2π→0) while new focus expands
+  // (0→2π) — complementary, so at most ONE arc is full-circle at any moment.
+  const FULL_CIRCLE_SPAN = TWO_PI_EPS - 0.01;
   const isInnermost = derive(() => {
     const span = a1Effective.value - a0Effective.value;
-    if (span < FULL_CIRCLE_SPAN) return false;
-    const drillId = chart?.drillCell?.value ?? null;
-    return drillId === node.id || (drillId === null && node.parentId === null);
+    return span >= FULL_CIRCLE_SPAN;
   });
 
   // Production sunburst look (matches main): every arc gets a thin
