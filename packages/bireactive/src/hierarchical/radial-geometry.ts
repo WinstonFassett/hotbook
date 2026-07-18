@@ -330,10 +330,16 @@ export function makeArc(
   disc.el.setAttribute("data-id", node.id);
   disc.el.style.pointerEvents = "none"; // arc handles pointer events
 
-  // Toggle visibility: path hidden when innermost, circle shown when innermost.
+  // Toggle visibility:
+  // - Innermost (span ≈ 2π): hide path, show true circle (no sliver).
+  // - Collapsed (span ≈ 0): hide both — degenerate path renders as a line
+  //   with stroke, painting on top of the focus node's disc.
+  // - Normal slice: show path, hide circle.
   const visDispose = effect(() => {
+    const span = a1Effective.value - a0Effective.value;
     const inner = isInnermost.value;
-    arc.el.style.visibility = inner ? "hidden" : "";
+    const collapsed = span < 0.001;
+    arc.el.style.visibility = (inner || collapsed) ? "hidden" : "";
     disc.el.style.visibility = inner ? "" : "hidden";
   });
 
