@@ -419,12 +419,8 @@ export function makeTile(
   );
   lbl.el.style.pointerEvents = "none";
 
-  // Rotation: reactive to orientation.
-  if (isHoriz) {
-    lbl.effect(() => { lbl.rotate.value = readNow(isHoriz) ? 0 : -90; });
-  }
-
-  // Wrapper <g> carries the label via CSS-transformable translate.
+  // Wrapper <g> carries the label via CSS transform (translate + rotate).
+  // Rotation applied here, not on the Shape, so it's a clean CSS transform.
   const labelWrap = document.createElementNS("http://www.w3.org/2000/svg", "g");
   labelWrap.appendChild(lbl.el);
   labelWrap.style.transition = "transform 300ms ease-out";
@@ -433,10 +429,11 @@ export function makeTile(
     if (h) {
       labelWrap.style.transform = `translate(${rx.value + LABEL_PAD}px, ${ry.value + LABEL_PAD}px)`;
     } else {
-      // Vertical: rotate -90° around the label's top-left origin, then
-      // position at the tile's center. After -90° rotation, the text
-      // extends upward from the origin. Shift so it's centered.
-      labelWrap.style.transform = `translate(${rx.value + rw.value / 2}px, ${ry.value + rh.value - LABEL_PAD}px)`;
+      // Vertical: translate to bottom-center of tile, rotate -90°.
+      // -90° = counterclockwise. Text reads bottom-to-top.
+      // transform-origin is 0 0 (the label's top-left), so after rotation
+      // the text extends upward. Position at bottom-center of tile.
+      labelWrap.style.transform = `translate(${rx.value + rw.value / 2}px, ${ry.value + rh.value - LABEL_PAD}px) rotate(-90deg)`;
     }
   });
 
