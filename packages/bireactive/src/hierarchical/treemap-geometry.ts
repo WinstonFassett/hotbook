@@ -202,6 +202,7 @@ export function makeTreemapTile(
   present?: Read<boolean>,
   defs?: SVGDefsElement,
   instanceId?: string,
+  valueMap?: Cell<Map<string, number>>,
 ): Shape {
   // No drawn inset — d3.treemap's paddingInner/paddingOuter already
   // creates the gaps in the layout. Drawing the rect at the full layout
@@ -276,7 +277,10 @@ export function makeTreemapTile(
   const valueText = derive(() => {
     const w0 = rw.value, h0 = rh.value;
     if (w0 <= 60 || h0 <= 16) return ""; // value needs more width
-    return node.value.toFixed(0);
+    // Read from the reactive valueMap so labels update on drag resize.
+    // Falls back to the stale RenderNode.value if no map provided.
+    const v = valueMap ? valueMap.value.get(node.id) : node.value;
+    return (v ?? node.value).toFixed(0);
   });
 
   const nameLbl = label(Vec.derive(() => ({ x: 0, y: 0 })), nameText, {

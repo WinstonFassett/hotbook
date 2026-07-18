@@ -62,6 +62,7 @@ export class PackChart extends HierarchicalChartBase implements ChartAccessors<P
           this,
           derive(() => membership.value.has(node.id)),
           this._defs,
+          this._valueMap,
         ),
       { key: (node) => node.id },
     );
@@ -95,12 +96,13 @@ export class PackChart extends HierarchicalChartBase implements ChartAccessors<P
   // Pack: transition cx/cy/r (drill affine slide) + opacity (enter/exit fade).
   // The full-tree + affine approach means layout only changes on drill (not
   // every edit), so CSS transitions animate the slide without chasing.
-  // Pack: transition cx/cy/r (circle position + radius) and x/y (label
-  // position) and opacity (enter/exit fade). All SVG attributes, one
-  // timing source — circle and labels move in lockstep.
+  // Pack: group transform handles position (circle + labels slide together
+  // via wrapG transform). Behavior only transitions r (radius grows/shrinks)
+  // and opacity (enter/exit fade). Transitioning cx/cy here would fight the
+  // group transform (double animation).
   protected _transitionOpts() {
     return {
-      attrs: ["cx", "cy", "r", "opacity", "x", "y"] as const,
+      attrs: ["r", "opacity"] as const,
       selector: this.tagName.toLowerCase(),
       elements: "circle, text",
       durationMs: () => motion.drillMs.value,

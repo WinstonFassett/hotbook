@@ -128,6 +128,7 @@ export function makeCircle(
   },
   present?: Read<boolean>,
   _defs?: SVGDefsElement,
+  valueMap?: Cell<Map<string, number>>,
 ): Shape {
   const lr = derive(() => layout.value.get(node.id) ?? { cx: 0, cy: 0, r: 0 });
   const cx = derive(() => lr.value.cx);
@@ -148,12 +149,13 @@ export function makeCircle(
       ? Math.max(2, sep * 2) : sep;
   });
 
-  // Circle at cx/cy — the behavior's CSS transitions cx/cy/r so the
-  // circle slides and grows on drill. Labels read from the same cx/cy
-  // and the behavior also transitions x/y on <text>, so labels ride
-  // in lockstep. No group transform needed — all SVG attributes, one
-  // timing source (the behavior's <style>).
-  const disc = circle(Vec.derive(() => ({ x: cx.value, y: cy.value })), r, {
+  // Circle + labels inside a <g> whose transform carries position.
+  // Circle at (0,0) inside the group; labels at (0, -6) and (0, 8).
+  // The behavior transitions r (radius) and opacity (enter/exit).
+  // The group's inline transform transition handles position — same
+  // pattern as icicle/treemap labels. This avoids relying on x/y CSS
+  // transitions on <text> which don't work reliably across browsers.
+  const disc = circle(Vec.derive(() => ({ x: 0, y: 0 })), r, {
     fill,
     stroke,
     strokeWidth,
@@ -184,10 +186,20 @@ export function makeCircle(
     (disc.el as SVGElement).focus?.();
   });
 
+  // Wrapper group — carries position via CSS transform transition.
+  const wrapG = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  wrapG.appendChild(disc.el);
+  effect(() => {
+    wrapG.style.transition = `transform ${motion.drillMs.value}ms ease-out`;
+  });
+  effect(() => {
+    wrapG.style.transform = `translate(${cx.value}px, ${cy.value}px)`;
+  });
+
   // Label for leaf nodes with enough room. Two-line center (Budget tree
-  // pattern): name (bold) on top, value (regular) below. Labels read
-  // from the same cx/cy as the circle, so the behavior's CSS transition
-  // on x/y moves them in lockstep with the circle.
+  // pattern): name (bold) on top, value (regular) below. Labels at fixed
+  // offsets from the group's origin (0,0) = circle center, so they ride
+  // the group's transform animation in lockstep with the circle.
   if (node.children.length === 0) {
     const labelFill = labelColorFor(node.color);
     const nameText = derive(() => {
@@ -196,24 +208,26 @@ export function makeCircle(
     });
     const valueText = derive(() => {
       if (r.value <= 20) return "";
-      return node.value.toFixed(0);
+      const v = valueMap ? valueMap.value.get(node.id) : node.value;
+      return (v ?? node.value).toFixed(0);
     });
     const nameLbl = label(
-      Vec.derive(() => ({ x: cx.value, y: cy.value - 6 })),
+      Vec.derive(() => ({ x: 0, y: -6 })),
       nameText,
       { size: 11, align: Anchor.Center, fill: labelFill, bold: true },
     );
     nameLbl.el.style.pointerEvents = "none";
     const valueLbl = label(
-      Vec.derive(() => ({ x: cx.value, y: cy.value + 8 })),
+      Vec.derive(() => ({ x: 0, y: 8 })),
       valueText,
       { size: 10, align: Anchor.Center, fill: labelFill, bold: false },
     );
     valueLbl.el.style.pointerEvents = "none";
-    const grp = group();
-    grp.add(disc, nameLbl, valueLbl);
-    return grp;
+    wrapG.appendChild(nameLbl.el);
+    wrapG.appendChild(valueLbl.el);
   }
 
-  return disc;
+  const grp = group();
+  grp.el.appendChild(wrapG);
+  return grp;
 }

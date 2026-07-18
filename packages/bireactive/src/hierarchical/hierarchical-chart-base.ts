@@ -90,6 +90,20 @@ export abstract class HierarchicalChartBase extends HTMLElement {
   protected _queryKeyCell = cell<string>("");
   protected _treeRoot = cell<ChartNode | null>(null);
   protected _frozenOrder = cell<Map<string, string[]> | null>(null);
+  /** Reactive map of node id → live value. Labels read from this so they
+   *  update when values change (drag resize, etc.) even though forEach
+   *  reuses DOM by key and RenderNode.value is a stale snapshot. */
+  protected _valueMap = derive(() => {
+    const root = this._treeRoot.value;
+    const map = new Map<string, number>();
+    if (!root) return map;
+    function walk(n: ChartNode) {
+      map.set(n.id, n.value.value);
+      for (const c of n.children) walk(c);
+    }
+    walk(root);
+    return map;
+  });
   protected _focusCell = cell<string | null>(null);
   protected _hoverCell = cell<string | null>(null);
   protected _drillId = cell<string | null>(null);

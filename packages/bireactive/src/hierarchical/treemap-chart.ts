@@ -96,6 +96,7 @@ export class TreemapChart extends HierarchicalChartBase implements ChartAccessor
           derive(() => membership.value.has(node.id)),
           this._defs,
           this._instanceId,
+          this._valueMap,
         ),
       { key: (node) => node.id },
     );
