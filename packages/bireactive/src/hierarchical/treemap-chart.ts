@@ -86,12 +86,9 @@ export class TreemapChart extends HierarchicalChartBase implements ChartAccessor
     this._rootShape!.add(tilesLayer);
 
     // Tiles: forEach over ALL descendants. Keyed by id → stable DOM.
-    // withExitDelay keeps exiting tiles mounted long enough for the exit
-    // fade to complete (level remove / depth config change).
-    const renderedNodes = withExitDelay(allNodes, { key: (n) => n.id });
     const tilesResult = forEach(
       tilesLayer,
-      renderedNodes,
+      allNodes,
       (node) =>
         makeTreemapTile(
           node,
