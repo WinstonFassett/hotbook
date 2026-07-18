@@ -142,7 +142,11 @@ export function sortedChildren(
   return node.children;
 }
 
-export function buildWindow(
+/** Walk the FULL tree — every descendant, not just the depth window.
+ *  D3-style: all nodes mount once; `present` gates visibility. Off-window
+ *  nodes (depth > maxDepth) get layout rects beyond the canvas edge and
+ *  slide to/from there via CSS transitions + opacity fade. */
+export function buildAllDescendants(
   root: ChartNode,
   config: ChartConfig,
   frozenOrder?: Map<string, string[]> | null,
@@ -151,8 +155,8 @@ export function buildWindow(
   const result: RenderNode[] = [];
 
   function build(n: ChartNode, depth: number, parentId: string | null): RenderNode {
-    const visibleChildren: RenderNode[] = [];
-    const isLeaf = n.children.length === 0 || depth === maxDepth;
+    const children: RenderNode[] = [];
+    const isLeaf = n.children.length === 0;
     const rn: RenderNode = {
       id: n.id,
       label: n.label,
@@ -161,13 +165,12 @@ export function buildWindow(
       depth,
       parentId,
       isLeaf,
-      children: visibleChildren,
+      present: depth <= maxDepth,
+      children,
     };
     result.push(rn);
-    if (!isLeaf) {
-      for (const c of sortedChildren(n, config, frozenOrder)) {
-        visibleChildren.push(build(c, depth + 1, n.id));
-      }
+    for (const c of sortedChildren(n, config, frozenOrder)) {
+      children.push(build(c, depth + 1, n.id));
     }
     return rn;
   }
@@ -201,7 +204,9 @@ export function computeLayout(
 
   function partition(n: ChartNode, v0: number, v1: number, d: number) {
     setRect(n.id, v0, v1, d);
-    if (d >= maxDepth) return;
+    // Don't stop at maxDepth — compute rects for ALL descendants so
+    // off-window nodes have geometry to transition from/to. Nodes beyond
+    // maxDepth get depthPos > canvas extent (below/right of canvas).
     const children = sortedChildren(n, config, frozenOrder);
     const totalValue = children.reduce((s, c) => s + c.value.value, 0);
     const span = v1 - v0;
@@ -217,9 +222,12 @@ export function computeLayout(
   return map;
 }
 
-export function buildEdges(windowNodes: RenderNode[]): Edge[] {
+export function buildEdges(allNodes: RenderNode[]): Edge[] {
   const edges: Edge[] = [];
-  for (const node of windowNodes) {
+  for (const node of allNodes) {
+    // Build edges between ALL adjacent sibling pairs (not just present).
+    // Handle visibility is gated by opacity in makeHandle — stable DOM,
+    // no mount/unmount on depth change.
     const children = node.children;
     for (let i = 0; i < children.length - 1; i++) {
       const left = children[i];
@@ -250,26 +258,24 @@ export function makeTile(
 ): Shape {
   const pad = 2;
 
-  // D3-style: tiles move to their target position. No grow/shrink animation.
-  // Entering tiles mount at target. Exiting tiles freeze at last position
-  // (withExitDelay holds them mounted briefly so they don't vanish instantly).
-  let frozen: LayoutRect = { x: 0, y: 0, width: 0, height: 0 };
+  // D3-style: every node always has a layout rect (computeLayout walks
+  // the full tree). Off-window nodes have rects beyond the canvas edge.
+  // No frozen/parent-rect fallback — the layout IS the source of truth.
+  // Visibility is gated by `present` (opacity + pointer-events), not by
+  // mount/unmount. CSS transitions animate the geometry + opacity.
   const liveRect = derive(() => {
-    const r = layout.value.get(node.id);
-    if (present) {
-      const p = readNow(present);
-      if (p && r) { frozen = r; return r; }
-      if (p) return r ?? frozen;
-    }
-    // Exiting node: freeze at last position so it stays put while
-    // withExitDelay holds it, then gets evicted.
-    return r ?? frozen;
+    return layout.value.get(node.id) ?? { x: 0, y: 0, width: 0, height: 0 };
   });
 
   const rx = derive(() => liveRect.value.x + pad);
   const ry = derive(() => liveRect.value.y + pad);
   const rw = derive(() => Math.max(0, liveRect.value.width - pad * 2));
   const rh = derive(() => Math.max(0, liveRect.value.height - pad * 2));
+
+  // Present gates visibility: in-window → opacity 1 + pointer-events auto;
+  // off-window → opacity 0 + pointer-events none. The opacity transition
+  // is inline (suppressed by gesture-active * { transition: none !important }).
+  const visible = present ? derive(() => readNow(present)) : null;
 
   // Stroke reflects focus/selection and hover state — reads bireactive cells
   // so the derive re-runs automatically when focus/hover changes.
@@ -327,6 +333,17 @@ export function makeTile(
   g.el.appendChild(labelWrap);
   (g as any).track?.(labelDispose);
 
+  // Pointer-events gate: off-window nodes can't capture clicks. No opacity
+  // fade — off-window tiles slide off-canvas (clipped by the SVG viewport)
+  // and slide back in. The geometry transition (rect x/y/w/h) handles the
+  // visual; the SVG viewport's overflow:hidden does the clipping.
+  if (visible) {
+    const visDispose = effect(() => {
+      tile.el.style.pointerEvents = visible.value ? "auto" : "none";
+    });
+    (g as any).track?.(visDispose);
+  }
+
   return g;
 }
 
@@ -336,6 +353,7 @@ export function makeHandle(
   edge: Edge,
   layout: Cell<Map<string, LayoutRect>>,
   configCell: Cell<ChartConfig | null>,
+  present?: Read<boolean>,
 ): Shape {
   const isHoriz = derive(() => configCell.value?.orientation === "horizontal");
 
@@ -367,5 +385,16 @@ export function makeHandle(
   });
   handle.el.style.pointerEvents = "all";
   (handle as any)._edge = edge;
+
+  // Pointer-events gate: handle can't capture clicks when either sibling
+  // is off-window. No opacity fade — same physical metaphor as tiles.
+  if (present) {
+    const visDispose = effect(() => {
+      const vis = readNow(present);
+      handle.el.style.pointerEvents = vis ? "all" : "none";
+    });
+    (handle as any).track?.(visDispose);
+  }
+
   return handle;
 }

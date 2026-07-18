@@ -29,7 +29,7 @@ export interface PreviewFullRenderOptions {
   /** Predicate read once at gesture start. When true, capture and freeze
    *  sibling order for the gesture's duration. Not reactive — see header. */
   deferSort: () => boolean;
-  /** The frozen-order cell that derivers (buildWindow, computeLayout) read.
+  /** The frozen-order cell that derivers (buildAllDescendants, computeLayout) read.
    *  The behavior writes to this cell: set on capture, cleared on commit/cancel. */
   frozenOrder: Writable<Cell<Map<string, string[]> | null>>;
   /** Capture the current sibling order from the tree. Returns a map of
@@ -55,9 +55,9 @@ export function captureOrderFromTree(root: ChartNode | null): Map<string, string
   return order;
 }
 
-/** Capture the currently-rendered sibling order from a window (the output
- *  of `buildWindow`). This respects the current sort config and any
- *  existing frozenOrder, so it captures what the user actually sees —
+/** Capture the currently-rendered sibling order from the node list (the
+ *  output of `buildAllDescendants`). This respects the current sort config
+ *  and any existing frozenOrder, so it captures what the user actually sees —
  *  not the dataset's index order. */
 export function captureOrderFromWindow(window: RenderNode[] | null): Map<string, string[]> {
   const order = new Map<string, string[]>();

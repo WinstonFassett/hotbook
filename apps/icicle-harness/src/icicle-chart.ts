@@ -10,9 +10,9 @@ import { Kernel, configKey } from "./kernel";
 import { DataView } from "./data-view";
 import { Gesture, setup } from "./gesture";
 import {
+  buildAllDescendants,
   buildEdges,
   buildTree,
-  buildWindow,
   computeLayout,
   findNode,
   makeHandle,
@@ -33,7 +33,7 @@ import { applyConservedDelta, effectiveMode, type ConservationContext } from "./
 import { tileBodyDrag } from "./behaviors/tile-body-drag";
 import { transitionOnUpdated } from "./behaviors/transition-on-updated";
 import { previewFullRender, captureOrderFromWindow } from "./behaviors/preview-full-render";
-import { withExitDelay, membershipCell } from "./behaviors/mark-lifecycle";
+import { membershipCell } from "./behaviors/mark-lifecycle";
 import { bindChart, rebuildTree } from "./chart-binding";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -153,17 +153,20 @@ export class IcicleChart extends HTMLElement implements GestureContext {
     this._hostSize = useHostSize(this, { width: FALLBACK_W, height: FALLBACK_H });
 
     // Rendering layer — created once, persists across config changes.
-    // Derivers read config from _configCell, so render-field changes
-    // (sort, orientation, etc.) re-derive on existing DOM → transition.
+    // D3-style: ALL descendants mount once via forEach over _allNodes
+    // (stable list, never mounts/unmounts on depth/sort/orientation change).
+    // _window is the present-filtered subset, used for edges + membership.
+    // Off-window nodes stay mounted, gate visibility via opacity.
     const { w: Wc, h: Hc } = this._hostSize;
 
-    this._window = derive(() => {
+    const allNodes = derive(() => {
       const root = this._treeRoot.value;
       const frozen = this._frozenOrder.value;
       const config = this._configCell.value;
       if (!root || !config) return [];
-      return buildWindow(root, config, frozen ?? undefined);
+      return buildAllDescendants(root, config, frozen ?? undefined);
     });
+    this._window = allNodes;
 
     this._layout = derive(() => {
       const root = this._treeRoot.value;
@@ -173,27 +176,31 @@ export class IcicleChart extends HTMLElement implements GestureContext {
       return computeLayout(root, config, frozen ?? undefined, Wc.value, Hc.value);
     });
 
-    const windowCell = this._window;
-    this._edges = derive(() => buildEdges(windowCell!.value));
-
-    // Enter/exit lifecycle: hold removed tiles in the rendered set for EXIT_MS
-    // so a CSS opacity fade can play before forEach evicts them. `membership`
-    // is the undelayed set — used per-tile to freeze geometry + drive the fade
-    // while a tile is in its exit window.
-    const renderedSet = withExitDelay(windowCell!, { key: (n) => n.id });
-    const membership = membershipCell(windowCell!, (n) => n.id);
+    // Present-filtered subset for membership (per-tile/per-handle visibility).
+    const presentNodes = derive(() => allNodes.value.filter((n) => n.present));
+    this._edges = derive(() => buildEdges(allNodes.value));
+    const membership = membershipCell(presentNodes, (n) => n.id);
 
     const tilesLayer = group();
     const edgesLayer = group();
     this._rootShape.add(tilesLayer, edgesLayer);
 
-    const tilesResult = forEach(tilesLayer, renderedSet, (node) =>
+    // Tiles: forEach over ALL descendants. Keyed by id → stable DOM across
+    // depth/sort/orientation changes. No mount/unmount, no exit delay.
+    const tilesResult = forEach(tilesLayer, allNodes, (node) =>
       makeTile(node, this._layout!, this, derive(() => membership.value.has(node.id))),
       { key: (node) => node.id },
     );
 
+    // Edges: forEach over ALL adjacent sibling pairs. Handle visibility
+    // gated by both siblings being present — no bleed-through during fade.
     const edgesResult = forEach(edgesLayer, this._edges, (edge) => {
-      const handle = makeHandle(edge, this._layout!, this._configCell);
+      const handle = makeHandle(
+        edge,
+        this._layout!,
+        this._configCell,
+        derive(() => membership.value.has(edge.leftId) && membership.value.has(edge.rightId)),
+      );
       const off = attachEdgeHandleDrag(handle, this);
       handle.track(off);
       return handle;

@@ -145,6 +145,7 @@ function toRenderNode(node: DataNode, depth: number, root: DataNode, _config: Ch
     depth,
     parentId: parent?.id ?? null,
     isLeaf: node.children.length === 0,
+    present: true,
     children: sortedChildren.map((c) => toRenderNode(c, depth + 1, root, _config, draftValues)),
   };
 }

@@ -66,7 +66,10 @@ export interface EditorTransition {
   draft?: DraftEvent;
 }
 
-/** A node in the rendered window (what the chart actually displays). */
+/** A node in the rendered tree. With D3-style mount-once rendering,
+ *  ALL descendants are mounted; `present` gates visibility (opacity +
+ *  pointer-events). Off-window nodes (depth > maxDepth) have layout
+ *  rects beyond the canvas edge — they slide to/from there and fade. */
 export interface RenderNode {
   id: string;
   label: string;
@@ -75,6 +78,10 @@ export interface RenderNode {
   depth: number;
   parentId: string | null;
   isLeaf: boolean;
+  /** True when this node is within the visible depth window. Drives
+   *  opacity + pointer-events. Off-window nodes stay mounted so their
+   *  geometry transitions animate the slide in/out. */
+  present: boolean;
   children: RenderNode[];
 }
 
