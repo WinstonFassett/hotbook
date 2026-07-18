@@ -136,7 +136,7 @@ const dataset: Dataset = {
 const config: ChartConfig = {
   datasetId: "budget",
   measure: "value",
-  sort: "value",
+  sort: "index",
   depth: 3,
   orientation: "vertical",
   canReorder: false,
