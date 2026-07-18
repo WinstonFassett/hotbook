@@ -26,14 +26,14 @@ import {
 } from "./radial-geometry";
 import {
   attachEdgeHandleDrag,
-  type GestureContext,
+  type EdgeDragHandler,
 } from "./gestures";
 import { tileBodyDrag } from "./behaviors/tile-body-drag";
 import { arcBodyReorder } from "./behaviors/arc-body-reorder";
 import { membershipCell, withExitDelay } from "./behaviors/mark-lifecycle";
 import { HierarchicalChartBase } from "./hierarchical-chart-base";
 
-export class SunburstChart extends HierarchicalChartBase implements GestureContext<RadialRect> {
+export class SunburstChart extends HierarchicalChartBase implements EdgeDragHandler<RadialRect> {
   static tag = "v-sunburst";
 
   private _window?: Cell<RenderNode[]>;
@@ -149,17 +149,7 @@ export class SunburstChart extends HierarchicalChartBase implements GestureConte
 
   protected _composeBehaviors(): void {
     const dragBehaviors = this._selectDragBehaviors(
-      tileBodyDrag({
-        target: (g: Gesture) => g.store.hover.value ?? g.store.focus.value,
-        valueOf: (g: Gesture) => this.valueOf,
-        writeValue: this.writeValue,
-        siblings: (g: Gesture) => this.siblings,
-        frozenOrder: () => this._frozenOrder.value,
-        windowGetter: () => this._window?.value ?? null,
-        frozenOrderCell: this._frozenOrder,
-        deferSort: () => this.config.sort !== "index",
-        focusTile: (id) => this.setFocus(id),
-      }),
+      tileBodyDrag(this._tileBodyDragDefaults()),
       arcBodyReorder({
         target: (g: Gesture) => g.store.hover.value ?? g.store.focus.value,
         treeRoot: (g: Gesture) => this._treeRoot.value,
@@ -167,23 +157,23 @@ export class SunburstChart extends HierarchicalChartBase implements GestureConte
         centerX: (g: Gesture) => this._hostSize!.w.value / 2,
         centerY: (g: Gesture) => this._hostSize!.h.value / 2,
         focusArc: (id) => this.setFocus(id),
-        writeReorder: (parentId, orderedIds) => {
-          const k = this._kernelCell.value;
-          const cfg = this._configCell.value;
-          if (k && cfg) k.writeReorder(cfg.datasetId, parentId, orderedIds);
-        },
+        writeReorder: (parentId, orderedIds) => this._writeReorder(parentId, orderedIds),
         bumpReorder: () => this.bumpReorder(),
         frozenOrderCell: this._frozenOrder,
       }),
     );
-    // Sunburst: transition opacity on paths (enter/exit fade) + transform
-    // on text (label movement). Path `d` can't CSS-transition (large-arc-flag
-    // flips mid-tween), so geometry settles via per-arc tween cells (spec §5).
-    this._behaviorDispose = this._composeStandardBehaviors(dragBehaviors, {
-      attrs: ["opacity"],
+    this._behaviorDispose = this._composeStandardBehaviors(dragBehaviors, this._transitionOpts());
+  }
+
+  // Sunburst: transition opacity on paths (enter/exit fade) + transform
+  // on text (label movement). Path `d` can't CSS-transition (large-arc-flag
+  // flips mid-tween), so geometry settles via per-arc tween cells (spec §5).
+  protected _transitionOpts() {
+    return {
+      attrs: ["opacity"] as const,
       selector: this.tagName.toLowerCase(),
       elements: "g[data-id], text",
-    });
+    };
   }
 
   // --- GestureContext: angular edge handle drag lifecycle ---

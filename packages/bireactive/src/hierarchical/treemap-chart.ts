@@ -7,16 +7,16 @@
 import { cell, derive, forEach, group, type Cell } from "bireactive";
 import type { LayoutRect, RenderNode } from "./types";
 import { type Behavior, type Gesture } from "./gesture";
-import { buildAllDescendants, type Edge } from "./hierarchy";
+import { buildAllDescendants } from "./hierarchy";
 import { computeTreemapLayout, makeTreemapTile } from "./treemap-geometry";
-import type { GestureContext } from "./gestures";
+import type { ChartAccessors } from "./gestures";
 import { tileBodyDrag } from "./behaviors/tile-body-drag";
 import { tileBodyReorder } from "./behaviors/tile-body-reorder";
 import { membershipCell } from "./behaviors/mark-lifecycle";
 import { HierarchicalChartBase } from "./hierarchical-chart-base";
 import { findNode, sortedChildren, type ChartNode } from "./tree";
 
-export class TreemapChart extends HierarchicalChartBase implements GestureContext<LayoutRect> {
+export class TreemapChart extends HierarchicalChartBase implements ChartAccessors<LayoutRect> {
   static tag = "v-treemap";
 
   private _window?: Cell<RenderNode[]>;
@@ -109,29 +109,13 @@ export class TreemapChart extends HierarchicalChartBase implements GestureContex
 
   protected _composeBehaviors(): void {
     const dragBehaviors = this._selectDragBehaviors(
-      tileBodyDrag({
-        target: (g: Gesture) => g.store.hover.value ?? g.store.focus.value,
-        valueOf: (g: Gesture) => this.valueOf,
-        writeValue: this.writeValue,
-        siblings: (g: Gesture) => this.siblings,
-        frozenOrder: () => this._frozenOrder.value,
-        windowGetter: () => this._window?.value ?? null,
-        frozenOrderCell: this._frozenOrder,
-        deferSort: () => this.config.sort !== "index",
-        focusTile: (id) => this.setFocus(id),
-        mode: () => "additive",
-        axis: "x",
-      }),
+      tileBodyDrag({ ...this._tileBodyDragDefaults(), mode: () => "additive", axis: "x" }),
       tileBodyReorder({
         target: (g: Gesture) => g.store.hover.value ?? g.store.focus.value,
         treeRoot: (g: Gesture) => this._treeRoot.value,
         layout: (g: Gesture) => this._layout!.value,
         focusTile: (id) => this.setFocus(id),
-        writeReorder: (parentId, orderedIds) => {
-          const k = this._kernelCell.value;
-          const cfg = this._configCell.value;
-          if (k && cfg) k.writeReorder(cfg.datasetId, parentId, orderedIds);
-        },
+        writeReorder: (parentId, orderedIds) => this._writeReorder(parentId, orderedIds),
         bumpReorder: () => this.bumpReorder(),
         frozenOrderCell: this._frozenOrder,
       }),
@@ -153,19 +137,5 @@ export class TreemapChart extends HierarchicalChartBase implements GestureContex
       });
 
     this._behaviorDispose = this._composeStandardBehaviors(dragBehaviors, undefined, [draftFreeze]);
-  }
-
-  // --- GestureContext: minimal stubs (treemap has no edge handles) ---
-
-  startGesture(_edge: Edge) {
-    // Treemap has no edge handles; this is a no-op.
-  }
-
-  updateGesture(_edge: Edge, _point: { x: number; y: number }) {
-    // Treemap has no edge handles; this is a no-op.
-  }
-
-  endGesture(_edge: Edge) {
-    // Treemap has no edge handles; this is a no-op.
   }
 }

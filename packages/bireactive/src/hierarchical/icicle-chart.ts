@@ -17,7 +17,7 @@ import {
 } from "./hierarchy";
 import {
   attachEdgeHandleDrag,
-  type GestureContext,
+  type EdgeDragHandler,
 } from "./gestures";
 import type { Gesture } from "./gesture";
 import { tileBodyDrag } from "./behaviors/tile-body-drag";
@@ -25,7 +25,7 @@ import { tileBodyReorder } from "./behaviors/tile-body-reorder";
 import { membershipCell } from "./behaviors/mark-lifecycle";
 import { HierarchicalChartBase } from "./hierarchical-chart-base";
 
-export class IcicleChart extends HierarchicalChartBase implements GestureContext<LayoutRect> {
+export class IcicleChart extends HierarchicalChartBase implements EdgeDragHandler<LayoutRect> {
   static tag = "v-icicle";
 
   private _window?: Cell<RenderNode[]>;
@@ -98,27 +98,13 @@ export class IcicleChart extends HierarchicalChartBase implements GestureContext
 
   protected _composeBehaviors(): void {
     const dragBehaviors = this._selectDragBehaviors(
-      tileBodyDrag({
-        target: (g: Gesture) => g.store.hover.value ?? g.store.focus.value,
-        valueOf: (_g: Gesture) => this.valueOf,
-        writeValue: this.writeValue,
-        siblings: (_g: Gesture) => this.siblings,
-        frozenOrder: () => this._frozenOrder.value,
-        windowGetter: () => this._window?.value ?? null,
-        frozenOrderCell: this._frozenOrder,
-        deferSort: () => this.config.sort !== "index",
-        focusTile: (id) => this.setFocus(id),
-      }),
+      tileBodyDrag(this._tileBodyDragDefaults()),
       tileBodyReorder({
         target: (g: Gesture) => g.store.hover.value ?? g.store.focus.value,
         treeRoot: (_g: Gesture) => this._treeRoot.value,
         layout: (_g: Gesture) => this._layout!.value,
         focusTile: (id) => this.setFocus(id),
-        writeReorder: (parentId, orderedIds) => {
-          const k = this._kernelCell.value;
-          const cfg = this._configCell.value;
-          if (k && cfg) k.writeReorder(cfg.datasetId, parentId, orderedIds);
-        },
+        writeReorder: (parentId, orderedIds) => this._writeReorder(parentId, orderedIds),
         bumpReorder: () => this.bumpReorder(),
         frozenOrderCell: this._frozenOrder,
       }),

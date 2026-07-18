@@ -25,6 +25,7 @@ import { findNode, snapshotValues, restoreValues, type ChartNode, type Edge } fr
 import { bindChart, rebuildTree } from "./chart-binding";
 import { useHostSize } from "./host-size";
 import type { ConservationMode } from "./behaviors/keyboard-edit";
+import type { TileBodyDragOptions } from "./behaviors/tile-body-drag";
 import { makeBridge, type BrSyncBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { transitionOnUpdated } from "./behaviors/transition-on-updated";
 import { previewFullRender, captureOrderFromWindow } from "./behaviors/preview-full-render";
@@ -644,6 +645,37 @@ export abstract class HierarchicalChartBase extends HTMLElement {
     if (dragBehavior === "resize") return [resizeBehavior];
     if (dragBehavior === "reorder") return [reorderBehavior];
     return [];
+  }
+
+  /** Common tileBodyDrag options shared by all hierarchical charts. Charts
+   *  spread this into their tileBodyDrag() call and add chart-specific
+   *  overrides (mode, axis) as needed. */
+  protected _tileBodyDragDefaults(): TileBodyDragOptions {
+    return {
+      target: (g: Gesture) => g.store.hover.value ?? g.store.focus.value,
+      valueOf: (_g: Gesture) => this.valueOf,
+      writeValue: this.writeValue,
+      siblings: (_g: Gesture) => this.siblings,
+      frozenOrder: () => this._frozenOrder.value,
+      windowGetter: () => this._window?.value ?? null,
+      frozenOrderCell: this._frozenOrder,
+      deferSort: () => this.config.sort !== "index",
+      focusTile: (id) => this.setFocus(id),
+    };
+  }
+
+  /** Common writeReorder callback for reorder behaviors (tile or arc). */
+  protected _writeReorder(parentId: string, orderedIds: string[]): void {
+    const k = this._kernelCell.value;
+    const cfg = this._configCell.value;
+    if (k && cfg) k.writeReorder(cfg.datasetId, parentId, orderedIds);
+  }
+
+  /** Transition options for _composeStandardBehaviors. Charts override to
+   *  customize which attributes/elements get CSS settle transitions. Default:
+   *  x/y/width/height on rect, text (icicle/treemap). */
+  protected _transitionOpts(): Parameters<typeof transitionOnUpdated>[0] | undefined {
+    return undefined;
   }
 
   /** Shared startGesture setup: captures snapshot, finds left/right nodes,

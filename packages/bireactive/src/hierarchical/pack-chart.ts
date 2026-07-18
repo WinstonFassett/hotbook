@@ -7,14 +7,14 @@
 import { cell, derive, forEach, group, type Cell } from "bireactive";
 import type { PackRect, RenderNode } from "./types";
 import { type Behavior, type Gesture, noopBehavior } from "./gesture";
-import { buildAllDescendants, type Edge } from "./hierarchy";
+import { buildAllDescendants } from "./hierarchy";
 import { computePackLayout, makeCircle } from "./pack-geometry";
-import type { GestureContext } from "./gestures";
+import type { ChartAccessors } from "./gestures";
 import { tileBodyDrag } from "./behaviors/tile-body-drag";
 import { membershipCell } from "./behaviors/mark-lifecycle";
 import { HierarchicalChartBase } from "./hierarchical-chart-base";
 
-export class PackChart extends HierarchicalChartBase implements GestureContext<PackRect> {
+export class PackChart extends HierarchicalChartBase implements ChartAccessors<PackRect> {
   static tag = "v-pack";
 
   private _window?: Cell<RenderNode[]>;
@@ -86,42 +86,20 @@ export class PackChart extends HierarchicalChartBase implements GestureContext<P
     // _selectDragBehaviors' "reorder" branch is never selected for pack (no
     // sort="index" reorder path applies to circles), so the reorder slot is
     // a placeholder that's never installed.
-    const resizeBehavior = tileBodyDrag({
-      target: (g: Gesture) => g.store.hover.value ?? g.store.focus.value,
-      valueOf: (g: Gesture) => this.valueOf,
-      writeValue: this.writeValue,
-      siblings: (g: Gesture) => this.siblings,
-      frozenOrder: () => this._frozenOrder.value,
-      windowGetter: () => this._window?.value ?? null,
-      frozenOrderCell: this._frozenOrder,
-      deferSort: () => this.config.sort !== "index",
-      focusTile: (id) => this.setFocus(id),
-      mode: () => "additive",
-      axis: "x",
-    });
+    const resizeBehavior = tileBodyDrag({ ...this._tileBodyDragDefaults(), mode: () => "additive", axis: "x" });
     const dragBehaviors = this._selectDragBehaviors(resizeBehavior, noopBehavior);
+    this._behaviorDispose = this._composeStandardBehaviors(dragBehaviors, this._transitionOpts());
+  }
 
-    // Pack: transition opacity on circles (enter/exit fade).
-    // No CSS transition on cx/cy/r — pack positions change on every layout
-    // re-derivation, and CSS transitions would chase the layout derive.
-    this._behaviorDispose = this._composeStandardBehaviors(dragBehaviors, {
-      attrs: ["opacity"],
+  // Pack: transition opacity on circles (enter/exit fade).
+  // No CSS transition on cx/cy/r — pack positions change on every layout
+  // re-derivation, and CSS transitions would chase the layout derive.
+  protected _transitionOpts() {
+    return {
+      attrs: ["opacity"] as const,
       selector: this.tagName.toLowerCase(),
       elements: "circle, text",
-    });
+    };
   }
 
-  // --- GestureContext: no edge handles (pack has no handles) ---
-
-  startGesture(_edge: Edge) {
-    // Pack has no edge handles; this is a no-op.
-  }
-
-  updateGesture(_edge: Edge, _point: { x: number; y: number }) {
-    // Pack has no edge handles; this is a no-op.
-  }
-
-  endGesture(_edge: Edge) {
-    // Pack has no edge handles; this is a no-op.
-  }
 }
