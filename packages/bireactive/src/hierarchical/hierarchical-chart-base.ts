@@ -25,6 +25,7 @@ import { findNode, snapshotValues, restoreValues, type ChartNode } from "./tree"
 import { bindChart, rebuildTree } from "./chart-binding";
 import { useHostSize } from "./host-size";
 import type { ConservationMode } from "./behaviors/keyboard-edit";
+import { makeBridge, type BrSyncBridge, type ElementWithBridge } from "../lib/hud-bridge";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const FALLBACK_W = 720;
@@ -158,6 +159,11 @@ export abstract class HierarchicalChartBase extends HTMLElement {
   // D3-style drill: dblclick a node to drill in; dblclick the current
   // focus to drill out to its parent. Emits to the Kernel's drill channel
   // so subscribers (side table, etc.) can sync.
+  protected _bridge: BrSyncBridge | null = null;
+  /** External ids last pushed via the bridge — suppresses echo emissions. */
+  private _extHover: string | null | undefined = undefined;
+  private _extFocus: string | null | undefined = undefined;
+
   drill = (id: string | null) => {
     let nextId: string | null;
     if (id === null) {
@@ -181,6 +187,8 @@ export abstract class HierarchicalChartBase extends HTMLElement {
     const k = this._kernelCell.value;
     const cfg = this._configCell.value;
     if (k && cfg) k.setDrill(cfg.datasetId, this.drillKey, nextId);
+    // Legacy hotbook HUD bridge.
+    this._bridge?.emitDrill(this.drillKey, nextId);
   };
 
   // --- Value accessors (shared GestureContext fields) ---
@@ -210,23 +218,12 @@ export abstract class HierarchicalChartBase extends HTMLElement {
 
   // --- Lifecycle ---
 
-  connectedCallback() {
-    if (this._svg) return;
-    ensureChromeCss(this.tagName.toLowerCase());
-    this.style.display = "flex";
-    this.style.flexDirection = "column";
-    this.style.width = "100%";
-    this.style.height = "100%";
-    this.style.outline = "none";
-    this.style.userSelect = "none";
-    this.tabIndex = -1;
+  /** Whether the surface has been created (guards re-entrant connects). */
+  protected _surfaceReady = false;
 
-    // Chrome layer: HTML bar above the SVG for breadcrumb etc.
-    this._chromeLayer = document.createElement("div");
-    this._chromeLayer.style.flex = "0 0 auto";
-    this._chromeLayer.style.pointerEvents = "none";
-    this.appendChild(this._chromeLayer);
-
+  /** Create the rendering surface. Default: an SVG canvas (charts). HTML
+   *  surfaces (treetable) override this and leave _svg unset. */
+  protected _createSurface(): void {
     this._svg = document.createElementNS(SVG_NS, "svg");
     this._svg.style.display = "block";
     this._svg.style.flex = "1 1 0";
@@ -242,6 +239,27 @@ export abstract class HierarchicalChartBase extends HTMLElement {
     this._defs = defs;
 
     this._hostSize = useHostSize(this, { width: FALLBACK_W, height: FALLBACK_H }, this._svg);
+  }
+
+  connectedCallback() {
+    if (this._surfaceReady) return;
+    this._surfaceReady = true;
+    ensureChromeCss(this.tagName.toLowerCase());
+    this.style.display = "flex";
+    this.style.flexDirection = "column";
+    this.style.width = "100%";
+    this.style.height = "100%";
+    this.style.outline = "none";
+    this.style.userSelect = "none";
+    this.tabIndex = -1;
+
+    // Chrome layer: HTML bar above the SVG for breadcrumb etc.
+    this._chromeLayer = document.createElement("div");
+    this._chromeLayer.style.flex = "0 0 auto";
+    this._chromeLayer.style.pointerEvents = "none";
+    this.appendChild(this._chromeLayer);
+
+    this._createSurface();
 
     // Chart-specific rendering (derivers + forEach layers).
     this._setupRendering();
@@ -275,6 +293,28 @@ export abstract class HierarchicalChartBase extends HTMLElement {
 
     // Breadcrumb (shared).
     this._setupBreadcrumb();
+
+    // Legacy hotbook HUD bridge (brSync): external hover/select/drill in,
+    // own hover/focus changes out. External pushes are recorded so the
+    // outgoing effects don't echo them back to the store.
+    const bridge = makeBridge({
+      setHover: (id) => { this._extHover = id; this.setHover(id); },
+      setSelect: (id) => { this._extFocus = id; this.setFocus(id); },
+      setDrill: (id) => { this.drill(id); },
+    });
+    this._bridge = bridge;
+    (this as ElementWithBridge).brSync = bridge;
+    this._setupDisposers.push(
+      effect(() => {
+        const id = this._hoverCell.value;
+        if (id !== this._extHover) { this._extHover = undefined; bridge.emitHover(id); }
+      }),
+      effect(() => {
+        const id = this._focusCell.value;
+        if (id !== this._extFocus) { this._extFocus = undefined; bridge.emitSelect(id); }
+      }),
+      () => { (this as ElementWithBridge).brSync = undefined; this._bridge = null; },
+    );
 
     // Data layer — rebuilds only when the query key changes.
     this._setupDisposers.push(
@@ -335,6 +375,25 @@ export abstract class HierarchicalChartBase extends HTMLElement {
     });
 
     rebuildTree(this._dataView, this._treeRoot);
+
+    // Legacy contract: `gestureActive` flag + `gesturecommit` event, used by
+    // demos (WIN-269 sort reconciliation) and tile-binder to reconcile
+    // frozen display order after a gesture ends.
+    this._buildDisposers.push(
+      this._gesture.editor.subscribe((t) => {
+        if (t.type === "draft") {
+          (this as any).gestureActive = true;
+        } else if (t.type === "commit" || t.type === "cancel") {
+          (this as any).gestureActive = false;
+          this.dispatchEvent(new CustomEvent("gesturecommit", {
+            detail: {
+              canceled: t.type === "cancel",
+              reorder: t.draft?.intent === "reorder",
+            },
+          }));
+        }
+      }),
+    );
 
     // Subscribe to the Kernel's drill channel for cross-view sync.
     // When another component drills on the same dataset+drillKey, update

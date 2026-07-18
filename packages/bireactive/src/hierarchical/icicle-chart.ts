@@ -95,7 +95,11 @@ export class IcicleChart extends HierarchicalChartBase implements GestureContext
 
     // Edges: forEach over ALL adjacent sibling pairs. Handle visibility
     // gated by both siblings being present — no bleed-through during fade.
-    const edgesResult = forEach(edgesLayer, this._edges, (edge) => {
+    // Spec §3: suppressed entirely when the `no-handles` attribute is
+    // present (checked at mount time, matching the old implementation).
+    const noHandles = this.hasAttribute("no-handles");
+    const emptyEdges = derive(() => [] as Edge[]);
+    const edgesResult = forEach(edgesLayer, noHandles ? emptyEdges : this._edges, (edge) => {
       const handle = makeHandle(
         edge,
         this._layout!,
