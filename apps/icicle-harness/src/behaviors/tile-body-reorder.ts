@@ -211,8 +211,23 @@ export function tileBodyReorder(opts: TileBodyReorderOptions): Behavior {
             opts.writeReorder(parentId, currentOrder.slice());
           }
         }
+        // Clear frozenOrder so layout re-derives from the real tree order.
         clearFrozenOrder();
-        restoreGhost();
+        // Let the layout re-derive (microtask), then animate the ghost
+        // from its dragged position back to zero offset. The rect's x/y
+        // will have updated to the final layout position; the <g> transform
+        // transitions from the dragged offset to 0 — one smooth motion.
+        requestAnimationFrame(() => {
+          if (ghostEl) {
+            // Restore transition FIRST so the transform clear animates.
+            ghostEl.style.transition = prevGhostTransition || "transform 200ms ease-out";
+            // Force a reflow so the browser registers the current transform
+            // before we clear it (otherwise it may skip the transition).
+            void ghostEl.offsetWidth;
+            ghostEl.style.transform = "";
+            ghostEl.removeAttribute("data-reordering");
+          }
+        });
         gesture.commit();
       }
       active = false;
