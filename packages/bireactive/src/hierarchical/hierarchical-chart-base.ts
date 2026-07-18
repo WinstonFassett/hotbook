@@ -107,6 +107,9 @@ export abstract class HierarchicalChartBase extends HTMLElement {
   protected _focusCell = cell<string | null>(null);
   protected _hoverCell = cell<string | null>(null);
   protected _drillId = cell<string | null>(null);
+  /** Exposed for geometry modules that need to know the current drill target
+   *  (e.g. sunburst center label only shows for the drilled/root node). */
+  get drillCell() { return this._drillId; }
   /** Tick cell — incremented on each reorder move to force layout
    *  re-derivation (children array mutation isn't reactive on its own). */
   protected _reorderTick = cell(0);

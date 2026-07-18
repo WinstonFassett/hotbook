@@ -233,6 +233,7 @@ export function makeArc(
     setFocus(id: string | null): void;
     focusCell: Cell<string | null>;
     hoverCell: Cell<string | null>;
+    drillCell?: Cell<string | null>;
     _colorModeCell?: Cell<"flat" | "depth" | "mono" | undefined>;
   },
   present?: Read<boolean>,
@@ -277,19 +278,17 @@ export function makeArc(
   // white/light-gray. The stroke IS the divider — no separate handle
   // rects needed for the clean rendering. Stroke width is driven by the
   // shared `motion.separation` cell so the tweaks pane retunes it live.
-  // Innermost arc (full circle): no stroke — it's a solid disc, not a
-  // slice, so a separator border is meaningless.
+  // Innermost arc (current focus/root, full circle): no stroke — it's a
+  // solid disc, not a slice, so a separator border is meaningless.
   const stroke = derive(() => {
-    const span = a1Effective.value - a0Effective.value;
-    if (span >= 2 * Math.PI - 0.01) return "none";
+    if (isInnermost.value) return "none";
     if (!chart) return "#0b0d12";
     if (chart.focusCell.value === node.id) return "#fff";
     if (chart.hoverCell.value === node.id) return "#c8cdd6";
     return "#0b0d12";
   });
   const strokeWidth = derive(() => {
-    const span = a1Effective.value - a0Effective.value;
-    if (span >= 2 * Math.PI - 0.01) return 0;
+    if (isInnermost.value) return 0;
     const sep = motion.separation.value;
     if (!chart) return sep;
     if (chart.focusCell.value === node.id || chart.hoverCell.value === node.id) return Math.max(2, sep * 2);
@@ -318,15 +317,24 @@ export function makeArc(
   // with text-anchor: middle, dy: 0.35em.
   // flip = midAngleDeg < 180 ? 0 : 180 — right half upright, left half flipped.
   // Innermost arc (full circle, span ≈ 2π): label renders at center, no rotation.
+  // Only the CURRENT focus/root gets the center label — prevents duplicate
+  // labels during drill transitions (old root shrinking + new focus expanding).
   const LABEL_MIN_SPAN = 0.08; // radians ~4.6°
   const LABEL_MIN_RADIAL = 18; // pixels
-  const FULL_CIRCLE_SPAN = 2 * Math.PI - 0.01; // tolerance for float comparison
+  const FULL_CIRCLE_SPAN = 2 * Math.PI - 0.01;
+  const isInnermost = derive(() => {
+    const span = a1Effective.value - a0Effective.value;
+    if (span < FULL_CIRCLE_SPAN) return false;
+    // Only the current drill target (or root when not drilled) is "innermost".
+    // This prevents the old root's label from showing while it collapses.
+    const drillId = chart?.drillCell?.value ?? null;
+    return drillId === node.id || (drillId === null && node.parentId === null);
+  });
   const labelText = derive(() => {
     const span = a1Effective.value - a0Effective.value;
     const radial = rOutEffective.value - rInEffective.value;
-    // Full-circle arc: always show label (it's the center disc).
-    const isFullCircle = span >= FULL_CIRCLE_SPAN;
-    if (!isFullCircle && (span < LABEL_MIN_SPAN || radial < LABEL_MIN_RADIAL)) return "";
+    if (isInnermost.value) return node.label; // always show center label
+    if (span < LABEL_MIN_SPAN || radial < LABEL_MIN_RADIAL) return "";
     return node.label;
   });
   const lbl = label(
@@ -343,11 +351,9 @@ export function makeArc(
   labelWrap.setAttribute("data-label-wrap", "");
 
   const labelDispose = effect(() => {
-    const span = a1Effective.value - a0Effective.value;
-    const isFullCircle = span >= FULL_CIRCLE_SPAN;
     const cx = center.x.value;
     const cy = center.y.value;
-    if (isFullCircle) {
+    if (isInnermost.value) {
       // Innermost disc: label at center, no rotation.
       labelWrap.setAttribute("transform", `translate(${cx},${cy})`);
       return;

@@ -86,30 +86,23 @@ export class SunburstChart extends HierarchicalChartBase implements EdgeDragHand
     const edgesLayer = group();
     this._rootShape!.add(tilesLayer, edgesLayer);
 
-    // Background disc: fills the center with the logical root's color so the
-    // center is never transparent during drill transitions. The disc sits
-    // behind all arcs (added first = painted first in SVG). It reads the
-    // root's rOut from the layout so it matches the root band.
+    // Background disc: neutral dark fill behind all arcs so the center is
+    // never transparent during drill transitions. The disc sits behind all
+    // arcs (added first = painted first in SVG). It reads the focus/root
+    // rOut from the layout so it matches the innermost band exactly.
+    // Neutral color (not the focus node's color) so it doesn't look like
+    // the root "turned red" the instant you drill in — the arcs animate
+    // on top, and the disc only shows through during the transition.
     const bgDisc = circle(
       { x: derive(() => center.x.value), y: derive(() => center.y.value) },
       derive(() => {
-        // The disc fills the innermost band — the focus node when drilled,
-        // the root otherwise. Uses the layout's rOut for that node so the
-        // disc matches the band exactly.
         const id = this._drillId.value ?? allNodes.value[0]?.id;
         if (!id) return 0;
         const r = this._layout!.value.get(id);
         return r?.rOut ?? 0;
       }),
       {
-        fill: derive(() => {
-          // Match the center band's color: focus node when drilled, root
-          // otherwise. Stays green on finance after drill-in completes
-          // rather than snapping back to the dark root color.
-          const id = this._drillId.value ?? allNodes.value[0]?.id;
-          const node = allNodes.value.find((n) => n.id === id);
-          return node?.color ?? "#1a1d24";
-        }),
+        fill: "#1a1d24",
         stroke: "none",
       },
     );
