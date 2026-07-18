@@ -68,7 +68,7 @@ export class SunburstChart extends HierarchicalChartBase implements GestureConte
     // (angular scaling + radial shift), same as the icicle's computeLayout.
     this._layout = this._deriveLayout(
       (root, config, frozen, w, h, drill) => computeRadialLayout(root, config, frozen, w, h, drill),
-      new Map<string, RadialRect>(),
+      () => new Map<string, RadialRect>(),
     );
 
     // Present-filtered subset for membership. Membership is computed from the

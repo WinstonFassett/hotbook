@@ -35,6 +35,7 @@ import {
   findNode,
   sortedChildren,
   treeDepth,
+  resolveFill,
 } from "./tree";
 
 const TWO_PI = Math.PI * 2;
@@ -228,6 +229,7 @@ export function makeArc(
     setFocus(id: string | null): void;
     focusCell: Cell<string | null>;
     hoverCell: Cell<string | null>;
+    _colorModeCell?: Cell<"flat" | "depth" | "mono" | undefined>;
   },
   present?: Read<boolean>,
   defs?: SVGDefsElement,

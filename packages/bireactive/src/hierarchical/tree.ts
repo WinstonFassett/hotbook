@@ -7,6 +7,7 @@
 
 import type { ChartConfig, DataNode, DraftEvent, RenderNode } from "./types";
 import { num, total, type Num, type Writable } from "bireactive";
+import { hsl } from "d3-color";
 
 export interface ChartNode {
   id: string;
@@ -31,6 +32,24 @@ const HUES = [240, 120, 40, 200, 160, 80, 0, 300];
 function colorFor(depth: number, explicit?: string): string {
   if (explicit) return explicit;
   return `oklch(0.6 0.12 ${HUES[depth % HUES.length]})`;
+}
+
+const WASH_PER_LEVEL = 0.22;
+
+/** Resolve a tile's fill color based on the chart's colorMode config.
+ *  - "flat" (default): node.color as-is.
+ *  - "depth": node.color brightened by depth (center saturated, outer washed out).
+ *  - "mono": a single neutral accent for all tiles. */
+export function resolveFill(
+  baseColor: string,
+  depth: number,
+  colorMode?: "flat" | "depth" | "mono",
+): string {
+  if (colorMode === "mono") return "oklch(0.55 0.08 240)";
+  if (colorMode === "depth") {
+    return hsl(baseColor).brighter(Math.max(0, depth - 1) * WASH_PER_LEVEL).toString();
+  }
+  return baseColor;
 }
 
 export function buildTree(root: DataNode, parent: ChartNode | null = null, depth = 0): ChartNode {

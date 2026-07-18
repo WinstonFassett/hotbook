@@ -93,6 +93,8 @@ export abstract class HierarchicalChartBase extends HTMLElement {
   /** Tick cell — incremented on each reorder move to force layout
    *  re-derivation (children array mutation isn't reactive on its own). */
   protected _reorderTick = cell(0);
+  /** Color mode cell — read by makeTile/makeArc for reactive fill changes. */
+  protected _colorModeCell = cell<"flat" | "depth" | "mono" | undefined>(undefined);
 
   // --- Shared infrastructure ---
   protected _gesture: Gesture | null = null;
@@ -138,6 +140,7 @@ export abstract class HierarchicalChartBase extends HTMLElement {
     const nextDrag = c.dragBehavior ?? (c.sort === "index" ? "reorder" : "resize");
     const dragChanged = prevDrag !== nextDrag;
     this._configCell.value = { ...c };
+    this._colorModeCell.value = c.colorMode;
     if (this._gesture) this._gesture.store.config.value = { ...c };
     // Query key change OR effective dragBehavior change → rebuild (behaviors
     // are composed in _build, so a dragBehavior switch needs a rebuild).

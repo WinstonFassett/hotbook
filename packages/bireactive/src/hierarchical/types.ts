@@ -40,6 +40,11 @@ export interface ChartConfig {
   showRoot?: boolean;
   /** Show a drill breadcrumb above the chart when drilled in. Default: false. */
   showBreadcrumb?: boolean;
+  /** How tiles are colored:
+   *  - "flat" (default): each node's own color, no depth adjustment.
+   *  - "depth": group hue brightened by depth (center saturated, outer washed out).
+   *  - "mono": single accent color for all tiles. */
+  colorMode?: "flat" | "depth" | "mono";
 }
 
 /** A draft event produced by a control surface. */

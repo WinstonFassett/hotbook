@@ -25,7 +25,7 @@ import {
 } from "bireactive";
 import type { LayoutRect, RenderNode } from "./types";
 import type { ChartNode } from "./tree";
-import { findNode, sortedChildren } from "./tree";
+import { findNode, sortedChildren, resolveFill } from "./tree";
 
 const PAD_INNER = 2;
 const PAD_TOP = 16; // Fixed-pixel group header space
@@ -130,6 +130,7 @@ export function makeTreemapTile(
     drill: (id: string | null) => void;
     focusCell: Cell<string | null>;
     hoverCell: Cell<string | null>;
+    _colorModeCell?: Cell<"flat" | "depth" | "mono" | undefined>;
   },
   present?: Read<boolean>,
   _defs?: SVGDefsElement,
@@ -160,7 +161,9 @@ export function makeTreemapTile(
     return 0;
   });
 
-  const tile = rect(rx, ry, rw, rh, { fill: node.color, stroke, strokeWidth });
+  const fillColor = chart?._colorModeCell;
+  const fill = derive(() => resolveFill(node.color, node.depth, fillColor?.value));
+  const tile = rect(rx, ry, rw, rh, { fill, stroke, strokeWidth });
   tile.el.setAttribute("data-id", node.id);
 
   // Group tiles: cursor pointer + click to drill in.

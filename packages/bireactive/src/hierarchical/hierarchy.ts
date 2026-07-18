@@ -39,6 +39,7 @@ export {
   applyDraft,
   sortedChildren,
   buildEdges,
+  resolveFill,
 } from "./tree";
 
 /** Walk the FULL tree — every descendant, not just the depth window.
@@ -221,6 +222,7 @@ export function makeTile(
     setFocus(id: string | null): void;
     focusCell: Cell<string | null>;
     hoverCell: Cell<string | null>;
+    _colorModeCell?: Cell<"flat" | "depth" | "mono" | undefined>;
   },
   present?: Read<boolean>,
   isHoriz?: Read<boolean>,
