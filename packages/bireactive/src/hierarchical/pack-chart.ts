@@ -91,13 +91,12 @@ export class PackChart extends HierarchicalChartBase implements ChartAccessors<P
     this._behaviorDispose = this._composeStandardBehaviors(dragBehaviors, this._transitionOpts());
   }
 
-  // Pack: transition opacity only (enter/exit fade). cx/cy/r transitions
-  // cause an infinite loop with the reactive layout derive — the transition
-  // triggers a re-layout which triggers another transition. The drill affine
-  // slide happens instantly; CSS transitions on opacity handle enter/exit.
+  // Pack: transition cx/cy/r (drill affine slide) + opacity (enter/exit fade).
+  // The full-tree + affine approach means layout only changes on drill (not
+  // every edit), so CSS transitions animate the slide without chasing.
   protected _transitionOpts() {
     return {
-      attrs: ["opacity"] as const,
+      attrs: ["cx", "cy", "r", "opacity"] as const,
       selector: this.tagName.toLowerCase(),
       elements: "circle, text",
     };
