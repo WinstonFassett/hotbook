@@ -101,22 +101,20 @@ details.diagram-source-panel md-syntax {
 }
 
 /* ── Sticky TOC sidebar ─────────────────────────────────────────────────── */
-.toc-layout {
-  display: flex;
-  align-items: flex-start;
-  gap: 16px;
-  max-width: 100%;
-}
+/* Fixed overlay to the LEFT of the 960px content area. Doesn't eat demo
+   width — only shows if the viewport has room to the left of the centered
+   content. Hidden on narrow screens. */
 .toc {
-  position: sticky;
+  position: fixed;
   top: 0;
+  left: 0;
   width: 200px;
-  min-width: 200px;
   max-height: 100vh;
   overflow-y: auto;
-  padding: 12px 8px 12px 0;
+  padding: 12px 8px 12px 12px;
   font-size: 13px;
   line-height: 1.5;
+  z-index: 5;
 }
 .toc-list {
   list-style: none;
@@ -152,11 +150,7 @@ details.diagram-source-panel md-syntax {
   background: var(--bg-subtle, #1a1a1a);
   border-left-color: var(--border, #333);
 }
-.toc-content {
-  flex: 1;
-  min-width: 0;
-}
-@media (max-width: 720px) {
+/* Only show if viewport is wide enough to fit TOC + 960px content + margins. */
+@media (max-width: 1240px) {
   .toc { display: none; }
-  .toc-layout { flex-direction: column; }
 }

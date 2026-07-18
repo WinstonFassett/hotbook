@@ -535,7 +535,9 @@ if (app) {
     : experiments;
 
   // ── Sticky TOC sidebar ──────────────────────────────────────────────────
-  // Left sidebar listing all demo sections. Click to scroll. Grouped by tier.
+  // Fixed overlay to the LEFT of the 960px content area. Doesn't eat demo
+  // width — only shows if the viewport has room. Built in the body, not
+  // inside the 960px main, so it doesn't affect the demo area width.
   const toc = document.createElement("nav");
   toc.id = "toc";
   toc.className = "toc";
@@ -577,16 +579,7 @@ if (app) {
     tocList.appendChild(tierLi);
   }
   toc.appendChild(tocList);
-
-  // Wrap: TOC on left, sections on right.
-  const layout = document.createElement("div");
-  layout.className = "toc-layout";
-  const content = document.createElement("div");
-  content.className = "toc-content";
-  // Move existing app children (config bar already prepended) into content.
-  while (app.firstChild) content.appendChild(app.firstChild);
-  layout.append(toc, content);
-  app.appendChild(layout);
+  document.body.appendChild(toc);
 
   for (const e of shown) {
     const section = document.createElement("section");
@@ -606,7 +599,7 @@ if (app) {
       demo.appendChild(placeholder);
       section.appendChild(h2);
       section.appendChild(demo);
-      content.appendChild(section);
+      app.appendChild(section);
       continue;
     }
 
@@ -661,7 +654,7 @@ if (app) {
     srcDetails.append(srcSummary, srcCode);
 
     section.append(h2, demo, srcDetails);
-    content.appendChild(section);
+    app.appendChild(section);
 
     if (e.custom) {
       e.custom(section, demo, el);
