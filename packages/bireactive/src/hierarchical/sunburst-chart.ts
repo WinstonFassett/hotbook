@@ -77,25 +77,20 @@ export class SunburstChart extends HierarchicalChartBase implements EdgeDragHand
     const presentNodes = derive(() => allNodes.value.filter((n) => n.present));
     this._edges = derive(() => buildEdges(allNodes.value));
     const membership = membershipCell(presentNodes, (n) => n.id);
-    // exitFade (config): when true, exiting arcs linger and fade out. When
-    // false, arcs are evicted immediately (same as icicle/treemap/pack).
-    // Default: true for sunburst (radial — items fade in place on level
-    // changes rather than moving off-screen).
-    const exitFade = this._configCell.value?.exitFade ?? true;
-    const renderedNodes = exitFade
-      ? withExitDelay(allNodes, { key: (n: RenderNode) => n.id })
-      : allNodes;
+    // Sunburst always uses withExitDelay: exiting arcs stay mounted during the
+    // collapse animation (angular width → zero via settle tween), then get
+    // evicted. This is the D3 zoomable sunburst "folding" metaphor — the focus
+    // slice expands to fill the circle while non-focus arcs collapse to zero.
+    const renderedNodes = withExitDelay(allNodes, { key: (n: RenderNode) => n.id });
 
     const tilesLayer = group();
     const edgesLayer = group();
     this._rootShape!.add(tilesLayer, edgesLayer);
 
     // Background disc: fills the center with the logical root's color so the
-    // center is never transparent during drill transitions. Without this, the
-    // old root arc fades out (withExitDelay) while the new root slides in,
-    // leaving the center transparent → black SVG background shows through.
-    // The disc sits behind all arcs (added first = painted first in SVG).
-    // It reads the root's rOut from the layout so it matches the root band.
+    // center is never transparent during drill transitions. The disc sits
+    // behind all arcs (added first = painted first in SVG). It reads the
+    // root's rOut from the layout so it matches the root band.
     const bgDisc = circle(
       { x: derive(() => center.x.value), y: derive(() => center.y.value) },
       derive(() => {
@@ -190,15 +185,13 @@ export class SunburstChart extends HierarchicalChartBase implements EdgeDragHand
     this._behaviorDispose = this._composeStandardBehaviors(dragBehaviors, this._transitionOpts());
   }
 
-  // Sunburst: transition opacity on paths (enter/exit fade) + transform
-  // on text (label movement). Path `d` can't CSS-transition (large-arc-flag
-  // flips mid-tween), so geometry settles via per-arc tween cells (spec §5).
+  // Sunburst: no CSS opacity transition — arcs collapse to zero angular width
+  // via the settle tween (per-arc cells), not opacity fade. Path `d` can't
+  // CSS-transition (large-arc-flag flips mid-tween). Labels move via the
+  // SVG transform attribute (also not CSS-transitionable). So no CSS settle
+  // attrs are needed.
   protected _transitionOpts() {
-    return {
-      attrs: ["opacity"] as const,
-      selector: this.tagName.toLowerCase(),
-      elements: "g[data-id], text",
-    };
+    return undefined;
   }
 
   // --- GestureContext: angular edge handle drag lifecycle ---

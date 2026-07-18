@@ -250,32 +250,21 @@ export function makeArc(
 
   const visible = present ? derive(() => readNow(present)) : null;
   // Cells are settle-driver targets only while this arc is mounted.
-  // (Disposal happens after the exit-delay window, so exiting arcs keep
-  // their frozen cells until the fade completes.)
+  // Disposal happens after the exit-delay window, so exiting arcs keep
+  // their cells and animate to zero width via the settle tween (D3 zoomable
+  // sunburst "collapse" metaphor — non-focus arcs are swallowed by the
+  // expanding focus, not faded out in place).
   const cellCleanup = () => { arcCellsMap.delete(node.id); };
 
-  // Exit freeze (spec §5): when arc becomes not present, freeze its geometry
-  // at the last visible position. As the layout tweens (e.g., during drill),
-  // the frozen arc stays in place and fades out (not sliding through the tween).
-  let frozenGeom: { a0: number; a1: number; rIn: number; rOut: number } | null = null;
-  const a0Effective = derive(() => {
-    if (present && readNow(present)) {
-      frozenGeom = null;
-      return cells.la0.value;
-    }
-    if (!frozenGeom) {
-      frozenGeom = {
-        a0: cells.la0.peek(),
-        a1: cells.la1.peek(),
-        rIn: cells.lrIn.peek(),
-        rOut: cells.lrOut.peek(),
-      };
-    }
-    return frozenGeom.a0;
-  });
-  const a1Effective = derive(() => (frozenGeom ? frozenGeom.a1 : cells.la1.value));
-  const rInEffective = derive(() => (frozenGeom ? frozenGeom.rIn : cells.lrIn.value));
-  const rOutEffective = derive(() => (frozenGeom ? frozenGeom.rOut : cells.lrOut.value));
+  // No exit freeze — arcs follow the layout cells all the way to zero width.
+  // The layout already computes zero angular width for off-subtree nodes
+  // (angular clamping in computeRadialLayout). The settle tween animates
+  // the cells to those zero-width values, so exiting arcs collapse smoothly
+  // instead of freezing and fading.
+  const a0Effective = derive(() => cells.la0.value);
+  const a1Effective = derive(() => cells.la1.value);
+  const rInEffective = derive(() => cells.lrIn.value);
+  const rOutEffective = derive(() => cells.lrOut.value);
 
   const stroke = derive(() => {
     if (!chart) return "none";
@@ -357,14 +346,15 @@ export function makeArc(
   (g as any).track?.(labelDispose);
   (g as any).track?.(cellCleanup);
 
-  // Visibility gate: opacity + pointer-events. The transitionOnUpdated
-  // behavior injects CSS that transitions opacity on path elements for
-  // enter/exit fade. The gesture-active class suppresses it during draft.
+  // Visibility gate: pointer-events only. No opacity fade on exit — arcs
+  // collapse to zero angular width (D3 zoomable sunburst metaphor), which
+  // makes them visually disappear without needing opacity. The settle tween
+  // animates the cells to zero width; withExitDelay keeps the arc mounted
+  // during the collapse, then evicts.
   if (visible) {
     const visDispose = effect(() => {
       const vis = visible.value;
       arc.el.style.pointerEvents = vis ? "auto" : "none";
-      arc.el.style.opacity = vis ? "1" : "0";
     });
     (g as any).track?.(visDispose);
   }

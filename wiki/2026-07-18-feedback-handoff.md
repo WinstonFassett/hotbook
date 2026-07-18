@@ -62,6 +62,10 @@ Dev servers: `hotbook-demos.localhost:1355` (demos) + `icicle-harness.localhost:
 
 **27. Visual consistency strategy needed.** With all 4 hierarchical charts side by side, the disparities are clear. Need a strategy session to align: separation, borders, labels, text styles, transition feel.
 
+### Round 5 feedback (sunburst drill metaphor, 2026-07-18)
+
+**28. Sunburst drill: collapse-to-zero, not fade-in-place.** The D3 zoomable sunburst uses a "folding" metaphor: when drilling into a slice, that slice expands to fill the full circle while everything else **collapses its angular width to zero** — the focus "swallows" the non-focus arcs. Currently our non-focus arcs fade out in place (opacity tween with frozen geometry), which looks wrong. The layout already computes zero-width for off-subtree nodes (angular clamping), but `makeArc`'s exit freeze prevents the animation — it freezes geometry at the last position instead of letting it animate to zero. Fix: remove the exit freeze for sunburst so arcs animate their angular width to zero via the settle tween. Keep `withExitDelay` so arcs stay mounted during the collapse animation. No opacity fade — arcs are visible until they collapse to zero, then evicted. Also fix z-index: fading labels overlay the expanding focus arc.
+
 ### Round 1 regressions (fix first)
 
 1. **Pack not transitioning** — likely caused by Phase 3/4 changes (`exitFade` default, `_transitionOpts()` extraction). Pack drill has no transition animation at all. Investigate `pack-chart.ts` `_setupRendering` + `_transitionOpts()` + the `transitionOnUpdated` behavior wiring. **Root cause found:** pack never wired `withExitDelay` (unlike sunburst), so exiting circles are evicted immediately — the opacity CSS transition fires but is invisible. Also pack uses the same "recompute on effective root" pattern as treemap (see #5 above) — needs the same D3-style affine transform fix.
