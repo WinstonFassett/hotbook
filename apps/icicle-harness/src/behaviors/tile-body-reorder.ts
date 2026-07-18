@@ -160,17 +160,25 @@ export function tileBodyReorder(opts: TileBodyReorderOptions): Behavior {
         });
       }
 
-      // Ghost: transform so visual center tracks pointer.
-      if (ghostEl) {
-        const freshLayout = opts.layout(gesture);
-        const r = freshLayout.get(targetId);
-        if (r) {
-          const slotMid = isHoriz ? (r.y + r.height / 2) : (r.x + r.width / 2);
-          const offset = pointerAxis - slotMid;
-          const dx = isHoriz ? 0 : offset;
-          const dy = isHoriz ? offset : 0;
-          ghostEl.style.transform = `translate(${dx}px, ${dy}px)`;
-        }
+      // Ghost: transform so the tile's visual center tracks the pointer.
+      // The layout position changes when frozenOrder changes (microtask),
+      // so we need to compensate: transform = pointerPos - layoutMid.
+      // Set immediately from the current layout (may be stale by one frame
+      // on order-change), then correct in rAF after the re-derive flushes.
+      const updateGhostTransform = () => {
+        if (!ghostEl) return;
+        const l = opts.layout(gesture);
+        const r = l.get(targetId);
+        if (!r) return;
+        const slotMid = isHoriz ? (r.y + r.height / 2) : (r.x + r.width / 2);
+        const offset = pointerAxis - slotMid;
+        const dx = isHoriz ? 0 : offset;
+        const dy = isHoriz ? offset : 0;
+        ghostEl.style.transform = `translate(${dx}px, ${dy}px)`;
+      };
+      updateGhostTransform();
+      if (changed) {
+        requestAnimationFrame(updateGhostTransform);
       }
 
       gesture.updateDraft({
