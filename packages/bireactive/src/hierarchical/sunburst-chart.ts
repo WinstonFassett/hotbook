@@ -6,7 +6,7 @@
 // (wheelEdit, keyboardEdit, transitionOnUpdated, previewFullRender) are
 // composed identically to the icicle.
 
-import { derive, forEach, group, Vec, type Cell } from "bireactive";
+import { derive, forEach, group, type Cell } from "bireactive";
 import type { ChartConfig, RadialRect, RenderNode } from "./types";
 import { Kernel } from "./kernel";
 import { Gesture, type Behavior } from "./gesture";
@@ -50,10 +50,8 @@ export class SunburstChart extends HierarchicalChartBase implements EdgeDragHand
   // --- Hook: chart-specific rendering (mirrors icicle _setupRendering) ---
 
   protected _setupRendering(): void {
-    const { w: Wc, h: Hc } = this._hostSize!;
-
-    // Center of the sunburst — reactive to host size.
-    const center = Vec.derive(() => ({ x: Wc.value / 2, y: Hc.value / 2 }));
+    // Center of the sunburst — reactive to host size (shared from base).
+    const center = this._center!;
 
     // All descendants of the logical root (drill focus or tree root).
     // Sunburst discards ancestors (unlike icicle) — sunburst.md §2.
@@ -154,8 +152,8 @@ export class SunburstChart extends HierarchicalChartBase implements EdgeDragHand
         target: (g: Gesture) => g.store.hover.value ?? g.store.focus.value,
         treeRoot: (g: Gesture) => this._treeRoot.value,
         layout: (g: Gesture) => this._layout!.value,
-        centerX: (g: Gesture) => this._hostSize!.w.value / 2,
-        centerY: (g: Gesture) => this._hostSize!.h.value / 2,
+        centerX: (_g: Gesture) => this._center!.value.x,
+        centerY: (_g: Gesture) => this._center!.value.y,
         focusArc: (id) => this.setFocus(id),
         writeReorder: (parentId, orderedIds) => this._writeReorder(parentId, orderedIds),
         bumpReorder: () => this.bumpReorder(),
@@ -201,10 +199,10 @@ export class SunburstChart extends HierarchicalChartBase implements EdgeDragHand
     const left = findNode(root, edge.leftId)!;
 
     // Convert pointer to angle relative to the SVG center.
-    // The SVG center = half the host size (set in _setupRendering).
-    const { w: Wc, h: Hc } = this._hostSize!;
-    const cx = Wc.value / 2;
-    const cy = Hc.value / 2;
+    // The SVG center = half the host size (shared _center cell from base).
+    const c = this._center!.value;
+    const cx = c.x;
+    const cy = c.y;
     const ang = Math.atan2(point.y - cy, point.x - cx);
     const normAng = ang < 0 ? ang + TWO_PI : ang;
 

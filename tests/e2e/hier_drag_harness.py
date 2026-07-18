@@ -108,12 +108,14 @@ class HierDragHarness:
         )
 
     def get_tile_bbox(self, chart_tag, node_id):
-        """Get center + size of a tile's rect element."""
+        """Get center + size of a tile's mark element (rect or circle)."""
         return self.page.evaluate(
             """({sel, nodeId}) => {
               const el = document.querySelector(sel);
               if (!el) return null;
-              const tile = el.querySelector('[data-id="' + nodeId + '"] rect');
+              const group = el.querySelector('[data-id="' + nodeId + '"]');
+              if (!group) return null;
+              const tile = group.querySelector('rect') || group.querySelector('circle');
               if (!tile) return null;
               const r = tile.getBoundingClientRect();
               return {x: r.x + r.width/2, y: r.y + r.height/2, w: r.width, h: r.height};
@@ -322,6 +324,12 @@ class HierDragHarness:
         self.passes.append(f"{label}: {count}")
         return True
 
+    def goto_section(self, section_id):
+        """Navigate to a different demo section and wait for it to render."""
+        self.section_id = section_id
+        self.page.goto(f"{BASE}/#{section_id}", wait_until="networkidle")
+        self.page.wait_for_timeout(800)
+
     # ── reporting ─────────────────────────────────────────────────────────────
 
     def report_and_exit(self):
@@ -362,5 +370,10 @@ if __name__ == "__main__":
 
         # Treetable number drag
         h.test_number_drag("v-treetable", "aapl", dx=40)
+
+        # Pack tests (separate demo section)
+        h.goto_section("pack")
+        h.test_tile_count("v-pack", 14)
+        h.test_tile_drag("v-pack", "aapl", dx=30)
 
     sys.exit(h.report_and_exit())

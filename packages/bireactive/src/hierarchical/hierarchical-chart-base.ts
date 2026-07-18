@@ -16,7 +16,7 @@
 // interface, not a deep hierarchy. Per CLAUDE.md: prefer decoupling through
 // interfaces; the base owns cells + lifecycle, the chart owns geometry composition.
 
-import { cell, derive, effect, group, type Cell } from "bireactive";
+import { cell, derive, effect, group, Vec, type Cell } from "bireactive";
 import type { ChartConfig } from "./types";
 import { Kernel, configKey } from "./kernel";
 import { DataView } from "./data-view";
@@ -110,6 +110,9 @@ export abstract class HierarchicalChartBase extends HTMLElement {
    *  when multiple chart instances are on the same page). */
   protected _instanceId = `c${Math.random().toString(36).slice(2, 8)}`;
   protected _hostSize?: ReturnType<typeof useHostSize>;
+  /** Reactive center point (W/2, H/2) — shared by radial charts (sunburst)
+   *  and the arc-body-reorder behavior. Lazily created in _build. */
+  protected _center?: ReturnType<typeof Vec.derive<{ x: number; y: number }>>;
 
   protected _setupDisposers: (() => void)[] = [];
   protected _buildDisposers: (() => void)[] = [];
@@ -251,6 +254,8 @@ export abstract class HierarchicalChartBase extends HTMLElement {
     this._defs = defs;
 
     this._hostSize = useHostSize(this, { width: FALLBACK_W, height: FALLBACK_H }, this._svg);
+    const { w: Wc, h: Hc } = this._hostSize;
+    this._center = Vec.derive(() => ({ x: Wc.value / 2, y: Hc.value / 2 }));
   }
 
   connectedCallback() {
