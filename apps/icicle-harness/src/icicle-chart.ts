@@ -62,6 +62,7 @@ export class IcicleChart extends HTMLElement implements GestureContext {
   private _chromeLayer?: HTMLDivElement;
   private _breadcrumbBar?: HTMLElement;
   private _rootShape?: any;
+  private _defs?: SVGDefsElement;
   private _window?: Cell<RenderNode[]>;
   private _layout?: Cell<Map<string, LayoutRect>>;
   private _edges?: Cell<Edge[]>;
@@ -204,6 +205,11 @@ export class IcicleChart extends HTMLElement implements GestureContext {
     this._rootShape = group();
     this._svg.appendChild(this._rootShape.el);
 
+    // <defs> for per-tile clipPaths (label overflow clipping).
+    const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+    this._svg.appendChild(defs);
+    this._defs = defs;
+
     this._hostSize = useHostSize(this, { width: FALLBACK_W, height: FALLBACK_H }, this._svg);
 
     // Rendering layer — created once, persists across config changes.
@@ -249,7 +255,7 @@ export class IcicleChart extends HTMLElement implements GestureContext {
     // depth/sort/orientation changes. No mount/unmount, no exit delay.
     const isHorizCell = derive(() => this._configCell.value?.orientation === "horizontal");
     const tilesResult = forEach(tilesLayer, allNodes, (node) =>
-      makeTile(node, this._layout!, this, derive(() => membership.value.has(node.id)), isHorizCell),
+      makeTile(node, this._layout!, this, derive(() => membership.value.has(node.id)), isHorizCell, this._defs),
       { key: (node) => node.id },
     );
 

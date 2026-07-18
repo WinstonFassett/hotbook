@@ -339,6 +339,7 @@ export function makeTile(
   },
   present?: Read<boolean>,
   isHoriz?: Read<boolean>,
+  defs?: SVGDefsElement,
 ): Shape {
   const pad = 2;
 
@@ -421,18 +422,36 @@ export function makeTile(
 
   // Wrapper <g> carries the label via CSS transform (translate + rotate).
   // Rotation applied here, not on the Shape, so it's a clean CSS transform.
+  // Clipped to the tile rect so labels don't overflow.
   const labelWrap = document.createElementNS("http://www.w3.org/2000/svg", "g");
   labelWrap.appendChild(lbl.el);
   labelWrap.style.transition = "transform 300ms ease-out";
+
+  // Per-tile clipPath — clips the label to the tile's rect dimensions.
+  let clipId: string | null = null;
+  let clipRect: SVGRectElement | null = null;
+  if (defs) {
+    clipId = `tile-clip-${node.id}`;
+    const clipPath = document.createElementNS("http://www.w3.org/2000/svg", "clipPath");
+    clipPath.setAttribute("id", clipId);
+    clipRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    clipPath.appendChild(clipRect);
+    defs.appendChild(clipPath);
+    labelWrap.style.clipPath = `url(#${clipId})`;
+  }
   const labelDispose = effect(() => {
     const h = isHoriz ? readNow(isHoriz) : true;
     if (h) {
       labelWrap.style.transform = `translate(${rx.value + LABEL_PAD}px, ${ry.value + LABEL_PAD}px)`;
     } else {
-      // Vertical: position at left edge with padding (the "top" after
-      // rotation), at the bottom of the tile so rotated text reads upward.
-      // Consistent with horizontal's top-left placement.
       labelWrap.style.transform = `translate(${rx.value + LABEL_PAD}px, ${ry.value + rh.value - LABEL_PAD}px) rotate(-90deg)`;
+    }
+    // Update clip rect to match tile dimensions.
+    if (clipRect) {
+      clipRect.setAttribute("x", String(rx.value));
+      clipRect.setAttribute("y", String(ry.value));
+      clipRect.setAttribute("width", String(rw.value));
+      clipRect.setAttribute("height", String(rh.value));
     }
   });
 
