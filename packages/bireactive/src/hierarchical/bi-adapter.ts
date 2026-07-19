@@ -189,11 +189,36 @@ function findBiNode(root: BiNode, id: string): BiNode | null {
 
 // ─── Legacy element-prop facade ────────────────────────────────────────────
 
-type SortBy = "index" | "value";
-type Orientation = "horizontal" | "vertical";
-type Conservation = "additive" | "proportional-neighbor" | "proportional-siblings";
-type ColorMode = "flat" | "depth" | "mono";
-type DragBehavior = "none" | "resize" | "reorder";
+export type BiCompatSortBy = "index" | "value";
+export type BiCompatOrientation = "horizontal" | "vertical";
+export type BiCompatConservation = "additive" | "proportional-neighbor" | "proportional-siblings";
+export type BiCompatColorMode = "flat" | "depth" | "mono";
+export type BiCompatDragBehavior = "none" | "resize" | "reorder";
+
+/** Public instance API added by the `withBiCompat` mixin — the legacy
+ *  BiNode element-prop surface (data/externalRoot/maxDepth/sortBy/...). */
+export interface BiCompatAPI {
+  data: BiNode | null;
+  externalRoot: BiNode | undefined;
+  maxDepth: number | undefined;
+  sortBy: BiCompatSortBy;
+  measureKey: string;
+  orientation: BiCompatOrientation;
+  canReorder: boolean;
+  conservationMode: BiCompatConservation;
+  showBreadcrumb: boolean;
+  showRoot: boolean;
+  colorMode: BiCompatColorMode | undefined;
+  dragBehavior: BiCompatDragBehavior | undefined;
+  exitFade: boolean | undefined;
+  drillNodeId: string | null;
+  onReorder?: (parentId: string | null, orderedIds: string[]) => void;
+}
+
+/** Constructor type returned by `withBiCompat`: the original base
+ *  constructor intersected with the BiCompatAPI instance surface. */
+export type BiCompatConstructor<T extends new (...args: any[]) => HierarchicalChartBase> =
+  T & (new (...args: any[]) => BiCompatAPI);
 
 /** Mixin adding the legacy MdXxxLC element API on top of a
  *  HierarchicalChartBase subclass. Every prop write recomputes the
@@ -201,20 +226,20 @@ type DragBehavior = "none" | "resize" | "reorder";
  *  the shared Kernel. */
 export function withBiCompat<
   T extends new (...args: any[]) => HierarchicalChartBase,
->(Base: T, defaults: Partial<ChartConfig> = {}) {
+>(Base: T, defaults: Partial<ChartConfig> = {}): BiCompatConstructor<T> {
   class BiCompat extends Base {
     private _c = {
       root: null as BiNode | null,
       maxDepth: undefined as number | undefined,
-      sortBy: "index" as SortBy,
+      sortBy: "index" as BiCompatSortBy,
       measureKey: "" as string,
-      orientation: (defaults.orientation ?? "horizontal") as Orientation,
+      orientation: (defaults.orientation ?? "horizontal") as BiCompatOrientation,
       canReorder: false,
-      conservationMode: (defaults.conservationMode ?? "additive") as Conservation,
+      conservationMode: (defaults.conservationMode ?? "additive") as BiCompatConservation,
       showBreadcrumb: defaults.showBreadcrumb ?? false,
       showRoot: defaults.showRoot ?? true,
-      colorMode: defaults.colorMode as ColorMode | undefined,
-      dragBehavior: defaults.dragBehavior as DragBehavior | undefined,
+      colorMode: defaults.colorMode as BiCompatColorMode | undefined,
+      dragBehavior: defaults.dragBehavior as BiCompatDragBehavior | undefined,
       exitFade: defaults.exitFade as boolean | undefined,
     };
     private _kernelSet = false;
@@ -231,26 +256,26 @@ export function withBiCompat<
     get maxDepth(): number | undefined { return this._c.maxDepth; }
     set maxDepth(v: number | undefined) { this._c.maxDepth = v; this._push(); }
 
-    get sortBy(): SortBy { return this._c.sortBy; }
-    set sortBy(v: SortBy) { this._c.sortBy = v; this._push(); }
+    get sortBy(): BiCompatSortBy { return this._c.sortBy; }
+    set sortBy(v: BiCompatSortBy) { this._c.sortBy = v; this._push(); }
 
     get measureKey(): string { return this._c.measureKey; }
     set measureKey(v: string) { this._c.measureKey = v; this._push(); }
 
-    get orientation(): Orientation { return this._c.orientation; }
-    set orientation(v: Orientation) { this._c.orientation = v; this._push(); }
+    get orientation(): BiCompatOrientation { return this._c.orientation; }
+    set orientation(v: BiCompatOrientation) { this._c.orientation = v; this._push(); }
 
     get canReorder(): boolean { return this._c.canReorder; }
     set canReorder(v: boolean) { this._c.canReorder = v; this._push(); }
 
-    get conservationMode(): Conservation { return this._c.conservationMode; }
-    set conservationMode(v: Conservation) { this._c.conservationMode = v; this._push(); }
+    get conservationMode(): BiCompatConservation { return this._c.conservationMode; }
+    set conservationMode(v: BiCompatConservation) { this._c.conservationMode = v; this._push(); }
 
-    get colorMode(): ColorMode | undefined { return this._c.colorMode; }
-    set colorMode(v: ColorMode | undefined) { this._c.colorMode = v; this._push(); }
+    get colorMode(): BiCompatColorMode | undefined { return this._c.colorMode; }
+    set colorMode(v: BiCompatColorMode | undefined) { this._c.colorMode = v; this._push(); }
 
-    get dragBehavior(): DragBehavior | undefined { return this._c.dragBehavior; }
-    set dragBehavior(v: DragBehavior | undefined) { this._c.dragBehavior = v; this._push(); }
+    get dragBehavior(): BiCompatDragBehavior | undefined { return this._c.dragBehavior; }
+    set dragBehavior(v: BiCompatDragBehavior | undefined) { this._c.dragBehavior = v; this._push(); }
 
     get exitFade(): boolean | undefined { return this._c.exitFade; }
     set exitFade(v: boolean | undefined) { this._c.exitFade = v; this._push(); }
@@ -333,5 +358,5 @@ export function withBiCompat<
       this._retain(null);
     }
   }
-  return BiCompat;
+  return BiCompat as unknown as BiCompatConstructor<T>;
 }

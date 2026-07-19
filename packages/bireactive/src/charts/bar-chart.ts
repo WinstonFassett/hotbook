@@ -18,6 +18,7 @@ import { motion } from "../lib/runtime-config";
 import { lightenHex } from "../lib/color-utils";
 import { dragController } from "../lib/interaction";
 import { attachReorderGesture } from "../lib/reorder-gesture";
+import { transitionOnUpdated } from "../hierarchical/behaviors/transition-on-updated";
 import { PALETTE, type ColorStrategy, getColorByStrategy } from "@hotbook/core";
 
 const W = 720;
@@ -831,7 +832,7 @@ export class MdBarChartLC extends CartesianChartBase {
     );
   }
 
-  protected _transitionOpts(): Parameters<typeof import("../hierarchical/behaviors/transition-on-updated").transitionOnUpdated>[0] {
+  protected _transitionOpts(): Parameters<typeof transitionOnUpdated>[0] {
     // The per-cell tween biEffect handles all bar geometry animation
     // (sort/reorder/measure/orientation). We still need transitionOnUpdated
     // for its gesture-active class management (wheel/keyboard edits), but we
