@@ -109,7 +109,7 @@ export class MdPieChartLC extends Diagram {
         seenMeasureKey = measureKey;
         if (measureSwapped && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
           tvCancel?.();
-          tvCancel = this.anim.start(tween(tv, target, motion.sortSec.value, easeOut));
+          tvCancel = this.anim.start(tween(tv, target, motion.motionMs.value / 1000, easeOut));
         } else {
           tvCancel?.(); tvCancel = null;
           tv.value = target;
@@ -170,8 +170,8 @@ export class MdPieChartLC extends Diagram {
         if (structural && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
           aCancel?.();
           aCancel = this.anim.start(
-            tween(a0, t0, motion.sortSec.value, easeOut) as any,
-            tween(a1, t1, motion.sortSec.value, easeOut) as any,
+            tween(a0, t0, motion.motionMs.value / 1000, easeOut) as any,
+            tween(a1, t1, motion.motionMs.value / 1000, easeOut) as any,
           );
         } else {
           aCancel?.(); aCancel = null;

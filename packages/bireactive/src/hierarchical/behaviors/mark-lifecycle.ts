@@ -39,7 +39,7 @@ export function withExitDelay<T>(
   source: Val<readonly T[]>,
   opts: WithExitDelayOptions<T>,
 ): Read<readonly T[]> {
-  const { key, exitMs = motion.exitMs.value, immediate } = opts;
+  const { key, exitMs = motion.motionMs.value, immediate } = opts;
   const rendered = cell<readonly T[]>(readNow(source));
   let timer: ReturnType<typeof setTimeout> | null = null;
 
@@ -90,8 +90,8 @@ export function enterExitFade(
   el: SVGElement | HTMLElement,
   opts: EnterExitFadeOptions,
 ): void {
-  const enterMs = opts.enterMs ?? motion.enterMs.value;
-  const exitMs = opts.exitMs ?? motion.exitMs.value;
+  const enterMs = opts.enterMs ?? motion.motionMs.value;
+  const exitMs = opts.exitMs ?? motion.motionMs.value;
   const reduced = prefersReducedMotion();
 
   if (reduced) {

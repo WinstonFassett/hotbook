@@ -216,7 +216,7 @@ export class MdRadarChartLC extends Diagram {
         seenMeasureKey = measureKey; seenOrder = order;
         if (structural && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
           rCancel?.();
-          rCancel = this.anim.start(tween(rPx, target, motion.sortSec.value, easeOut) as any);
+          rCancel = this.anim.start(tween(rPx, target, motion.motionMs.value / 1000, easeOut) as any);
         } else {
           rCancel?.(); rCancel = null;
           rPx.value = target;

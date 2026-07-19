@@ -142,12 +142,12 @@ export class TreemapChart extends HierarchicalChartBase implements ChartAccessor
     this._behaviorDispose = this._composeStandardBehaviors(dragBehaviors, this._transitionOpts(), [draftFreeze]);
   }
 
-  // Treemap: tile rects (x/y/width/height) transition at drillMs so they
-  // slide in sync with the label group transform (also drillMs). Same
+  // Treemap: tile rects (x/y/width/height) transition at motionMs so they
+  // slide in sync with the label group transform (also motionMs). Same
   // rule as icicle — see wiki/transition-timing.md.
   protected _transitionOpts() {
     return {
-      durationMs: () => motion.drillMs.value,
+      durationMs: () => motion.motionMs.value,
     };
   }
 }

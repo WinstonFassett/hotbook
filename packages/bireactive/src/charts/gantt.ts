@@ -250,7 +250,7 @@ export class MdGanttChartLC extends Diagram {
           if (!entry) continue;
           const targetY = getTargetY(task.id);
           entry.cancel?.();
-          entry.cancel = this.anim.start(tween(entry.yCell, targetY, motion.sortSec.value, easeOut) as any);
+          entry.cancel = this.anim.start(tween(entry.yCell, targetY, motion.motionMs.value / 1000, easeOut) as any);
         }
       } else if (!sortChanged && !reorderCommitted) {
         // Data or size changed but sort/reorder didn't: snap to new positions

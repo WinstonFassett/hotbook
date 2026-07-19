@@ -245,7 +245,7 @@ export function makeTreemapTile(
   // adding levels (depth config change) blinks tiles in at full opacity.
   // The exit fade is handled by the visibility gate below (delayed hide).
   tile.el.style.opacity = "0";
-  tile.el.style.transition = `opacity ${TRANSITION_DURATION.enter}ms ease-out`;
+  tile.el.style.transition = `opacity ${TRANSITION_DURATION.motion}ms ease-out`;
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       tile.el.style.opacity = "";
@@ -322,12 +322,12 @@ export function makeTreemapTile(
   const labelWrap = document.createElementNS("http://www.w3.org/2000/svg", "g");
   labelWrap.appendChild(nameLbl.el);
   labelWrap.appendChild(valueLbl.el);
-  // Label group transform transition — timed by drillMs. The behavior's
+  // Label group transform transition — timed by motionMs. The behavior's
   // CSS handles x/y on <text>, but the group transform is separate (CSS
   // transform property, not SVG attribute), so it needs its own inline
-  // transition. Reads drillMs so it stays in sync with the behavior.
+  // transition. Reads motionMs so it stays in sync with the behavior.
   effect(() => {
-    labelWrap.style.transition = `transform ${TRANSITION_DURATION.drill}ms ease-out`;
+    labelWrap.style.transition = `transform ${TRANSITION_DURATION.motion}ms ease-out`;
   });
 
   // Per-tile clipPath — clips the label to the tile's rect dimensions so
@@ -369,7 +369,7 @@ export function makeTreemapTile(
   // slide off-canvas first (via the 2D affine transform + SVG clipping),
   // then vanish — not instant. Coming back (drilling up) restores opacity
   // immediately so tiles slide back into view. Asymmetric:
-  // hide-after-drillMs, show-instant. Initial mount hides immediately.
+  // hide-after-motionMs, show-instant. Initial mount hides immediately.
   if (visible) {
     let hideTimer: ReturnType<typeof setTimeout> | null = null;
     let firstRun = true;
@@ -392,7 +392,7 @@ export function makeTreemapTile(
             hideTimer = null;
             tile.el.style.opacity = "0";
             labelWrap.style.opacity = "0";
-          }, TRANSITION_DURATION.drill);
+          }, TRANSITION_DURATION.motion);
         }
       }
       firstRun = false;

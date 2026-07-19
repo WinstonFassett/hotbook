@@ -305,8 +305,8 @@ export class MdTreeChart extends Diagram {
         if (structural && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
           lcancel?.();
           lcancel = this.anim.start(
-            tween(lx, t.x, motion.sortSec.value, easeOut) as any,
-            tween(ly, t.y, motion.sortSec.value, easeOut) as any,
+            tween(lx, t.x, motion.motionMs.value / 1000, easeOut) as any,
+            tween(ly, t.y, motion.motionMs.value / 1000, easeOut) as any,
           );
         } else {
           lcancel?.(); lcancel = null;
@@ -341,7 +341,7 @@ export class MdTreeChart extends Diagram {
         const target = opTarget.value;
         if (!opInited) { opInited = true; op.value = target; return; }
         opCancel?.();
-        opCancel = this.anim.start(tween(op, target, motion.sortSec.value, easeOut) as any);
+        opCancel = this.anim.start(tween(op, target, motion.motionMs.value / 1000, easeOut) as any);
       });
     }
 

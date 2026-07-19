@@ -149,7 +149,7 @@ export function chartContext<TData>(opts: ChartContextOpts<TData>): ChartContext
   const tweenY = canTween && yIsReactive && typeof yVal0 === 'number';
   const xTweens = new Map<string, ReturnType<typeof num>>();
   const yTweens = new Map<string, ReturnType<typeof num>>();
-  const tweenSec = opts.tweenSec ?? motion.sortSec.value;
+  const tweenSec = opts.tweenSec ?? motion.motionMs.value / 1000;
 
   if (tweenX || tweenY) {
     const idOf = opts.idOf!;

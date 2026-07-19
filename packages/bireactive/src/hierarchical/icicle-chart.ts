@@ -113,13 +113,12 @@ export class IcicleChart extends HierarchicalChartBase implements EdgeDragHandle
     this._behaviorDispose = this._composeStandardBehaviors(dragBehaviors, this._transitionOpts());
   }
 
-  // Icicle: tile rects (x/y/width/height) transition at drillMs so they
-  // slide in sync with the label group transform (also drillMs). Using
-  // settle (baseMs*2.5) here caused tiles to snap while labels slid —
-  // visible speed mismatch on drill.
+  // Icicle: tile rects (x/y/width/height) transition at motionMs so they
+  // slide in sync with the label group transform (also motionMs). One
+  // duration for all layout transitions (drill, config, value-commit).
   protected _transitionOpts() {
     return {
-      durationMs: () => motion.drillMs.value,
+      durationMs: () => motion.motionMs.value,
     };
   }
 

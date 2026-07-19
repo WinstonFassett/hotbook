@@ -62,7 +62,7 @@ export class MdSankeySimple extends Diagram {
         const target = targets[i]!;
         const current = untracked(() => linkValues[i]!.value.value);
         if (Math.abs(current - target) < 0.001) continue;
-        this.anim.start(tween(linkValues[i]!.value, target, motion.sortSec.value, easeOut));
+        this.anim.start(tween(linkValues[i]!.value, target, motion.motionMs.value / 1000, easeOut));
       }
       prevData = next;
     });

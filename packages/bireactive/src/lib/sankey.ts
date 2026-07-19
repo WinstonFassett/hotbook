@@ -318,7 +318,7 @@ export function sankeyScene(
         entry.cancel?.();
         entry.offsetCell.value = initialOffset; // Start at old position
         // Tween offset back to 0 (so actual position becomes newY)
-        entry.cancel = host.anim.start(tween(entry.offsetCell, 0, motion.sortSec.value, easeOut));
+        entry.cancel = host.anim.start(tween(entry.offsetCell, 0, motion.motionMs.value / 1000, easeOut));
         prevNodeY.set(i, newY);
       }
     } else if (!sortChanged) {

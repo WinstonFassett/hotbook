@@ -1,6 +1,6 @@
 // Single source of truth for transition timing across all charts.
-// Five motion categories, five cells, zero multipliers. See
-// wiki/transition-timing.md for the canonical reference.
+// Three cells, no multipliers. See wiki/transition-timing.md for the
+// canonical reference.
 //
 // Decision: CSS transitions over tween cells. See wiki/transitions-decision.md.
 
@@ -13,31 +13,25 @@ export const TRANSITION_EASING = "cubic-bezier(0.4, 0.0, 0.2, 1)"; // ease-in-ou
 export const TRANSITION_DURATION = {
   /** Hover/focus micro-feedback. */
   get hover()  { return motion.hoverMs.value; },
-  /** Post-commit settle (value change, resize, sort reorder). */
-  get settle() { return motion.settleMs.value; },
-  /** Hierarchical drill navigation. */
-  get drill()  { return motion.drillMs.value; },
-  /** Mark appear (fade in). */
-  get enter()  { return motion.enterMs.value; },
-  /** Mark disappear (fade out before eviction). */
-  get exit()   { return motion.exitMs.value; },
+  /** All layout and fade transitions (drill, config, value-commit, enter/exit). */
+  get motion() { return motion.motionMs.value; },
 } as const;
 
 /** True when the user has asked for reduced motion. Reactive (gesture-driven)
- *  motion ignores this; autonomous transitions (settle/drill) must
- *  respect it (Interaction Principle 9). */
+ *  motion ignores this; autonomous transitions must respect it
+ *  (Interaction Principle 9). */
 export function prefersReducedMotion(): boolean {
   if (typeof window === "undefined" || !window.matchMedia) return false;
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
 /** Compose a CSS `transition` shorthand for one or more properties on the
- *  settle rhythm. Returns "none" under reduced motion so autonomous transitions
+ *  motion rhythm. Returns "none" under reduced motion so autonomous transitions
  *  vanish without further plumbing at call sites. */
 export function settleTransition(properties: string | readonly string[]): string {
   if (prefersReducedMotion()) return "none";
   const props = typeof properties === "string" ? [properties] : properties;
-  return props.map(p => `${p} ${TRANSITION_DURATION.settle}ms ${TRANSITION_EASING}`).join(", ");
+  return props.map(p => `${p} ${TRANSITION_DURATION.motion}ms ${TRANSITION_EASING}`).join(", ");
 }
 
 export function hoverTransition(properties: string | readonly string[]): string {

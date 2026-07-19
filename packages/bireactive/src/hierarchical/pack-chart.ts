@@ -97,8 +97,8 @@ export class PackChart extends HierarchicalChartBase implements ChartAccessors<P
   // The full-tree + affine approach means layout only changes on drill (not
   // every edit), so CSS transitions animate the slide without chasing.
   // Pack: group transform handles position (circle + labels slide together
-  // via wrapG transform at drillMs). Behavior transitions r (radius) at
-  // drillMs so circles grow/shrink in sync with the slide. NOT cx/cy —
+  // via wrapG transform at motionMs). Behavior transitions r (radius) at
+  // motionMs so circles grow/shrink in sync with the slide. NOT cx/cy —
   // group transform handles position. NOT opacity — peers don't fade
   // (solid-card metaphor); they slide off-canvas via transform.
   protected _transitionOpts() {
@@ -106,7 +106,7 @@ export class PackChart extends HierarchicalChartBase implements ChartAccessors<P
       attrs: ["r"] as const,
       selector: this.tagName.toLowerCase(),
       elements: "circle",
-      durationMs: () => motion.drillMs.value,
+      durationMs: () => motion.motionMs.value,
     };
   }
 

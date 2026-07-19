@@ -46,13 +46,13 @@ export function prefersReducedMotion(): boolean {
  *  master rhythm at call-time so a tweaks-pane bump is picked up on the next
  *  `<style>` emission (see `transitionOnUpdated`, which re-emits on cell change).
  *  If `durationMs` is provided, it overrides the settle duration — use this
- *  for charts that have their own timing cell (e.g. drillMs for hierarchical). */
+ *  for charts that have their own timing cell (e.g. motionMs for hierarchical). */
 export function settleTransition(
   attrs: readonly string[] = SETTLE_ATTRS,
   durationMs?: () => number,
 ): string {
   if (prefersReducedMotion()) return "none";
-  const dur = durationMs ? durationMs() : TRANSITION_DURATION.settle;
+  const dur = durationMs ? durationMs() : TRANSITION_DURATION.motion;
   return attrs.map((a) => `${a} ${dur}ms ease-out`).join(", ");
 }
 
@@ -60,7 +60,7 @@ export interface TransitionOnUpdatedOptions {
   /** SVG attributes to transition. Defaults to x/y/width/height. */
   attrs?: readonly string[];
   /** Direct duration in ms (overrides settle default). Use for charts that
-   *  have their own timing cell (e.g. drillMs for hierarchical charts). */
+   *  have their own timing cell (e.g. motionMs for hierarchical charts). */
   durationMs?: () => number;
   /** CSS selector scope for the transition rule. Defaults to the host tag. */
   selector?: string;

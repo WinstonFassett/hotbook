@@ -43,11 +43,7 @@ export function mountMotionTweaks(opts: MountMotionTweaksOptions = {}): MountedM
 
   const mirror = {
     hoverMs:   motion.hoverMs.value,
-    settleMs:  motion.settleMs.value,
-    drillMs:   motion.drillMs.value,
-    enterMs:   motion.enterMs.value,
-    exitMs:    motion.exitMs.value,
-    sortSec:   motion.sortSec.value,
+    motionMs:  motion.motionMs.value,
     separation: motion.separation.value,
     reset: () => resetMotionToDefaults(),
   };
@@ -65,27 +61,15 @@ export function mountMotionTweaks(opts: MountMotionTweaksOptions = {}): MountedM
 
   gui.add(mirror, "hoverMs",   10, 1000, 10).name("hover (ms)")
     .onChange((v: number) => { motion.hoverMs.value = v; });
-  gui.add(mirror, "settleMs",  10, 2000, 10).name("settle (ms)")
-    .onChange((v: number) => { motion.settleMs.value = v; });
-  gui.add(mirror, "drillMs",   50, 3000, 50).name("drill (ms)")
-    .onChange((v: number) => { motion.drillMs.value = v; });
-  gui.add(mirror, "enterMs",   0, 2000, 20).name("enter (ms)")
-    .onChange((v: number) => { motion.enterMs.value = v; });
-  gui.add(mirror, "exitMs",    0, 2000, 20).name("exit (ms)")
-    .onChange((v: number) => { motion.exitMs.value = v; });
-  gui.add(mirror, "sortSec",   0, 2,    0.05).name("sort (s)")
-    .onChange((v: number) => { motion.sortSec.value = v; });
+  gui.add(mirror, "motionMs",  10, 3000, 10).name("motion (ms)")
+    .onChange((v: number) => { motion.motionMs.value = v; });
   gui.add(mirror, "separation", 0, 6, 0.5).name("separation (px)")
     .onChange((v: number) => { motion.separation.value = v; });
   gui.add(mirror, "reset").name(`reset to defaults`);
 
   const syncEffects = [
-    effect(() => { mirror.hoverMs  = motion.hoverMs.value;   gui.controllersRecursive().forEach(c => c.updateDisplay()); }),
-    effect(() => { mirror.settleMs = motion.settleMs.value;  gui.controllersRecursive().forEach(c => c.updateDisplay()); }),
-    effect(() => { mirror.drillMs  = motion.drillMs.value;   gui.controllersRecursive().forEach(c => c.updateDisplay()); }),
-    effect(() => { mirror.enterMs  = motion.enterMs.value;   gui.controllersRecursive().forEach(c => c.updateDisplay()); }),
-    effect(() => { mirror.exitMs   = motion.exitMs.value;    gui.controllersRecursive().forEach(c => c.updateDisplay()); }),
-    effect(() => { mirror.sortSec  = motion.sortSec.value;   gui.controllersRecursive().forEach(c => c.updateDisplay()); }),
+    effect(() => { mirror.hoverMs   = motion.hoverMs.value;   gui.controllersRecursive().forEach(c => c.updateDisplay()); }),
+    effect(() => { mirror.motionMs  = motion.motionMs.value;  gui.controllersRecursive().forEach(c => c.updateDisplay()); }),
     effect(() => { mirror.separation = motion.separation.value; gui.controllersRecursive().forEach(c => c.updateDisplay()); }),
   ];
 

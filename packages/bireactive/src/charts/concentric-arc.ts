@@ -268,7 +268,7 @@ export class MdConcentricArcLC extends Diagram {
         seenMeasureKey = measureKey;
         if (measureSwapped && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
           fracCancel?.();
-          fracCancel = this.anim.start(tween(frac, target, motion.sortSec.value, easeOut));
+          fracCancel = this.anim.start(tween(frac, target, motion.motionMs.value / 1000, easeOut));
         } else {
           fracCancel?.(); fracCancel = null;
           frac.value = target;

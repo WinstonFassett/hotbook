@@ -465,9 +465,9 @@ export abstract class HierarchicalChartBase extends HTMLElement {
 
   // --- Breadcrumb (shared) ---
   private _setupBreadcrumb() {
-    // Breadcrumb appear/disappear = mark enter/exit. Uses motion.enterMs.
+    // Breadcrumb appear/disappear = mark enter/exit. Uses motion.motionMs.
     const fadeOutEl = (el: HTMLElement) => {
-      const exitMs = motion.exitMs.value;
+      const exitMs = motion.motionMs.value;
       el.style.opacity = "0";
       el.addEventListener("transitionend", function onEnd(e: TransitionEvent) {
         if (e.propertyName !== "opacity") return;
@@ -481,7 +481,7 @@ export abstract class HierarchicalChartBase extends HTMLElement {
       const seg = document.createElement("span");
       seg.className = "drill-segment";
       seg.dataset.crumbId = node.id;
-      seg.style.transition = `opacity ${motion.enterMs.value}ms ease`;
+      seg.style.transition = `opacity ${motion.motionMs.value}ms ease`;
       seg.style.opacity = "0";
 
       const sep = document.createElement("span");
@@ -504,7 +504,7 @@ export abstract class HierarchicalChartBase extends HTMLElement {
       const seg = document.createElement("span");
       seg.className = "drill-segment";
       seg.dataset.crumbId = node.id;
-      seg.style.transition = `opacity ${motion.enterMs.value}ms ease`;
+      seg.style.transition = `opacity ${motion.motionMs.value}ms ease`;
       seg.style.opacity = "0";
 
       const btn = document.createElement("button");
@@ -564,7 +564,7 @@ export abstract class HierarchicalChartBase extends HTMLElement {
       if (!this._breadcrumbBar) {
         const bar = document.createElement("div");
         bar.className = "drill-breadcrumb";
-        bar.style.transition = `opacity ${motion.enterMs.value}ms ease`;
+        bar.style.transition = `opacity ${motion.motionMs.value}ms ease`;
         bar.style.opacity = "0";
         this._chromeLayer!.appendChild(bar);
         void bar.offsetHeight;
@@ -728,14 +728,13 @@ export abstract class HierarchicalChartBase extends HTMLElement {
   }
 
   /** Transition options for _composeStandardBehaviors. Charts override to
-   *  customize which attributes/elements get CSS settle transitions. Default:
+   *  customize which attributes/elements get CSS transitions. Default:
    *  x/y/width/height on rect, text (icicle/treemap). */
   protected _transitionOpts(): Parameters<typeof transitionOnUpdated>[0] | undefined {
-    // Default: no override. The behavior uses TRANSITION_DURATION.settle
-    // (baseMs * 2.5) for CSS transitions on x/y/width/height. This covers
-    // value-change settle and resize. Drill transitions are handled
-    // separately (inline transform transitions on label groups, JS tweens
-    // for sunburst) which DO use drillMs.
+    // Default: no override. The behavior uses TRANSITION_DURATION.motion
+    // for CSS transitions on x/y/width/height. This covers all layout
+    // transitions (drill, config change, value-commit). Charts that need
+    // a different duration override via durationMs.
     return undefined;
   }
 

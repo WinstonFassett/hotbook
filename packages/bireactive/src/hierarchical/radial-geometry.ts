@@ -434,7 +434,7 @@ export function makeArc(
 
   // Opacity transition so arcs fade (not vanish) on depth/drill changes.
   effect(() => {
-    arc.el.style.transition = `opacity ${TRANSITION_DURATION.drill}ms ease-out`;
+    arc.el.style.transition = `opacity ${TRANSITION_DURATION.motion}ms ease-out`;
   });
 
   return g;
@@ -537,8 +537,8 @@ function easeOutQuad(t: number): number {
 // Settle duration is now a live cell read (WIN-352). Sampled at each anim's
 // start below and stored on the per-arc anim state so an in-flight tween keeps
 // its original duration but the next commit picks up the new value from the
-// tweaks pane. `TRANSITION_DURATION.drill` is a getter on `motion.drillMs`
-// (3× base by default = 300ms) — bumping base or drill retimes this.
+// tweaks pane. `TRANSITION_DURATION.motion` is a getter on `motion.motionMs`
+// (300ms default) — bumping motionMs retimes this.
 
 /**
  * Chart-level settle driver: watches the layout cell and moves the per-arc
@@ -631,7 +631,7 @@ export function settleArcCells(
         }
         // Sample duration once per anim start so the tweaks pane retimes the
         // NEXT settle, but an in-flight tween keeps its original duration.
-        anims.set(id, { from, to: target, start, duration: TRANSITION_DURATION.drill });
+        anims.set(id, { from, to: target, start, duration: TRANSITION_DURATION.motion });
       }
       if (anims.size > 0 && raf === null) raf = requestAnimationFrame(step);
     });

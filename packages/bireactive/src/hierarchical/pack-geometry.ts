@@ -178,7 +178,7 @@ export function makeCircle(
   const wrapG = document.createElementNS("http://www.w3.org/2000/svg", "g");
   wrapG.appendChild(disc.el);
   effect(() => {
-    wrapG.style.transition = `transform ${TRANSITION_DURATION.drill}ms ease-out`;
+    wrapG.style.transition = `transform ${TRANSITION_DURATION.motion}ms ease-out`;
   });
   effect(() => {
     wrapG.style.transform = `translate(${cx.value}px, ${cy.value}px)`;

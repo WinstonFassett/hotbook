@@ -210,8 +210,8 @@ export class TreetableChart extends HierarchicalChartBase {
         row = document.createElement("div");
         row.dataset.id = nodeId;
         const baseTransition = animate
-          ? `${settleTransition(["opacity", "transform"])}, background ${motion.settleMs.value}ms ease-out`
-          : `background ${motion.settleMs.value}ms ease-out`;
+          ? `${settleTransition(["opacity", "transform"])}, background ${motion.motionMs.value}ms ease-out`
+          : `background ${motion.motionMs.value}ms ease-out`;
         row.style.cssText = `display:flex;align-items:center;padding:3px 8px;cursor:default;transition:${baseTransition};`;
         // Listeners attach ONCE per row element (rows are keyed and reused
         // across renders — re-attaching per render leaks listeners). The

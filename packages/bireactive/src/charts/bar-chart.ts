@@ -516,7 +516,7 @@ export class MdBarChartLC extends Diagram {
       // snapped instantly otherwise. Returns the two tweens to run, if any.
       const applyPair = (a: ReturnType<typeof num>, b: ReturnType<typeof num>, at: number, bt: number, animate: boolean) => {
         if (!animate) { a.value = at; b.value = bt; return []; }
-        return [tween(a, at, motion.sortSec.value, easeInOut), tween(b, bt, motion.sortSec.value, easeInOut)];
+        return [tween(a, at, motion.motionMs.value / 1000, easeInOut), tween(b, bt, motion.motionMs.value / 1000, easeInOut)];
       };
       biEffect(() => {
         const xt = barXTarget.value, yt = barYTarget.value, wt = barWTarget.value, ht = barHTarget.value;
@@ -809,7 +809,7 @@ export class MdBarChartLC extends Diagram {
               siblingTweenCancels.get(id)?.();
               const target = bs(String(i)) ?? 0;
               const bandCell = isV ? sc.barX : sc.barY;
-              const cancel = this.anim.start(tween(bandCell, target, motion.sortSec.value, easeOut) as any);
+              const cancel = this.anim.start(tween(bandCell, target, motion.motionMs.value / 1000, easeOut) as any);
               if (cancel) siblingTweenCancels.set(id, cancel);
             }
 
@@ -847,7 +847,7 @@ export class MdBarChartLC extends Diagram {
               if (!sc) return;
               const target = bs(String(i)) ?? 0;
               const bandCell = isV ? sc.barX : sc.barY;
-              this.anim.start(tween(bandCell, target, motion.sortSec.value, easeOut) as any);
+              this.anim.start(tween(bandCell, target, motion.motionMs.value / 1000, easeOut) as any);
               // Return dragged bar's value-axis to its live target too.
               if (id === datumId) {
                 const valTarget = isV ? (valueScale.peek() as any)(d.value) : (valueScale.peek() as any)(d.value);
