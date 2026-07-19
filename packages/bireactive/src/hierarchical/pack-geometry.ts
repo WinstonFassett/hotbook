@@ -224,7 +224,7 @@ export function makeCircle(
     const valueLbl = label(
       Vec.derive(() => ({ x: 0, y: 8 })),
       valueText,
-      { size: 10, align: Anchor.Center, fill: labelFill, bold: false },
+      { size: 11, align: Anchor.Center, fill: labelFill, bold: false },
     );
     valueLbl.el.style.pointerEvents = "none";
     wrapG.appendChild(nameLbl.el);

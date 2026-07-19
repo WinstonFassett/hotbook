@@ -65,7 +65,7 @@ export class IcicleChart extends HierarchicalChartBase implements EdgeDragHandle
     // depth/sort/orientation changes. No mount/unmount, no exit delay.
     const isHorizCell = derive(() => this._configCell.value?.orientation === "horizontal");
     const tilesResult = forEach(tilesLayer, allNodes, (node) =>
-      makeTile(node, this._layout!, this, derive(() => membership.value.has(node.id)), isHorizCell, this._defs, this._instanceId),
+      makeTile(node, this._layout!, this, derive(() => membership.value.has(node.id)), isHorizCell, this._defs, this._instanceId, this._valueMap),
       { key: (node) => node.id },
     );
 

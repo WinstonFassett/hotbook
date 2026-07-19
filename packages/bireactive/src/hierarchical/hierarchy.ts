@@ -232,6 +232,7 @@ export function makeTile(
   isHoriz?: Read<boolean>,
   defs?: SVGDefsElement,
   instanceId?: string,
+  valueMap?: Cell<Map<string, number>>,
 ): Shape {
   // Inset pad — driven by the shared `motion.separation` cell so the
   // tweaks pane retunes it live. Icicle uses an inset rect (shrink each
@@ -313,15 +314,35 @@ export function makeTile(
   const lbl = label(
     Vec.derive(() => ({ x: 0, y: 0 })),
     labelText,
-    { size: 11, align: Anchor.TopLeft, fill: labelColorFor(node.color) },
+    { size: 11, align: Anchor.TopLeft, fill: labelColorFor(node.color), bold: true },
   );
   lbl.el.style.pointerEvents = "none";
+
+  // Value label — second line below the name. Hidden when tile is too small.
+  const valueText = derive(() => {
+    const w0 = rw.value, h0 = rh.value;
+    const h = isHoriz ? readNow(isHoriz) : true;
+    if (h) {
+      if (w0 <= 60 || h0 <= 28) return "";
+    } else {
+      if (w0 <= 28 || h0 <= 60) return "";
+    }
+    const v = valueMap ? valueMap.value.get(node.id) : node.value;
+    return (v ?? node.value).toFixed(0);
+  });
+  const valueLbl = label(
+    Vec.derive(() => ({ x: 0, y: 13 })),
+    valueText,
+    { size: 11, align: Anchor.TopLeft, fill: labelColorFor(node.color), bold: false },
+  );
+  valueLbl.el.style.pointerEvents = "none";
 
   // Wrapper <g> carries the label via CSS transform (translate + rotate).
   // Rotation applied here, not on the Shape, so it's a clean CSS transform.
   // Clipped to the tile rect so labels don't overflow.
   const labelWrap = document.createElementNS("http://www.w3.org/2000/svg", "g");
   labelWrap.appendChild(lbl.el);
+  labelWrap.appendChild(valueLbl.el);
   // Label group transform transition — timed by motionMs. The behavior's
   // CSS handles x/y on <text>, but the group transform is separate (CSS
   // transform property, not SVG attribute), so it needs its own inline
