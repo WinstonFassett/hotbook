@@ -95,7 +95,16 @@ function valueData(
 
   function foldEdits(el: any, key: string) {
     const cur = el.dataCell?.value as any[] | undefined;
-    if (cur) applied.forEach((item, i) => { if (cur[i] != null) writeItemValue(item, schema!.readValue!(cur[i]), key); });
+    if (!cur) return;
+    // Match by identity, not position — the chart's data array may already be
+    // reordered (drag-to-reorder calls onReorder → setOrder → foldEdits AFTER
+    // the chart's onEnd has reordered data.value). Positional matching would
+    // write each datum's value into the wrong item.
+    const curById = new Map(cur.map((d: any) => [d.id ?? d.label, d]));
+    applied.forEach((item) => {
+      const curItem = curById.get(item.id);
+      if (curItem != null) writeItemValue(item, schema!.readValue!(curItem), key);
+    });
   }
 
   function apply(model: DemoDataModel, el: any, ordered: ValueItem[], orderBinding: 'index' | 'value' = 'index', orderDir: 'asc' | 'desc' = 'asc') {
@@ -203,20 +212,24 @@ function valueData(
       apply(this, el, byIndex);
     },
     setSort(el: any, sort: 'index' | 'value') {
+      console.log('[DM] setSort sort=', sort, 'byIndex ids=', byIndex.map(x => x.id));
       const key = getMeasureKey(el);
       foldEdits(el, key);
       const next = sort === 'value'
         ? byIndex.slice().sort((a, b) => (b as any)[key] - (a as any)[key])
         : byIndex.slice();
       const orderDir = sort === 'value' ? 'desc' : 'asc';
+      console.log('[DM] setSort applying next ids=', next.map(x => x.id));
       apply(this, el, next, sort, orderDir);
     },
     setOrder(el: any, ids: string[]) {
+      console.log('[DM] setOrder ids=', ids, 'byIndex ids=', byIndex.map(x => x.id));
       const key = getMeasureKey(el);
       foldEdits(el, key);
       const byId = new Map(byIndex.map(x => [x.id, x]));
       const next = ids.map(id => byId.get(id)!).filter(Boolean);
-      if (next.length !== byIndex.length) return;
+      console.log('[DM] setOrder next.length=', next.length, 'byIndex.length=', byIndex.length, 'next ids=', next.map(x => x.id));
+      if (next.length !== byIndex.length) { console.log('[DM] setOrder REJECTED — length mismatch'); return; }
       byIndex.length = 0;
       byIndex.push(...next);
       apply(this, el, byIndex.slice());
