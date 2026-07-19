@@ -145,7 +145,7 @@ export class MdTreeChart extends CartesianChartBase {
 
     // Use real tile size so the tree fills its container.
     const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
-    this._setViewBox(Wc, Hc);
+    this._setViewBox(Wc.value, Hc.value);
     const view = { bottom: { up: (n: number) => Vec.derive(() => ({ x: W / 2, y: Hc.value - n })) } };
 
     this.tabIndex = -1;

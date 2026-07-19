@@ -85,7 +85,7 @@ export class MdSankeySimple extends CartesianChartBase {
 
     renderColorControls(this, nodeColorProp, linkColorMode);
     if (!this.hasAttribute('no-source')) {
-      const root = this.shadowRoot!;
+      const root = this;
       const help = document.createElement("div");
       help.style.cssText = "text-align:center; font-size:10px; color:#9aa0a8; padding:2px 0;";
       root.appendChild(help);
@@ -170,7 +170,7 @@ export class MdSankeyComplex extends CartesianChartBase {
     });
     renderColorControls(this, nodeColorProp, linkColorMode);
     {
-      const root = this.shadowRoot!;
+      const root = this;
       const help = document.createElement("div");
       help.style.cssText = "text-align:center; font-size:10px; color:#9aa0a8; padding:2px 0;";
       root.appendChild(help);
@@ -329,7 +329,7 @@ export class MdSankeyHierarchy extends CartesianChartBase {
     });
     renderColorControls(this, nodeColorProp, linkColorMode);
     {
-      const root = this.shadowRoot!;
+      const root = this;
       const help = document.createElement("div");
       help.style.cssText = "text-align:center; font-size:10px; color:#9aa0a8; padding:2px 0;";
       root.appendChild(help);
