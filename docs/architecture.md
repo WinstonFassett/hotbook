@@ -178,18 +178,16 @@ flowchart LR
 
 ### Timing tokens
 
-All durations live in `packages/bireactive/src/lib/transitions.ts`:
+All durations live in `packages/bireactive/src/lib/runtime-config.ts` as live bireactive cells:
 
 ```
-TRANSITION_BASE_MS = 100
-├── settle     = 250 ms   (value-change settle after gesture)
-├── reorder    = 250 ms   (item reorder slide)
-├── hover      =  100 ms   (micro-feedback)
-├── highlight  = 150 ms   (highlight rect)
-└── drill      = 300 ms   (drill in / out)
+motionMs     = 300 ms   (all layout/fade transitions: drill, config, value-commit, enter/exit)
+hoverMs      = 100 ms   (micro-feedback: hover/focus stroke, opacity)
+separation   =   1 px   (visual gap between hierarchical marks)
 ```
 
-All are multiples of `TRANSITION_BASE_MS` so global tuning is one edit.
+No multipliers. Each cell is independently tunable via the tweaks pane.
+See `wiki/transition-timing.md` for the canonical reference.
 
 ### Why CSS, not JS timeline
 
@@ -434,7 +432,7 @@ The rebuild design specifies more than what's built. Current gaps, per `wiki/ret
 |---|---|
 | Add a chart type | `packages/bireactive/src/charts/bar-chart.ts` — copy, adapt, export from `index.ts`. |
 | Change tween / scale behavior | `packages/bireactive/src/lib/chart-context.ts`. |
-| Change transition timing | `packages/bireactive/src/lib/transitions.ts` (`TRANSITION_BASE_MS`). |
+| Change transition timing | `packages/bireactive/src/lib/runtime-config.ts` (`motionMs`, `hoverMs`, `separation`). |
 | Wire a new tile kind | `apps/hotbook/src/tile-sources.ts` (`TAGS` array + builder). |
 | Dock tree ops | `apps/hotbook/src/dock.ts` (pure) + `DockView.ts` (element). |
 | Add an Astro demo | `apps/docs/src/demos-bidirectional.ts` (vanilla JS). |

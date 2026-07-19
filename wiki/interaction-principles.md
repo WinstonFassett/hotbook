@@ -52,7 +52,7 @@ Honor `prefers-reduced-motion`. The distinction:
 Under reduced-motion: suppress autonomous, keep reactive.
 
 ### 12. Single source of truth for timing
-All chart durations live as configurable cells in `runtime-config.ts` (`hoverMs`, `settleMs`, `drillMs`, `enterMs`, `exitMs`). No hardcoded ms values in gesture handlers or chart code. No multipliers — each duration is independently tunable. The tweaks pane exposes all of them. See `wiki/transition-timing.md` for the canonical reference and per-chart mapping.
+All chart durations live as configurable cells in `runtime-config.ts` (`hoverMs`, `motionMs`, `separation`). No hardcoded ms values in gesture handlers or chart code. No multipliers — each duration is independently tunable. The tweaks pane exposes all of them. See `wiki/transition-timing.md` for the canonical reference and per-chart mapping.
 
 ### 13. Transitions are interruptible at any time
 Any autonomous transition (post-commit, reorder, mode-change morph) can be interrupted by user input without snapping, flashing, or corrupting state. Transition effects are disposable. When a new state arrives, the effect can be disposed and the frontend can decide to let it finish or jump to the new state. When interrupted, the element should stay at its current visual position and the new transition should start from there. The system should be in a coherent visual state, not mid-commit.
