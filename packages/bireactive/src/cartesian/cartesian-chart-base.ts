@@ -360,6 +360,7 @@ export abstract class CartesianChartBase extends HTMLElement {
     dragBehaviors: Behavior[],
     transitionOpts?: Parameters<typeof transitionOnUpdated>[0],
     extraPre?: Behavior[],
+    pixelToValueDelta?: (deltaY: number, currentValue: number) => number,
   ): () => void {
     const gesture = this._gesture!;
     return setup(gesture)(
@@ -377,6 +378,7 @@ export abstract class CartesianChartBase extends HTMLElement {
         frozenOrder: () => this._frozenOrder.value,
         conservationMode: (g: Gesture) => this.conservationMode,
         siblings: (_g: Gesture) => this.siblings,
+        pixelToValueDelta,
       }),
       keyboardEdit({
         target: (g: Gesture) => g.store.focus.value,

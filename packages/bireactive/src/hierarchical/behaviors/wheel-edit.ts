@@ -24,6 +24,11 @@ export interface WheelEditOptions {
   stepFraction?: GestureGetter<number>;
   fineStepFraction?: GestureGetter<number>;
   minStep?: GestureGetter<number>;
+  /** When provided, the wheel step is computed by mapping `deltaY` pixels to
+   *  value space (like a drag handle) instead of the default value-proportional
+   *  step. This makes ctrl+wheel feel like dragging the handle — a fixed,
+   *  predictable pixel→value delta instead of an explosive 10%/tick. */
+  pixelToValueDelta?: (deltaY: number, currentValue: number) => number;
 }
 
 export function wheelEdit(opts: WheelEditOptions): Behavior {
@@ -64,7 +69,9 @@ export function wheelEdit(opts: WheelEditOptions): Behavior {
 
       const frac = e.shiftKey ? fineFrac : stepFrac;
       const direction = e.deltaY < 0 ? 1 : -1;
-      const step = Math.max(minStep, Math.abs(currentValue * frac)) * direction;
+      const step = opts.pixelToValueDelta
+        ? opts.pixelToValueDelta(e.deltaY, currentValue)
+        : Math.max(minStep, Math.abs(currentValue * frac)) * direction;
       const delta = step; // applyConservedDelta handles the clamping
 
       // Apply with conservation mode (alt flips).

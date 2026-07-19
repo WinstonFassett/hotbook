@@ -133,6 +133,11 @@ export class MdBarChartLC extends CartesianChartBase {
   // like restore() work correctly).
   private _dataSyncDispose: (() => void) | null = null;
 
+  /** Current value scale (set in _setupRendering, read by the wheel behavior
+   *  in _composeBehaviors). Maps pixel position → value space so ctrl+wheel
+   *  uses the same mechanics as dragging the handle. */
+  protected _valueScale?: any;
+
   #barColor(idx: number, datum?: Bar): string {
     if (this.colorMode === 'single') return SINGLE_COLOR;
     const max = Math.max(1, ...this.dataCell.value.map(d => d.value));
@@ -242,6 +247,7 @@ export class MdBarChartLC extends CartesianChartBase {
       const range = isV ? [plotY.value + effPlotH.value, plotY.value] : [plotX.value, plotX.value + effPlotW.value];
       return scaleLinear().domain([0, max]).range(range).nice();
     });
+    this._valueScale = valueScale;
 
     // ─── Value axis ticks ─────────────────────────────────────────────────
     const valueTicks = derive(() => {
@@ -636,9 +642,30 @@ export class MdBarChartLC extends CartesianChartBase {
     // wheel/keyboard/transition behaviors; the drag gestures share the same
     // dragController singleton so only one drag is live at a time.
     const dragBehaviors: any[] = [];
+    // Map ctrl+wheel deltaY pixels → value-space delta via the chart's
+    // valueScale (same mechanics as dragging the handle). Vertical bars: value
+    // axis is Y (inverted range — higher value = lower y), so +deltaY (wheel
+    // down) moves down in pixels → value decreases. Horizontal bars: value
+    // axis is X (normal range), so +deltaY must move left in pixels → value
+    // decreases, matching "drag the handle down/left = smaller value".
+    // A mouse wheel notch fires deltaY≈120, but a real drag moves only a few
+    // px per frame — so we dampen by WHEEL_PX_DIVISOR to make one notch feel
+    // like a ~10px drag (predictable, not explosive).
+    const WHEEL_PX_DIVISOR = 12;
+    const pixelToValueDelta = (deltaY: number, currentValue: number): number => {
+      const scale = this._valueScale?.value;
+      if (!scale) return -Math.abs(currentValue * 0.1) * Math.sign(deltaY);
+      const isV = this._orientationCell.value === 'vertical';
+      const px = deltaY / WHEEL_PX_DIVISOR;
+      const curPx = scale(currentValue);
+      const newPx = isV ? curPx + px : curPx - px;
+      return scale.invert(newPx) - currentValue;
+    };
     this._behaviorDispose = this._composeStandardBehaviors(
       dragBehaviors,
       this._transitionOpts(),
+      undefined,
+      pixelToValueDelta,
     );
   }
 
