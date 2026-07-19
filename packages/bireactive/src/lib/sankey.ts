@@ -17,7 +17,7 @@ import {
   easeOut,
   untracked,
 } from "bireactive";
-import type { Diagram } from "./diagram";
+import type { CartesianChartBase } from "../cartesian/cartesian-chart-base";
 import { motion } from "./runtime-config";
 import { scaleSequential } from "d3-scale";
 import { interpolateCool } from "d3-scale-chromatic";
@@ -172,7 +172,7 @@ function initialPxPerUnit(
 }
 
 export function sankeyScene(
-  host: Diagram,
+  host: CartesianChartBase,
   s: Mount,
   opts: SankeySceneOptions,
 ) {
@@ -923,7 +923,7 @@ export function sankeyScene(
 // ---------------------------------------------------------------------------
 
 export function renderColorControls(
-  host: Diagram,
+  host: CartesianChartBase,
   nodeColorProp: ReturnType<typeof cell<NodeColorProp>>,
   linkColorMode: ReturnType<typeof cell<LinkColorMode>>,
 ) {

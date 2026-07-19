@@ -8,16 +8,16 @@
 
 import {
   Anchor, cell, circle, derive, effect as biEffect,
-  group, label, mount, type Mount, Num, num, pathD, rect, Vec, type Writable,
+  group, label, mount, Num, num, pathD, rect, Vec, type Writable,
 } from "bireactive";
-import { Diagram } from "../lib/diagram";
+import { RadialChartBase } from "../radial/radial-chart-base";
 import { arc as d3Arc } from "d3-shape";
 import { wheelController, realModifierDown } from "../lib/interaction";
 import { dragCancelable } from "../lib/esc-contract";
 import { numberDrag } from "../lib/number-drag";
-import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
-import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { PALETTE } from "@hotbook/core";
+import { setup } from "../hierarchical/gesture";
+import { transitionOnUpdated } from "../hierarchical/behaviors/transition-on-updated";
 
 const W = 320;
 const H = 240;
@@ -41,8 +41,18 @@ function arcD(rOuter: number, rInner: number, startAngle: number, endAngle: numb
 // d3 angle (0 = top, cw) → SVG vector (0 = right, cw, y-down).
 function d3ToSvg(d3Angle: number): number { return d3Angle - Math.PI / 2; }
 
-export class MdGaugeLC extends Diagram {
-  static styles = `text { pointer-events: none; }${FILL_STYLE}`;
+const GAUGE_CSS = `text { pointer-events: none; }`;
+let gaugeCssInjected = false;
+function ensureGaugeCss() {
+  if (typeof document === "undefined" || gaugeCssInjected) return;
+  gaugeCssInjected = true;
+  const style = document.createElement("style");
+  style.id = "vf-gauge-chart";
+  style.textContent = GAUGE_CSS;
+  document.head.appendChild(style);
+}
+
+export class MdGaugeLC extends RadialChartBase {
 
   /** 0–100 value cell. */
   readonly valueCell: Writable<Num> = num(50);
@@ -65,9 +75,18 @@ export class MdGaugeLC extends Diagram {
     return { value: this.valueCell.value, min: this.minValue, max: this.maxValue, color: this.color, label: this.metricLabel };
   }
 
-  protected scene(s: Mount): void {
-    const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
-    this.view(Wc, Hc);
+  connectedCallback() {
+    super.connectedCallback();
+    if (!this._configCell.value) {
+      this._configCell.value = { sort: "index", conservationMode: "additive" };
+    }
+  }
+
+  protected _setupRendering(): void {
+    ensureGaugeCss();
+    const s = this._s;
+    const { w: Wc, h: Hc } = this._hostSize!;
+    this._setViewBox(Wc.value, Hc.value);
     this.tabIndex = 0;
     this.style.outline = "none";
 
@@ -258,13 +277,15 @@ export class MdGaugeLC extends Diagram {
       }
     });
 
-    // Cross-tile bridge — single-value chart, key is a fixed "value" string.
-    let applyingExternal = false;
-    const bridge = makeBridge({
-      setHover: (_key) => { /* no-op for single-value */ },
-      setSelect: (key) => { applyingExternal = true; focused.value = key === "value"; applyingExternal = false; },
-    });
-    (this as unknown as ElementWithBridge).brSync = bridge;
-    biEffect(() => { const f = focused.value; if (applyingExternal) return; bridge.emitSelect(f ? "value" : null); });
+    // Bridge: single-value chart. Sync focused ↔ base class _focusCell.
+    this._setupDisposers.push(
+      biEffect(() => { this._focusCell.value = focused.value ? "value" : null; }),
+      biEffect(() => { const id = this._extFocus; focused.value = id === "value"; }),
+    );
+  }
+
+  protected _composeBehaviors(): void {
+    const gesture = this._gesture!;
+    this._behaviorDispose = setup(gesture)(transitionOnUpdated());
   }
 }

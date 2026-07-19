@@ -1,8 +1,25 @@
-import { effect, type Mount, cell, tween, easeOut, untracked } from "bireactive";
-import { Diagram } from "../lib/diagram";
+import { effect, cell, tween, easeOut, untracked } from "bireactive";
+import { CartesianChartBase } from "../cartesian/cartesian-chart-base";
 import { interpolateWarm, interpolateRainbow } from "d3-scale-chromatic";
 import { sankeyScene, renderColorControls, type LinkDef } from "../lib/sankey";
 import { motion } from "../lib/runtime-config";
+import { setup } from "../hierarchical/gesture";
+import { transitionOnUpdated } from "../hierarchical/behaviors/transition-on-updated";
+
+const SANKEY_CSS = `
+text { pointer-events: none; }
+[data-focusable]:focus { outline: 2px solid #4a9eff; outline-offset: 2px; }
+[data-focusable]:focus:not(:focus-visible) { outline: none; }
+`;
+let sankeyCssInjected = false;
+function ensureSankeyCss() {
+  if (typeof document === "undefined" || sankeyCssInjected) return;
+  sankeyCssInjected = true;
+  const style = document.createElement("style");
+  style.id = "vf-sankey";
+  style.textContent = SANKEY_CSS;
+  document.head.appendChild(style);
+}
 
 // ---------------------------------------------------------------------------
 // Take 1: Simple editable graph
@@ -19,17 +36,7 @@ const SIMPLE_LINKS: LinkDef[] = [
   {source:"C3",target:"D2",init:1},
 ];
 
-export class MdSankeySimple extends Diagram {
-  static styles = `
-    text { pointer-events: none; }
-    [data-focusable]:focus {
-      outline: 2px solid #4a9eff;
-      outline-offset: 2px;
-    }
-    [data-focusable]:focus:not(:focus-visible) {
-      outline: none;
-    }
-  `
+export class MdSankeySimple extends CartesianChartBase {
   private _dataCell = cell<{ nodes: string[]; links: { source: string; target: string; value: number }[] } | undefined>(undefined)
   get externalData(): { nodes: string[]; links: { source: string; target: string; value: number }[] } | undefined { return this._dataCell.value }
   set externalData(v) { this._dataCell.value = v }
@@ -38,14 +45,23 @@ export class MdSankeySimple extends Diagram {
   get sortBy(): 'index' | 'value' { return this._sortByCell.value }
   set sortBy(v: 'index' | 'value') { this._sortByCell.value = v }
 
-  protected scene(s: Mount): void {
+  connectedCallback() {
+    super.connectedCallback();
+    if (!this._configCell.value) {
+      this._configCell.value = { sort: "index", conservationMode: "additive" };
+    }
+  }
+
+  protected _setupRendering(): void {
+    ensureSankeyCss();
+    const s = this._s;
     const ext = this.externalData
     const hasExt = ext && ext.nodes.length > 0 && ext.links.length > 0
     const nodeIds = hasExt ? ext.nodes : SIMPLE_NODES
     const linkDefs: LinkDef[] = hasExt ? ext.links.map(l => ({ source: l.source, target: l.target, init: l.value })) : SIMPLE_LINKS
     const nodePadding = ext ? Math.max(1, Math.min(6, Math.floor(300 / nodeIds.length))) : 6
     const W = 560, H = ext ? Math.max(340, nodeIds.length * (8 + nodePadding)) : 340;
-    this.view(W + 120, H + 48);
+    this._setViewBox(W + 120, H + 48);
     const { focused, hovered, wheelLocked, linkValues, nodeColorProp, linkColorMode } = sankeyScene(this, s, {
       W, H, nodeIds, linkDefs, labelSize: 11, stringIds: true, nodePadding,
       sortByCell: this._sortByCell,
@@ -80,10 +96,12 @@ export class MdSankeySimple extends Diagram {
       });
     }
   }
-}
 
-// ---------------------------------------------------------------------------
-// Take 2: Complex UK energy — same DM, more data
+  protected _composeBehaviors(): void {
+    const gesture = this._gesture!;
+    this._behaviorDispose = setup(gesture)(transitionOnUpdated());
+  }
+}
 // ---------------------------------------------------------------------------
 
 const COMPLEX_NODES = [
@@ -128,25 +146,23 @@ const COMPLEX_LINKS: LinkDef[] = [
   {source:46,target:15,init:2.096},{source:47,target:15,init:79.329},
 ];
 
-export class MdSankeyComplex extends Diagram {
-  static styles = `
-    text { pointer-events: none; }
-    [data-focusable]:focus {
-      outline: 2px solid #4a9eff;
-      outline-offset: 2px;
-    }
-    [data-focusable]:focus:not(:focus-visible) {
-      outline: none;
-    }
-  `
-
+export class MdSankeyComplex extends CartesianChartBase {
   private _sortByCell = cell<'index' | 'value'>('index')
   get sortBy(): 'index' | 'value' { return this._sortByCell.value }
   set sortBy(v: 'index' | 'value') { this._sortByCell.value = v }
 
-  protected scene(s: Mount): void {
+  connectedCallback() {
+    super.connectedCallback();
+    if (!this._configCell.value) {
+      this._configCell.value = { sort: "index", conservationMode: "additive" };
+    }
+  }
+
+  protected _setupRendering(): void {
+    ensureSankeyCss();
+    const s = this._s;
     const W = 800, H = 560;
-    this.view(W + 180, H + 48);
+    this._setViewBox(W + 180, H + 48);
     const { focused, hovered, wheelLocked, linkValues, nodeColorProp, linkColorMode } = sankeyScene(this, s, {
       W, H, nodeIds: COMPLEX_NODES, linkDefs: COMPLEX_LINKS,
       nodePadding: 4, interp: interpolateWarm, labelSize: 9, stringIds: false,
@@ -170,10 +186,12 @@ export class MdSankeyComplex extends Diagram {
       });
     }
   }
-}
 
-// ---------------------------------------------------------------------------
-// Take 3: Hierarchy take — d3-hierarchy tree flattened to sankey parent→child
+  protected _composeBehaviors(): void {
+    const gesture = this._gesture!;
+    this._behaviorDispose = setup(gesture)(transitionOnUpdated());
+  }
+}
 // ---------------------------------------------------------------------------
 
 interface HNode { name: string; value?: number; children?: HNode[] }
@@ -290,21 +308,19 @@ function hierarchyToSankey(root: HNode): { nodeIds: string[]; linkDefs: LinkDef[
   return { nodeIds, linkDefs };
 }
 
-export class MdSankeyHierarchy extends Diagram {
-  static styles = `
-    text { pointer-events: none; }
-    [data-focusable]:focus {
-      outline: 2px solid #4a9eff;
-      outline-offset: 2px;
+export class MdSankeyHierarchy extends CartesianChartBase {
+  connectedCallback() {
+    super.connectedCallback();
+    if (!this._configCell.value) {
+      this._configCell.value = { sort: "index", conservationMode: "additive" };
     }
-    [data-focusable]:focus:not(:focus-visible) {
-      outline: none;
-    }
-  `
+  }
 
-  protected scene(s: Mount): void {
+  protected _setupRendering(): void {
+    ensureSankeyCss();
+    const s = this._s;
     const W = 680, H = 500;
-    this.view(W + 160, H + 48);
+    this._setViewBox(W + 160, H + 48);
     const { nodeIds, linkDefs } = hierarchyToSankey(FLARE_TREE);
     const { focused, hovered, wheelLocked, linkValues, nodeColorProp, linkColorMode } = sankeyScene(this, s, {
       W, H, nodeIds, linkDefs,
@@ -323,5 +339,10 @@ export class MdSankeyHierarchy extends Diagram {
         else { const lv = linkValues[i]!; help.textContent = `${lv.source} → ${lv.target}: ${lv.value.value.toFixed(0)} · ↑↓ / cmd+wheel`; }
       });
     }
+  }
+
+  protected _composeBehaviors(): void {
+    const gesture = this._gesture!;
+    this._behaviorDispose = setup(gesture)(transitionOnUpdated());
   }
 }

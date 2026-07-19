@@ -29,7 +29,6 @@ import {
   MdIcicleLC,
   MdSunburstLC,
   MdSankeySimple,
-  MdSankeyFlow,
   MdTreeChart,
   MdGanttChartLC,
 } from '@hotbook/bireactive'

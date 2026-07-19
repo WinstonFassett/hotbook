@@ -12,7 +12,6 @@ import {
   derive,
   effect as biEffect,
   label,
-  type Mount,
   Num,
   num,
   rect,
@@ -22,9 +21,25 @@ import {
   type Writable,
   type Cell,
 } from "bireactive";
-import { Diagram } from "../lib/diagram";
+import { CartesianChartBase } from "../cartesian/cartesian-chart-base";
 import { dragCancelable } from "../lib/esc-contract";
 import type { BiNode } from "../lib/tree";
+import { setup } from "../hierarchical/gesture";
+import { transitionOnUpdated } from "../hierarchical/behaviors/transition-on-updated";
+
+const BUDGET_CSS = `
+[data-focusable]:focus { outline: 2px solid #4a9eff; outline-offset: 2px; }
+[data-focusable]:focus:not(:focus-visible) { outline: none; }
+`;
+let budgetCssInjected = false;
+function ensureBudgetCss() {
+  if (typeof document === "undefined" || budgetCssInjected) return;
+  budgetCssInjected = true;
+  const style = document.createElement("style");
+  style.id = "vf-budget-tree";
+  style.textContent = BUDGET_CSS;
+  document.head.appendChild(style);
+}
 
 interface Category {
   label: string;
@@ -96,23 +111,23 @@ const BAR_W = W - 2 * PAD_X;
 const CAT_FILLS = ["#5b8def", "#7ed321", "#e25c5c"];
 const LEAF_FILLS = ["#a8c5f7", "#d0eea1", "#f3a4a4", "#bdd5f9", "#bce096", "#f2b8b8"];
 
-export class MdBudgetTree extends Diagram {
-  static styles = `
-    [data-focusable]:focus {
-      outline: 2px solid #4a9eff;
-      outline-offset: 2px;
-    }
-    [data-focusable]:focus:not(:focus-visible) {
-      outline: none;
-    }
-  `
+export class MdBudgetTree extends CartesianChartBase {
   /** Shared BiNode hierarchy (root → categories → leaves). When set, the
    *  chart renders those cells directly, so edits round-trip with any other
    *  view bound to the same tree. Falls back to the built-in budget data. */
   externalRoot?: BiNode;
 
-  protected scene(s: Mount): void {
-    const view = this.view(W, H);
+  connectedCallback() {
+    super.connectedCallback();
+    if (!this._configCell.value) {
+      this._configCell.value = { sort: "index", conservationMode: "additive" };
+    }
+  }
+
+  protected _setupRendering(): void {
+    ensureBudgetCss();
+    const s = this._s;
+    this._setViewBox(W, H);
     this.tabIndex = -1;
     this.style.outline = "none";
     const selected = cell<Writable<Num> | null>(null);
@@ -164,7 +179,7 @@ export class MdBudgetTree extends Diagram {
 
     s(
       label(
-        view.top.down(20),
+        Vec.derive(() => ({ x: W / 2, y: 20 })),
         "drag any boundary — adjacent rectangles redistribute; parent totals update via sum",
       ),
     );
@@ -175,15 +190,20 @@ export class MdBudgetTree extends Diagram {
 
     s(
       label(
-        view.bottom.up(14),
+        Vec.derive(() => ({ x: W / 2, y: H - 14 })),
         "sum aggregate at each non-leaf: read = Σchildren; write = redistribute proportionally · invariant: every row's total width is equal",
         { size: 10 },
       ),
     );
   }
 
+  protected _composeBehaviors(): void {
+    const gesture = this._gesture!;
+    this._behaviorDispose = setup(gesture)(transitionOnUpdated());
+  }
+
   private renderRow(
-    s: Mount,
+    s: ReturnType<CartesianChartBase['_s']>,
     y: number,
     x0: number,
     w: number,

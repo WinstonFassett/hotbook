@@ -28,7 +28,6 @@ import { mountControls } from "./layout/controls";
 import { getChartSchema } from "@hotbook/core";
 import { cell, derive, effect, untracked } from "bireactive";
 import "@hotbook/bireactive"; // Import to trigger schema registration
-import { MdViewerDemo } from "./viewer-demo-element";
 import { MdCartesianViewerDemo } from "./cartesian-viewer-demo";
 
 class MdBandsChartLC extends MdBarChartLC {
@@ -46,7 +45,7 @@ const demoIdToKind: Record<string, string> = {
   'bar-chart': 'bar',
   'bands-chart': 'bands',
   'scatter-chart': 'scatter',
-  'pie-chart': 'pie',
+  'pie-chart': 'sunburst',
   'radar-chart': 'radar',
   'concentric-arc': 'concentric-arc',
   'gauge': 'gauge',
@@ -105,7 +104,7 @@ const experiments: Array<{
 
   // ── Tier 5: Experimental viewers ────────────────────────────────────────
   { id: "cartesian-viewer", title: "CartesianViewer (zoomable scatterplot with axes)", tag: "md-cartesian-viewer", ctor: MdCartesianViewerDemo as unknown as CustomElementConstructor, underConstruction: true },
-  { id: "viewer-demo", title: "Viewer (pan/zoom/show demo)", tag: "md-viewer-demo", ctor: MdViewerDemo as unknown as CustomElementConstructor, underConstruction: true },
+  // viewer-demo deleted — eclipsed by cartesian-viewer-demo (axis-aware logical zoom).
 ];
 
 // The treetable demo section is hidden, but the side-by-side data tables still need the tag.
@@ -555,7 +554,7 @@ if (app) {
     { label: "Cartesian", ids: ["line-chart", "area-chart", "bar-chart", "bands-chart", "scatter-chart"] },
     { label: "Novelty", ids: ["radar-chart", "concentric-arc", "gauge", "gauge-segmented"] },
     { label: "Under construction", ids: ["pie-chart", "sankey-simple", "sankey-complex", "tree-chart", "budget-tree", "gantt", "nested-layered"] },
-    { label: "Experimental", ids: ["cartesian-viewer", "viewer-demo"] },
+    { label: "Experimental", ids: ["cartesian-viewer"] },
   ];
   for (const tier of TIERS) {
     const tierShown = tier.ids.filter(id => shown.some(e => e.id === id));
@@ -696,6 +695,10 @@ if (app) {
         treetable.externalRoot = dataModel.root;
         if (dataModel.columns) treetable.columns = dataModel.columns;
         dataModel.sync(el);
+        // Hierarchical charts (pie preset = sunburst) need externalRoot set.
+        if ('externalRoot' in el && !('externalData' in el)) {
+          (el as any).externalRoot = dataModel.root;
+        }
       }
       tableWrap.appendChild(treetable);
 

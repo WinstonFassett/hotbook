@@ -2,14 +2,14 @@
 // Full-360° track per ring, rounded ends, value arc on top.
 // Click ring to select · Tab/←/→ nav · ↑/↓ edit · cmd+wheel.
 
-import { Anchor, cell, circle, derive, easeInOut, easeOut, effect as biEffect, group, label, mount, type Mount, num, pathD, tween, untracked, Vec } from "bireactive";
-import { Diagram } from "../lib/diagram";
+import { Anchor, cell, circle, derive, easeInOut, easeOut, effect as biEffect, group, label, mount, num, pathD, tween, untracked, Vec } from "bireactive";
+import { RadialChartBase, type FlatItem } from "../radial/radial-chart-base";
 import { arc as d3Arc } from "d3-shape";
 import { wheelController, dragController, realModifierDown } from "../lib/interaction";
-import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
-import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { GESTURE_ACTIVE_CLASS } from "../lib/transitions";
 import { motion } from "../lib/runtime-config";
+import { setup } from "../hierarchical/gesture";
+import { transitionOnUpdated } from "../hierarchical/behaviors/transition-on-updated";
 
 const W = 640;
 const H = 640;
@@ -31,7 +31,7 @@ const RING_DEFS = [
   { label: "Vision",   color: "#a0c840" },
 ];
 
-interface Ring {
+interface Ring extends FlatItem {
   id?: string;
   label: string;
   color: string;
@@ -58,18 +58,22 @@ const START = 0; // d3Arc: 0 = top (12 o'clock), clockwise
 // sliver. Applies to wheel, keyboard, AND drag edits.
 const MIN_VALUE = 3;
 
-export class MdConcentricArcLC extends Diagram {
-  static styles = `
-    text { pointer-events: none; }
-    ${FILL_STYLE}
-    [data-focusable]:focus {
-      outline: 2px solid #4a9eff;
-      outline-offset: 2px;
-    }
-    [data-focusable]:focus:not(:focus-visible) {
-      outline: none;
-    }
-  `
+const CONCENTRIC_CSS = `
+text { pointer-events: none; }
+[data-focusable]:focus { outline: 2px solid #4a9eff; outline-offset: 2px; }
+[data-focusable]:focus:not(:focus-visible) { outline: none; }
+`;
+let concentricCssInjected = false;
+function ensureConcentricCss() {
+  if (typeof document === "undefined" || concentricCssInjected) return;
+  concentricCssInjected = true;
+  const style = document.createElement("style");
+  style.id = "vf-concentric-arc";
+  style.textContent = CONCENTRIC_CSS;
+  document.head.appendChild(style);
+}
+
+export class MdConcentricArcLC extends RadialChartBase {
   readonly dataCell = cell<readonly Ring[]>(makeData());
 
   private _maxRingsCell = cell<number>(DEFAULT_MAX_RINGS)
@@ -89,14 +93,26 @@ export class MdConcentricArcLC extends Diagram {
   get externalData(): { label: string; value: number }[] | undefined {
     return this.dataCell.value as unknown as { label: string; value: number }[];
   }
-  protected scene(s: Mount): void {
-    const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
-    this.view(Wc, Hc);
+  connectedCallback() {
+    super.connectedCallback();
+    if (!this._configCell.value) {
+      this._configCell.value = { sort: "index", conservationMode: "additive" };
+    }
+  }
+
+  protected _setupRendering(): void {
+    ensureConcentricCss();
+    const s = this._s;
+    const { w: Wc, h: Hc } = this._hostSize!;
+    this._setViewBox(Wc.value, Hc.value);
     this.tabIndex = -1; // Container not directly focusable, items are
     this.style.outline = "none";
     // Rule 14: touch is a first-class gesture surface. Claim the touch gesture
     // from the browser so drag-edit on ring handles doesn't lose to page scroll.
     this.style.touchAction = "none";
+
+    // Sync dataCell → base _dataCell.
+    this._setupDisposers.push(biEffect(() => { this._dataCell.value = this.dataCell.value; }));
 
     const cx = derive(() => Wc.value / 2);
     const cy = derive(() => Hc.value / 2);
@@ -136,7 +152,7 @@ export class MdConcentricArcLC extends Diagram {
     // still target it for a moment after the cursor exits the ring band.
     let lastRing: Ring | null = null;
 
-    const svgEl = (this as any).svg as SVGSVGElement;
+    const svgEl = this._svg!;
     svgEl.style.touchAction = "none";
     // Pointer → diagram-local coords (CX/CY origin at center, SVG-space angles).
     const localPt = (e: PointerEvent) => {
@@ -411,16 +427,17 @@ export class MdConcentricArcLC extends Diagram {
       { size: 11, align: Anchor.Center, opacity: 0.7 },
     ));
 
-    // Cross-tile hover/select sync bridge — keyed on the datum's stable id.
-    const idOf = (d: Ring | null) => d?.id ?? null;
-    const datumAt = (id: string | null) => id == null ? null : (data.value as Ring[]).find(d => d.id === id) ?? null;
-    let applyingExternal = false;
-    const bridge = makeBridge({
-      setHover: (key) => { applyingExternal = true; hover.value = datumAt(key); applyingExternal = false; },
-      setSelect: (key) => { applyingExternal = true; selected.value = datumAt(key); applyingExternal = false; },
-    });
-    (this as unknown as ElementWithBridge).brSync = bridge;
-    biEffect(() => { const h = hover.value; if (applyingExternal) return; bridge.emitHover(idOf(h)); });
-    biEffect(() => { const sel = selected.value; if (applyingExternal) return; bridge.emitSelect(idOf(sel)); });
+    // Bridge: sync local hover/selected ↔ base class cells.
+    this._setupDisposers.push(
+      biEffect(() => { this._hoverCell.value = hover.value?.id ?? null; }),
+      biEffect(() => { this._focusCell.value = selected.value?.id ?? null; }),
+      biEffect(() => { const id = this._extHover; if (id) hover.value = (data.value as Ring[]).find(d => d.id === id) ?? null; }),
+      biEffect(() => { const id = this._extFocus; if (id) selected.value = (data.value as Ring[]).find(d => d.id === id) ?? null; }),
+    );
+  }
+
+  protected _composeBehaviors(): void {
+    const gesture = this._gesture!;
+    this._behaviorDispose = setup(gesture)(transitionOnUpdated());
   }
 }

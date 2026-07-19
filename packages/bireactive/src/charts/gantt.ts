@@ -28,14 +28,12 @@
 import {
   Anchor, cell, circle, derive, effect as biEffect,
   ensureArrowMarker, forEach, group,
-  label, line, type Mount, pathD, rect, Vec,
+  label, line, pathD, rect, Vec,
   num, tween, easeOut, untracked,
   type Cell,
 } from "bireactive";
-import { Diagram } from "../lib/diagram";
+import { CartesianChartBase, type FlatItem } from "../cartesian/cartesian-chart-base";
 import { scaleTime } from "d3-scale";
-import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
-import { useHostSize, FILL_STYLE, type HostSize } from "../lib/host-size";
 import {
   dragController,
   dynamicWheelStep,
@@ -44,8 +42,6 @@ import {
 } from "../lib/interaction";
 import {
   GESTURE_ACTIVE_CLASS,
-  GESTURE_SUPPRESSION_CSS,
-  REORDER_ELEVATION_CSS,
   hoverTransition,
 } from "../lib/transitions";
 import { motion } from "../lib/runtime-config";
@@ -53,6 +49,8 @@ import { lightenHex } from "../lib/color-utils";
 import { PALETTE } from "@hotbook/core";
 import { attachReorderGesture } from "../lib/reorder-gesture";
 import { withExitDelay, membershipCell } from "../lib/mark-lifecycle";
+import { setup } from "../hierarchical/gesture";
+import { transitionOnUpdated } from "../hierarchical/behaviors/transition-on-updated";
 
 const W = 720;
 const H = 360;
@@ -63,12 +61,23 @@ const ROW_H = 32;      // Row height
 const ROW_GAP = 8;     // Gap between rows
 const ROW_STEP = ROW_H + ROW_GAP; // Total step per row
 
+const GANTT_CSS = `text { pointer-events: none; }`;
+let ganttCssInjected = false;
+function ensureGanttCss() {
+  if (typeof document === "undefined" || ganttCssInjected) return;
+  ganttCssInjected = true;
+  const style = document.createElement("style");
+  style.id = "vf-gantt-chart";
+  style.textContent = GANTT_CSS;
+  document.head.appendChild(style);
+}
+
 export interface GanttDependency {
   from: string;  // predecessor task ID
   lag?: number;  // gap in days (positive = wait, negative = overlap/lead). Default: 0
 }
 
-export interface GanttTask {
+export interface GanttTask extends FlatItem {
   id: string;
   label: string;
   start: Date;
@@ -101,9 +110,7 @@ function makeSample(): GanttTask[] {
 
 type DragKind = 'move' | 'start' | 'end';
 
-export class MdGanttChartLC extends Diagram {
-  static styles = `text { pointer-events: none; }${FILL_STYLE}${GESTURE_SUPPRESSION_CSS}${REORDER_ELEVATION_CSS}`;
-
+export class MdGanttChartLC extends CartesianChartBase {
   readonly dataCell = cell<readonly GanttTask[]>(makeSample());
 
   /** Pad domain by this many days on each side of the data extent. */
@@ -138,28 +145,43 @@ export class MdGanttChartLC extends Diagram {
     return this.dataCell.value as GanttTask[];
   }
 
-  protected scene(s: Mount): void {
-    const size = useHostSize(this, { width: W, height: H });
+  connectedCallback() {
+    super.connectedCallback();
+    if (!this._configCell.value) {
+      this._configCell.value = { sort: "index", conservationMode: "additive" };
+    }
+  }
+
+  protected _setupRendering(): void {
+    ensureGanttCss();
     this.tabIndex = 0;
     this.style.outline = "none";
-    // Rule 14: touch is a first-class gesture surface. Claim the touch gesture
-    // from the browser so drag-edit on Gantt bars doesn't lose to page scroll.
     this.style.touchAction = "none";
-    this.#draw(s, size);
+    this.#draw(this._s, this._hostSize!);
+  }
+
+  protected _composeBehaviors(): void {
+    // Gantt uses custom drag/wheel/keyboard controllers, not shared behaviors.
+    // Just install transitionOnUpdated for CSS transitions on settle.
+    const gesture = this._gesture!;
+    this._behaviorDispose = setup(gesture)(transitionOnUpdated());
   }
 
   #color(idx: number, task: GanttTask): string {
     return task.color ?? PALETTE[idx % PALETTE.length]!;
   }
 
-  #draw(s: Mount, { w: Wc, h: Hc }: HostSize) {
+  #draw(s: ReturnType<CartesianChartBase['_s']>, { w: Wc, h: Hc }: { w: Cell<number>, h: Cell<number> }) {
     const PAD = { top: 20, right: 24, bottom: 36, left: 120 };
     const plotX = PAD.left, plotY = PAD.top;
 
     const data = this.dataCell;
     const rows0 = data.value as GanttTask[];
 
-    this.view(Wc, Hc);
+    this._setViewBox(Wc.value, Hc.value);
+
+    // Sync dataCell → base _dataCell.
+    this._setupDisposers.push(biEffect(() => { this._dataCell.value = this.dataCell.value; }));
 
     // Sorted order: derive task array in display order based on sortBy.
     // When sortBy = 'value', sort by duration (end - start).
@@ -268,7 +290,7 @@ export class MdGanttChartLC extends Diagram {
     const hover = cell<GanttTask | null>(null);
     const selected = cell<GanttTask | null>(null);
 
-    const svgEl = (this as any).svg as SVGSVGElement;
+    const svgEl = this._svg!;
     svgEl.style.touchAction = "none";
     const localPoint = (e: PointerEvent) => {
       const r = svgEl.getBoundingClientRect();
@@ -1054,7 +1076,7 @@ export class MdGanttChartLC extends Diagram {
     // Finish-to-start orthogonal arrows: predecessor end-edge → small stub →
     // vertical channel → small stub → dependent start-edge. Routed via the
     // task gap, so the path slots between rows instead of overlapping bars.
-    ensureArrowMarker((this as any).svg as SVGSVGElement);
+    ensureArrowMarker(this._svg!);
     const STUB = 8;       // horizontal stub before the bar edge
     const ARROW_GAP = 6;  // space before successor bar so arrowhead doesn't overlap
 
@@ -1170,24 +1192,14 @@ export class MdGanttChartLC extends Diagram {
       { size: 11, align: Anchor.Center, opacity: 0.7 },
     ));
 
-    this.#bridge(data, hover, selected);
-  }
-
-  #bridge(
-    data: ReturnType<typeof cell<readonly GanttTask[]>>,
-    hover: ReturnType<typeof cell<GanttTask | null>>,
-    selected: ReturnType<typeof cell<GanttTask | null>>,
-  ) {
-    const idOf = (d: GanttTask | null) => d?.id ?? null;
-    const datumAt = (id: string | null) =>
-      id == null ? null : (data.value as GanttTask[]).find(d => d.id === id) ?? null;
-    let applying = false;
-    const bridge = makeBridge({
-      setHover: (key) => { applying = true; hover.value = datumAt(key); applying = false; },
-      setSelect: (key) => { applying = true; selected.value = datumAt(key); applying = false; },
-    });
-    (this as unknown as ElementWithBridge).brSync = bridge;
-    biEffect(() => { if (!applying) bridge.emitHover(idOf(hover.value)); });
-    biEffect(() => { if (!applying) bridge.emitSelect(idOf(selected.value)); });
+    // Bridge is handled by CartesianChartBase. But Gantt uses local hover/selected
+    // cells (not the base class _hoverCell/_focusCell which are string IDs).
+    // Sync local hover/selected ↔ base class cells for bridge compatibility.
+    this._setupDisposers.push(
+      biEffect(() => { const h = hover.value; this._hoverCell.value = h?.id ?? null; }),
+      biEffect(() => { const s = selected.value; this._focusCell.value = s?.id ?? null; }),
+      biEffect(() => { const id = this._extHover; if (id) hover.value = (data.value as GanttTask[]).find(d => d.id === id) ?? null; }),
+      biEffect(() => { const id = this._extFocus; if (id) selected.value = (data.value as GanttTask[]).find(d => d.id === id) ?? null; }),
+    );
   }
 }

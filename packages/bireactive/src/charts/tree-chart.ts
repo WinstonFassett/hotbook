@@ -3,7 +3,6 @@ import {
   derive,
   effect as biEffect,
   label,
-  type Mount,
   num,
   pathD,
   rect,
@@ -14,7 +13,7 @@ import {
   Vec,
   cell,
 } from "bireactive";
-import { Diagram } from "../lib/diagram";
+import { CartesianChartBase } from "../cartesian/cartesian-chart-base";
 import { tree, type HierarchyPointNode } from "d3-hierarchy";
 import { zoom } from "d3-zoom";
 import { select } from "d3-selection";
@@ -25,6 +24,25 @@ import { useHostSize } from "../lib/host-size";
 import { FILL_STYLE } from "../lib/host-size";
 import { GESTURE_ACTIVE_CLASS } from "../lib/transitions";
 import { motion } from "../lib/runtime-config";
+import { setup } from "../hierarchical/gesture";
+import { transitionOnUpdated } from "../hierarchical/behaviors/transition-on-updated";
+
+const TREE_CSS = `
+text { pointer-events: none; }
+${FILL_STYLE}
+[data-focusable]:focus { outline: 2px solid #4a9eff; outline-offset: 2px; }
+[data-focusable]:focus:not(:focus-visible) { outline: none; }
+.tree-node { pointer-events: all; vector-effect: non-scaling-stroke; cursor: pointer; }
+`;
+let treeCssInjected = false;
+function ensureTreeCss() {
+  if (typeof document === "undefined" || treeCssInjected) return;
+  treeCssInjected = true;
+  const style = document.createElement("style");
+  style.id = "vf-tree-chart";
+  style.textContent = TREE_CSS;
+  document.head.appendChild(style);
+}
 
 const W = 560;
 const H = 400;
@@ -78,24 +96,7 @@ function labelInk(color: string): string {
   return relLuminance(color) > 0.5 ? "#111" : "#f0f2f6";
 }
 
-export class MdTreeChart extends Diagram {
-  static styles = `
-    text { pointer-events: none; }
-    ${FILL_STYLE}
-    [data-focusable]:focus {
-      outline: 2px solid #4a9eff;
-      outline-offset: 2px;
-    }
-    [data-focusable]:focus:not(:focus-visible) {
-      outline: none;
-    }
-    .tree-node {
-      pointer-events: all;
-      vector-effect: non-scaling-stroke;
-      cursor: pointer;
-    }
-  `
-
+export class MdTreeChart extends CartesianChartBase {
   externalRoot?: BiNode;
 
   private _sortByCell = cell<'index' | 'value'>('index')
@@ -137,12 +138,15 @@ export class MdTreeChart extends Diagram {
     this.style.cursor = '';
   }
 
-  protected scene(s: Mount): void {
+  protected _setupRendering(): void {
+    ensureTreeCss();
+    const s = this._s;
     const root = this.externalRoot ?? portfolio();
 
     // Use real tile size so the tree fills its container.
     const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
-    const view = this.view(Wc, Hc);
+    this._setViewBox(Wc, Hc);
+    const view = { bottom: { up: (n: number) => Vec.derive(() => ({ x: W / 2, y: Hc.value - n })) } };
 
     this.tabIndex = -1;
     this.style.outline = "none";
@@ -514,5 +518,10 @@ export class MdTreeChart extends Diagram {
         { size: 10, align: Anchor.Center, fill: "#9aa0a8" },
       ),
     );
+  }
+
+  protected _composeBehaviors(): void {
+    const gesture = this._gesture!;
+    this._behaviorDispose = setup(gesture)(transitionOnUpdated());
   }
 }

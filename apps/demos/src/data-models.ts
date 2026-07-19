@@ -681,17 +681,6 @@ export function dataModelFor(id: string): DemoDataModel | undefined {
         })),
       );
 
-    case "pie-chart":
-      return valueData(
-        "pie",
-        ["Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta"].map((m, i) => ({
-          id: m,
-          label: m,
-          value: 15 + (i * 12) % 75,
-          color: PALETTE[i % PALETTE.length]!,
-        })),
-      );
-
     case "radar-chart":
       return valueData(
         "radar",
@@ -741,10 +730,11 @@ export function dataModelFor(id: string): DemoDataModel | undefined {
     case "treemap":
     case "icicle":
     case "sunburst":
+    case "pie-chart":
     case "tree-chart":
     case "budget-tree":
     case "treetable": {
-      const hierKind = id === 'budget-tree' ? 'pack' : id === 'tree-chart' ? 'tree' : id;
+      const hierKind = id === 'budget-tree' ? 'pack' : id === 'tree-chart' ? 'tree' : id === 'pie-chart' ? 'sunburst' : id;
       return hierarchicalData(hierKind);
     }
 

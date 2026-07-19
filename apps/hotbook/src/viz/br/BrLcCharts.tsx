@@ -22,7 +22,7 @@ import {
   MdBarChartLC, MdLineChartLC, MdAreaChartLC, MdScatterChartLC, MdPieChartLC,
   MdRadarChartLC, MdConcentricArcLC, MdGaugeLC, MdGaugeSegmentedLC,
   MdPack, MdTreemapLC, MdTreetableLC, MdIcicleLC, MdSunburstLC,
-  MdSankeySimple, MdSankeyFlow, MdTreeChart, MdGanttChartLC,
+  MdSankeySimple, MdTreeChart, MdGanttChartLC,
   type GanttTask,
 } from '@hotbook/bireactive'
 
