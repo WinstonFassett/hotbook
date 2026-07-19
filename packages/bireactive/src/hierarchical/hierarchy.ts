@@ -319,14 +319,25 @@ export function makeTile(
   lbl.el.style.pointerEvents = "none";
 
   // Value label — second line below the name. Hidden when tile is too small.
+  //
+  // Threshold rule (geometric area proxy, no text measurement — see D2):
+  //   name  (1 line): text-width dim ≥ 28px AND line-stack dim ≥ 16px
+  //   value (2 lines): text-width dim ≥ 28px AND line-stack dim ≥ 28px
+  // For horizontal orientation the text-width dim is w0 and the line-stack
+  // dim is h0; for vertical (rotated -90°) they swap. Both reduce to the
+  // same expression, so a single check covers both orientations. The value
+  // needs a taller line-stack (two lines: name at y=0, value at y=13) but
+  // the SAME text-width as the name (the value is short — 3-4 digits).
+  //
+  // Regression note: the previous per-orientation thresholds (`w0 <= 60`
+  // for horizontal, `h0 <= 60` for vertical) were copied from treemap where
+  // tiles are wide. Icicle partitions by depth into narrow bands (~50px in
+  // the hier-family demo), so the 60px text-width gate suppressed EVERY
+  // value label even on tiles with plenty of room. 28px matches the name
+  // gate and fits a 3-4 digit value at 11px.
   const valueText = derive(() => {
     const w0 = rw.value, h0 = rh.value;
-    const h = isHoriz ? readNow(isHoriz) : true;
-    if (h) {
-      if (w0 <= 60 || h0 <= 28) return "";
-    } else {
-      if (w0 <= 28 || h0 <= 60) return "";
-    }
+    if (w0 <= 28 || h0 <= 28) return "";
     const v = valueMap ? valueMap.value.get(node.id) : node.value;
     return (v ?? node.value).toFixed(0);
   });

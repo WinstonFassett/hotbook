@@ -103,6 +103,10 @@ export class TreetableChart extends HierarchicalChartBase {
   private _renderListeners = new Set<(allNodeIds: string[]) => void>();
   private _root?: HTMLDivElement;
   private _body?: HTMLDivElement;
+  /** Thin HTML drill breadcrumb (lives in the chrome layer above the table).
+   *  Only mounted when drilled in — disappears at root level. Reuses the
+   *  shared .drill-breadcrumb CSS injected by HierarchicalChartBase. */
+  private _tableBreadcrumb?: HTMLDivElement;
   /** Bumped by refresh()/columns writes to force a re-render. */
   private _renderTick = cell(0);
 
@@ -169,6 +173,19 @@ export class TreetableChart extends HierarchicalChartBase {
   private _render(root: ChartNode, config: ChartConfig, drillId: string | null, collapsed: Set<string>): void {
     const visibleColumns = this._getVisibleColumns();
     const singleColumnMode = visibleColumns.length === 1;
+    // CSS grid template: name column carries the weight (1fr), each value
+    // column gets a fixed 64px track. A fixed (not min-content) track is
+    // intentional: header and rows are separate grids, so min-content would
+    // resolve each to its own content width (label "X" vs number "27") and
+    // misalign the value columns between header and rows. 64px is a saner
+    // ratio than the old 80px default — the name column gets the remaining
+    // space and stays readable even in narrow hosts with multiple measures.
+    // (Text-measurement-driven auto-sizing is deferred to D2.)
+    const VALUE_COL_PX = 64;
+    const gridCols = `1fr repeat(${visibleColumns.length}, ${VALUE_COL_PX}px)`;
+
+    // Drill breadcrumb — only when drilled in (disappears at root).
+    this._renderBreadcrumb(root, drillId);
 
     // Lazy-init body
     if (!this._body) {
@@ -217,7 +234,7 @@ export class TreetableChart extends HierarchicalChartBase {
         const baseTransition = animate
           ? `${settleTransition(["opacity", "transform"])}, background ${motion.motionMs.value}ms ease-out`
           : `background ${motion.motionMs.value}ms ease-out`;
-        row.style.cssText = `display:flex;align-items:center;padding:3px 8px;cursor:default;transition:${baseTransition};`;
+        row.style.cssText = `display:grid;grid-template-columns:${gridCols};align-items:center;padding:3px 8px;cursor:default;transition:${baseTransition};gap:4px;`;
         // Listeners attach ONCE per row element (rows are keyed and reused
         // across renders — re-attaching per render leaks listeners). The
         // click handler delegates: twisty toggles collapse, else focus.
@@ -247,6 +264,11 @@ export class TreetableChart extends HierarchicalChartBase {
 
       const indent = (depth - 1) * INDENT_WIDTH;
       const isCollapsed = collapsed.has(nodeId);
+
+      // Keep the grid template in sync with the current column count (rows
+      // are keyed/reused across renders, so the cssText set at creation would
+      // otherwise go stale when columns are toggled).
+      row.style.gridTemplateColumns = gridCols;
 
       // Clear and rebuild row content
       row.innerHTML = this._buildRowContent(node, nodeId, depth, hasKids, isCollapsed, indent, visibleColumns, singleColumnMode);
@@ -345,24 +367,100 @@ export class TreetableChart extends HierarchicalChartBase {
     }
   }
 
+  /** Thin HTML drill breadcrumb. Mounted in the chrome layer (above the
+   *  scrollable table surface) only while drilled in — removed at root level.
+   *  Reads the same `_drillId` cell + `drill()` channel as the SVG charts'
+   *  shared breadcrumb, and reuses the `.drill-breadcrumb` CSS classes
+   *  injected by HierarchicalChartBase.ensureChromeCss. Each crumb pops to
+   *  its level via the drill channel (root crumb → drill out). */
+  private _renderBreadcrumb(root: ChartNode, drillId: string | null): void {
+    const chrome = this._chromeLayer;
+    if (!chrome) return;
+
+    if (!drillId) {
+      // At root level: no breadcrumb.
+      if (this._tableBreadcrumb) {
+        this._tableBreadcrumb.remove();
+        this._tableBreadcrumb = undefined;
+      }
+      return;
+    }
+
+    const drilled = findNode(root, drillId);
+    if (!drilled) {
+      if (this._tableBreadcrumb) {
+        this._tableBreadcrumb.remove();
+        this._tableBreadcrumb = undefined;
+      }
+      return;
+    }
+
+    // Build the ancestor chain root → drilled node.
+    const chain: ChartNode[] = [];
+    let cur: ChartNode | null = drilled;
+    while (cur) {
+      chain.unshift(cur);
+      if (cur.id === root.id) break;
+      cur = cur.parent;
+    }
+    if (chain.length === 0 || chain[0].id !== root.id) chain.unshift(root);
+
+    if (!this._tableBreadcrumb) {
+      const bar = document.createElement("div");
+      bar.className = "drill-breadcrumb";
+      chrome.appendChild(bar);
+      this._tableBreadcrumb = bar;
+    }
+    const bar = this._tableBreadcrumb;
+    bar.innerHTML = "";
+
+    for (let i = 0; i < chain.length; i++) {
+      const node = chain[i];
+      const isLast = i === chain.length - 1;
+      const seg = document.createElement("span");
+      seg.className = "drill-segment";
+      if (i > 0) {
+        const sep = document.createElement("span");
+        sep.className = "drill-sep";
+        sep.textContent = "›";
+        seg.appendChild(sep);
+      }
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = isLast ? "drill-crumb drill-crumb--current" : "drill-crumb";
+      btn.textContent = node.label;
+      if (!isLast) {
+        // Root crumb (i === 0) drills out to null; intermediate crumbs pop
+        // to that node's level.
+        const targetId = i === 0 ? null : node.id;
+        btn.addEventListener("click", () => this.drill(targetId));
+      }
+      seg.appendChild(btn);
+      bar.appendChild(seg);
+    }
+  }
+
   private _buildHeader(visibleColumns: ColumnDef[]): HTMLElement {
+    const gridCols = `1fr repeat(${visibleColumns.length}, 64px)`;
     const head = document.createElement("div");
     head.dataset.tableHeader = "true";
     head.style.cssText =
-      "display:flex;align-items:center;padding:4px 8px;border-bottom:1px solid oklch(0.25 0 0);position:sticky;top:0;background:oklch(0.14 0 0);z-index:1;gap:4px;";
+      `display:grid;grid-template-columns:${gridCols};align-items:center;padding:4px 8px;border-bottom:1px solid oklch(0.25 0 0);position:sticky;top:0;background:oklch(0.14 0 0);z-index:1;gap:4px;`;
 
     const nameHeader = document.createElement("div");
     nameHeader.style.cssText =
-      "flex:1;font-size:10px;font-weight:600;letter-spacing:0.06em;color:oklch(0.5 0 0);text-transform:uppercase;";
+      "position:relative;font-size:10px;font-weight:600;letter-spacing:0.06em;color:oklch(0.5 0 0);text-transform:uppercase;";
     nameHeader.textContent = "Name";
     head.appendChild(nameHeader);
 
-    // Column picker button
+    // Column picker button — anchored to the right of the name header cell so
+    // it doesn't steal a grid column from the value headers (which would
+    // misalign them from the row value cells).
     const allColumns = this._getAvailableColumns();
     if (allColumns.length > 0) {
       const pickerBtn = document.createElement("button");
       pickerBtn.style.cssText =
-        `all:unset;cursor:pointer;padding:2px 6px;font-size:10px;color:oklch(0.5 0 0);background:oklch(0.18 0 0);border-radius:3px;transition:background ${motion.hoverMs.value}ms ease-out;`;
+        `all:unset;cursor:pointer;padding:2px 6px;font-size:10px;color:oklch(0.5 0 0);background:oklch(0.18 0 0);border-radius:3px;transition:background ${motion.hoverMs.value}ms ease-out;position:absolute;right:0;top:50%;transform:translateY(-50%);`;
       pickerBtn.textContent = "⚙";
       pickerBtn.title = "Column picker";
 
@@ -378,13 +476,13 @@ export class TreetableChart extends HierarchicalChartBase {
         this._showColumnPicker(pickerBtn, allColumns);
       });
 
-      head.appendChild(pickerBtn);
+      nameHeader.appendChild(pickerBtn);
     }
 
     // Column headers for visible columns
     for (const col of visibleColumns) {
       const colHeader = document.createElement("div");
-      colHeader.style.cssText = `width:${col.width ?? 80}px;text-align:right;font-size:10px;font-weight:600;letter-spacing:0.06em;color:oklch(0.5 0 0);text-transform:uppercase;`;
+      colHeader.style.cssText = `text-align:right;padding:0 6px;font-size:10px;font-weight:600;letter-spacing:0.06em;color:oklch(0.5 0 0);text-transform:uppercase;`;
       colHeader.textContent = col.label;
       head.appendChild(colHeader);
     }
@@ -409,7 +507,7 @@ export class TreetableChart extends HierarchicalChartBase {
       : `<span style="width:14px;flex-shrink:0;"></span>`;
 
     const nameCell = `
-      <div style="flex:1;display:flex;align-items:center;gap:4px;padding-left:${indent}px;min-width:0;">
+      <div style="display:flex;align-items:center;gap:4px;padding-left:${indent}px;min-width:0;">
         ${twisty}
         <span style="width:8px;height:8px;border-radius:50%;background:${node.color};flex-shrink:0;"></span>
         <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:oklch(0.88 0 0);">${node.label}</span>
@@ -420,9 +518,7 @@ export class TreetableChart extends HierarchicalChartBase {
     const valueCells = visibleColumns
       .map(
         (col) =>
-          `<div data-value-cell="${nodeId}:${col.key}" data-editable-value="${nodeId}:${col.key}" data-measure-key="${col.key}" style="width:${
-            col.width ?? 80
-          }px;text-align:right;color:oklch(0.7 0 0);font-variant-numeric:tabular-nums;cursor:${cellCursor};touch-action:none;"></div>`,
+          `<div data-value-cell="${nodeId}:${col.key}" data-editable-value="${nodeId}:${col.key}" data-measure-key="${col.key}" style="text-align:right;padding:0 6px;color:oklch(0.7 0 0);font-variant-numeric:tabular-nums;cursor:${cellCursor};touch-action:none;overflow:hidden;"></div>`,
       )
       .join("");
 
@@ -589,5 +685,7 @@ export class TreetableChart extends HierarchicalChartBase {
     }
     this._valueEffectDisposers.clear();
     this._renderListeners.clear();
+    this._tableBreadcrumb?.remove();
+    this._tableBreadcrumb = undefined;
   }
 }
