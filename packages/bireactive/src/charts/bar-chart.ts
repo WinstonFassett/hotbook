@@ -9,7 +9,7 @@
 // machine, shared behaviors (wheelEdit, keyboardEdit, transitionOnUpdated),
 // CSS transitions instead of anim.clock tween, motionMs/hoverMs for timing.
 
-import { Anchor, cell, circle, derive, effect as biEffect, forEach, label, line, rect, Vec } from "bireactive";
+import { Anchor, cell, circle, derive, easeInOut, easeOut, effect as biEffect, forEach, label, line, type Num, num, rect, tween, untracked, Vec, type Writable } from "bireactive";
 import { CartesianChartBase, type CartesianConfig, type FlatItem } from "../cartesian/cartesian-chart-base";
 import { scaleLinear, scaleBand } from "d3-scale";
 import { FILL_STYLE } from "../lib/host-size";
@@ -39,6 +39,8 @@ const LABEL_PAD = 8;
 const VALUE_PAD = 8;
 const VALUE_GAP = 4;
 const OUT_GAP = 8;
+const SORT_SEC = 0.35; // s — orientation/measure swap tween duration
+const REORDER_SEC = 0.25; // s — reorder preview/commit tween duration
 
 const xAnchor = (x: number) => (x <= 0.25 ? "start" : x >= 0.75 ? "end" : "middle");
 const yAnchor = (y: number) => (y <= 0.25 ? "hanging" : y >= 0.75 ? "alphabetic" : "central");
@@ -327,7 +329,23 @@ export class MdBarChartLC extends CartesianChartBase {
     hlRect.el.style.transition = `x ${motion.hoverMs.value}ms ease, y ${motion.hoverMs.value}ms ease, opacity ${motion.hoverMs.value}ms ease`;
     hlRect.el.style.pointerEvents = "none";
 
-    // ─── Bars — identity-keyed via forEach, CSS transitions ────────────────
+    // ─── Bars — identity-keyed via forEach, per-cell tween system ──────────
+    // orderHash detects sort/reorder — id sequence changes when hotbook hands
+    // data in a new display order. Tween on sort/orientation/measure; snap on
+    // value edits (same datum, different value) during gesture.
+    const orderHash = derive(() => data.value.map(d => d.id).join(','));
+
+    // Per-bar cell handles hoisted for the reorder gesture (imperative preview
+    // needs to reach into any bar to rewrite its band-axis coord).
+    interface BarCells {
+      barX: Writable<Num>;
+      barY: Writable<Num>;
+      barW: Writable<Num>;
+      barH: Writable<Num>;
+      tileEl: SVGRectElement;
+      di: () => Bar | null;
+    }
+    const barCells = new Map<string, BarCells>();
     const tileElements = new Map<string, SVGGElement>();
 
     const barsResult = forEach(this._rootShape, data, (datum, idx) => {
@@ -337,23 +355,78 @@ export class MdBarChartLC extends CartesianChartBase {
       const baseColor = (): string => { const d = di(); return d ? this.#barColor(cur.value, d) : SINGLE_COLOR; };
       const hoverBaseColor = (): string => { const d = di(); return d ? this.#hoverColor(cur.value, d) : lightenHex(SINGLE_COLOR, 0.35); };
 
-      // Bar geometry — all four swap roles with orientation.
-      const barX = derive(() => {
+      // Bar geometry targets — all four swap roles with orientation.
+      const barXTarget = derive(() => {
         const i = cur.value; if (i < 0) return -9999;
         return isVert.value ? (bandScale.value(String(i)) ?? 0) : plotX.value;
       });
-      const barY = derive(() => {
+      const barYTarget = derive(() => {
         const i = cur.value; if (i < 0) return -9999;
         const d = di(); if (!d) return isVert.value ? plotBottom.value : -9999;
         return isVert.value ? (valueScale.value as any)(d.value) : (bandScale.value(String(i)) ?? 0);
       });
-      const barW = derive(() => {
+      const barWTarget = derive(() => {
         const d = di(); if (!d) return 0;
         return isVert.value ? bandScale.value.bandwidth() : Math.max(0, (valueScale.value as any)(d.value) - plotX.value);
       });
-      const barH = derive(() => {
+      const barHTarget = derive(() => {
         const d = di(); if (!d) return 0;
         return isVert.value ? Math.max(0, plotBottom.value - (valueScale.value as any)(d.value)) : bandScale.value.bandwidth();
+      });
+
+      // Tweened cells. Two roles, gated independently: POSITION (band
+      // placement — moves on sort) and VALUE (measure length — moves on
+      // measure swap/edit). Which literal cell pair plays which role trades
+      // places with orientation: vertical → position=(x,w), value=(y,h);
+      // horizontal → the reverse.
+      const barX = num(barXTarget.value);
+      const barY = num(barYTarget.value);
+      const barW = num(barWTarget.value);
+      const barH = num(barHTarget.value);
+      let animCancel: (() => void) | null = null;
+      let inited = false;
+      let seenOrient = untracked(() => this._orientationCell.value);
+      let seenMeasureKey = untracked(() => this._measureKeyCell.value);
+      let seenOrder = untracked(() => orderHash.value);
+      // Apply a target to a (a, b) cell pair — tweened together if `animate`,
+      // snapped instantly otherwise. Returns the two tweens to run, if any.
+      const applyPair = (a: ReturnType<typeof num>, b: ReturnType<typeof num>, at: number, bt: number, animate: boolean) => {
+        if (!animate) { a.value = at; b.value = bt; return []; }
+        return [tween(a, at, SORT_SEC, easeInOut), tween(b, bt, SORT_SEC, easeInOut)];
+      };
+      biEffect(() => {
+        const xt = barXTarget.value, yt = barYTarget.value, wt = barWTarget.value, ht = barHTarget.value;
+        const orient = this._orientationCell.value;
+        const measureKey = untracked(() => this._measureKeyCell.value);
+        const order = orderHash.value;
+        if (!inited) {
+          inited = true; seenOrient = orient; seenMeasureKey = measureKey; seenOrder = order;
+          barX.value = xt; barY.value = yt; barW.value = wt; barH.value = ht;
+          return;
+        }
+        const orientChanged = orient !== seenOrient;
+        const orderChanged = order !== seenOrder;
+        const measureChanged = measureKey !== seenMeasureKey;
+        seenOrient = orient; seenMeasureKey = measureKey; seenOrder = order;
+        if (this.classList.contains(GESTURE_ACTIVE_CLASS)) {
+          // A gesture is live — snap everything (no tween jitter).
+          animCancel?.(); animCancel = null;
+          barX.value = xt; barY.value = yt; barW.value = wt; barH.value = ht;
+          return;
+        }
+        const vertical = orient === 'vertical';
+        const [posA, posB, posAt, posBt] = vertical ? [barX, barW, xt, wt] as const : [barY, barH, yt, ht] as const;
+        const [valA, valB, valAt, valBt] = vertical ? [barY, barH, yt, ht] as const : [barX, barW, xt, wt] as const;
+        // Orientation swap morphs both roles at once. Sort moves position
+        // only; measure swap (or a plain value edit) moves value only.
+        const tweenPos = orientChanged || orderChanged;
+        const tweenVal = orientChanged || measureChanged || !orderChanged;
+        animCancel?.();
+        const tweens = [
+          ...applyPair(posA, posB, posAt, posBt, tweenPos),
+          ...applyPair(valA, valB, valAt, valBt, tweenVal),
+        ];
+        animCancel = tweens.length ? this.anim.start(...(tweens as any)) : null;
       });
 
       const fill = derive(() => {
@@ -370,9 +443,11 @@ export class MdBarChartLC extends CartesianChartBase {
 
       const tile = s(rect(barX, barY, barW, barH, { fill, corner: 2 }));
       tile.el.style.touchAction = "none";
-      // CSS transitions on geometry are handled by transitionOnUpdated behavior
-      // (injects a scoped <style> with transition on rect attrs + gesture suppression).
+      // Per-cell tween system handles geometry animation (biEffect above);
+      // transitionOnUpdated still manages the gesture-active class for
+      // wheel/keyboard edits but does NOT add CSS transitions on rect attrs.
       tileElements.set(datum.id, tile.el as unknown as SVGGElement);
+      barCells.set(datum.id, { barX, barY, barW, barH, tileEl: tile.el as SVGRectElement, di });
       biEffect(() => {
         tile.el.style.cursor = this._canReorderCell.value
           ? 'grab' : (isVert.value ? "ns-resize" : "ew-resize");
@@ -561,40 +636,127 @@ export class MdBarChartLC extends CartesianChartBase {
       // ─── Drag bar body → reorder (when canReorder) ────────────────────
       // attachReorderGesture owns the activation threshold (below = click),
       // elevation + DOM raise of the dragged tile, and the GESTURE_ACTIVE_CLASS
-      // toggle. We only commit a data reorder on release-with-change.
+      // toggle. Per-cell tweens: dragged bar follows pointer directly; siblings
+      // tween to their new band positions. Commit sets data.value for the first
+      // time → the reactive biEffect tweens from current visual positions.
+      let startBandCoord = 0;
+      let startPointerBand = Number.NaN;
+      let startValueCoord = 0; // frozen value-axis position; ghost doesn't move on this axis
+      const siblingTweenCancels = new Map<string, () => void>();
+      const lastAppliedIdx = new Map<string, number>();
+
+      const eventBand = (e: PointerEvent): number => {
+        const { x, y } = localPoint(e);
+        return isVert.peek() ? x : y;
+      };
+
       const reorderDetach = attachReorderGesture({
         hitEl: tile.el as unknown as SVGElement,
         dragEl: tile.el as unknown as SVGElement,
         itemId: datum.id,
         host: this,
         filter: () => this._canReorderCell.value,
-        getInitialOrder: () => (data.value as Bar[]).map((d) => d.id),
-        computeTargetIndex: (e: PointerEvent) => {
-          const lp = localPoint(e);
-          const bs = bandScale.value;
-          const step = bs.step();
-          const start = isVert.value ? plotX.value : plotY.value;
-          const px = isVert.value ? lp.x : lp.y;
-          return (px - start) / step;
+        getInitialOrder: () => (data.peek() as Bar[]).map((d) => d.id),
+        computeTargetIndex: (e: PointerEvent, order: readonly string[]) => {
+          const bs = bandScale.peek();
+          const p = eventBand(e);
+          // Ghost's band-axis center = its initial center + pointer delta.
+          const ghostCenter = startBandCoord + bs.bandwidth() / 2 + (p - startPointerBand);
+          // Find the slot whose center is nearest to the ghost center.
+          const N = order.length;
+          let bestIdx = 0;
+          let bestDist = Infinity;
+          for (let i = 0; i < N; i++) {
+            const slotCenter = (bs(String(i)) ?? 0) + bs.bandwidth() / 2;
+            const dist = Math.abs(slotCenter - ghostCenter);
+            if (dist < bestDist) { bestDist = dist; bestIdx = i; }
+          }
+          return bestIdx;
         },
-        onPreview: (order) => {
-          const items = data.peek() as Bar[];
-          const byId = new Map(items.map((d) => [d.id, d]));
-          const reordered = order.map((id) => byId.get(id)).filter(Boolean) as Bar[];
-          if (reordered.length === items.length) data.value = reordered;
+        onActivate: () => {
+          const bs = bandScale.peek();
+          const isV = isVert.peek();
+          const initialIdx = (data.peek() as Bar[]).findIndex(d => d.id === datum.id);
+          startBandCoord = bs(String(initialIdx)) ?? 0;
+          // Freeze value-axis position at gesture start (value dim shouldn't
+          // shift under the user just because the band axis is being manipulated).
+          startValueCoord = isV ? barY.peek() : barX.peek();
+          startPointerBand = Number.NaN;
+          siblingTweenCancels.forEach(fn => fn());
+          siblingTweenCancels.clear();
+          lastAppliedIdx.clear();
+          (data.peek() as Bar[]).forEach((d, i) => lastAppliedIdx.set(d.id, i));
         },
-        onEnd: (finalOrder, canceled) => {
-          const items = data.peek() as Bar[];
-          const byId = new Map(items.map((d) => [d.id, d]));
-          const reordered = finalOrder.map((id) => byId.get(id)).filter(Boolean) as Bar[];
-          data.value = reordered;
-          if (canceled) {
-            this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled: true } }));
+        onPreview: (order: readonly string[], e: PointerEvent) => {
+          const bs = bandScale.peek();
+          const isV = isVert.peek();
+          if (Number.isNaN(startPointerBand)) startPointerBand = eventBand(e);
+
+          // Siblings: tween to new band positions when their provisional
+          // index changes. Each sibling's tween is per-cell so we can
+          // interrupt cleanly if their target flips again mid-flight.
+          for (let i = 0; i < order.length; i++) {
+            const id = order[i]!;
+            if (id === datum.id) continue;
+            const sc = barCells.get(id);
+            if (!sc) continue;
+            if (lastAppliedIdx.get(id) === i) continue;
+            lastAppliedIdx.set(id, i);
+            siblingTweenCancels.get(id)?.();
+            const target = bs(String(i)) ?? 0;
+            const bandCell = isV ? sc.barX : sc.barY;
+            const cancel = this.anim.start(tween(bandCell, target, REORDER_SEC, easeOut) as any);
+            if (cancel) siblingTweenCancels.set(id, cancel);
+          }
+
+          // Dragged bar: follow pointer directly. Value-axis coord frozen.
+          const p = eventBand(e);
+          const newCoord = startBandCoord + (p - startPointerBand);
+          if (isV) {
+            barX.value = newCoord;
+            barY.value = startValueCoord;
+          } else {
+            barY.value = newCoord;
+            barX.value = startValueCoord;
+          }
+        },
+        onEnd: (finalOrder: readonly string[], canceled: boolean) => {
+          siblingTweenCancels.forEach(fn => fn());
+          siblingTweenCancels.clear();
+
+          const initial = (data.peek() as Bar[]).map(d => d.id);
+          const changed = !canceled && finalOrder.some((id, i) => id !== initial[i]);
+          if (changed) {
+            // Commit. data.value set for the first time → reactive biEffect
+            // tweens from current visual positions (Rule 4 settle from where
+            // they are).
+            const items = data.peek() as Bar[];
+            const byId = new Map(items.map((d) => [d.id, d]));
+            const reordered = finalOrder.map((id) => byId.get(id)).filter(Boolean) as Bar[];
+            data.value = reordered;
+            this.bumpReorder();
+            this.onReorder?.(finalOrder.slice());
+            this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled: false, reorder: true } }));
             return;
           }
-          this.bumpReorder();
-          this.onReorder?.(finalOrder.slice());
-          this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled: false, reorder: true } }));
+          // Cancel / no-op: tween each bar back to its initial slot.
+          const bs = bandScale.peek();
+          const isV = isVert.peek();
+          (data.peek() as Bar[]).forEach((d, i) => {
+            const id = d.id;
+            const sc = barCells.get(id);
+            if (!sc) return;
+            const target = bs(String(i)) ?? 0;
+            const bandCell = isV ? sc.barX : sc.barY;
+            this.anim.start(tween(bandCell, target, REORDER_SEC, easeOut) as any);
+            // Return dragged bar's value-axis to its live target too.
+            if (id === datum.id) {
+              const valTarget = (valueScale.peek() as any)(d.value);
+              const valCell = isV ? sc.barY : sc.barX;
+              valCell.value = isV ? valTarget : plotX.peek();
+            }
+          });
+          this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } }));
         },
       });
       this._setupDisposers.push(reorderDetach);
@@ -670,11 +832,13 @@ export class MdBarChartLC extends CartesianChartBase {
   }
 
   protected _transitionOpts(): Parameters<typeof import("../hierarchical/behaviors/transition-on-updated").transitionOnUpdated>[0] {
-    // CSS transitions on bar rect attributes — replaces anim.clock tween.
-    // transitionOnUpdated handles gesture suppression (snap on draft,
-    // transition on updated/commit) via the gesture-active class.
+    // The per-cell tween biEffect handles all bar geometry animation
+    // (sort/reorder/measure/orientation). We still need transitionOnUpdated
+    // for its gesture-active class management (wheel/keyboard edits), but we
+    // disable CSS transitions on rect attrs to avoid double-animation with
+    // the anim.clock-driven num() cell tweens.
     return {
-      attrs: ["x", "y", "width", "height"],
+      attrs: [],
       durationMs: () => motion.motionMs.value,
       elements: "rect",
     };
