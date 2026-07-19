@@ -329,9 +329,14 @@ export function makeArc(
   // a perfect full circle (start = end → degenerate), and the epsilon fix
   // leaves a 0.06° sliver. When isInnermost, hide the path and show a real
   // <circle> instead — no gap, no sliver, perfect disc.
+  // Clamp r ≥ 0: the settle tween (settleArcCells) interpolates rOut between
+  // non-negative layout targets, but floating-point drift or a mid-tween
+  // retarget can momentarily produce a tiny negative value. SVG <circle> r
+  // must be non-negative — without this clamp the browser logs "Negative
+  // value is not valid in an SVG circle element" on drill pop.
   const disc = circle(
     { x: derive(() => center.x.value), y: derive(() => center.y.value) },
-    rOutEffective,
+    derive(() => Math.max(0, rOutEffective.value)),
     { fill: node.color, stroke: "none" },
   );
   disc.el.style.cursor = "grab";

@@ -622,7 +622,6 @@ function hierarchicalData(kind: string): DemoDataModel {
     sync: () => () => {},
     columns: [
       { key: "value", label: "Value", width: 80 },
-      { key: "value2", label: "Value 2", width: 80 },
     ],
   };
 }

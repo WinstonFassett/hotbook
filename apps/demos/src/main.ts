@@ -254,6 +254,8 @@ function mountHierFamily(section: HTMLElement, demo: HTMLElement, el: HTMLElemen
   const model = dataModelFor("icicle");
   if (!model?.root) return;
 
+  // Grid: treemap (left, full height) | pack (center top) + icicle (center bottom) | sunburst (right, full height) | treetable (far right).
+  // Pairs treemap↔pack (both rectilinear) and icicle↔sunburst (both partition, one rect one radial).
   demo.style.cssText += "display:grid;grid-template-columns:1fr 1fr 1fr 240px;gap:8px;height:560px;overflow:hidden;";
 
   const sunburst = document.createElement("v-sunburst") as any;
@@ -261,18 +263,20 @@ function mountHierFamily(section: HTMLElement, demo: HTMLElement, el: HTMLElemen
   const pack = document.createElement("v-pack") as any;
   const table = document.createElement("v-treetable") as any;
 
-  // Left column: icicle (el) — full height.
+  // Left column: treemap — full height.
+  treemap.externalRoot = model.root;
+  treemap.showBreadcrumb = true;
+  const treemapWrap = document.createElement("div");
+  treemapWrap.style.cssText = "min-width:0;overflow:hidden;border:1px solid var(--border);border-radius:6px;";
+  treemapWrap.appendChild(treemap);
+  demo.appendChild(treemapWrap);
+
+  // Center column: pack (top) + icicle (bottom) — stacked.
   el.externalRoot = model.root;
   el.showBreadcrumb = true;
-  const icicleWrap = document.createElement("div");
-  icicleWrap.style.cssText = "min-width:0;overflow:hidden;border:1px solid var(--border);border-radius:6px;";
-  icicleWrap.appendChild(el);
-  demo.appendChild(icicleWrap);
-
-  // Center column: pack (top) + sunburst (bottom) — stacked.
   const centerCol = document.createElement("div");
   centerCol.style.cssText = "display:flex;flex-direction:column;gap:8px;min-width:0;";
-  for (const c of [pack, sunburst] as any[]) {
+  for (const c of [pack, el] as any[]) {
     c.externalRoot = model.root;
     c.showBreadcrumb = true;
     const wrap = document.createElement("div");
@@ -282,13 +286,13 @@ function mountHierFamily(section: HTMLElement, demo: HTMLElement, el: HTMLElemen
   }
   demo.appendChild(centerCol);
 
-  // Right column: treemap — full height.
-  treemap.externalRoot = model.root;
-  treemap.showBreadcrumb = true;
-  const treemapWrap = document.createElement("div");
-  treemapWrap.style.cssText = "min-width:0;overflow:hidden;border:1px solid var(--border);border-radius:6px;";
-  treemapWrap.appendChild(treemap);
-  demo.appendChild(treemapWrap);
+  // Right column: sunburst — full height.
+  sunburst.externalRoot = model.root;
+  sunburst.showBreadcrumb = true;
+  const sunburstWrap = document.createElement("div");
+  sunburstWrap.style.cssText = "min-width:0;overflow:hidden;border:1px solid var(--border);border-radius:6px;";
+  sunburstWrap.appendChild(sunburst);
+  demo.appendChild(sunburstWrap);
 
   // Far right: treetable.
   table.externalRoot = model.root;
@@ -352,11 +356,28 @@ function buildChartConfigUI(demoId: string, chartEl: HTMLElement, dataModel?: De
   const schema = getChartSchema(kind);
   if (!schema || !schema.ui.fields.length) return null;
 
+  // Per-demo field allowlist: demos that share a schema kind but shouldn't
+  // expose all of its settings (e.g. budget-tree uses the pack schema but
+  // honors none of its controls; tree-chart's dendrogram has no meaningful
+  // measure/root/breadcrumb; gantt's start/end measure is nonsensical).
+  // `undefined` = no override (use schema defaults). `null` = hide all fields.
+  // `string[]` = show only these field types.
+  const demoFieldAllowlist: Record<string, string[] | null> = {
+    'budget-tree': null,                              // strip all settings
+    'tree-chart': ['sort', 'depth', 'orientation'],   // no measure/root/breadcrumb on a dendrogram
+    'gantt': [],                                       // no measure (start/end is nonsensical)
+  };
+  const allowlist = demoFieldAllowlist[demoId];
+  const fields = allowlist === undefined
+    ? schema.ui.fields
+    : schema.ui.fields.filter(f => allowlist === null ? false : allowlist.includes(f.type));
+  if (!fields.length) return null;
+
   const controls = document.createElement('div');
   controls.className = 'chart-config-controls';
   controls.style.cssText = 'display:flex;gap:8px;align-items:center;padding:8px;border-bottom:1px solid var(--border);background:var(--bg-subtle,#1a1a1a);';
 
-  for (const field of schema.ui.fields) {
+  for (const field of fields) {
     switch (field.type) {
       case 'depth': {
         const label = document.createElement('label');

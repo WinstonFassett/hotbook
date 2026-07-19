@@ -712,6 +712,7 @@ export function sankeyScene(
       if (grip.el.firstElementChild) groupNodeEls.set(grip.el.firstElementChild, n);
       dragCancelable(grip, lens, allCells, {
         onStart: () => {
+          host.classList.toggle(GESTURE_ACTIVE_CLASS, true);
           nodeActive.value = true;
           tooltipNodeIdx.value = n; tooltipVis.value = true;
           const p = gripPos();
@@ -719,7 +720,7 @@ export function sankeyScene(
           startVals = allCells.map((c) => c.value);
           startTot = groupLinks.reduce((a, li) => a + startVals[li]!, 0);
         },
-        onEnd: () => { nodeActive.value = false; },
+        onEnd: () => { nodeActive.value = false; host.classList.toggle(GESTURE_ACTIVE_CLASS, false); },
       });
     }
 
@@ -815,8 +816,8 @@ export function sankeyScene(
       grip.el.addEventListener("pointermove", (e) => { tooltipAt.value = toSVG(e as PointerEvent); });
       grip.el.addEventListener("pointerleave", () => { active.value = false; if (hovered.value === li) hovered.value = null; tooltipVis.value = false; tooltipLinkIdx.value = null; });
       dragCancelable(grip, lens, allCells, {
-        onStart: () => { active.value = true; focused.value = li; tooltipLinkIdx.value = li; tooltipVis.value = true; startAllVals = allCells.map((c) => c.value); },
-        onEnd: () => { active.value = false; },
+        onStart: () => { host.classList.toggle(GESTURE_ACTIVE_CLASS, true); active.value = true; focused.value = li; tooltipLinkIdx.value = li; tooltipVis.value = true; startAllVals = allCells.map((c) => c.value); },
+        onEnd: () => { active.value = false; host.classList.toggle(GESTURE_ACTIVE_CLASS, false); },
       });
     }
   }
@@ -901,8 +902,8 @@ export function sankeyScene(
       grip.el.addEventListener("pointermove", (e) => { tooltipAt.value = toSVG(e as PointerEvent); });
       grip.el.addEventListener("pointerleave", () => { active.value = false; if (hovered.value === li) hovered.value = null; tooltipVis.value = false; tooltipLinkIdx.value = null; });
       dragCancelable(grip, lens, allCells, {
-        onStart: () => { active.value = true; focused.value = li; tooltipLinkIdx.value = li; tooltipVis.value = true; startAllVals = allCells.map((c) => c.value); },
-        onEnd: () => { active.value = false; },
+        onStart: () => { host.classList.toggle(GESTURE_ACTIVE_CLASS, true); active.value = true; focused.value = li; tooltipLinkIdx.value = li; tooltipVis.value = true; startAllVals = allCells.map((c) => c.value); },
+        onEnd: () => { active.value = false; host.classList.toggle(GESTURE_ACTIVE_CLASS, false); },
       });
     }
   }

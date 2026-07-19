@@ -13,9 +13,11 @@ import { Anchor, cell, circle, derive, effect as biEffect, forEach, label, line,
 import { CartesianChartBase, type CartesianConfig, type FlatItem } from "../cartesian/cartesian-chart-base";
 import { scaleLinear, scaleBand } from "d3-scale";
 import { FILL_STYLE } from "../lib/host-size";
-import { GESTURE_SUPPRESSION_CSS, REORDER_ELEVATION_CSS } from "../lib/transitions";
+import { GESTURE_ACTIVE_CLASS, GESTURE_SUPPRESSION_CSS, REORDER_ELEVATION_CSS } from "../lib/transitions";
 import { motion } from "../lib/runtime-config";
 import { lightenHex } from "../lib/color-utils";
+import { dragController } from "../lib/interaction";
+import { attachReorderGesture } from "../lib/reorder-gesture";
 import { PALETTE, type ColorStrategy, getColorByStrategy } from "@hotbook/core";
 
 const W = 720;
@@ -46,6 +48,7 @@ const BAR_CSS = `
 text { pointer-events: none; }
 ${FILL_STYLE}
 ${GESTURE_SUPPRESSION_CSS}
+.${GESTURE_ACTIVE_CLASS} * { transition: none !important; }
 ${REORDER_ELEVATION_CSS}
 [data-focusable]:focus { outline: 2px solid #4a9eff; outline-offset: 2px; }
 [data-focusable]:focus:not(:focus-visible) { outline: none; }
@@ -194,6 +197,17 @@ export class MdBarChartLC extends CartesianChartBase {
     const viewW = derive(() => overflowMode.value && isVert.value ? neededBand.value : Wc.value);
     const viewH = derive(() => overflowMode.value && !isVert.value ? neededOrtho.value : Hc.value);
     const svgEl = this._svg!;
+
+    // Gesture-suppression class toggle (light-DOM: vf-gesture-active on host).
+    const setGestureActive = (on: boolean) => this.classList.toggle(GESTURE_ACTIVE_CLASS, on);
+    // Convert a pointer event's client coords into the SVG viewBox coordinate space.
+    const localPoint = (e: PointerEvent): { x: number; y: number } => {
+      const r = svgEl.getBoundingClientRect();
+      const vb = svgEl.viewBox?.baseVal;
+      const sx = vb && vb.width ? vb.width / r.width : 1;
+      const sy = vb && vb.height ? vb.height / r.height : 1;
+      return { x: (e.clientX - r.left) * sx, y: (e.clientY - r.top) * sy };
+    };
     biEffect(() => {
       this._setViewBox(viewW.value, viewH.value);
       const om = overflowMode.value, iv = isVert.value;
@@ -392,7 +406,7 @@ export class MdBarChartLC extends CartesianChartBase {
         const catPos = Vec.derive(() => isVert.value
           ? { x: barCX.value, y: plotBottom.value + 16 }
           : { x: plotX.value - 6, y: barCY.value });
-        catLbl = s(label(catPos, derive(() => di()?.label ?? ""), { size: 10, fill: "#888", opacity: 0.8 }));
+        catLbl = tile.add(label(catPos, derive(() => di()?.label ?? ""), { size: 10, fill: "#888", opacity: 0.8 }));
         biEffect(() => {
           const a = isVert.value ? Anchor.Center : Anchor.Right;
           catLbl.intrinsic!.setAttribute('text-anchor', xAnchor(a.x));
@@ -415,7 +429,7 @@ export class MdBarChartLC extends CartesianChartBase {
           if (labelPopped.value) return { x: barX.value + barW.value + OUT_GAP, y: barCY.value };
           return { x: barX.value + LABEL_PAD, y: barCY.value };
         });
-        inLbl = s(label(inPos, derive(() => di()?.label ?? ""), { size: 10, fill: inFill, opacity: inOpacity }));
+        inLbl = tile.add(label(inPos, derive(() => di()?.label ?? ""), { size: 10, fill: inFill, opacity: inOpacity }));
       }
 
       // ─── Value label ───────────────────────────────────────────────────
@@ -443,7 +457,7 @@ export class MdBarChartLC extends CartesianChartBase {
           }
           return { x: barX.value + barW.value - VALUE_PAD, y: barCY.value };
         });
-        vLbl = s(label(vPos, derive(() => { const d = di(); return d ? `${Math.round(d.value)}` : ""; }), { size: 11, fill: vFill, opacity: 1 }));
+        vLbl = tile.add(label(vPos, derive(() => { const d = di(); return d ? `${Math.round(d.value)}` : ""; }), { size: 11, fill: vFill, opacity: 1 }));
       }
 
       // ─── Measure text widths + alignment ───────────────────────────────
@@ -476,7 +490,7 @@ export class MdBarChartLC extends CartesianChartBase {
         const d = di(); const id = d?.id;
         return (id && this._hoverCell.value === id) || (id && this._focusCell.value === id) ? 1 : 0;
       });
-      const handle = s(circle(handlePos, derive(() => {
+      const handle = tile.add(circle(handlePos, derive(() => {
         const d = di(); const id = d?.id;
         return id && this._focusCell.value === id ? 6 : 5;
       }), {
@@ -488,6 +502,96 @@ export class MdBarChartLC extends CartesianChartBase {
       biEffect(() => { handle.el.style.cursor = isVert.value ? "ns-resize" : "ew-resize"; });
       handle.el.addEventListener("pointerenter", () => { const d = di(); if (d) this.setHover(d.id); });
       handle.el.addEventListener("pointerleave", () => { const d = di(); if (d && this._hoverCell.value === d.id) this.setHover(null); });
+
+      // ─── Drag handle → value resize (both orientations) ────────────────
+      // Uses the shared dragController (one live drag at a time). The value
+      // delta is computed in the gesture-START scale so mid-drag domain
+      // re-derivation can't cause spikes. GESTURE_ACTIVE_CLASS suppresses
+      // CSS settle transitions on siblings while the drag is live.
+      let handleStartPx = 0;
+      let handleStartScale: any = null;
+      let handlePointerId = -1;
+      const onHandleMove = (pe: PointerEvent, snap: { origValue: number; startPx: number; startScale: any }) => {
+        const d = di(); if (!d) return;
+        const px = isVert.value ? localPoint(pe).y : localPoint(pe).x;
+        const valueDelta = snap.startScale.invert(px) - snap.startScale.invert(snap.startPx);
+        this.writeValue(d.id, Math.max(0, snap.origValue + valueDelta));
+      };
+      const handleDragConfig = {
+        snapshot: (_d: Bar) => ({
+          origValue: di()?.value ?? 0,
+          startPx: handleStartPx,
+          startScale: handleStartScale,
+        }),
+        restore: (_d: Bar, snap: { origValue: number }) => { const d = di(); if (d) this.writeValue(d.id, snap.origValue); },
+        onMove: onHandleMove,
+        onEnd: (canceled: boolean) => {
+          if (handlePointerId >= 0 && (this as any).hasPointerCapture?.(handlePointerId)) {
+            (this as any).releasePointerCapture(handlePointerId);
+          }
+          handlePointerId = -1;
+          handleStartPx = 0;
+          handleStartScale = null;
+          this.style.cursor = "";
+          setGestureActive(false);
+          this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled } }));
+        },
+      };
+      handle.el.addEventListener("pointerdown", (e: PointerEvent) => {
+        if (dragController.active) return;
+        const d = di(); if (!d) return;
+        handlePointerId = e.pointerId;
+        const lp = localPoint(e);
+        handleStartPx = isVert.value ? lp.y : lp.x;
+        handleStartScale = valueScale.value;
+        this.style.cursor = isVert.value ? "ns-resize" : "ew-resize";
+        setGestureActive(true);
+        try { handle.el.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+        dragController.begin(d, handleDragConfig);
+        e.preventDefault();
+        e.stopPropagation();
+      });
+
+      // ─── Drag bar body → reorder (when canReorder) ────────────────────
+      // attachReorderGesture owns the activation threshold (below = click),
+      // elevation + DOM raise of the dragged tile, and the GESTURE_ACTIVE_CLASS
+      // toggle. We only commit a data reorder on release-with-change.
+      const reorderDetach = attachReorderGesture({
+        hitEl: tile.el as unknown as SVGElement,
+        dragEl: tile.el as unknown as SVGElement,
+        itemId: datum.id,
+        host: this,
+        filter: () => this._canReorderCell.value,
+        getInitialOrder: () => (data.value as Bar[]).map((d) => d.id),
+        computeTargetIndex: (e: PointerEvent) => {
+          const lp = localPoint(e);
+          const bs = bandScale.value;
+          const step = bs.step();
+          const start = isVert.value ? plotX.value : plotY.value;
+          const px = isVert.value ? lp.x : lp.y;
+          return (px - start) / step;
+        },
+        onPreview: (order) => {
+          const items = data.peek() as Bar[];
+          const byId = new Map(items.map((d) => [d.id, d]));
+          const reordered = order.map((id) => byId.get(id)).filter(Boolean) as Bar[];
+          if (reordered.length === items.length) data.value = reordered;
+        },
+        onEnd: (finalOrder, canceled) => {
+          const items = data.peek() as Bar[];
+          const byId = new Map(items.map((d) => [d.id, d]));
+          const reordered = finalOrder.map((id) => byId.get(id)).filter(Boolean) as Bar[];
+          data.value = reordered;
+          if (canceled) {
+            this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled: true } }));
+            return;
+          }
+          this.bumpReorder();
+          this.onReorder?.(finalOrder.slice());
+          this.dispatchEvent(new CustomEvent("gesturecommit", { detail: { canceled: false, reorder: true } }));
+        },
+      });
+      this._setupDisposers.push(reorderDetach);
 
       return tile;
     }, { key: (item: Bar) => item.id });
@@ -525,9 +629,12 @@ export class MdBarChartLC extends CartesianChartBase {
   }
 
   protected _composeBehaviors(): void {
-    // For now, just compose the standard behaviors (transitionOnUpdated +
-    // previewFullRender + wheelEdit + keyboardEdit). The drag-resize and
-    // reorder behaviors will be added as custom cartesian behaviors.
+    // Value-resize drag (handle) and drag-to-reorder (bar body) are wired in
+    // _setupRendering via the shared dragController + attachReorderGesture —
+    // they are not Editor "behaviors" because they need per-orientation hit
+    // logic and the handle is a dedicated element. Here we compose the shared
+    // wheel/keyboard/transition behaviors; the drag gestures share the same
+    // dragController singleton so only one drag is live at a time.
     const dragBehaviors: any[] = [];
     this._behaviorDispose = this._composeStandardBehaviors(
       dragBehaviors,

@@ -71,7 +71,24 @@ export class MdScatterChartLC extends CartesianChartBase {
   set xKey(v: string) { this.xBinding = v }
 
   set externalData(v: { x: number; y: number }[] | undefined) {
-    if (v) this.dataCell.value = v as Point[];
+    if (!v) return;
+    // Mutate existing items IN PLACE rather than swapping in new objects.
+    // The dots and per-datum tween cells are created once (points0) and hold
+    // direct references to the initial point objects; replacing the array
+    // with fresh objects orphans those references so the chart never updates
+    // when the x/y binding dropdown re-feeds data. Mutating in place keeps
+    // the captured references valid — the accessor (d) => d.x / (d) => d.y
+    // then reads the new values and the tween gate fires on binding change.
+    const cur = this.dataCell.peek() as Point[];
+    if (cur.length === v.length) {
+      for (let i = 0; i < v.length; i++) {
+        cur[i].x = v[i].x;
+        cur[i].y = v[i].y;
+      }
+      this.dataCell.value = [...cur];
+    } else {
+      this.dataCell.value = v as Point[];
+    }
   }
   get externalData(): { x: number; y: number }[] | undefined {
     return this.dataCell.value as Point[];

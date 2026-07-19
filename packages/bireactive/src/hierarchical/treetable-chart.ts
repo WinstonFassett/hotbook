@@ -68,9 +68,14 @@ function computeVisible(
       out.push({ node, depth, hasKids });
     }
 
-    // Add children if not collapsed and within maxDepth
+    // Add children if not collapsed and within maxDepth.
+    // When drilled, the effective root is always shown expanded even if it
+    // lives in the collapsed set — drilling into a node means "show its
+    // subtree", regardless of its prior collapse state.
     const withinDepth = maxDepth === undefined || depth < maxDepth;
-    if (hasKids && !collapsed.has(node.id) && withinDepth) {
+    const isEffectiveRoot = depth === 0 && drillId != null;
+    const expanded = isEffectiveRoot || !collapsed.has(node.id);
+    if (hasKids && expanded && withinDepth) {
       for (const child of children) {
         walk(child, depth + 1);
       }
@@ -278,6 +283,14 @@ export class TreetableChart extends HierarchicalChartBase {
                   this._dataView?.draft({
                     nodeId,
                     value: measureValue.value,
+                    source: "table-cell",
+                    intent: "edit",
+                  });
+                },
+                onMove: (v: number) => {
+                  this._dataView?.updateDraft({
+                    nodeId,
+                    value: v,
                     source: "table-cell",
                     intent: "edit",
                   });
