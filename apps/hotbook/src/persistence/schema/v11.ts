@@ -93,6 +93,9 @@ export interface Tile {
   depth?: number
   orientation?: 'vertical' | 'horizontal'
   colorMode?: 'single' | 'palette'
+  /** Hierarchical charts: whether exiting tiles fade out (true) or evict
+   *  immediately (false). Default: true for sunburst, false for others. */
+  exitFade?: boolean
   labelMode?: 'axis' | 'inside' | 'both'
   valueMode?: 'inside' | 'outside' | 'none'
   minBandSize?: number

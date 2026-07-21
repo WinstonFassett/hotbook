@@ -25,6 +25,7 @@ export { wheelController, dragController, realModifierDown } from './lib/interac
 export type { BiNode } from './lib/tree'
 export { group, leaf, leaves } from './lib/tree'
 export { numberDrag, type NumberDragOpts } from './lib/number-drag'
+export { DataViewController, gestureCoordinator, phaseOf, type GesturePhase, type Editor, type EditorState, type EditorTransition, type EditorIntent, type EditorListener } from './lib/editor'
 export { circleHandle, lineHandle, type HandleKind, type HandleStyle } from './lib/handles'
 export { Viewer, type ViewerOptions, type ShowOptions } from './lib/viewer'
 export { CartesianViewer, type CartesianViewerOptions, type CartesianDomain } from './lib/cartesian-viewer'
@@ -32,3 +33,7 @@ export type { Bounds } from './lib/sankey-layout'
 // Chart metadata:
 export { CHART_METADATA, getChartMaturity, type ChartMaturity, type ChartMetadata } from './metadata'
 export { LINK_MIN } from './lib/sankey'
+
+// Runtime-tunable design defaults (WIN-352)
+export { motion, MOTION_DEFAULTS, resetMotionToDefaults, type MotionCells } from './lib/runtime-config'
+export { mountMotionTweaks, type MountMotionTweaksOptions, type MountedMotionTweaks } from './lib/motion-tweaks-panel'

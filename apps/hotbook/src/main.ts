@@ -24,6 +24,12 @@ import { defaultDockTree, reconcile, addTileToDock, type DockNode } from './dock
 import { readLayoutFromURL, parseLayout } from './url-layout'
 import { getAllChartSchemas } from '@hotbook/core'
 import '@hotbook/bireactive' // Import to trigger schema registration
+import { mountMotionTweaks } from '@hotbook/bireactive'
+
+// WIN-352: live design-tweaks pane. Ephemeral, unconditional in dev + preview.
+// Top-middle placement per issue discussion — hotbook's chrome fills the corners.
+mountMotionTweaks({ position: { top: 8, left: '50%' }, label: 'tweaks' })
+  .trigger.style.transform = 'translateX(-50%)'
 
 // ─── Tile metadata (derived from schema registry) ────────────────────────────
 

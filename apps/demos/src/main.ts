@@ -19,14 +19,15 @@ import {
   MdBudgetTree,
   MdTreetableLC,
   MdGanttChartLC,
+  mountMotionTweaks,
 } from "@hotbook/bireactive";
 import { MdNestedLayered } from "@hotbook/layout";
 import { dataModelFor, type DemoDataModel } from "./data-models";
 import { sharedRows, sharedEdges } from "./layout/demo-data";
 import { mountControls } from "./layout/controls";
 import { getChartSchema } from "@hotbook/core";
+import { cell, derive, effect, untracked } from "bireactive";
 import "@hotbook/bireactive"; // Import to trigger schema registration
-import { MdViewerDemo } from "./viewer-demo-element";
 import { MdCartesianViewerDemo } from "./cartesian-viewer-demo";
 
 class MdBandsChartLC extends MdBarChartLC {
@@ -44,7 +45,7 @@ const demoIdToKind: Record<string, string> = {
   'bar-chart': 'bar',
   'bands-chart': 'bands',
   'scatter-chart': 'scatter',
-  'pie-chart': 'pie',
+  'pie-chart': 'sunburst',
   'radar-chart': 'radar',
   'concentric-arc': 'concentric-arc',
   'gauge': 'gauge',
@@ -66,33 +67,44 @@ const experiments: Array<{
   tag: string;
   ctor: CustomElementConstructor;
   custom?: (section: HTMLElement, demo: HTMLElement, el: HTMLElement) => void;
+  underConstruction?: boolean;
 }> = [
-  { id: "viewer-demo", title: "Viewer (pan/zoom/show demo)", tag: "md-viewer-demo", ctor: MdViewerDemo as unknown as CustomElementConstructor },
-  { id: "cartesian-viewer", title: "CartesianViewer (zoomable scatterplot with axes)", tag: "md-cartesian-viewer", ctor: MdCartesianViewerDemo as unknown as CustomElementConstructor },
+  // ── Tier 1: Hierarchical (the primary surface) ──────────────────────────
+  { id: "hier-family", title: "Hierarchical family (shared dataset, cross-view sync)", tag: "v-icicle", ctor: MdIcicleLC, custom: mountHierFamily },
+  { id: "icicle", title: "Icicle (Partition vertical)", tag: "v-icicle", ctor: MdIcicleLC },
+  { id: "sunburst", title: "Sunburst (Partition polar)", tag: "v-sunburst", ctor: MdSunburstLC },
+  { id: "treemap", title: "Treemap (squarified)", tag: "v-treemap", ctor: MdTreemapLC },
+  { id: "pack", title: "Pack (circle packing)", tag: "v-pack", ctor: MdPack },
+  // Hidden for now: demoing the treetable next to a treetable is redundant (WIN-255).
+  // { id: "treetable", title: "Treetable (hierarchical, editable rows)", tag: "v-treetable", ctor: MdTreetableLC as unknown as CustomElementConstructor },
+
+  // ── Tier 2: Cartesian family ────────────────────────────────────────────
   { id: "line-chart", title: "LineChart", tag: "v-line-chart", ctor: MdLineChartLC },
   { id: "area-chart", title: "AreaChart", tag: "v-area-chart", ctor: MdAreaChartLC },
   { id: "bar-chart", title: "BarChart (vertical)", tag: "v-bar-chart", ctor: MdBarChartLC },
   { id: "bands-chart", title: "Bands (horizontal, palette, inside labels)", tag: "v-bands-chart", ctor: MdBandsChartLC },
   { id: "scatter-chart", title: "ScatterChart", tag: "v-scatter-chart", ctor: MdScatterChartLC },
-  { id: "pie-chart", title: "PieChart", tag: "v-pie-chart", ctor: MdPieChartLC },
+
+  // ── Tier 3: Novelty (radial / gauge) ────────────────────────────────────
   { id: "radar-chart", title: "RadarChart (Radial Line)", tag: "v-radar-chart", ctor: MdRadarChartLC },
   { id: "concentric-arc", title: "ConcentricArc", tag: "v-concentric-arc", ctor: MdConcentricArcLC },
   { id: "gauge", title: "Gauge (single 270° arc, draggable endpoint + center scrub)", tag: "v-gauge", ctor: MdGaugeLC },
   { id: "gauge-segmented", title: "Gauge (segmented, draggable boundaries)", tag: "v-gauge-segmented", ctor: MdGaugeSegmentedLC },
-  { id: "pack", title: "Pack (circle packing)", tag: "v-pack", ctor: MdPack },
-  { id: "treemap", title: "Treemap (squarified)", tag: "v-treemap", ctor: MdTreemapLC },
-  { id: "icicle", title: "Icicle (Partition vertical)", tag: "v-icicle", ctor: MdIcicleLC },
-  { id: "sunburst", title: "Sunburst (Partition polar)", tag: "v-sunburst", ctor: MdSunburstLC },
-  { id: "sankey-simple", title: "Sankey (simple, editable)", tag: "v-sankey-simple", ctor: MdSankeySimple },
-  { id: "sankey-complex", title: "Sankey (UK energy)", tag: "v-sankey-complex", ctor: MdSankeyComplex },
+
+  // ── Tier 4: Under construction ──────────────────────────────────────────
+  { id: "pie-chart", title: "PieChart (under construction)", tag: "v-pie-chart", ctor: MdPieChartLC, underConstruction: true },
+  { id: "sankey-simple", title: "Sankey (simple, editable)", tag: "v-sankey-simple", ctor: MdSankeySimple, underConstruction: true },
+  { id: "sankey-complex", title: "Sankey (UK energy)", tag: "v-sankey-complex", ctor: MdSankeyComplex, underConstruction: true },
   // Hidden: more tree than flow (WIN-265).
   // { id: "sankey-hierarchy", title: "Sankey (hierarchy → flow)", tag: "v-sankey-hierarchy", ctor: MdSankeyHierarchy },
-  { id: "tree-chart", title: "Tree (node-link dendrogram)", tag: "v-tree-chart", ctor: MdTreeChart },
-  { id: "budget-tree", title: "Budget Tree (drag boundary handles)", tag: "v-budget-tree", ctor: MdBudgetTree },
-  // Hidden for now: demoing the treetable next to a treetable is redundant (WIN-255).
-  // { id: "treetable", title: "Treetable (hierarchical, editable rows)", tag: "v-treetable", ctor: MdTreetableLC as unknown as CustomElementConstructor },
-  { id: "gantt", title: "Gantt (drag propagates through dependencies, zero-slack enforced)", tag: "v-gantt", ctor: MdGanttEnforcedLC as unknown as CustomElementConstructor },
-  { id: "nested-layered", title: "Nested-layered layout (recursive graph layout)", tag: "md-nested-layered", ctor: MdNestedLayered as unknown as CustomElementConstructor, custom: mountLayoutSection },
+  { id: "tree-chart", title: "Tree (node-link dendrogram)", tag: "v-tree-chart", ctor: MdTreeChart, underConstruction: true },
+  { id: "budget-tree", title: "Budget Tree (drag boundary handles)", tag: "v-budget-tree", ctor: MdBudgetTree, underConstruction: true },
+  { id: "gantt", title: "Gantt (drag propagates through dependencies, zero-slack enforced)", tag: "v-gantt", ctor: MdGanttEnforcedLC as unknown as CustomElementConstructor, underConstruction: true },
+  { id: "nested-layered", title: "Nested-layered layout (recursive graph layout)", tag: "md-nested-layered", ctor: MdNestedLayered as unknown as CustomElementConstructor, custom: mountLayoutSection, underConstruction: true },
+
+  // ── Tier 5: Experimental viewers ────────────────────────────────────────
+  { id: "cartesian-viewer", title: "CartesianViewer (zoomable scatterplot with axes)", tag: "md-cartesian-viewer", ctor: MdCartesianViewerDemo as unknown as CustomElementConstructor, underConstruction: true },
+  // viewer-demo deleted — eclipsed by cartesian-viewer-demo (axis-aware logical zoom).
 ];
 
 // The treetable demo section is hidden, but the side-by-side data tables still need the tag.
@@ -133,29 +145,89 @@ function readConfig(): ReproConfig {
     only: onlyRaw ? onlyRaw.split(',').map(s => s.trim()).filter(Boolean) : null,
   };
 }
-let config = readConfig();
+// `only` is read once at load (reload on change); `sort` is reactive below.
+const config = { only: readConfig().only };
 
-// Live sort: hierarchical charts expose a reactive sortBy and animate the
-// toggle themselves; flat charts tween on data-order changes, so their demo
-// data model re-feeds sorted data (setSort). Treetables re-sort via sortBy.
-function applySort(el: HTMLElement, treetable: HTMLElement | null, model: DemoDataModel | undefined, kind?: string) {
-  // Only drive chart sort if the schema actually declares a sort field.
+// --- Sort: reactive global default + per-chart overrides ---
+// (chart-architecture.md §"Config layering": global defaults, per-chart
+// overrides win. The chart is the source of truth for its own effective
+// config; the global bar is a default, not a hidden override.)
+//
+// `globalSort` is the page-wide default, driven by the global sort button and
+// the URL hash. Each chart gets its own `sortOverride` cell (null = fall back
+// to global). `effectiveSort` derives per chart: override ?? global. An effect
+// per chart applies the effective sort to the chart + side treetable whenever
+// it changes — no applySort loop, no hashchange walker, no gesturecommit
+// re-apply reading a stale global.
+const globalSort = cell<'index' | 'value'>(readConfig().sort);
+// Update globalSort from URL hash changes (the global button writes the hash).
+let lastCfgSeg = parseHash().cfg.toString();
+window.addEventListener('hashchange', () => {
+  const cfgSeg = parseHash().cfg.toString();
+  if (cfgSeg === lastCfgSeg) return;
+  lastCfgSeg = cfgSeg;
+  const next = readConfig();
+  globalSort.value = next.sort;
+  // `only` change requires a reload (chart set changes).
+  if (JSON.stringify(next.only) !== JSON.stringify(config.only)) location.reload();
+});
+
+interface ChartSortState {
+  /** Per-chart override cell (null = fall back to global default). */
+  override: ReturnType<typeof cell<'index' | 'value' | null>>;
+  /** Derived effective sort: override ?? globalSort. */
+  effective: ReturnType<typeof derive<'index' | 'value'>>;
+}
+const chartSortStates = new Map<HTMLElement, ChartSortState>();
+
+/** Get or create the per-chart sort state for an element. The per-chart
+ *  selector writes to `override`; everyone else reads `effective`. */
+function chartSort(el: HTMLElement): ChartSortState {
+  let st = chartSortStates.get(el);
+  if (!st) {
+    const override = cell<'index' | 'value' | null>(null);
+    const effective = derive(() => override.value ?? globalSort.value);
+    st = { override, effective };
+    chartSortStates.set(el, st);
+  }
+  return st;
+}
+
+/** Wire a chart's effective sort to its chart + side treetable. The effect
+ *  fires on mount and whenever the effective sort changes (global or override).
+ *  Hierarchical charts have a reactive `sortBy` → setting it re-derives layout.
+ *  Flat charts (bar/pie) re-feed sorted data via the data model. The treetable
+ *  follows via its own `sortBy`. */
+function wireSort(
+  el: HTMLElement,
+  treetable: HTMLElement | null,
+  model: DemoDataModel | undefined,
+  kind?: string,
+): void {
   const schema = kind ? getChartSchema(kind) : undefined;
   const hasSort = schema?.ui.fields.some(f => f.type === 'sort') ?? false;
-  if (hasSort) {
-    if ('sortBy' in el) {
-      (el as any).sortBy = config.sort;
-    } else if (model?.setSort) {
-      model.setSort(el, config.sort);
-      if (treetable) {
-        (treetable as any).externalRoot = model.root;
-        (treetable as any).refresh?.();
+  if (!hasSort) return;
+  const { effective } = chartSort(el);
+  effect(() => {
+    const sort = effective.value;
+    // untracked: setSort/apply reads el.dataCell and el.measureKey (bireactive
+    // cells). Without untracked, the effect would track those cells as deps
+    // and re-fire when apply writes el.externalData → infinite loop.
+    untracked(() => {
+      if ('sortBy' in el) {
+        (el as any).sortBy = sort;
+      } else if (model?.setSort) {
+        model.setSort(el, sort);
+        if (treetable) {
+          (treetable as any).externalRoot = model.root;
+          (treetable as any).refresh?.();
+        }
       }
-    }
-  }
-  if (treetable && 'sortBy' in treetable) (treetable as any).sortBy = config.sort;
-  // Drag-to-reorder gate (WIN-262): only active when sort is by natural order.
-  if ('canReorder' in el) (el as any).canReorder = (config.sort === 'index');
+      if (treetable && 'sortBy' in treetable) (treetable as any).sortBy = sort;
+      // Drag-to-reorder gate (WIN-262): only active when sort is by natural order.
+      if ('canReorder' in el) (el as any).canReorder = (sort === 'index');
+    });
+  });
 }
 
 function wireReorder(el: HTMLElement, treetable: HTMLElement | null, model: DemoDataModel | undefined) {
@@ -168,6 +240,74 @@ function wireReorder(el: HTMLElement, treetable: HTMLElement | null, model: Demo
       (treetable as any).refresh?.();
     }
   };
+}
+
+// All five hierarchical charts on ONE dataset (same BiNode root → shared
+// Kernel dataset via the bi-adapter). Edits preview live everywhere; drill
+// syncs across views via the kernel drill channel.
+//
+// Layout: icicle (left, full height) | pack + sunburst (center, stacked) |
+// treemap (right, full height) | treetable (far right). This makes a neat
+// rectangle and lets you compare visual/separation styles across all 4
+// hierarchical SVG charts side by side.
+function mountHierFamily(section: HTMLElement, demo: HTMLElement, el: HTMLElement): void {
+  const model = dataModelFor("icicle");
+  if (!model?.root) return;
+
+  // Grid: treemap (left, full height) | pack (center top) + icicle (center bottom) | sunburst (right, full height) | treetable (far right).
+  // Pairs treemap↔pack (both rectilinear) and icicle↔sunburst (both partition, one rect one radial).
+  demo.style.cssText += "display:grid;grid-template-columns:1fr 1fr 1fr 240px;gap:8px;height:560px;overflow:hidden;";
+
+  const sunburst = document.createElement("v-sunburst") as any;
+  const treemap = document.createElement("v-treemap") as any;
+  const pack = document.createElement("v-pack") as any;
+  const table = document.createElement("v-treetable") as any;
+
+  // Left column: treemap — full height.
+  treemap.externalRoot = model.root;
+  treemap.showBreadcrumb = true;
+  const treemapWrap = document.createElement("div");
+  treemapWrap.style.cssText = "min-width:0;overflow:hidden;border:1px solid var(--border);border-radius:6px;";
+  treemapWrap.appendChild(treemap);
+  demo.appendChild(treemapWrap);
+
+  // Center column: pack (top) + icicle (bottom) — stacked.
+  el.externalRoot = model.root;
+  el.showBreadcrumb = true;
+  const centerCol = document.createElement("div");
+  centerCol.style.cssText = "display:flex;flex-direction:column;gap:8px;min-width:0;";
+  for (const c of [pack, el] as any[]) {
+    c.externalRoot = model.root;
+    c.showBreadcrumb = true;
+    const wrap = document.createElement("div");
+    wrap.style.cssText = "flex:1;min-height:0;overflow:hidden;border:1px solid var(--border);border-radius:6px;";
+    wrap.appendChild(c);
+    centerCol.appendChild(wrap);
+  }
+  demo.appendChild(centerCol);
+
+  // Right column: sunburst — full height.
+  sunburst.externalRoot = model.root;
+  sunburst.showBreadcrumb = true;
+  const sunburstWrap = document.createElement("div");
+  sunburstWrap.style.cssText = "min-width:0;overflow:hidden;border:1px solid var(--border);border-radius:6px;";
+  sunburstWrap.appendChild(sunburst);
+  demo.appendChild(sunburstWrap);
+
+  // Far right: treetable.
+  table.externalRoot = model.root;
+  if (model.columns) table.columns = model.columns;
+  const tw = document.createElement("div");
+  tw.style.cssText = "overflow:hidden;border:1px solid var(--border);border-radius:6px;";
+  tw.appendChild(table);
+  demo.appendChild(tw);
+
+  // Wire reactive sort to all four hierarchical charts + treetable.
+  // The global sort button and per-chart sort dropdown both feed into
+  // chartSort(el).effective, which sets el.sortBy → config.sort → re-derive.
+  for (const c of [el, sunburst, treemap, pack, table] as HTMLElement[]) {
+    wireSort(c, table, model, "icicle");
+  }
 }
 
 function mountLayoutSection(section: HTMLElement, demo: HTMLElement, el: HTMLElement): void {
@@ -199,17 +339,14 @@ function mountLayoutSection(section: HTMLElement, demo: HTMLElement, el: HTMLEle
     treetable.externalRoot = nested.root;
     if (nested.columns) treetable.columns = nested.columns;
     dataWrap.appendChild(treetable);
-    // Track this treetable so it gets sort updates.
-    applySort(el, treetable, nested);
-    mounted.push({ el, treetable, model: nested });
+    // Wire reactive sort (effective = per-chart override ?? global default).
+    wireSort(el, treetable, nested);
   }
 
   mountControls(toolbar);
 
   section.insertBefore(toolbar, demo);
 }
-
-let updateSortLabel: () => void = () => {};
 
 // Build schema-driven config UI for a demo chart
 function buildChartConfigUI(demoId: string, chartEl: HTMLElement, dataModel?: DemoDataModel): HTMLElement | null {
@@ -219,11 +356,28 @@ function buildChartConfigUI(demoId: string, chartEl: HTMLElement, dataModel?: De
   const schema = getChartSchema(kind);
   if (!schema || !schema.ui.fields.length) return null;
 
+  // Per-demo field allowlist: demos that share a schema kind but shouldn't
+  // expose all of its settings (e.g. budget-tree uses the pack schema but
+  // honors none of its controls; tree-chart's dendrogram has no meaningful
+  // measure/root/breadcrumb; gantt's start/end measure is nonsensical).
+  // `undefined` = no override (use schema defaults). `null` = hide all fields.
+  // `string[]` = show only these field types.
+  const demoFieldAllowlist: Record<string, string[] | null> = {
+    'budget-tree': null,                              // strip all settings
+    'tree-chart': ['sort', 'depth', 'orientation'],   // no measure/root/breadcrumb on a dendrogram
+    'gantt': [],                                       // no measure (start/end is nonsensical)
+  };
+  const allowlist = demoFieldAllowlist[demoId];
+  const fields = allowlist === undefined
+    ? schema.ui.fields
+    : schema.ui.fields.filter(f => allowlist === null ? false : allowlist.includes(f.type));
+  if (!fields.length) return null;
+
   const controls = document.createElement('div');
   controls.className = 'chart-config-controls';
   controls.style.cssText = 'display:flex;gap:8px;align-items:center;padding:8px;border-bottom:1px solid var(--border);background:var(--bg-subtle,#1a1a1a);';
 
-  for (const field of schema.ui.fields) {
+  for (const field of fields) {
     switch (field.type) {
       case 'depth': {
         const label = document.createElement('label');
@@ -305,11 +459,11 @@ function buildChartConfigUI(demoId: string, chartEl: HTMLElement, dataModel?: De
         sel.value = (chartEl as any).sortBy ?? 'index';
         sel.addEventListener('change', () => {
           const newSort = sel.value as 'index' | 'value';
-          if ('sortBy' in chartEl) {
-            (chartEl as any).sortBy = newSort;
-          } else if (dataModel?.setSort) {
-            dataModel.setSort(chartEl, newSort);
-          }
+          // Per-chart override: write to the override cell. The wireSort effect
+          // reacts and applies it to the chart + treetable. Global sort changes
+          // can't clobber this — effectiveSort = override ?? global.
+          // (chart-architecture.md §"Config layering".)
+          chartSort(chartEl).override.value = newSort;
           chartEl.dispatchEvent(new CustomEvent('chartconfigchange', { bubbles: true }));
         });
         controls.appendChild(label);
@@ -352,6 +506,28 @@ function buildChartConfigUI(demoId: string, chartEl: HTMLElement, dataModel?: De
         controls.appendChild(sel);
         break;
       }
+
+      case 'toggle': {
+        const lbl = document.createElement('label');
+        lbl.style.cssText = 'font-size:12px;color:var(--text-muted,#999);margin-left:8px;display:flex;align-items:center;gap:4px;cursor:pointer;';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.style.cssText = 'cursor:pointer;';
+        // Read current value from config (hierarchical charts read these
+        // from the config object, not as direct element properties).
+        const cfg = (chartEl as any).config ?? {};
+        cb.checked = !!cfg[field.path];
+        cb.addEventListener('change', () => {
+          // Update the config object and re-set it on the chart element.
+          const newCfg = { ...(chartEl as any).config, [field.path]: cb.checked };
+          (chartEl as any).config = newCfg;
+          chartEl.dispatchEvent(new CustomEvent('chartconfigchange', { bubbles: true }));
+        });
+        lbl.appendChild(cb);
+        lbl.appendChild(document.createTextNode(field.label));
+        controls.appendChild(lbl);
+        break;
+      }
     }
   }
 
@@ -370,20 +546,68 @@ function buildConfigBar(): HTMLElement {
     location.hash = anchor ? `${parts[0] ?? ''}|${anchor}` : (parts[0] ?? '');
   };
   const sortBtn = document.createElement('button');
-  sortBtn.textContent = `sort: ${config.sort}`;
-  sortBtn.onclick = () => set('sort', config.sort === 'value' ? 'index' : 'value');
+  // Reactive label + onclick: the button reflects and writes the global default.
+  // Per-chart overrides are not affected (effectiveSort = override ?? global).
+  effect(() => { sortBtn.textContent = `sort: ${globalSort.value}`; });
+  sortBtn.onclick = () => set('sort', globalSort.value === 'value' ? 'index' : 'value');
   bar.append(sortBtn);
-  updateSortLabel = () => { sortBtn.textContent = `sort: ${config.sort}`; };
   return bar;
 }
 
 const app = document.getElementById("app");
-const mounted: Array<{ el: HTMLElement; treetable: HTMLElement | null; model?: DemoDataModel; kind?: string }> = [];
 if (app) {
   app.prepend(buildConfigBar());
   const shown = config.only
     ? experiments.filter(e => config.only!.includes(e.id))
     : experiments;
+
+  // ── Sticky TOC sidebar ──────────────────────────────────────────────────
+  // Fixed overlay to the LEFT of the 960px content area. Doesn't eat demo
+  // width — only shows if the viewport has room. Built in the body, not
+  // inside the 960px main, so it doesn't affect the demo area width.
+  const toc = document.createElement("nav");
+  toc.id = "toc";
+  toc.className = "toc";
+  const tocList = document.createElement("ul");
+  tocList.className = "toc-list";
+  const TIERS = [
+    { label: "Hierarchical", ids: ["hier-family", "icicle", "sunburst", "treemap", "pack"] },
+    { label: "Cartesian", ids: ["line-chart", "area-chart", "bar-chart", "bands-chart", "scatter-chart"] },
+    { label: "Novelty", ids: ["radar-chart", "concentric-arc", "gauge", "gauge-segmented"] },
+    { label: "Under construction", ids: ["pie-chart", "sankey-simple", "sankey-complex", "tree-chart", "budget-tree", "gantt", "nested-layered"] },
+    { label: "Experimental", ids: ["cartesian-viewer"] },
+  ];
+  for (const tier of TIERS) {
+    const tierShown = tier.ids.filter(id => shown.some(e => e.id === id));
+    if (tierShown.length === 0) continue;
+    const tierLi = document.createElement("li");
+    tierLi.className = "toc-tier";
+    const tierLabel = document.createElement("div");
+    tierLabel.className = "toc-tier-label";
+    tierLabel.textContent = tier.label;
+    tierLi.appendChild(tierLabel);
+    const subUl = document.createElement("ul");
+    subUl.className = "toc-sublist";
+    for (const id of tierShown) {
+      const e = shown.find(x => x.id === id)!;
+      const li = document.createElement("li");
+      li.className = "toc-item";
+      const a = document.createElement("a");
+      a.href = `#${id}`;
+      a.textContent = e.title.replace(/\s*\(.*\)$/, "");
+      a.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+      li.appendChild(a);
+      subUl.appendChild(li);
+    }
+    tierLi.appendChild(subUl);
+    tocList.appendChild(tierLi);
+  }
+  toc.appendChild(tocList);
+  document.body.appendChild(toc);
+
   for (const e of shown) {
     const section = document.createElement("section");
     section.id = e.id;
@@ -391,9 +615,16 @@ if (app) {
 
     const h2 = document.createElement("h2");
     h2.textContent = e.title;
+    if (e.underConstruction) {
+      const badge = document.createElement("span");
+      badge.textContent = "under construction";
+      badge.style.cssText = 'margin-left:8px;font-size:11px;font-weight:400;color:var(--text-muted,#999);border:1px solid var(--border,#333);border-radius:3px;padding:1px 6px;vertical-align:middle;';
+      h2.appendChild(badge);
+    }
 
     const demo = document.createElement("div");
     demo.className = "demo";
+
     const el = document.createElement(e.tag) as HTMLElement;
     el.setAttribute("no-source", "");
 
@@ -416,7 +647,12 @@ if (app) {
         const hasSort = schema?.ui.fields.some(f => f.type === 'sort') ?? false;
         queueMicrotask(() => {
           if (!(el as any).gestureActive && hasSort && dataModel.setSort) {
-            dataModel.setSort(el, config.sort);
+            // Re-feed sorted data using the chart's reactive effective sort.
+            // The bar chart freezes display order during gestures; after commit
+            // it needs a re-feed to reconcile to the (possibly new) sorted
+            // order. Reading the reactive effective sort means per-chart
+            // overrides are respected. (chart-architecture.md §"Config layering".)
+            dataModel.setSort(el, chartSort(el).effective.value);
             el.dispatchEvent(new CustomEvent('chartconfigchange', { bubbles: true }));
           }
         });
@@ -480,6 +716,10 @@ if (app) {
         treetable.externalRoot = dataModel.root;
         if (dataModel.columns) treetable.columns = dataModel.columns;
         dataModel.sync(el);
+        // Hierarchical charts (pie preset = sunburst) need externalRoot set.
+        if ('externalRoot' in el && !('externalData' in el)) {
+          (el as any).externalRoot = dataModel.root;
+        }
       }
       tableWrap.appendChild(treetable);
 
@@ -492,24 +732,18 @@ if (app) {
 
       const kind = demoIdToKind[e.id];
       wireReorder(el, treetable, dataModel);
-      applySort(el, treetable, dataModel, kind);
-      mounted.push({ el, treetable, model: dataModel, kind });
+      // Wire reactive sort (effective = per-chart override ?? global default).
+      wireSort(el, treetable, dataModel, kind);
+      // Enable breadcrumb on all hierarchical charts (the base class wires it
+      // but the demo config must opt in via showBreadcrumb). Without this,
+      // drilling into pack/treemap/icicle/sunburst leaves the user stuck.
+      if ('showBreadcrumb' in el) (el as any).showBreadcrumb = true;
     }
   }
 }
 
-let lastCfgSeg = parseHash().cfg.toString();
-window.addEventListener('hashchange', () => {
-  const cfgSeg = parseHash().cfg.toString();
-  if (cfgSeg === lastCfgSeg) return;
-  lastCfgSeg = cfgSeg;
-  const next = readConfig();
-  const needsReload = JSON.stringify(next.only) !== JSON.stringify(config.only);
-  config = next;
-  if (needsReload) { location.reload(); return; }
-  updateSortLabel();
-  for (const { el, treetable, model, kind } of mounted) applySort(el, treetable, model, kind);
-});
+// WIN-352: live design-tweaks pane. Ephemeral, unconditional in dev + preview.
+mountMotionTweaks({ position: { top: 8, right: 8 } });
 
 function dedentFn(s: string): string {
   const lines = s.split("\n");

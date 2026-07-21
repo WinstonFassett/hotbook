@@ -7,7 +7,8 @@
 //     toggles to a rendered mark's DOM element.
 
 import { cell, derive, effect, readNow, untracked, type Read, type Val } from "bireactive";
-import { ENTER_MS, EXIT_MS, prefersReducedMotion, TRANSITION_EASING } from "./transitions";
+import { motion } from "./runtime-config";
+import { prefersReducedMotion, TRANSITION_EASING } from "./transitions";
 
 export interface WithExitDelayOptions<T> {
   key: (item: T) => unknown;
@@ -27,7 +28,7 @@ export function withExitDelay<T>(
   source: Val<readonly T[]>,
   opts: WithExitDelayOptions<T>,
 ): Read<readonly T[]> {
-  const { key, exitMs = EXIT_MS, immediate } = opts;
+  const { key, exitMs = motion.motionMs.value, immediate } = opts;
   const rendered = cell<readonly T[]>(readNow(source));
   let timer: ReturnType<typeof setTimeout> | null = null;
 
@@ -75,8 +76,8 @@ export function enterExitFade(
   el: SVGElement | HTMLElement,
   opts: EnterExitFadeOptions,
 ): void {
-  const enterMs = opts.enterMs ?? ENTER_MS;
-  const exitMs = opts.exitMs ?? EXIT_MS;
+  const enterMs = opts.enterMs ?? motion.motionMs.value;
+  const exitMs = opts.exitMs ?? motion.motionMs.value;
   const reduced = prefersReducedMotion();
 
   if (reduced) {

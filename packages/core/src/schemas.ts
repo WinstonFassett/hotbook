@@ -17,7 +17,7 @@ export const groupBySchema = v.optional(v.string())
 // ─── UI Field Descriptor ──────────────────────────────────────────────────────
 
 export interface UIField {
-  type: 'measure' | 'sort' | 'orientation' | 'depth' | 'xKey' | 'yKey' | 'groupBy'
+  type: 'measure' | 'sort' | 'orientation' | 'depth' | 'xKey' | 'yKey' | 'groupBy' | 'toggle'
   label: string
   path: string  // dot-path into config object (e.g., 'measureKey', 'orderBinding')
 }

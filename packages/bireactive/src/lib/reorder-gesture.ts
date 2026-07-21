@@ -17,7 +17,7 @@
 // hooks: computeTargetIndex (pointer → slot) and onPreview (imperative draw).
 
 import { dragController } from "./interaction";
-import { GESTURE_ACTIVE_CLASS } from "./transitions";
+import { REORDER_ACTIVE_CLASS } from "../hierarchical/behaviors/transition-on-updated";
 
 export interface ReorderGestureConfig {
   /** Element that receives pointerdown to start a reorder drag. Usually the
@@ -30,8 +30,9 @@ export interface ReorderGestureConfig {
   dragEl?: SVGElement | HTMLElement;
   /** Stable id of the item this hit-element represents. */
   itemId: string;
-  /** Host element that carries GESTURE_ACTIVE_CLASS. Reactive layout effects
-   *  check this class to skip work while a gesture is live. */
+  /** Host element that carries REORDER_ACTIVE_CLASS. CSS transitions on
+   *  siblings stay active (they slide to provisional slots); only the
+   *  [data-reordering] ghost element has transitions suppressed. */
   host: HTMLElement;
   /** Snapshot the initial id sequence at pointerdown. */
   getInitialOrder: () => string[];
@@ -77,7 +78,7 @@ export function attachReorderGesture(cfg: ReorderGestureConfig): () => void {
   let prevBodyCursor = "";
   let prevBodyUserSelect = "";
 
-  const setGestureActive = (on: boolean) => host.classList.toggle(GESTURE_ACTIVE_CLASS, on);
+  const setGestureActive = (on: boolean) => host.classList.toggle(REORDER_ACTIVE_CLASS, on);
 
   const raiseAndElevate = () => {
     // DOM raise so the dragged element paints above siblings. SVG has no

@@ -1,149 +1,141 @@
 # hotbook Interaction Principles
 
-Design rules for gesture-based data visualization. Priority-ordered — higher rules win when they conflict with lower ones.
+Design rules for gesture-based data visualization. This document lists goals, principles, and hard rules. Higher entries win when they conflict with lower ones.
+
+This is a living document. The goal is **direct manipulation of datasets through data views and visualizations**: the user touches a data mark and the mark changes. The result should be **beautiful, intuitive, fluid, and best-of-breed**. The architecture is **consumer-driven reactive subscription**: a data kernel publishes data and pre-edit events, and charts subscribe and decide how to render. The system is bireactive, not top-down imperative.
 
 ---
 
-## Rules
+## Goals
 
-### 1. Direct manipulation is the top value
-Wherever possible, the user touches the thing and the thing changes. No modals, no forms, no indirection. The visualization is the UI.
+### 1. Direct manipulation of datasets through data views and visualizations
+Wherever possible, the user touches the thing and the thing changes. Prefer the visualization over modals, forms, or indirection. The visualization is the UI.
 
-### 2. Scale stability during manipulation
-The coordinate system of the gesture does not change while the gesture is active. A pixel of drag means the same thing at the end of the gesture as it did at the start. No re-layout, no reorder, nothing that shifts what the gesture means mid-flight.
+### 2. Beautiful, intuitive, fluid, best-of-breed
+The interaction should feel like a polished, native-quality app. Motion is smooth, feedback is immediate, and the user rarely has to think about how to do something.
 
 ### 3. Real-time feedback
-Values and visualization update live during the gesture — not on release. Throttle or debounce for rendering cost, but never at the expense of perceived responsiveness. The user sees the effect of what they're doing as they do it.
+Values and visualization update live during the gesture — not on release. Throttle or debounce for rendering cost, but never at the cost of perceived responsiveness. The user sees the effect of what they're doing as they do it.
 
-### 4. Good mechanics
-Transitions use physics-appropriate easing. Elements animate from where they visually are at the moment a transition starts — not from stale pre-gesture positions. Snap-back is never acceptable.
+### 4. Minimize thrashing
+Preview and edit with the smallest change to the current view, then commit the rest. A single value change should not cause a whole-chart re-render unless the chart has no cheaper way to show the preview.
 
-### 5. Gesture atomicity — one gesture at a time
-A gesture has a clear beginning and end. While a gesture is active, the system is committed to that gesture. No other dimension of the visualization mutates out from under the user. The gesture owns the state until it completes.
+---
 
-### 6. Gestures are speculative until committed
-Live preview during a gesture is not a mutation — it's a preview. The entire gesture is a "what if." Escape at any point cancels cleanly, reverting to the exact state at gesture start. Commit happens on release (or equivalent explicit action). The system must snapshot state at gesture start to support this.
+## Principles
+
+### 5. One gesture, one user, usually one pre-edit
+A user can make one gesture at a time. That gesture usually edits one value. A chart usually only needs to preview at most one live pre-edit at a time. Charts should generally optimize to be maximally informative while minimizing thrashing during a gesture.
+
+### 6. Gestures are speculative pre-edits
+A gesture is a **pre-edit** of an uncommitted value, not a value edit itself. Escape at any point cancels cleanly, reverting to the **committed view**. Commit happens on release (or equivalent explicit action). The system may need to snapshot the committed view at gesture start to support this.
 
 > Implementation note: `onUpdate` calls during a gesture are preview updates. Currently hotbook writes them to state immediately. Works in practice (escape reverts), but the speculative contract isn't formally exposed to consumers.
 
-### 7. Derived reorders defer to commit
-Sort order holds for the duration of a gesture. If the sort is derived (e.g. sorted by value), mid-gesture value changes do not trigger reorders — that would disorient the user and violate Rule 2. Reorder re-evaluation happens at commit (release), not during. If the gesture is canceled, no reorder occurs. The user sees any reorder as a single deliberate animation after they let go.
+### 7. Defer gesture-induced reordering until commit
+If a pre-edit would change a derived sort order, the reorder is **deferred** until `commit`. The chart should use the ordering at the start of the gesture while the gesture is active. Reordering mid-gesture would disrupt the user's visual context.
 
-### 8. Feature exposure through affordance, not chrome
-Features are exposed through the visualization itself — drag handles, hit zones, gestures — rather than external UI controls, unless the visualization cannot reasonably express them. The chart is the control surface. Every interaction that requires chrome instead of the data mark is *excise* (Victor, 2006) — extra effort that doesn't contribute to the user's goal.
+### 8. Defer thrashing-causing relayout and transitions until commit
+Full layout recomputes and transitions that would move sibling marks (reorder, relayout, partition, pack, treemap) are **deferred** while the gesture is active — the chart should not recompute `d3` layout or shuffle sibling positions mid-gesture. The full layout transition should run after `commit`. The gesture should hold the relevant state until it completes.
 
-### 9. Respect motion preferences — reactive vs. autonomous
+### 9. Preview by patching the existing view when possible
+If the edited mark can be scaled linearly or from its center, the chart should resize it live during the gesture and **do its best to scale the matching axis/domain to fit the preview value**. This is the default for bar, area, scatter, and similar Cartesian marks. If the chart cannot patch the view cheaply, it may do a full re-render. The `Editor` does not dictate the strategy; it signals `Drafting` or `Idle`.
+
+### 10. Charts are autonomous consumers
+A chart is a consumer of data and pre-edit events. The data kernel publishes; the chart subscribes and decides what to render. We do not force all charts to behave the same way; we provide defaults and let components choose. A chart may expose settings to tweak its preview behavior.
+
+### 11. Respect motion preferences — reactive vs. autonomous
 Honor `prefers-reduced-motion`. The distinction:
-- **Reactive motion** — direct manipulation feedback, real-time response to physical input. Always on. Suppressing it would break the gesture.
-- **Autonomous motion** — settle transitions, reorder animations, mode-change morphs. Suppressible.
+- **Reactive motion** — direct manipulation feedback, real-time response to physical input. Stays on. Suppressing it would break the gesture.
+- **Autonomous motion** — post-commit transitions, reorder animations, mode-change morphs. Suppressible.
 
 Under reduced-motion: suppress autonomous, keep reactive.
 
-### 10. Single source of truth for timing
-All durations and easing curves derive from one base rhythm — a design token or CSS variable. Role-specific durations (settle, enter/exit, reorder) are explicit multipliers of that base, not independent magic numbers. The system has a coherent rhythm that shakes out fractionally from one tunable root. No hardcoded ms values scattered through gesture handlers.
+### 12. Single source of truth for timing
+All chart durations live as configurable cells in `runtime-config.ts` (`hoverMs`, `motionMs`, `separation`). No hardcoded ms values in gesture handlers or chart code. No multipliers — each duration is independently tunable. The tweaks pane exposes all of them. See `wiki/transition-timing.md` for the canonical reference and per-chart mapping.
 
-### 11. Transitions are interruptible at any time
-Any autonomous transition (settle, reorder, mode-change morph) can be interrupted by user input without snapping, flashing, or corrupting state. When interrupted, the element stays at its current visual position and the new transition starts from there. The system is always in a coherent visual state, never mid-commit.
+### 13. Transitions are interruptible at any time
+Any autonomous transition (post-commit, reorder, mode-change morph) can be interrupted by user input without snapping, flashing, or corrupting state. Transition effects are disposable. When a new state arrives, the effect can be disposed and the frontend can decide to let it finish or jump to the new state. When interrupted, the element should stay at its current visual position and the new transition should start from there. The system should be in a coherent visual state, not mid-commit.
 
-### 12. Visual cohesion — elements that belong together move together
+### 14. Visual cohesion — elements that belong together move together
 A label belongs to its data mark. A number belongs to its slice. When a shape moves, its label moves with it — not on a separate trajectory, not on a separate timeline. Detachment is a design choice, not a default.
 
-Label types: name label, value label, value-units label. Each has its own threshold behavior (visibility, inside/outside, size). When a label can't track its shape, acceptable options are: fade out early and fade in at destination; or hold position and fade out. Drifting independently is not acceptable.
+Label types: name label, value label, value-units label. Each has its own threshold behavior (visibility, inside/outside, size). When a label can't track its shape, acceptable options are: fade out early and fade in at destination; or hold position and fade out. Drifting independently is not the default.
 
-Corollary: interpolate everything that changes. Color changing during a transition should be tweened. A label crossing a threshold (inside → outside) should tween position continuously, not cut.
+Corollary: interpolate what changes. Color changing during a transition should be tweened. A label crossing a threshold (inside → outside) should tween position continuously, not cut.
 
-### 13. Cross-view transitions preserve identity through shape
-When transitioning between visualization modes, the primary visual object for each datum is its colored shape. Shapes morph continuously — the color block is the anchor of identity. Labels may detach briefly during a cross-view morph if needed, but shapes never disappear and reappear. Intermediate formations are acceptable when they make the morph legible. The user never loses track of where their data went.
+### 15. Touch and mouse are equivalent gesture surfaces
+Direct manipulation should work on touch as well as mouse. Same gestures, same feedback, same mechanics. Where platform differences require adaptation (no hover on touch, different hit target sizes), adapt — but avoid dropping capabilities.
 
-### 14. Touch and mouse are equivalent gesture surfaces
-Direct manipulation must work on touch as well as mouse. Same gestures, same feedback, same mechanics. Where platform differences require adaptation (no hover on touch, different hit target sizes), adapt — but don't drop capabilities.
+**Value edits scale live; deferred scale is a future exception.** During value-edit gestures, charts should scale the edited mark and its axis/domain live (per Principle 9). Deferring the scale update until commit is a possible future optimization for specific cases, but the default is live scaling.
 
-### 15. Scale/bounds updates defer to commit, not gesture
-When a gesture changes a value that affects the overall scale or bounds of the visualization (e.g. making the largest bar shorter shifts the chart's max), the scale must not update live during the gesture — that shifts the coordinate system under the user (violates Rule 2). Scale re-evaluates at commit (release). During the gesture, scale is frozen at its gesture-start value.
+### 16. Layout should contain the data — zoom-to-fit on commit
+After any commit (gesture end, data change), the visualization should animate or snap to contain all data in bounds. Avoid clipping data or leaving persistent empty space. This is a post-commit operation, not mid-gesture.
 
-**Radial exception:** resizing a slice inherently rebalances all other slices' angles — 360° is fixed total. This is acceptable because the proportion *is* the coordinate and the other slices moving is the expected feedback. Required: other slices reposition smoothly, not by jumping.
-
-### 16. Layout always contains the data — zoom-to-fit on commit
-After any commit (gesture end, data change), the visualization animates or snaps to contain all data in bounds. Never clip data or leave persistent empty space. This is a post-commit operation on the settle rhythm (Rule 10), not mid-gesture.
-
-### 17. Hierarchical modes get the same transition and drill quality as flat modes
-h-treemap, h-icicle, h-radial (sunburst) must:
-- Transition between each other with continuous shape morphs, same quality as flat↔flat (Rule 13).
+### 17. Hierarchical modes support animated drill and multi-level display
+h-treemap, h-icicle, h-radial (sunburst) should:
 - Support drill-down and drill-up with animated transitions — not hard cuts. Drilling in feels like zooming into the hierarchy; drilling out reverses it. The transition communicates the level change.
 - Show multiple levels simultaneously where the layout supports it. Icicle and sunburst do this naturally; h-treemap should show breadcrumb or context on drill. Drilling to level N should reveal N+1 within the same view where possible.
 - Quality bar: `~/dev/tries/2026-04-26-project-allocation-editor-visualizer` — multi-level visible, animated drill, icicle-style level continuity, sunburst with visible depth.
-- Flat↔hierarchical cross-mode transitions are a known gap and a big lift. Not required now, but the architecture shouldn't foreclose them.
 
 ---
 
-## Current state audit
+## Hard rules
 
-### Rule 1 — Direct manipulation
-**Partial.** Resize (radial + bands) and reorder (radial + bands) work via DM. Color, name, add/remove, grouping — chrome only.
-
-### Rule 2 — Scale stability
-**✅** `dragOrderSnapshot` freezes layout during resize. Reorder locks pie to `dr.layoutMap`.
-
-### Rule 3 — Real-time feedback
-**✅** Resize and reorder both issue live `onUpdate` preview calls during gesture.
-
-### Rule 4 — Good mechanics
-**✅** Radial settle snap-back fixed (`dragSettlePrevAtoms` + interrupt `'reorder'` at drag end). Verified on device.
-
-### Rule 5 — Gesture atomicity
-**✅** One drag state flag active at a time. D3 drag handlers are mutually exclusive.
-
-### Rule 6 — Speculative gestures
-**Partial.** Escape works for resize (`_cancelResizeDrag`). Reorder has no escape path. Hotbook writes preview updates immediately — speculative contract not formally exposed.
-
-### Rule 7 — Derived reorders defer to commit
-**✅** Reorder `onUpdate` loop fires only at drag end.
-
-### Rule 8 — Affordance not chrome
-**Partial.** Gesture targets are the data marks. But name, color, add/remove are chrome-only.
-
-### Rule 9 — Motion preferences
-**Partial.** `prefers-reduced-motion` zeroes `DUR`, `REORDER_DUR`, `EXIT_DUR` — correctly suppresses autonomous. Drag-position updates use `.interrupt().attr()` not transitions, so reactive motion is already frame-driven. The distinction is implicitly correct but not by explicit design.
-
-### Rule 10 — Single source of truth for timing
-**Partial.** `constants.ts` has `DUR`, `REORDER_DUR`, `EXIT_DUR`, `DUR_MOVE`, `DUR_ENTER`, `DUR_EXIT`. Independent literals, not expressed as multipliers of a base. Coherent in practice; derivation not visible in code. See `wiki/cross-file-maintainability-audit.md` (WIN-288) and the linked sub-tickets for the remediation plan.
-
-### Rule 11 — Interruptibility
-**Partial.** Mode-change morph interrupts prior transitions before starting. Reorder transitions interrupted at drag end. Gap: mid-morph interruption needs verification that D3 reads the current mid-tween DOM position correctly.
-
-### Rule 12 — Visual cohesion
-**Partial — gap.** Labels tween their own `transform` independently during settle. During cross-view morph, labels fade out/in (`'morph-label'`) rather than tracking the shape. Looks detached. Root cause: label position computed from target geometry, not interpolated from the shape's mid-tween `t`. Chosen approach: fade out early, fade in at destination (to be implemented).
-
-### Rule 13 — Cross-view transitions
-
-| From → To | Status |
-|---|---|
-| radial ↔ bands | ✅ `arcToRectReel` / `rectToArcReel` |
-| bands ↔ treemap | ✅ `rectToRectScreen` |
-| radial ↔ treemap | ✅ user verified |
-| flat → hierarchical | ❌ hard cut — `HViz` is a separate component |
-| within hierarchical | ❌ not implemented (ticket f289) |
-
-Gap: color snaps at morph end (`.attr('fill')`) instead of being tweened.
-
-### Rule 14 — Touch parity
-**Partial.** Touch drag fixed this branch. Resize handle hit targets may be undersized for touch. Hover-reveal has no touch equivalent — handle discoverability on touch not audited.
-
-### Rule 15 — Scale defers to commit
-**❌ Gap.** Bands resize: scale re-derives on every preview `onUpdate` — shifts live during drag. Fix: snapshot scale domain at drag start, hold through gesture, re-derive at commit. Radial rebalancing is the acceptable exception per rule.
-
-### Rule 16 — Zoom-to-fit
-**❌ Not implemented.** Layout fills SVG container statically. No animated bounds adjustment on commit.
-
-### Rule 17 — Hierarchical parity
-**❌ Significant gap.** No cross-mode transitions within hierarchical modes. Drill is a hard cut in h-treemap. Multi-level display incomplete. See ticket f289.
+- **No overflow:** A mark must never be rendered outside the chart component bounds. If a pre-edit would exceed the chart domain, the chart must scale the domain or do a full re-render. Dynamic domain scaling is the default for Cartesian charts; hierarchical charts can scale outer bounds or hide/show levels.
+- **A gesture should be cancellable and revert to the committed view.**
+- **There is usually one active user gesture at a time.**
+- **Autonomous motion respects `prefers-reduced-motion`.**
+- **Transition effects are disposable.** When state changes, the effect can be disposed and the chart can decide to let it finish or jump.
+- **Avoid reordering or full layout relayout during a gesture without an explicit chart choice.**
 
 ---
 
-## Open questions
+## Rendering strategies
 
-- **Treemap DM**: how does direct manipulation work on a treemap? Resize via drag corner/edge? Reorder via drag to new position? Not yet designed.
-- **Radial resize live rebalance**: other slices moving live during drag — currently accepted as the radial exception. Revisit if it feels disorienting in practice.
+The chart chooses how to render. These are defaults, not requirements.
+
+### Cartesian marks
+- **Bar / area / scatter / line**: resize the edited mark and scale the matching axis/domain to fit the pre-edit value.
+- **Pie / sunburst**: rebalance the edited mark and its siblings. The coordinate is a fixed total (360° for a full pie, or a parent value for a sunburst ring), so previewing a change inherently moves others.
+
+### Hierarchical marks
+- **Icicle / sunburst**: recompute the affected subtree inside the saved parent bounds, with the sibling ordering frozen at gesture start.
+- **Treemap / circle pack**: scale the edited mark around its center, possibly rendering it as a puzzle-piece "atop" the original layout, while fading or hiding children. Whether children are also relaid out is a chart-specific option. If the pre-edit would exceed the chart domain, scale the domain or do a full re-render.
+
+### Cross-tile / cross-chart
+- Other charts bound to the same data should receive the pre-edit event by default. They can opt out or choose a different preview strategy (e.g. breadcrumb only). The data kernel publishes; each chart subscribes and decides what to render.
+
+---
+
+## Other hard interactions
+
+### Filter and enter/exit transitions
+Filtering should animate entering and exiting marks. Marks should not simply appear or disappear. The layout should also animate to contain the remaining data (zoom-to-fit on filter). The chart is a consumer of the filter state; it decides how to render the transition.
+
+### Zoom, pan, and viewport
+Charts should support zoom and pan where the data supports it. The viewport should preserve context and keep the user's point of focus. Selections and pre-edits should be stable across zoom/pan. The scatter chart already does this; it should be the model for other charts that can support it.
+
+### Drag-to-reorder and keyboard reorder
+Reordering can be a gesture. The chart can support drag-to-reorder and keyboard reorder (e.g. swap, move up/down). Reorder gestures should be cancellable and revert to the committed order. The reorder is committed on release. The chart can start an `Editor` with `intent: 'reorder'`. The same `commit`/`cancel` semantics apply as for pre-edits.
+
+### Cross-tile selection
+Selection is a cross-tile concept. If a mark is selected in one chart, other charts bound to the same data should reflect that selection by default. They can opt out or render selection differently. Linked zoom could be anchored on selection, but there is no plan for independent linked zoom.
+
+### Cursor affordances
+Cursors must be set on the **interactive element** (tile, handle, cell), never on the chart host or SVG container. Setting cursor on the host bleeds into dead areas (gaps between tiles, SVG background, padding) and misleads the user into thinking those areas are interactive. The icicle is the reference: tiles get `pointer`, edge handles get `row-resize`/`col-resize`, and the host has no cursor set — dead areas inherit the default. All hierarchical charts follow the same pattern.
+
+### Testing and verification
+Gesture effects and transitions must be testable. The `Editor` state machine should expose observable transitions. The chart's effect callbacks should be unit-testable. Transitions should be deterministic and interruptible. The test checklist in `wiki/gesture-test-checklist.md` should be the source of truth for coverage.
+
+### Implementation correctness
+Chart implementations must satisfy the invariants in `wiki/gesture-architecture.md` §"Implementation invariants":
+- **Disposer discipline** — no memory leaks from undisposed subscriptions/listeners
+- **Reactive-source ordering** — `derive()` depends on cells, not side-effect-populated structures
+- **Drill and hover contracts** — hierarchical charts accept `drillId` and emit hover
+- **Multi-instance ID hygiene** — no bare `id`/`clipPath`/`xlink:href` that collides across instances
+
+These are correctness requirements, not style. Violations break multi-instance rendering, cross-chart sync, or leak memory.
 
 ---
 

@@ -32,7 +32,7 @@ WIN-258 is the schema refactor, spun out of WIN-255.
 ### 2a. What a chart accepts today
 
 Charts are custom elements (extend `Diagram`) exposing reactive cells as
-properties. `MdSunburstLC` (`packages/bireactive/src/charts/sunburst.ts`):
+properties. `MdSunburstLC` (sunburst chart):
 
 ```ts
 externalRoot?: BiNode          // hierarchical data
@@ -535,7 +535,7 @@ are shippable; no big-bang.
 ### Stage 2 — Author schemas for two chart kinds (bar, sunburst)
 
 - `packages/schemas/src/charts/bar.ts`, `.../sunburst.ts`.
-- Re-export from `packages/bireactive`.
+- Re-export from the chart package (bireactive public export, local, or patch — TBD).
 - `BarChartSchema` + `SunburstChartSchema` in the registry on import.
 - **No behavior change** — DockView still uses the old `TILE_CONFIG_SCHEMAS`.
 - Snapshot the JSON-Schema output. This is where we discover mistakes cheap.

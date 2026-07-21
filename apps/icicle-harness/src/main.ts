@@ -1,0 +1,225 @@
+// main.ts — wire up the harness.
+// Create a Kernel, register a Dataset, give the icicle and side table the
+// same Kernel + config (so they share the DataView).
+
+import type { ChartConfig, Dataset, DataNode } from "./types";
+import { Kernel } from "./kernel";
+import "./icicle-chart.ts";
+import "./sunburst-chart.ts";
+import "./side-table.ts";
+
+// ─── Sample hierarchical data ──────────────────────────────────────────────
+
+const sampleData: DataNode = {
+  id: "root",
+  label: "Budget",
+  value: 0,
+  children: [
+    {
+      id: "housing",
+      label: "Housing",
+      value: 0,
+      color: "oklch(0.6 0.12 240)",
+      children: [
+        {
+          id: "rent",
+          label: "Rent",
+          value: 0,
+          color: "oklch(0.6 0.12 240)",
+          children: [
+            { id: "rent-base", label: "Base rent", value: 320, color: "oklch(0.6 0.12 240)", children: [
+              { id: "rent-base-lease", label: "Lease", value: 300, color: "oklch(0.6 0.12 240)", children: [] },
+              { id: "rent-base-fees", label: "Fees", value: 20, color: "oklch(0.65 0.12 240)", children: [] },
+            ] },
+            { id: "rent-parking", label: "Parking spot", value: 70, color: "oklch(0.65 0.12 240)", children: [] },
+          ],
+        },
+        {
+          id: "utilities",
+          label: "Utilities",
+          value: 0,
+          color: "oklch(0.65 0.12 240)",
+          children: [
+            { id: "electric", label: "Electric", value: 35, color: "oklch(0.65 0.12 240)", children: [] },
+            { id: "water", label: "Water", value: 15, color: "oklch(0.7 0.12 240)", children: [] },
+            { id: "internet", label: "Internet", value: 25, color: "oklch(0.75 0.12 240)", children: [] },
+          ],
+        },
+        { id: "insurance", label: "Insurance", value: 35, color: "oklch(0.7 0.12 240)", children: [] },
+      ],
+    },
+    {
+      id: "food",
+      label: "Food",
+      value: 0,
+      color: "oklch(0.6 0.12 120)",
+      children: [
+        {
+          id: "groceries",
+          label: "Groceries",
+          value: 0,
+          color: "oklch(0.6 0.12 120)",
+          children: [
+            { id: "produce", label: "Produce", value: 45, color: "oklch(0.6 0.12 120)", children: [] },
+            { id: "protein", label: "Protein", value: 40, color: "oklch(0.65 0.12 120)", children: [] },
+            { id: "pantry", label: "Pantry", value: 30, color: "oklch(0.7 0.12 120)", children: [] },
+          ],
+        },
+        {
+          id: "dining",
+          label: "Dining out",
+          value: 0,
+          color: "oklch(0.65 0.12 120)",
+          children: [
+            { id: "lunch", label: "Lunch", value: 35, color: "oklch(0.65 0.12 120)", children: [] },
+            { id: "dinner", label: "Dinner", value: 30, color: "oklch(0.7 0.12 120)", children: [] },
+          ],
+        },
+      ],
+    },
+    {
+      id: "transport",
+      label: "Transport",
+      value: 0,
+      color: "oklch(0.6 0.12 40)",
+      children: [
+        {
+          id: "gas",
+          label: "Gas",
+          value: 0,
+          color: "oklch(0.6 0.12 40)",
+          children: [
+            { id: "gas-commute", label: "Commute", value: 35, color: "oklch(0.6 0.12 40)", children: [] },
+            { id: "gas-trips", label: "Trips", value: 15, color: "oklch(0.65 0.12 40)", children: [] },
+          ],
+        },
+        { id: "transit", label: "Transit", value: 20, color: "oklch(0.65 0.12 40)", children: [] },
+        { id: "parking", label: "Parking", value: 10, color: "oklch(0.7 0.12 40)", children: [] },
+      ],
+    },
+    {
+      id: "savings",
+      label: "Savings",
+      value: 0,
+      color: "oklch(0.6 0.12 200)",
+      children: [
+        {
+          id: "emergency",
+          label: "Emergency fund",
+          value: 0,
+          color: "oklch(0.6 0.12 200)",
+          children: [
+            { id: "emergency-monthly", label: "Monthly", value: 55, color: "oklch(0.6 0.12 200)", children: [] },
+            { id: "emergency-buffer", label: "Buffer", value: 35, color: "oklch(0.65 0.12 200)", children: [] },
+          ],
+        },
+        {
+          id: "retire",
+          label: "Retirement",
+          value: 0,
+          color: "oklch(0.65 0.12 200)",
+          children: [
+            { id: "retire-401k", label: "401k", value: 90, color: "oklch(0.65 0.12 200)", children: [] },
+            { id: "retire-ira", label: "IRA", value: 55, color: "oklch(0.7 0.12 200)", children: [] },
+          ],
+        },
+      ],
+    },
+  ],
+};
+
+const dataset: Dataset = {
+  id: "budget",
+  dataShape: "hierarchical",
+  root: sampleData,
+};
+
+const config: ChartConfig = {
+  datasetId: "budget",
+  measure: "value",
+  sort: "index",
+  depth: 3,
+  orientation: "vertical",
+  canReorder: false,
+  conservationMode: "proportional-neighbor",
+  showRoot: false,
+  showBreadcrumb: true,
+};
+// Tree is now 5 levels deep (root → category → subcategory → item → detail).
+// depth:3 shows root + 2 levels; drilling into a category reveals its
+// subcategories + items, drilling again reveals items + details.
+
+// ─── Wire up ───────────────────────────────────────────────────────────────
+
+const kernel = new Kernel();
+kernel.registerDataset(dataset);
+
+const icicle = document.querySelector("v-icicle") as any;
+const sunburst = document.querySelector("v-sunburst") as any;
+const table = document.querySelector("v-side-table") as any;
+
+icicle.kernel = kernel;
+icicle.config = config;
+sunburst.kernel = kernel;
+// Sunburst shares the same config minus orientation (radial has no orientation).
+// It uses the same drillKey so drill state syncs across all three views.
+sunburst.config = { ...config, orientation: undefined };
+table.kernel = kernel;
+table.config = config;
+
+// Config bar: push config changes to all components.
+function updateConfig(key: keyof ChartConfig, value: any) {
+  (config as any)[key] = value;
+  icicle.config = config;
+  sunburst.config = { ...config, orientation: undefined };
+  table.config = config;
+}
+
+document.querySelectorAll("#config-bar button").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const cfg = btn.getAttribute("data-cfg") as keyof ChartConfig;
+    const val = btn.getAttribute("data-val");
+    // Toggle active state within the group
+    const group = btn.parentElement!;
+    group.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    // Parse value
+    if (cfg === "depth") updateConfig(cfg, parseInt(val!));
+    else if (cfg === "showRoot" || cfg === "showBreadcrumb") updateConfig(cfg, val === "true");
+    else if (cfg === "dragBehavior") updateConfig(cfg, val);
+    else updateConfig(cfg, val);
+  });
+});
+
+// Global Esc handler — cancel any active draft.
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    const active = kernel.drafts.activeEditor;
+    if (active && active.state === "Drafting") {
+      for (const chart of [icicle, sunburst, table]) {
+        const dv = chart._dataView;
+        if (dv && dv.editor === active) { dv.cancel(); break; }
+      }
+    }
+  }
+});
+
+// Status display
+const icicleStatus = document.getElementById("icicle-status")!;
+const sunburstStatus = document.getElementById("sunburst-status")!;
+const tableStatus = document.getElementById("table-status")!;
+kernel.drafts.subscribe((isDrafting, activeEditor) => {
+  const label = isDrafting ? "drafting" : "idle";
+  icicleStatus.textContent = label;
+  sunburstStatus.textContent = label;
+  tableStatus.textContent = label;
+  for (const el of [icicleStatus, sunburstStatus, tableStatus]) {
+    if (isDrafting) el.classList.add("drafting");
+    else el.classList.remove("drafting");
+  }
+});
+
+// Expose kernel globally for testing
+(window as any).__kernel = kernel;
+
+console.log("icicle harness ready", { kernel, config });

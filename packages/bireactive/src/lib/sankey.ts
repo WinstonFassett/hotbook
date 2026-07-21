@@ -17,7 +17,8 @@ import {
   easeOut,
   untracked,
 } from "bireactive";
-import type { Diagram } from "./diagram";
+import type { CartesianChartBase } from "../cartesian/cartesian-chart-base";
+import { motion } from "./runtime-config";
 import { scaleSequential } from "d3-scale";
 import { interpolateCool } from "d3-scale-chromatic";
 import { wheelController, dynamicWheelStep, realModifierDown } from "./interaction";
@@ -140,7 +141,6 @@ export interface SankeySceneOptions {
 }
 
 export const LINK_MIN = 0.5; // floor so a flow never collapses to an ungrabbable sliver
-export const SORT_SEC = 0.35; // Sort/reorder tween duration in seconds (matching Gantt)
 
 /**
  * Pick the constant px-per-unit ONCE from the initial values so the diagram opens
@@ -172,7 +172,7 @@ function initialPxPerUnit(
 }
 
 export function sankeyScene(
-  host: Diagram,
+  host: CartesianChartBase,
   s: Mount,
   opts: SankeySceneOptions,
 ) {
@@ -318,7 +318,7 @@ export function sankeyScene(
         entry.cancel?.();
         entry.offsetCell.value = initialOffset; // Start at old position
         // Tween offset back to 0 (so actual position becomes newY)
-        entry.cancel = host.anim.start(tween(entry.offsetCell, 0, SORT_SEC, easeOut));
+        entry.cancel = host.anim.start(tween(entry.offsetCell, 0, motion.motionMs.value / 1000, easeOut));
         prevNodeY.set(i, newY);
       }
     } else if (!sortChanged) {
@@ -712,6 +712,7 @@ export function sankeyScene(
       if (grip.el.firstElementChild) groupNodeEls.set(grip.el.firstElementChild, n);
       dragCancelable(grip, lens, allCells, {
         onStart: () => {
+          host.classList.toggle(GESTURE_ACTIVE_CLASS, true);
           nodeActive.value = true;
           tooltipNodeIdx.value = n; tooltipVis.value = true;
           const p = gripPos();
@@ -719,7 +720,7 @@ export function sankeyScene(
           startVals = allCells.map((c) => c.value);
           startTot = groupLinks.reduce((a, li) => a + startVals[li]!, 0);
         },
-        onEnd: () => { nodeActive.value = false; },
+        onEnd: () => { nodeActive.value = false; host.classList.toggle(GESTURE_ACTIVE_CLASS, false); },
       });
     }
 
@@ -815,8 +816,8 @@ export function sankeyScene(
       grip.el.addEventListener("pointermove", (e) => { tooltipAt.value = toSVG(e as PointerEvent); });
       grip.el.addEventListener("pointerleave", () => { active.value = false; if (hovered.value === li) hovered.value = null; tooltipVis.value = false; tooltipLinkIdx.value = null; });
       dragCancelable(grip, lens, allCells, {
-        onStart: () => { active.value = true; focused.value = li; tooltipLinkIdx.value = li; tooltipVis.value = true; startAllVals = allCells.map((c) => c.value); },
-        onEnd: () => { active.value = false; },
+        onStart: () => { host.classList.toggle(GESTURE_ACTIVE_CLASS, true); active.value = true; focused.value = li; tooltipLinkIdx.value = li; tooltipVis.value = true; startAllVals = allCells.map((c) => c.value); },
+        onEnd: () => { active.value = false; host.classList.toggle(GESTURE_ACTIVE_CLASS, false); },
       });
     }
   }
@@ -901,8 +902,8 @@ export function sankeyScene(
       grip.el.addEventListener("pointermove", (e) => { tooltipAt.value = toSVG(e as PointerEvent); });
       grip.el.addEventListener("pointerleave", () => { active.value = false; if (hovered.value === li) hovered.value = null; tooltipVis.value = false; tooltipLinkIdx.value = null; });
       dragCancelable(grip, lens, allCells, {
-        onStart: () => { active.value = true; focused.value = li; tooltipLinkIdx.value = li; tooltipVis.value = true; startAllVals = allCells.map((c) => c.value); },
-        onEnd: () => { active.value = false; },
+        onStart: () => { host.classList.toggle(GESTURE_ACTIVE_CLASS, true); active.value = true; focused.value = li; tooltipLinkIdx.value = li; tooltipVis.value = true; startAllVals = allCells.map((c) => c.value); },
+        onEnd: () => { active.value = false; host.classList.toggle(GESTURE_ACTIVE_CLASS, false); },
       });
     }
   }
@@ -923,7 +924,7 @@ export function sankeyScene(
 // ---------------------------------------------------------------------------
 
 export function renderColorControls(
-  host: Diagram,
+  host: CartesianChartBase,
   nodeColorProp: ReturnType<typeof cell<NodeColorProp>>,
   linkColorMode: ReturnType<typeof cell<LinkColorMode>>,
 ) {

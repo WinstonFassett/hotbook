@@ -1,25 +1,22 @@
 // LineChart — vanilla-TS port of LayerChart's LineChart wrapper.
 //
-// Axis-binding model (WIN-144 redesign): yBinding is a reactive accessor
-// cell. x is always date (static). Changing yBinding fires the tween gate
-// in chartContext — line animates to new values. No manual tween cells.
+// Migrated from Diagram to CartesianChartBase. Uses the shared SVG surface,
+// host size, and anim clock. Gestures via attachCartesianGestures.
 
-import { Anchor, cell, circle, derive, label, line, type Mount, Vec } from "bireactive";
-import { Diagram } from "../lib/diagram";
+import { Anchor, cell, circle, derive, effect as biEffect, label, line, Vec } from "bireactive";
+import { CartesianChartBase, type FlatItem } from "../cartesian/cartesian-chart-base";
 import { axis } from "../lib/axis";
 import { chartContext } from "../lib/chart-context";
 import { attachCartesianGestures, makeBisectFinder } from "../lib/cartesian-gestures";
 import { spline } from "../lib/spline";
-import { useHostSize, FILL_STYLE } from "../lib/host-size";
+import { FILL_STYLE } from "../lib/host-size";
+import { setup } from "../hierarchical/gesture";
+import { transitionOnUpdated } from "../hierarchical/behaviors/transition-on-updated";
 
 const W = 720;
 const H = 360;
 
-interface Point {
-  id?: string;
-  date: Date;
-  value: number;
-}
+interface Point extends FlatItem { date: Date; value: number; }
 
 function makeSeries(): Point[] {
   const out: Point[] = [];
@@ -28,40 +25,39 @@ function makeSeries(): Point[] {
   let v = 100;
   for (let i = 0; i < 30; i++) {
     v += (Math.random() - 0.45) * 6;
-    out.push({ id: String(i), date: new Date(start + i * day), value: Math.max(50, v) });
+    out.push({ id: String(i), label: String(i), date: new Date(start + i * day), value: Math.max(50, v) });
   }
   return out;
 }
 
-export class MdLineChartLC extends Diagram {
-  static styles = `
-    text { pointer-events: none; }
-    ${FILL_STYLE}
-    [data-focusable]:focus {
-      outline: 2px solid #4a9eff;
-      outline-offset: 2px;
-    }
-    [data-focusable]:focus:not(:focus-visible) {
-      outline: none;
-    }
-  `
+const LINE_CSS = `
+text { pointer-events: none; }
+${FILL_STYLE}
+[data-focusable]:focus { outline: 2px solid #4a9eff; outline-offset: 2px; }
+[data-focusable]:focus:not(:focus-visible) { outline: none; }
+`;
+let lineCssInjected = false;
+function ensureLineCss() {
+  if (typeof document === "undefined" || lineCssInjected) return;
+  lineCssInjected = true;
+  const style = document.createElement("style");
+  style.id = "vf-line-chart";
+  style.textContent = LINE_CSS;
+  document.head.appendChild(style);
+}
+
+export class MdLineChartLC extends CartesianChartBase {
   readonly dataCell = cell<readonly Point[]>(makeSeries());
 
-  // Y binding — reactive accessor cell. x is always date (static).
   private _yBindingCell = cell<(d: Point) => number>((d) => d.value);
 
   get yBinding(): string { return (this as any)._yBindingName ?? 'value' }
   set yBinding(v: string) {
-    const prev = (this as any)._yBindingName
-    ;(this as any)._yBindingName = v;
-    // Only create a new accessor reference when the binding name actually
-    // changes. applyData sets el.measureKey (→ yBinding) on EVERY call.
-    if (prev !== v) {
-      this._yBindingCell.value = (d: Point) => d.value;
-    }
+    const prev = (this as any)._yBindingName;
+    (this as any)._yBindingName = v;
+    if (prev !== v) this._yBindingCell.value = (d: Point) => d.value;
   }
 
-  // Backward compat: measureKey maps to yBinding
   get measureKey(): string { return this.yBinding }
   set measureKey(v: string) { this.yBinding = v }
 
@@ -72,13 +68,23 @@ export class MdLineChartLC extends Diagram {
     return this.dataCell.value as Point[];
   }
 
-  protected scene(s: Mount): void {
-    const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
-    this.view(Wc, Hc);
+  connectedCallback() {
+    super.connectedCallback();
+    if (!this._configCell.value) {
+      this._configCell.value = { sort: "index", conservationMode: "additive" };
+    }
+  }
+
+  protected _setupRendering(): void {
+    ensureLineCss();
+    const s = this._s;
+    const { w: Wc, h: Hc } = this._hostSize!;
+    this._setViewBox(Wc.value, Hc.value);
     this.tabIndex = -1;
     this.style.outline = "none";
 
     const data = this.dataCell;
+    this._setupDisposers.push(biEffect(() => { this._dataCell.value = this.dataCell.value; }));
 
     const ctx = chartContext<Point>({
       width: Wc, height: Hc, data,
@@ -99,14 +105,13 @@ export class MdLineChartLC extends Diagram {
     const selected = cell<Point | null>(null);
 
     const bisectFind = makeBisectFinder(data, (d) => d.date);
-    const svgEl = (this as any).svg as SVGSVGElement;
+    const svgEl = this._svg!;
 
     const mutateDatum = (pt: Point, delta: number) => {
       pt.value = Math.max(0, pt.value + delta);
       data.value = [...data.value];
     };
 
-    // Focus circles — read through ctx.xGet/ctx.yGet (tween layer).
     const points0 = data.peek() as Point[];
     const pointElements = new Map<Point, SVGCircleElement>();
     for (const pt of points0) {
@@ -133,20 +138,16 @@ export class MdLineChartLC extends Diagram {
       focusDatum: (d) => { if (d) pointElements.get(d)?.focus(); },
     });
 
-    // Hover crosshair — reads through ctx.xGet/ctx.yGet (tween layer).
     const hoverX = Vec.derive(() => {
-      const p = hover.value;
-      if (!p) return { x: -10, y: -10 };
+      const p = hover.value; if (!p) return { x: -10, y: -10 };
       return { x: ctx.xGet.value(p), y: ctx.plotY };
     });
     const hoverBottom = Vec.derive(() => {
-      const p = hover.value;
-      if (!p) return { x: -10, y: -10 };
+      const p = hover.value; if (!p) return { x: -10, y: -10 };
       return { x: ctx.xGet.value(p), y: ctx.plotY + ctx.plotHeight };
     });
     const hoverPoint = Vec.derive(() => {
-      const p = hover.value;
-      if (!p) return { x: -10, y: -10 };
+      const p = hover.value; if (!p) return { x: -10, y: -10 };
       return { x: ctx.xGet.value(p), y: ctx.yGet.value(p) };
     });
     const hoverOpacity = derive(() => (hover.value ? 1 : 0));
@@ -155,10 +156,8 @@ export class MdLineChartLC extends Diagram {
     hoverCircle.el.style.pointerEvents = "none";
     s(line(hoverX, hoverBottom, { thin: true, dashed: true, opacity: hoverOpacity, stroke: "#888" }));
 
-    // Selection marker — reads through ctx.xGet/ctx.yGet.
     const selPoint = Vec.derive(() => {
-      const p = selected.value;
-      if (!p) return { x: -10, y: -10 };
+      const p = selected.value; if (!p) return { x: -10, y: -10 };
       return { x: ctx.xGet.value(p), y: ctx.yGet.value(p) };
     });
     const selOpacity = derive(() => (selected.value ? 1 : 0));
@@ -173,6 +172,11 @@ export class MdLineChartLC extends Diagram {
       "LineChart — hover · click to select · ←/→ navigate · ↑/↓ edit · cmd+wheel · drag marker",
       { size: 11, align: Anchor.Center, opacity: 0.7 },
     ));
+  }
+
+  protected _composeBehaviors(): void {
+    const gesture = this._gesture!;
+    this._behaviorDispose = setup(gesture)(transitionOnUpdated());
   }
 }
 
