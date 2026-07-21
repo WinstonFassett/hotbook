@@ -15,7 +15,7 @@ import { dragCancelable } from "../lib/esc-contract";
 import { numberDrag } from "../lib/number-drag";
 import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
-import { PALETTE } from "@hotbook/core";
+import { PALETTE } from "@fiddleviz/core";
 
 const W = 320;
 const H = 240;

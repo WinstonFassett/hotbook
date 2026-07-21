@@ -1,9 +1,9 @@
 import { num, Num, treeNode as node, type Writable, type Num as NumType } from "bireactive";
-import { type BiNode, type ColumnDef } from "@hotbook/bireactive";
-import type { GanttTask } from "@hotbook/bireactive";
+import { type BiNode, type ColumnDef } from "@fiddleviz/bireactive";
+import type { GanttTask } from "@fiddleviz/bireactive";
 import { sharedRows, items } from "./layout/demo-data";
-import { PALETTE, getChartSchema } from "@hotbook/core";
-import type { FlatRow, ChartContext, MountContext } from "@hotbook/core";
+import { PALETTE, getChartSchema } from "@fiddleviz/core";
+import type { FlatRow, ChartContext, MountContext } from "@fiddleviz/core";
 
 export interface DemoDataModel {
   root?: BiNode;

@@ -1,9 +1,9 @@
 {
-  "name": "@hotbook/apitable",
+  "name": "@fiddleviz/apitable",
   "version": "0.1.1",
-  "description": "APITable widget adapter for hotbook",
+  "description": "APITable widget adapter for fiddleviz",
   "license": "AGPL-3.0",
-  "repository": { "type": "git", "url": "https://github.com/WinstonFassett/hotbook.git", "directory": "apitable" },
+  "repository": { "type": "git", "url": "https://github.com/WinstonFassett/fiddleviz.git", "directory": "apitable" },
   "publishConfig": { "access": "public" },
   "main": "src/index.tsx",
   "files": [
@@ -18,8 +18,8 @@
   },
   "dependencies": {
     "@apitable/widget-sdk": "^1.10.0",
-    "@hotbook/bireactive": "*",
-    "@hotbook/core": "*"
+    "@fiddleviz/bireactive": "*",
+    "@fiddleviz/core": "*"
   },
   "devDependencies": {
     "@apitable/widget-cli": "^1.3.0",

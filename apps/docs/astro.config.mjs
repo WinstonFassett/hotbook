@@ -6,8 +6,8 @@ import { fileURLToPath } from 'url';
 export default defineConfig({
   vite: {
     resolve: {
-      // 'node' condition resolves workspace packages (hotbook-charts) to SOURCE
-      // (same mechanism as hotbook) — live HMR, never a stale dist.
+      // 'node' condition resolves workspace packages (fiddleviz-charts) to SOURCE
+      // (same mechanism as fiddleviz) — live HMR, never a stale dist.
       conditions: ['browser', 'node'],
       // One bireactive instance across all modules — two copies silently kill
       // cross-element reactivity.

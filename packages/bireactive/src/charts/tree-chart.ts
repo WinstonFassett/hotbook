@@ -113,7 +113,7 @@ export class MdTreeChart extends Diagram {
   // Reactive maxDepth — the tile-binder writes `el.maxDepth = ...` and
   // expects the chart to re-render. Sunburst/treemap/pack/icicle all use
   // this pattern; this cell brings the tree in line.
-  //   undefined → show every level (matches sunburst/treemap; hotbook's
+  //   undefined → show every level (matches sunburst/treemap; fiddleviz's
   //               depth picker maps "All" → 0 → undefined at the tile-source layer)
   //   0         → show every level
   //   N > 0     → show levels 0..N; deeper levels start collapsed but user

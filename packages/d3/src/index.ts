@@ -1,7 +1,7 @@
 export type {
   Goal, GoalTree, UnitKind, ViewMode, FlatMode, HierMode,
   VizConfig, HVizConfig, VizCallbacks, HVizCallbacks,
-  hotbookEvent, hotbookChangeEvent, hotbookClickEvent, Cleanup,
+  fiddlevizEvent, fiddlevizChangeEvent, fiddlevizClickEvent, Cleanup,
   VizNode, PNode, Rollup, Measurement,
 } from './types'
 export { pickColor, colorFor } from './colors'

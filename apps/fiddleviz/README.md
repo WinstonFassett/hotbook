@@ -1,8 +1,8 @@
-# hotbook
+# fiddleviz
 
-Demo app for [hotbook](../../README.md). Multi-board data table with live proportional and hierarchical visualizations.
+Demo app for [fiddleviz](../../README.md). Multi-board data table with live proportional and hierarchical visualizations.
 
-**Live:** [hotbook-build.netlify.app](https://hotbook-build.netlify.app)
+**Live:** [fiddleviz-build.netlify.app](https://fiddleviz-build.netlify.app)
 
 ## What it does
 
@@ -15,15 +15,15 @@ Demo app for [hotbook](../../README.md). Multi-board data table with live propor
 
 ```sh
 npm install        # from repo root
-npm run dev -w apps/hotbook
+npm run dev -w apps/fiddleviz
 ```
 
-Opens at `http://hotbook.localhost` via portless.
+Opens at `http://fiddleviz.localhost` via portless.
 
 ## Build
 
 ```sh
-npm run build -w apps/hotbook
+npm run build -w apps/fiddleviz
 ```
 
 Deployed to Netlify on push to `main` via [`netlify.toml`](./netlify.toml).

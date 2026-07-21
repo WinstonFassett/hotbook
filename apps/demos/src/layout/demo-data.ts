@@ -1,8 +1,8 @@
 // Demo-specific data fixtures for the layout spike.
-// The generic data model lives in @hotbook/layout.
+// The generic data model lives in @fiddleviz/layout.
 
 import { arr, type Arr } from "bireactive";
-import { makeRow, makeEdge, type Row, type Edge } from "@hotbook/layout";
+import { makeRow, makeEdge, type Row, type Edge } from "@fiddleviz/layout";
 
 // ── seed ─────────────────────────────────────────────────────────────
 // A compound graph: two top-level containers, one nested container,

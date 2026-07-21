@@ -4,7 +4,7 @@
 > **Audience:** Anyone touching packages, apps, or wiring.
 > **Companion reading:** `wiki/rebuild-tech-design.md` (design), `wiki/retro-2026-07.md` (current gaps), `wiki/viewer-architecture.md` (planned), `wiki/dockview-spec.md` (behavior), `wiki/transitions-decision.md` (why CSS), `wiki/bireactive-surface-audit.md` (substrate).
 
-Vizform (repo name `hotbook`) is a bidirectional reactive visualization kit. The vision, in one line: **give a chart reactive data, get bidirectional edits back — no events, no stores, no wiring.** Every layer in this doc exists to make that sentence true.
+Vizform (repo name `fiddleviz`) is a bidirectional reactive visualization kit. The vision, in one line: **give a chart reactive data, get bidirectional edits back — no events, no stores, no wiring.** Every layer in this doc exists to make that sentence true.
 
 The distinguishing move is that charts do **not** own their data. They receive a tree (or list) of reactive cells and build scales and marks *from those cells*. A drag writes to the cell. A treetable reading the same tree sees the change instantly. No diffing. No event wiring.
 
@@ -15,15 +15,15 @@ The distinguishing move is that charts do **not** own their data. They receive a
 ```mermaid
 graph LR
   subgraph packages["packages/"]
-    core["@hotbook/core<br/>types · colors · data-ops"]
-    bireactive["@hotbook/bireactive<br/>18 chart custom elements<br/>gestures · transitions · tree"]
-    d3["@hotbook/d3<br/>gen-0 D3 renderer (legacy)"]
-    layout["@hotbook/layout<br/>2D graph layout"]
-    apitable["@hotbook/apitable<br/>APITable widget (stale)"]
+    core["@fiddleviz/core<br/>types · colors · data-ops"]
+    bireactive["@fiddleviz/bireactive<br/>18 chart custom elements<br/>gestures · transitions · tree"]
+    d3["@fiddleviz/d3<br/>gen-0 D3 renderer (legacy)"]
+    layout["@fiddleviz/layout<br/>2D graph layout"]
+    apitable["@fiddleviz/apitable<br/>APITable widget (stale)"]
   end
 
   subgraph apps["apps/"]
-    hotbook["hotbook<br/>React host · dock · persistence"]
+    fiddleviz["fiddleviz<br/>React host · dock · persistence"]
     docs["docs<br/>Astro doc site"]
     demos["demos<br/>Vite standalone demos"]
   end
@@ -37,9 +37,9 @@ graph LR
   d3 --> core
   apitable --> bireactive
   apitable --> core
-  hotbook --> bireactive
-  hotbook --> core
-  hotbook --> d3
+  fiddleviz --> bireactive
+  fiddleviz --> core
+  fiddleviz --> d3
   docs --> bireactive
   demos --> bireactive
   demos --> layout
@@ -49,20 +49,20 @@ graph LR
 
 - **`core` has no deps.** Pure TypeScript, MIT. Types (`VizNode`, `ColumnSchema`, `Dataset`), colors, data-ops. Any package may depend on it.
 - **`bireactive` is the canonical surface.** All 18 chart custom elements live here (bar, line, area, scatter, pie, radar, concentric-arc, gauge, pack, treemap, icicle, sunburst, sankey, budget-tree, gantt, tree-chart, treetable). It consumes the external `bireactive` npm package (v0.3.4+) for reactive primitives and re-exports what surfaces need.
-- **`d3` is gen-0.** Direct D3 rendering. Kept alive by one dying import in hotbook. Slated for deletion (see retro-2026-07).
-- **`layout` is a peer to `bireactive`.** Graph layout engine used by demos; not consumed by hotbook or apitable today.
+- **`d3` is gen-0.** Direct D3 rendering. Kept alive by one dying import in fiddleviz. Slated for deletion (see retro-2026-07).
+- **`layout` is a peer to `bireactive`.** Graph layout engine used by demos; not consumed by fiddleviz or apitable today.
 - **`apitable` is AGPL and stale.** Isolated widget adapter, not in the main dependency path.
-- **Apps are peers.** hotbook, docs, demos never import each other. They only reach into `packages/`.
+- **Apps are peers.** fiddleviz, docs, demos never import each other. They only reach into `packages/`.
 
 ### Entry points
 
 | Package | Entry | Consumers |
 |---|---|---|
-| `@hotbook/core` | `src/index.ts` | bireactive/d3/hotbook/apitable |
-| `@hotbook/bireactive` | dist ESM + `charts/*`, `lib/*` | hotbook, docs, demos, apitable |
-| `@hotbook/d3` | dist ESM (tile-binder) | hotbook (one remaining site) |
-| `@hotbook/layout` | `src/index.ts` | demos only |
-| `@hotbook/apitable` | `src/index.tsx` | external widget host |
+| `@fiddleviz/core` | `src/index.ts` | bireactive/d3/fiddleviz/apitable |
+| `@fiddleviz/bireactive` | dist ESM + `charts/*`, `lib/*` | fiddleviz, docs, demos, apitable |
+| `@fiddleviz/d3` | dist ESM (tile-binder) | fiddleviz (one remaining site) |
+| `@fiddleviz/layout` | `src/index.ts` | demos only |
+| `@fiddleviz/apitable` | `src/index.tsx` | external widget host |
 
 ---
 
@@ -74,7 +74,7 @@ The pipeline is unidirectional in *shape* (persistence flows in, edits flow out)
 flowchart TB
   persist["Persistence<br/>localStorage / IndexedDB<br/>Schema v11"]
   dataset["Dataset (plain)<br/>VizNode[] + ColumnSchema[]"]
-  tilerec["TileRecord (hotbook)<br/>tile config + onUpdate callback"]
+  tilerec["TileRecord (fiddleviz)<br/>tile config + onUpdate callback"]
   source["buildTileSource<br/>makeFlatSource / makeHierSource"]
   binode["BiNode tree<br/>NodeValue { total: Writable&lt;Num&gt;, measures: {...} }<br/>parents use Num.lens over children"]
   chart["Chart custom element<br/>externalRoot = BiNode | externalData = flat"]
@@ -83,7 +83,7 @@ flowchart TB
   user(["user drag / edit"])
   gesture["dragController<br/>onStart/onMove/onEnd"]
   brSync["brSync bridge<br/>hover/select/drill"]
-  hud["hudStore (hotbook)<br/>cross-tile coordination"]
+  hud["hudStore (fiddleviz)<br/>cross-tile coordination"]
 
   persist -->|initWorkspace| dataset
   dataset -->|wrap| tilerec
@@ -104,7 +104,7 @@ flowchart TB
 ### Steps in prose
 
 1. **Load.** `Persistence.initWorkspace()` returns a plain `Dataset` — no cells yet.
-2. **Wrap.** hotbook creates a `TileRecord` per tile: dataset reference + tile config + `onUpdate` mutation callback.
+2. **Wrap.** fiddleviz creates a `TileRecord` per tile: dataset reference + tile config + `onUpdate` mutation callback.
 3. **Build reactive tree.** `buildTileSource(tile, dataset)` calls `makeFlatSource` or `makeHierSource`. Every leaf gets a `Writable<Num>` for its `total` and each measure. Parents get **`Num.lens(children.map(c => c.value.total), fwd, backward)`** — a bidirectional lens. The forward lens sums children; the backward lens (invoked when someone writes the parent) redistributes proportionally.
 4. **Mount.** The chart custom element gets `externalRoot = biNode` (hier) or `externalData = flatArray` (flat) set *before* it's appended. `connectedCallback` triggers `scene(s)`, which builds derived scales and marks.
 5. **Render.** Marks read through `ctx.xGet(d)` / `ctx.yGet(d)`. Under the hood that's `xScale.value(tweenX(d).value)` — a **tween cell**, not a raw value. See §3.
@@ -242,7 +242,7 @@ The custom element is **the** interop point. Above it, framework hosts (React, A
 ```mermaid
 graph TB
   subgraph hosts["Framework hosts (above the boundary)"]
-    react["React (apps/hotbook)<br/>BrLcTile.tsx creates element,<br/>writes cells, binds brSync"]
+    react["React (apps/fiddleviz)<br/>BrLcTile.tsx creates element,<br/>writes cells, binds brSync"]
     astro["Astro (apps/docs)<br/>vanilla JS in demos-bidirectional.ts"]
     vanilla["Vanilla (apps/demos)<br/>direct element creation"]
     apitbl["APITable (packages/apitable)<br/>React widget, mounts element"]
@@ -388,7 +388,7 @@ On load, tileIds in `dockTree` that no longer exist in the dataset are silently 
 
 ### Where it lives
 
-Only `apps/hotbook` uses the dock today. Primitives are in `apps/hotbook/src/dock.ts`; the custom element is `apps/hotbook/src/DockView.ts`. It hosts chart custom elements directly — no React wrapping between the dock and a chart.
+Only `apps/fiddleviz` uses the dock today. Primitives are in `apps/fiddleviz/src/dock.ts`; the custom element is `apps/fiddleviz/src/DockView.ts`. It hosts chart custom elements directly — no React wrapping between the dock and a chart.
 
 ---
 
@@ -405,11 +405,11 @@ Everything above stands on `bireactive` (external npm package, v0.3.4+). The rel
 | `untracked(fn)` | Read cells without registering deps (used by the gate). |
 | `num(v)` / `Num.lens(children, fwd, back)` | Numeric cell with bidirectional aggregate lens. Foundation of hier trees. |
 | `Coll<E>`, `SortView`, `FilterView`, `GroupView` | Reactive collections. Used for hier reorder / kanban. |
-| `TreeNode<T>` | Reactive tree; `BiNode = TreeNode<NodeValue>` in hotbook. |
+| `TreeNode<T>` | Reactive tree; `BiNode = TreeNode<NodeValue>` in fiddleviz. |
 | `tween(cell, target, sec, ease)` / `Spring` / `Anim` | Animation controllers. |
 | Shapes (`rect`, `circle`, `path`, `line`, `label`) | SVG scene-graph primitives that compose into `Diagram`. |
 
-`packages/bireactive` re-exports what surfaces need and adds hotbook-specific tree constructors (`leaf`, `group`), gesture controllers (`wheelController`, `dragController`), and the transition tokens.
+`packages/bireactive` re-exports what surfaces need and adds fiddleviz-specific tree constructors (`leaf`, `group`), gesture controllers (`wheelController`, `dragController`), and the transition tokens.
 
 ---
 
@@ -419,12 +419,12 @@ The rebuild design specifies more than what's built. Current gaps, per `wiki/ret
 
 | Item | Designed | Now |
 |---|---|---|
-| `@hotbook/data` layer (incremental reconcile) | Own package, `fromDataset(ds, view)` incremental patch | Inline in `apps/hotbook/src/tile-sources.ts` |
+| `@fiddleviz/data` layer (incremental reconcile) | Own package, `fromDataset(ds, view)` incremental patch | Inline in `apps/fiddleviz/src/tile-sources.ts` |
 | Unified flat + hier data model | Cells all the way down, one code path | Two sources: `makeFlatSource`, `makeHierSource` |
 | Tile spec migration | `xField` / `orderBinding` / `sortDir` | Backward-compat aliases; migration pending |
 | `Viewer` primitive (fit / pan / zoom / show / label-layer) | Full contract in `viewer-architecture.md` | Only reactive `viewBox` fit in sankey |
 | Element interface stable at construction | brSync available on `connectedCallback` | Exponential-backoff polling workaround |
-| Gen-0 cleanup | Delete `@hotbook/d3` + `hotbook-react-d3` | One legacy import remains in `tile-sources.ts` |
+| Gen-0 cleanup | Delete `@fiddleviz/d3` + `fiddleviz-react-d3` | One legacy import remains in `tile-sources.ts` |
 
 ---
 
@@ -435,9 +435,9 @@ The rebuild design specifies more than what's built. Current gaps, per `wiki/ret
 | Add a chart type | `packages/bireactive/src/charts/bar-chart.ts` — copy, adapt, export from `index.ts`. |
 | Change tween / scale behavior | `packages/bireactive/src/lib/chart-context.ts`. |
 | Change transition timing | `packages/bireactive/src/lib/transitions.ts` (`TRANSITION_BASE_MS`). |
-| Wire a new tile kind | `apps/hotbook/src/tile-sources.ts` (`TAGS` array + builder). |
-| Dock tree ops | `apps/hotbook/src/dock.ts` (pure) + `DockView.ts` (element). |
+| Wire a new tile kind | `apps/fiddleviz/src/tile-sources.ts` (`TAGS` array + builder). |
+| Dock tree ops | `apps/fiddleviz/src/dock.ts` (pure) + `DockView.ts` (element). |
 | Add an Astro demo | `apps/docs/src/demos-bidirectional.ts` (vanilla JS). |
-| Persistence schema | `apps/hotbook/src/persistence/schema/v11.ts` (+ `migrate.ts`). |
-| Cross-tile hover/select | `apps/hotbook/src/viz/br/bindTile.ts` (`bindHudSync`). |
+| Persistence schema | `apps/fiddleviz/src/persistence/schema/v11.ts` (+ `migrate.ts`). |
+| Cross-tile hover/select | `apps/fiddleviz/src/viz/br/bindTile.ts` (`bindHudSync`). |
 | APITable widget | `packages/apitable/src/index.tsx`. |

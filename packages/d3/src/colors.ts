@@ -1,1 +1,1 @@
-export { PALETTE, pickColor, colorFor } from '@hotbook/core'
+export { PALETTE, pickColor, colorFor } from '@fiddleviz/core'

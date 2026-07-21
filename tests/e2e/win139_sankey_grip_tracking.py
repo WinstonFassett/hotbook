@@ -8,7 +8,7 @@ while the bar moved to its new size — "handle in whitespace."
 The fix: make frozenGripPos a cell so clearing it triggers re-derive.
 
 This test:
-  1. Renders the sankey in hotbook
+  1. Renders the sankey in fiddleviz
   2. Finds a group grip (rect 14x4, fill #0b0d12) and its matching node bar
   3. Asserts the grip is anchored at the bar's bottom edge BEFORE drag
   4. Drags the grip down ~40px (growing the node)
@@ -22,8 +22,8 @@ import sys
 import math
 from playwright.sync_api import sync_playwright
 
-BASE = os.environ.get("BASE_URL", "http://hotbook.localhost:1355")
-URL = f"{BASE}/hotbook/"
+BASE = os.environ.get("BASE_URL", "http://fiddleviz.localhost:1355")
+URL = f"{BASE}/fiddleviz/"
 TOL = 2.0  # px tolerance for position matching in SVG coords
 
 

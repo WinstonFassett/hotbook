@@ -9,8 +9,8 @@ export default defineConfig({
   build: {
     lib: {
       entry: resolve(__dirname, 'src/index.ts'),
-      name: 'hotbookCharts',
-      fileName: 'hotbook-charts',
+      name: 'fiddlevizCharts',
+      fileName: 'fiddleviz-charts',
     },
     rollupOptions: {
       external: ['bireactive'],

@@ -1,4 +1,4 @@
-# @hotbook/bireactive
+# @fiddleviz/bireactive
 
 Fine-grained reactive chart and graph custom elements built on [bireactive](https://github.com/WinstonFassett/bireactive) and D3. Each chart is a framework-agnostic web component that renders to SVG, owns its own lifecycle, and updates incrementally when the data changes.
 
@@ -60,7 +60,7 @@ flowchart LR
 
 ```sh
 npm install
-npm run build   # vite build — dist/hotbook-charts.js, .umd.cjs, index.d.ts
+npm run build   # vite build — dist/fiddleviz-charts.js, .umd.cjs, index.d.ts
 npm run watch   # vite build --watch
 ```
 

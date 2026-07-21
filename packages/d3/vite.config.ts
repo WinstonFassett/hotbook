@@ -9,8 +9,8 @@ export default defineConfig({
   build: {
     lib: {
       entry: resolve(__dirname, 'src/index.ts'),
-      name: 'hotbookCore',
-      fileName: 'hotbook-d3',
+      name: 'fiddlevizCore',
+      fileName: 'fiddleviz-d3',
     },
     rollupOptions: {
       external: [],

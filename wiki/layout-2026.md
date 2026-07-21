@@ -193,7 +193,7 @@ why they look better than dagre.
 
 These are all *pure tree* — no cross-containment edges. They're the
 "containment-only" corner of the space. Where we are with the
-hotbook work.
+fiddleviz work.
 
 ### 2.4 Orthogonal / wiring
 
@@ -705,7 +705,7 @@ sequence, not buckets.
    `radial()` or `tree()` inside a specific group, etc. The
    architecture admits it; pick when a real diagram needs it.
 9. **Additional data bindings.** Node/group size driven by a
-   measure, colour by a dimension, etc. — hotbook-style bindings
+   measure, colour by a dimension, etc. — fiddleviz-style bindings
    extended to the graph layout.
 10. **Edge routing.** Polyline / orthogonal routing as a nudging
     pass. Straight edges with placed labels (P3) hold us until

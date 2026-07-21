@@ -1,6 +1,6 @@
-# @hotbook/core
+# @fiddleviz/core
 
-Shared data model, types, color palette, and tree operations for the hotbook visualization packages. This is a source-only, runtime-light package that `@hotbook/d3`, `@hotbook/bireactive`, and `@hotbook/apitable` build on.
+Shared data model, types, color palette, and tree operations for the fiddleviz visualization packages. This is a source-only, runtime-light package that `@fiddleviz/d3`, `@fiddleviz/bireactive`, and `@fiddleviz/apitable` build on.
 
 ## Overview
 
@@ -48,7 +48,7 @@ flowchart LR
 - Model flat data as `VizNode` records and hierarchical data as `GoalTree`.
 - Use `colorFor` when you want the same identity to always get the same color; use `getColorByStrategy` when the color should depend on a value or index.
 - Use `buildTree` before handing data to `d3-hierarchy`; use `applyView` when the user groups by a dimension; use `drillPath` to render breadcrumbs; use `leavesOf` to get terminal nodes.
-- This package has no runtime output; import the types and functions directly from `@hotbook/core`.
+- This package has no runtime output; import the types and functions directly from `@fiddleviz/core`.
 
 ## Development
 

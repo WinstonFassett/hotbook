@@ -19,13 +19,13 @@ import {
   MdBudgetTree,
   MdTreetableLC,
   MdGanttChartLC,
-} from "@hotbook/bireactive";
-import { MdNestedLayered } from "@hotbook/layout";
+} from "@fiddleviz/bireactive";
+import { MdNestedLayered } from "@fiddleviz/layout";
 import { dataModelFor, type DemoDataModel } from "./data-models";
 import { sharedRows, sharedEdges } from "./layout/demo-data";
 import { mountControls } from "./layout/controls";
-import { getChartSchema } from "@hotbook/core";
-import "@hotbook/bireactive"; // Import to trigger schema registration
+import { getChartSchema } from "@fiddleviz/core";
+import "@fiddleviz/bireactive"; // Import to trigger schema registration
 import { MdViewerDemo } from "./viewer-demo-element";
 import { MdCartesianViewerDemo } from "./cartesian-viewer-demo";
 
@@ -115,7 +115,7 @@ for (const e of experiments) {
   }
 }
 
-// --- Repro config: drive charts into the states that only break in hotbook ---
+// --- Repro config: drive charts into the states that only break in fiddleviz ---
 const CFG_PREFIX = 'cfg:';
 function parseHash(): { cfg: URLSearchParams; anchor: string } {
   const raw = location.hash.replace(/^#/, '');
@@ -406,7 +406,7 @@ if (app) {
       // gesture ends, the chart's internal state has the new value but the frozen
       // display order hasn't reconciled to match the (possibly sorted) store order.
       // Re-applying the current sort triggers the reorder animation, matching the
-      // tile-binder behavior that hotbook uses.
+      // tile-binder behavior that fiddleviz uses.
       el.addEventListener('gesturecommit', (ev: Event) => {
         const detail = (ev as CustomEvent).detail;
         // Only re-apply on commit (not cancel), matching tile-binder's contract.

@@ -1,0 +1,16 @@
+# Netlify config for standalone fiddleviz app deployment
+# This builds fiddleviz without a base path (served at root)
+
+[build]
+  base    = ""
+  command = "npm run build:fiddleviz"
+  publish = "apps/fiddleviz/dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# SPA fallback for fiddleviz
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
+  status = 200

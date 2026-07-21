@@ -1,11 +1,11 @@
 {
-  "name": "@hotbook/core",
+  "name": "@fiddleviz/core",
   "version": "0.1.0",
-  "description": "hotbook core — shared types, data model, state machine, edit primitives.",
+  "description": "fiddleviz core — shared types, data model, state machine, edit primitives.",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/WinstonFassett/hotbook.git",
+    "url": "https://github.com/WinstonFassett/fiddleviz.git",
     "directory": "packages/core"
   },
   "publishConfig": {

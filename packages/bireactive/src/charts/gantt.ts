@@ -49,7 +49,7 @@ import {
   hoverTransition,
 } from "../lib/transitions";
 import { lightenHex } from "../lib/color-utils";
-import { PALETTE } from "@hotbook/core";
+import { PALETTE } from "@fiddleviz/core";
 import { attachReorderGesture } from "../lib/reorder-gesture";
 import { withExitDelay, membershipCell } from "../lib/mark-lifecycle";
 

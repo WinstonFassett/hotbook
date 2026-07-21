@@ -1,15 +1,15 @@
 /**
  * biTree.ts — bireactive node tree builder for BR-LC charts.
  *
- * Ported from apps/hotbook/src/viz/br/tree.ts.
+ * Ported from apps/fiddleviz/src/viz/br/tree.ts.
  * Builds a BiNode tree (bireactive Num lenses for every measure at every node)
  * from a flat VizNode array. Used by tile-binder.ts source factories.
  */
 
 import { num, treeNode, walkTree, leavesOf, Num } from 'bireactive'
 import type { TreeNode, Writable } from 'bireactive'
-import { colorFor } from '@hotbook/core'
-import type { VizNode } from '@hotbook/core'
+import { colorFor } from '@fiddleviz/core'
+import type { VizNode } from '@fiddleviz/core'
 
 export interface NodeValue {
   /** Backing VizNode id, so chart edits can map back to the store. */

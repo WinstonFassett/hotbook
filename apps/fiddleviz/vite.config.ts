@@ -26,11 +26,11 @@ export default defineConfig({
     conditions: ['browser', 'node'],
     dedupe: ['bireactive'],
     alias: {
-      '@hotbook/core': path.resolve(__dirname, '../../packages/core/src'),
-      '@hotbook/bireactive': path.resolve(__dirname, '../../packages/bireactive/src'),
-      '@hotbook/d3': path.resolve(__dirname, '../../packages/d3/src'),
-      '@hotbook/layout': path.resolve(__dirname, '../../packages/layout/src'),
-      '@hotbook/apitable': path.resolve(__dirname, '../../packages/apitable/src'),
+      '@fiddleviz/core': path.resolve(__dirname, '../../packages/core/src'),
+      '@fiddleviz/bireactive': path.resolve(__dirname, '../../packages/bireactive/src'),
+      '@fiddleviz/d3': path.resolve(__dirname, '../../packages/d3/src'),
+      '@fiddleviz/layout': path.resolve(__dirname, '../../packages/layout/src'),
+      '@fiddleviz/apitable': path.resolve(__dirname, '../../packages/apitable/src'),
     },
   },
   build: {

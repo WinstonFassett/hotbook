@@ -19,7 +19,7 @@ import {
 } from "../lib/transitions";
 import { lightenHex } from "../lib/color-utils";
 import { attachReorderGesture } from "../lib/reorder-gesture";
-import { PALETTE, type ColorStrategy, getColorByStrategy } from "@hotbook/core";
+import { PALETTE, type ColorStrategy, getColorByStrategy } from "@fiddleviz/core";
 
 const W = 720;
 const H = 360;
@@ -437,7 +437,7 @@ export class MdBarChartLC extends Diagram {
     ));
 
     // ─── Bars — identity-keyed, tweened x/y/w/h with gate ─────────────────
-    // orderHash detects sort (reorder) — id sequence changes when hotbook
+    // orderHash detects sort (reorder) — id sequence changes when fiddleviz
     // hands data in a new display order. Tween on sort/orientation/measure;
     // snap on value edits (same datum, different value).
     const orderHash = derive(() => (data.value as Bar[]).map(d => d.id ?? d.label).join(','));

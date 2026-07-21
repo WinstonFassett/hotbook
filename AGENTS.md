@@ -1,4 +1,4 @@
-# AGENTS.md — hotbook
+# AGENTS.md — fiddleviz
 
 ## bireactive `rect()` overload gotcha
 

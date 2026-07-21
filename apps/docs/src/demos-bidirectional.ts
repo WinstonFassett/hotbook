@@ -20,11 +20,11 @@ import {
   MdTreetableLC,
   leaf,
   group,
-} from '@hotbook/bireactive';
-import type { ColumnDef } from '@hotbook/bireactive';
+} from '@fiddleviz/bireactive';
+import type { ColumnDef } from '@fiddleviz/bireactive';
 
 // Expose tree constructors for console poking and the e2e lifecycle tests.
-(window as unknown as Record<string, unknown>).hotbookCharts = { leaf, group };
+(window as unknown as Record<string, unknown>).fiddlevizCharts = { leaf, group };
 
 // Register custom elements once
 if (!customElements.get('v-br-bar')) {

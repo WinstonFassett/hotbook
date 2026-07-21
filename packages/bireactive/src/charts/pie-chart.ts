@@ -7,7 +7,7 @@ import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
 import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { dragCancelable } from "../lib/esc-contract";
 import { GESTURE_ACTIVE_CLASS } from "../lib/transitions";
-import { PALETTE } from "@hotbook/core";
+import { PALETTE } from "@fiddleviz/core";
 
 const W = 640;
 const H = 640;

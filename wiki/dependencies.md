@@ -1,4 +1,4 @@
-# hotbook — workspace dependency map
+# fiddleviz — workspace dependency map
 
 > `node scripts/depgraph.mjs` prints a paste-able mermaid graph from the live
 > package.json files; `--write` splices a plain auto-version into the block below
@@ -12,15 +12,15 @@ npm workspaces: `packages/*` + `apps/*`. Internal deps use `"*"` (workspace-loca
 ```mermaid
 graph TD
   subgraph pkgs["packages/ (libraries)"]
-    core["hotbook-core<br/><i>shared types + colors</i>"]
-    vanilla["hotbook-d3<br/><i>d3 renderer: VizRenderer, hviz</i>"]
-    elem["hotbook-element-d3<br/><i>web-component wrapper</i>"]
-    reactd3["hotbook-react-d3<br/><i>React wrapper</i>"]
-    apitable["hotbook-apitable<br/><i>APITable binding</i>"]
+    core["fiddleviz-core<br/><i>shared types + colors</i>"]
+    vanilla["fiddleviz-d3<br/><i>d3 renderer: VizRenderer, hviz</i>"]
+    elem["fiddleviz-element-d3<br/><i>web-component wrapper</i>"]
+    reactd3["fiddleviz-react-d3<br/><i>React wrapper</i>"]
+    apitable["fiddleviz-apitable<br/><i>APITable binding</i>"]
   end
 
   subgraph apps["apps/"]
-    slice["hotbook<br/><b>main app</b>"]
+    slice["fiddleviz<br/><b>main app</b>"]
     brlc["layercharts-bireactive-spike<br/><i>spike/demo harness</i>"]
     sveltelc["layerchart-direct-spike<br/><i>@svelte-lc source</i>"]
     brspike["bireactive-spike"]
@@ -28,7 +28,7 @@ graph TD
 
   subgraph packages["packages/"]
     direction TB
-    nativelayout["hotbook-layout<br/><i>layout engine</i>"]
+    nativelayout["fiddleviz-layout<br/><i>layout engine</i>"]
   end
 
   vanilla --> core
@@ -41,49 +41,49 @@ graph TD
 ```
 
 Solid arrows = real `package.json` dependencies. Dotted arrows = **vite source
-aliases** in `apps/hotbook/vite.config.ts` — hotbook imports the svelte spike
+aliases** in `apps/fiddleviz/vite.config.ts` — fiddleviz imports the svelte spike
 app's `src/` directly (`@svelte-lc`) for no-build live HMR; it is
-*not* a workspace package dep. (The `@hotbook/charts` package is a
+*not* a workspace package dep. (The `@fiddleviz/charts` package is a
 real workspace dep — no alias needed.)
 
 ## The package split (post-rename nuance)
 
-`hotbook-core` was **split, not renamed**:
+`fiddleviz-core` was **split, not renamed**:
 
-- The d3 renderer guts (`VizRenderer`, `hviz/*`, `viz/*`) moved to **`hotbook-d3`**.
-- A thin **`hotbook-core`** survives holding only `colors.ts`, `types.ts`, `index.ts`
+- The d3 renderer guts (`VizRenderer`, `hviz/*`, `viz/*`) moved to **`fiddleviz-d3`**.
+- A thin **`fiddleviz-core`** survives holding only `colors.ts`, `types.ts`, `index.ts`
   — framework-agnostic contracts (`PNode`, `PEdge`, `ColumnSchema`, color helpers).
 
 The `-d3` suffix marks "the d3/vanilla rendering approach," leaving the
 Svelte/LayerChart approach free to be a sibling rather than a fork.
 
-`packages/hotbook-react/` is a **stale empty dir** (only an untracked `dist/`) —
+`packages/fiddleviz-react/` is a **stale empty dir** (only an untracked `dist/`) —
 safe to delete.
 
 ## Packages
 
 | Package | Role | Internal deps | Notable external |
 |---|---|---|---|
-| `hotbook-core` | Shared types + colors | — | (none) |
-| `hotbook-d3` | d3 renderer | core | `d3-drag/ease/hierarchy/interpolate/scale/selection/shape/transition` |
-| `hotbook-element-d3` | Web-component wrapper | vanilla-d3 | — |
-| `hotbook-react-d3` | React wrapper | vanilla-d3 | `react >=17` |
-| `hotbook-apitable` | APITable binding | core, react-d3 | `react ^17` |
-| `hotbook-layout` | Graph layout engine experiments | — | `bireactive`, `d3-force/hierarchy` |
+| `fiddleviz-core` | Shared types + colors | — | (none) |
+| `fiddleviz-d3` | d3 renderer | core | `d3-drag/ease/hierarchy/interpolate/scale/selection/shape/transition` |
+| `fiddleviz-element-d3` | Web-component wrapper | vanilla-d3 | — |
+| `fiddleviz-react-d3` | React wrapper | vanilla-d3 | `react >=17` |
+| `fiddleviz-apitable` | APITable binding | core, react-d3 | `react ^17` |
+| `fiddleviz-layout` | Graph layout engine experiments | — | `bireactive`, `d3-force/hierarchy` |
 
 ## Apps
 
 | App (dir) | package name | Internal / alias | Notable external |
 |---|---|---|---|
-| `hotbook` | hotbook | react-d3 + `@webdev/vite`; `hotbook-charts`; alias `@svelte-lc` | `bireactive ^0.3.4`, `d3 ^7`, `react ^18.3` |
-| `demos` | layercharts-bireactive-spike | `hotbook-charts` (workspace dep) | `bireactive`, `d3-array/hierarchy/sankey/scale/scale-chromatic/shape` |
+| `fiddleviz` | fiddleviz | react-d3 + `@webdev/vite`; `fiddleviz-charts`; alias `@svelte-lc` | `bireactive ^0.3.4`, `d3 ^7`, `react ^18.3` |
+| `demos` | layercharts-bireactive-spike | `fiddleviz-charts` (workspace dep) | `bireactive`, `d3-array/hierarchy/sankey/scale/scale-chromatic/shape` |
 
 ## ⚠️ Version conflicts & packaging smells
 
 These don't bite in the workspace (hoisting + source resolution paper over them)
 but **will** bite on publish/consume:
 
-1. **`hotbook-apitable` renders React with no `react` peerDependency.** It pins
+1. **`fiddleviz-apitable` renders React with no `react` peerDependency.** It pins
    `react@^17.0.2` + `@types/react@^17` in *devDeps* only, while the rest of the
    tree is React 18. A React-18 consumer works only transitively through
    `react-d3`'s `peer react>=17`; apitable's own JSX types are React 17.
@@ -91,16 +91,16 @@ but **will** bite on publish/consume:
    bump types to 18 — mirror `react-d3`.
 2. **`react-d3` is the correct pattern** (peer `react>=17`, react in devDeps only).
    Copy it everywhere React appears.
-3. **bireactive is app-only.** None of the publishable `hotbook-*-d3` packages
+3. **bireactive is app-only.** None of the publishable `fiddleviz-*-d3` packages
    depend on it. The actual bireactive charts (BR-LC) live inside the *spike apps*
    and are consumed by vite source-alias — **not packaged.** If the bireactive
    charts are the product, they're currently unshippable.
-4. **d3 dual-style.** hotbook pulls full `d3@^7` (large); `vanilla-d3` uses
+4. **d3 dual-style.** fiddleviz pulls full `d3@^7` (large); `vanilla-d3` uses
    granular `d3-*@^3` / `d3-scale@^4`. Compatible (d3@7 re-exports these) but
    inconsistent — pick granular everywhere to keep bundles lean.
 5. **`*` internal version specifier** is workspace-only. For publish, switch to
    the workspace protocol / real semver ranges.
-6. **`packages/hotbook-react/`** stale empty dir — delete.
+6. **`packages/fiddleviz-react/`** stale empty dir — delete.
 
 ## Target architecture (if we did it over)
 
@@ -110,7 +110,7 @@ charts (the canon direction). Two design constraints drive the whole shape:
 1. **Licensing firewall.** APITable is **AGPL-3.0** — anything that imports
    apitable code inherits AGPL. So deps point *down* into a permissive (MIT) core,
    and the apitable integration sits at a **leaf nothing else imports**. The two
-   product surfaces (hotbook, apitable) are **peers** — same widgets from a
+   product surfaces (fiddleviz, apitable) are **peers** — same widgets from a
    user's view, neither built from the other; they share the library down-stack,
    never sideways.
 2. **Custom elements are the interop boundary — no host framework in the spine.**
@@ -121,12 +121,12 @@ charts (the canon direction). Two design constraints drive the whole shape:
 
 ```mermaid
 graph TD
-  tcore["@hotbook/core<br/><i>Dataset · PNode/PEdge · schema · widget config · colors</i><br/><b>pure TS · zero deps · MIT</b>"]
-  tcharts["@hotbook/charts<br/><i>bireactive/Svelte renderers → custom elements · gestures · sort/identity · d3-*</i><br/><b>MIT</b>"]
+  tcore["@fiddleviz/core<br/><i>Dataset · PNode/PEdge · schema · widget config · colors</i><br/><b>pure TS · zero deps · MIT</b>"]
+  tcharts["@fiddleviz/charts<br/><i>bireactive/Svelte renderers → custom elements · gestures · sort/identity · d3-*</i><br/><b>MIT</b>"]
   tcharts --> tcore
 
   subgraph surfaces["product surfaces — PEERS · consume custom elements DIRECTLY"]
-    tslice["hotbook host<br/><i>vanilla + Svelte-when-needed</i><br/>layout · persistence · local data → Dataset"]
+    tslice["fiddleviz host<br/><i>vanilla + Svelte-when-needed</i><br/>layout · persistence · local data → Dataset"]
     tapit["apitable integration<br/><i>fusion API → Dataset</i><br/><b>AGPL leaf</b>"]
   end
   tslice --> tcharts
@@ -134,13 +134,13 @@ graph TD
   tapit --> tcharts
   tapit --> tcore
 
-  treact["@hotbook/react<br/><i>optional dumb shim · published for external React users only</i>"]
+  treact["@fiddleviz/react<br/><i>optional dumb shim · published for external React users only</i>"]
   treact -.->|"NOT used by our surfaces"| tcharts
 ```
 
 Key moves vs today:
 
-- **Extract the bireactive charts out of the spike apps** into `@hotbook/charts`.
+- **Extract the bireactive charts out of the spike apps** into `@fiddleviz/charts`.
   Single most important step — the real product is currently trapped in
   `apps/*-spike/src` behind vite aliases, hence unshippable.
 - **`core` is pure TS** (Dataset/PNode/PEdge/schema + widget config + colors).
@@ -149,10 +149,10 @@ Key moves vs today:
 - **No framework in any surface's dep path.** Charts are custom elements; the host
   mounts them directly. `bireactive` and Svelte are *authoring paths inside
   `charts`* that both emit custom elements — not wrapper layers above them.
-- **hotbook migrates off React → vanilla + Svelte (Svelte only where component
+- **fiddleviz migrates off React → vanilla + Svelte (Svelte only where component
   ergonomics earn it).** The viz layer never knew it was inside a framework, so
   the host shell can change with zero impact on charts.
-- **`@hotbook/react` is optional and off to the side** — a paper-thin shim for
+- **`@fiddleviz/react` is optional and off to the side** — a paper-thin shim for
   *external* React consumers, depended on by nothing in our spine. Likely
   generated. AVOID internally.
 - **Bindings/surfaces depend on `core` (+ `charts`) only** — never on each other,
@@ -164,9 +164,9 @@ Key moves vs today:
 
 | Layer | Owns | Current code today | Must NOT contain |
 |---|---|---|---|
-| **`@hotbook/core`** (pure TS, zero deps) | Data shapes; the **view spec** type; the **sort/group/filter transform** (pure fns); color | `hotbook-core/src/types.ts` (`PNode`,`PEdge`,`ColumnSchema`,`Dataset`); a `DataView`/`TileSpec` type (today hotbook's `tile` in `persistence.ts`); `applyView`=`applyGroupBy`+`colorByGroup`+sort+reindex (today **inline in `App.tsx`** as `sortedNodes`); `colors.ts` (`PALETTE`,`colorFor`) | DOM, d3, bireactive, React |
-| **`@hotbook/charts`** (bireactive + d3 → custom elements) | Layout math; gesture mechanics; hit-test; reactive draw; edit emission | `demos/*` chart classes (`MdBarChartLC`…`MdBudgetTree`); `lib/*`: `chart-context` (scale substrate), `axis`,`area`,`spline` (path math), `cartesian-gestures`,`gestures`,`interaction` (singleton wheel/drag + `applyDelta` redistribute), `esc-contract`, `host-size` (RO→fill), `hud-bridge` (id-based hover/select contract), `tree` (BiNode build), `sankey-layout` (pure solver) | sort *policy*, which dataset, tile arrangement, persistence |
-| **surface** (hotbook; later apitable) | Data **source**→Dataset; `tile.kind`→element **dispatch**; view-edit **UI**; view **persistence**; cross-tile HUD; tile **layout** | `persistence.ts` (localStorage→Dataset), the `if (tile.kind===…)` ladder in `App.tsx`, sort/groupBy/measure/depth pickers, `hudStore`, `react-grid-layout`, **`BrLcCharts.tsx` React wrappers (throwaway — die with React)** | chart internals, layout math, gesture mechanics |
+| **`@fiddleviz/core`** (pure TS, zero deps) | Data shapes; the **view spec** type; the **sort/group/filter transform** (pure fns); color | `fiddleviz-core/src/types.ts` (`PNode`,`PEdge`,`ColumnSchema`,`Dataset`); a `DataView`/`TileSpec` type (today fiddleviz's `tile` in `persistence.ts`); `applyView`=`applyGroupBy`+`colorByGroup`+sort+reindex (today **inline in `App.tsx`** as `sortedNodes`); `colors.ts` (`PALETTE`,`colorFor`) | DOM, d3, bireactive, React |
+| **`@fiddleviz/charts`** (bireactive + d3 → custom elements) | Layout math; gesture mechanics; hit-test; reactive draw; edit emission | `demos/*` chart classes (`MdBarChartLC`…`MdBudgetTree`); `lib/*`: `chart-context` (scale substrate), `axis`,`area`,`spline` (path math), `cartesian-gestures`,`gestures`,`interaction` (singleton wheel/drag + `applyDelta` redistribute), `esc-contract`, `host-size` (RO→fill), `hud-bridge` (id-based hover/select contract), `tree` (BiNode build), `sankey-layout` (pure solver) | sort *policy*, which dataset, tile arrangement, persistence |
+| **surface** (fiddleviz; later apitable) | Data **source**→Dataset; `tile.kind`→element **dispatch**; view-edit **UI**; view **persistence**; cross-tile HUD; tile **layout** | `persistence.ts` (localStorage→Dataset), the `if (tile.kind===…)` ladder in `App.tsx`, sort/groupBy/measure/depth pickers, `hudStore`, `react-grid-layout`, **`BrLcCharts.tsx` React wrappers (throwaway — die with React)** | chart internals, layout math, gesture mechanics |
 
 **The runtime seam (the contract every surface obeys):**
 
@@ -179,12 +179,12 @@ Key moves vs today:
 The "sortable data view" = **`DataView` type + `applyView` fn (both core)** + dumb
 chart element (charts) + sort control & storage (surface). The chart never sorts
 ([[project_sort_identity_architecture]]); the surface owns only the control and
-where the choice is saved. That split is what lets hotbook and apitable share
+where the choice is saved. That split is what lets fiddleviz and apitable share
 the view logic — both call `applyView`, differing only in data source + storage.
 
 > **Demo/seed data is not chart code.** `portfolio.ts` (hard-coded
 > holdings) is fixture data — it stays in the demo app / a fixtures path, **not**
-> in the shipped `@hotbook/charts`.
+> in the shipped `@fiddleviz/charts`.
 
 ### Why React comes out of the spine
 
@@ -197,22 +197,22 @@ to the **custom element** deletes that whole class of bug — and lets the
 
 ### Still open
 
-- **Widget/tile/data-view definitions:** in `core`, or a `@hotbook/widgets`
+- **Widget/tile/data-view definitions:** in `core`, or a `@fiddleviz/widgets`
   package? (Lean: config *types* in core, tile→chart *dispatch* in charts.)
 - **How fat is the shared "data-view"?** Does a tile carry sort/filter/group/
   persistence shared across surfaces, or does each surface own that? Decides how
   much logic lives in the library vs. per-surface.
 
-Open calls: keep the legacy `hotbook-d3` / `-react-d3` gen-1 chain as a
+Open calls: keep the legacy `fiddleviz-d3` / `-react-d3` gen-1 chain as a
 deprecated path or retire it; whether `element` or `svelte` is the canonical
-public surface; npm scope (`@hotbook/*` vs `@winstonfassett/*`).
+public surface; npm scope (`@fiddleviz/*` vs `@winstonfassett/*`).
 
 ## No-build live dev (why edits ripple instantly)
 
-1. The `hotbook-*-d3` packages expose a `node` export condition → `./src/index.ts`,
-   so hotbook resolves them to **TS source**, not built `dist`.
-2. `@hotbook/charts` also exposes a `node` export condition → `./src/index.ts` for the same reason. The `@svelte-lc` alias still points at the svelte spike's `src/`.
+1. The `fiddleviz-*-d3` packages expose a `node` export condition → `./src/index.ts`,
+   so fiddleviz resolves them to **TS source**, not built `dist`.
+2. `@fiddleviz/charts` also exposes a `node` export condition → `./src/index.ts` for the same reason. The `@svelte-lc` alias still points at the svelte spike's `src/`.
 3. `dedupe: ['react','react-dom']` forces a single React copy across all
    source-resolved packages (else a second instance crashes hooks).
 
-Net: edit any package or spike `src/` → HMR into hotbook, no rebuild.
+Net: edit any package or spike `src/` → HMR into fiddleviz, no rebuild.

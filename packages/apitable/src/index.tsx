@@ -11,7 +11,7 @@ import {
   useViewMeta,
   FieldType,
 } from '@apitable/widget-sdk'
-import { colorFor } from '@hotbook/core'
+import { colorFor } from '@fiddleviz/core'
 import {
   MdBarChartLC,
   MdPieChartLC,
@@ -22,7 +22,7 @@ import {
   group,
   leaf,
   type BiNode,
-} from '@hotbook/bireactive'
+} from '@fiddleviz/bireactive'
 
 // Register custom elements once
 const TAGS: Array<[string, CustomElementConstructor]> = [

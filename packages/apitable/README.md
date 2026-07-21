@@ -1,10 +1,10 @@
-# @hotbook/apitable
+# @fiddleviz/apitable
 
-APITable widget adapter that renders a datasheet view as a hotbook visualization. It supports flat modes (treemap, bands, pie, arc) and hierarchical modes (h-treemap, h-icicle, h-sunburst) based on the active view's grouping. It is currently stale and not actively maintained.
+APITable widget adapter that renders a datasheet view as a fiddleviz visualization. It supports flat modes (treemap, bands, pie, arc) and hierarchical modes (h-treemap, h-icicle, h-sunburst) based on the active view's grouping. It is currently stale and not actively maintained.
 
 ## Overview
 
-The package is a single React widget that bridges the APITable SDK to `@hotbook/bireactive` chart components. It reads the datasheet, builds a `BiNode` tree, registers the appropriate `bireactive` custom element, and mounts it inside the widget.
+The package is a single React widget that bridges the APITable SDK to `@fiddleviz/bireactive` chart components. It reads the datasheet, builds a `BiNode` tree, registers the appropriate `bireactive` custom element, and mounts it inside the widget.
 
 ## Architecture
 
@@ -38,7 +38,7 @@ flowchart LR
 
 - `react >=17` peer dependency (APITable widget SDK constraint).
 - `@apitable/widget-sdk` and `@apitable/widget-cli`.
-- `@hotbook/core` and `@hotbook/bireactive` from the workspace.
+- `@fiddleviz/core` and `@fiddleviz/bireactive` from the workspace.
 
 ## Development
 

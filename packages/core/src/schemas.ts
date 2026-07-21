@@ -24,7 +24,7 @@ export interface UIField {
 
 // ─── Runtime Data Row ─────────────────────────────────────────────────────────
 
-/** Row passed to a chart's `toChart` transform. Keep it plain so hotbook and
+/** Row passed to a chart's `toChart` transform. Keep it plain so fiddleviz and
  *  the demos can both build it from their own data substrates. */
 export interface FlatRow {
   id: string

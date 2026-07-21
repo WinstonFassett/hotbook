@@ -1,4 +1,4 @@
-# hotbook Viewer Architecture — diagram / viewer / container
+# fiddleviz Viewer Architecture — diagram / viewer / container
 
 Status: **design** (no full implementation yet). The pure-function sankey
 (`apps/demos/src/lib/sankey-layout.ts` +
@@ -29,7 +29,7 @@ each other:
    ruler. Grows/shrinks honestly. Knows nothing about pixels or containers.
 2. **Viewer** — a viewport over the diagram's data-space. Owns pan/zoom/viewBox,
    fitting, legibility thresholds. Maps data-space ⇄ its pixel box.
-3. **Container** — the pixel box itself (a hotbook tile, or an auto-height
+3. **Container** — the pixel box itself (a fiddleviz tile, or an auto-height
    region in the spike) and its resize gesture.
 
 None of these recomputes another's work. The only couplings are two explicit,
@@ -152,9 +152,9 @@ recomputes layout.
 ## Open questions / not yet decided
 
 - **Viewer as a bireactive primitive?** If the Viewer is a bireactive
-  `Diagram`-level construct, hotbook tiles could host bireactive viewers
+  `Diagram`-level construct, fiddleviz tiles could host bireactive viewers
   **natively** rather than through React wrappers — which lines up with the
-  standing "replace React with Svelte in hotbook" direction
+  standing "replace React with Svelte in fiddleviz" direction
   ([[feedback_prefer_svelte_over_react]]). Worth a real evaluation as its own
   step; not assumed here.
 - **Shared tile↔viz lens.** The data-space ⇄ tile-px mapping could be a single
@@ -176,4 +176,4 @@ recomputes layout.
 2. **Next:** extract the **Viewer** primitive (fit + `show()` + optional pan/zoom
    + legibility + label layer), with the sankey as its first real consumer.
 3. **Then:** the resize live/commit phasing (Object 3) and retrofit other charts.
-4. **Evaluate:** bireactive-native viewers in hotbook vs. React wrappers.
+4. **Evaluate:** bireactive-native viewers in fiddleviz vs. React wrappers.

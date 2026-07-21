@@ -9,9 +9,9 @@
 
 import { effect } from "bireactive";
 
-import { descendantsOf, type Edge, type Row } from "@hotbook/layout";
+import { descendantsOf, type Edge, type Row } from "@fiddleviz/layout";
 import { sharedEdges, sharedRows, items, removeRow, removeEdge } from "./demo-data";
-import { clearSelection, sharedSelection } from "@hotbook/layout";
+import { clearSelection, sharedSelection } from "@fiddleviz/layout";
 
 export function mountSidebar(host: HTMLElement): () => void {
   host.innerHTML = "";

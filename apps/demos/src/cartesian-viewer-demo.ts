@@ -1,6 +1,6 @@
 // Zoomable Scatterplot Demo - demonstrates CartesianViewer with axis-aware pan/zoom
 import { Diagram, css } from '../../../packages/bireactive/src/lib/diagram';
-import { CartesianViewer, type CartesianDomain } from '@hotbook/bireactive';
+import { CartesianViewer, type CartesianDomain } from '@fiddleviz/bireactive';
 import { effect } from 'bireactive';
 import type { Mount } from 'bireactive';
 

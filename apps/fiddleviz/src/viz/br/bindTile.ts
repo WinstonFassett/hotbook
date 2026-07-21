@@ -1,13 +1,13 @@
 /**
- * bindTile.ts — hotbook facade over the shared TileBinder module.
+ * bindTile.ts — fiddleviz facade over the shared TileBinder module.
  *
  * This file now only owns:
- *   - bindHudSync: wires a BR-LC element to hotbook's hudStore
- *   - bindTile: wraps the shared bindTile with hotbook's bindHudSync
+ *   - bindHudSync: wires a BR-LC element to fiddleviz's hudStore
+ *   - bindTile: wraps the shared bindTile with fiddleviz's bindHudSync
  *
  * All generic binding logic (TileSource, makeFlatSource, makeHierSource,
  * makeHierRootFlatSource, hierShapeKey, hierValueKey, etc.) lives in:
- *   packages/hotbook-d3/src/host/tile-binder.ts
+ *   packages/fiddleviz-d3/src/host/tile-binder.ts
  */
 
 import {
@@ -19,14 +19,14 @@ import {
   makeHierRootFlatSource,
   hierShapeKey,
   hierValueKey,
-} from '@hotbook/d3'
+} from '@fiddleviz/d3'
 import type {
   TileSource,
   TileController,
   FlatSpec,
   HierSpec,
   HierRootFlatSpec,
-} from '@hotbook/d3'
+} from '@fiddleviz/d3'
 import { hudStore } from '../../store'
 
 export type { TileSource, TileController, FlatSpec, HierSpec, HierRootFlatSpec }
@@ -44,7 +44,7 @@ interface BrSyncBridge {
 interface ElWithBrSync extends HTMLElement { brSync?: BrSyncBridge }
 
 /**
- * Wire a mounted BR-LC element to the hotbook hudStore in both directions.
+ * Wire a mounted BR-LC element to the fiddleviz hudStore in both directions.
  * Echo-suppressed: we skip pushing a value the element just reported.
  * Returns a disposer.
  */
@@ -112,10 +112,10 @@ export function bindHudSync(el: ElWithBrSync): () => void {
   return () => { offHover(); offSelect(); offDrill(); unsub() }
 }
 
-// ─── bindTile (hotbook entry point) ───────────────────────────────────────
+// ─── bindTile (fiddleviz entry point) ───────────────────────────────────────
 
 /**
- * Hotbook-specific wrapper: passes bindHudSync as the HUD binding function.
+ * FiddleViz-specific wrapper: passes bindHudSync as the HUD binding function.
  * This is the only symbol BrLcTile.tsx needs to call directly.
  */
 export function bindTile(container: HTMLElement, source: TileSource): TileController {

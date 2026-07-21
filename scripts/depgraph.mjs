@@ -34,14 +34,14 @@ for (const rel of files) {
 const id = (name) => name.replace(INTERNAL, '').replace(/[^a-zA-Z0-9]/g, '_')
 const byName = Object.fromEntries(nodes.map((n) => [n.name, n]))
 
-// Pull vite source aliases from hotbook (dotted edges).
+// Pull vite source aliases from fiddleviz (dotted edges).
 const aliasEdges = []
-const viteCfg = join(root, 'apps/hotbook/vite.config.ts')
+const viteCfg = join(root, 'apps/fiddleviz/vite.config.ts')
 if (existsSync(viteCfg)) {
   const txt = readFileSync(viteCfg, 'utf8')
   for (const m of txt.matchAll(/'(@[\w-]+)':\s*path\.resolve\([^,]+,\s*'([^']+)'\)/g)) {
     const target = m[2].split('/apps/')[1]?.split('/')[0]
-    if (target) aliasEdges.push({ from: 'hotbook', alias: m[1], dir: target })
+    if (target) aliasEdges.push({ from: 'fiddleviz', alias: m[1], dir: target })
   }
 }
 
@@ -55,7 +55,7 @@ lines.push('  end')
 for (const n of nodes) for (const dep of n.internal) if (byName[dep]) lines.push(`  ${id(n.name)} --> ${id(dep)}`)
 for (const e of aliasEdges) {
   const dirNode = nodes.find((n) => n.rel.startsWith(`apps/${e.dir}/`))
-  if (dirNode) lines.push(`  ${id('hotbook')} -. "${e.alias}" .-> ${id(dirNode.name)}`)
+  if (dirNode) lines.push(`  ${id('fiddleviz')} -. "${e.alias}" .-> ${id(dirNode.name)}`)
 }
 lines.push('```')
 const mermaid = lines.join('\n')

@@ -12,11 +12,11 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "paths": {
-      "@hotbook/core": ["./packages/core/src"],
-      "@hotbook/bireactive": ["./packages/bireactive/src"],
-      "@hotbook/d3": ["./packages/d3/src"],
-      "@hotbook/layout": ["./packages/layout/src"],
-      "@hotbook/apitable": ["./packages/apitable/src"]
+      "@fiddleviz/core": ["./packages/core/src"],
+      "@fiddleviz/bireactive": ["./packages/bireactive/src"],
+      "@fiddleviz/d3": ["./packages/d3/src"],
+      "@fiddleviz/layout": ["./packages/layout/src"],
+      "@fiddleviz/apitable": ["./packages/apitable/src"]
     }
   }
 }

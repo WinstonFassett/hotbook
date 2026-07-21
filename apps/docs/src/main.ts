@@ -1,2 +1,2 @@
 // Docs site entry point — placeholder for future interactive demos
-console.log('hotbook docs loaded');
+console.log('fiddleviz docs loaded');
