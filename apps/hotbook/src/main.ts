@@ -28,8 +28,8 @@ import { mountMotionTweaks } from '@hotbook/bireactive'
 
 // WIN-352: live design-tweaks pane. Ephemeral, unconditional in dev + preview.
 // Top-middle placement per issue discussion — hotbook's chrome fills the corners.
-mountMotionTweaks({ position: { top: 8, left: '50%' }, label: 'tweaks' })
-  .trigger.style.transform = 'translateX(-50%)'
+const tweaks = mountMotionTweaks({ position: { top: 8, left: '50%' }, label: 'tweaks' })
+tweaks.gui.domElement.style.transform = 'translateX(-50%)'
 
 // ─── Tile metadata (derived from schema registry) ────────────────────────────
 
