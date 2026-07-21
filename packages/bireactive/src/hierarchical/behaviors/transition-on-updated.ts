@@ -99,10 +99,19 @@ export function transitionOnUpdated(opts: TransitionOnUpdatedOptions = {}): Beha
     // Re-emit the settle CSS whenever the master rhythm changes so the tweaks
     // pane retimes settle live (WIN-352). settleTransition reads the timing
     // cell (or durationMs) at call-time; the effect subscribes via that read.
-    const styleDispose = effect(() => {
+    // Suppress transitions until the chart has rendered real geometry. Charts
+    // mount with empty data; the tile binder sets externalData afterward,
+    // which flips overflowMode / bandScale / rect attrs. If transitions are
+    // enabled during that first data-driven flush, marks animate from 0 or
+    // compressed to final — visible as "scaling down."
+    let suppressTransitions = true;
+    const emitStyle = () => {
+      // Always call settleTransition to subscribe to timing cells, even while
+      // suppressed — otherwise the effect won't re-run when timing changes.
       const transitionValue = settleTransition(attrs, durationMs);
+      const effective = suppressTransitions ? "none" : transitionValue;
       styleEl.textContent = `
-${elemSel} { transition: ${transitionValue}; }
+${elemSel} { transition: ${effective}; }
 ${selector}.${GESTURE_ACTIVE_CLASS} * { transition: none !important; }
 ${selector}.${REORDER_ACTIVE_CLASS} [data-reordering],
 ${selector}.${REORDER_ACTIVE_CLASS} [data-reordering] * { transition: none !important; }
@@ -110,7 +119,44 @@ ${selector}.${REORDER_ACTIVE_CLASS} [data-reordering] * { transition: none !impo
   ${elemSel} { transition: none !important; }
 }
 `;
-    });
+    };
+    const styleDispose = effect(emitStyle);
+
+    // Enable transitions after the first data-driven layout. Two cases:
+    // 1. Elements already exist with geometry (synchronous data) → enable
+    //    after one rAF to let the current flush complete.
+    // 2. Elements don't exist yet (async data via tile binder) → watch for
+    //    the first attribute write, then enable.
+    const hasGeometryNow = () => {
+      const els = host.querySelectorAll(elements);
+      for (const el of els) {
+        const r = el as SVGElement;
+        const w = parseFloat(r.getAttribute("width") || "0");
+        const h = parseFloat(r.getAttribute("height") || "0");
+        if (w > 0 || h > 0) return true;
+      }
+      return false;
+    };
+    const enableNextFrame = () => {
+      requestAnimationFrame(() => { suppressTransitions = false; emitStyle(); });
+    };
+    if (hasGeometryNow()) {
+      // Elements already have geometry — data was set synchronously.
+      // Enable after one frame so any pending attribute writes don't animate.
+      enableNextFrame();
+    } else {
+      // Watch for the first geometry attribute write (async data arrival).
+      const mo = new MutationObserver(() => {
+        if (!suppressTransitions) return;
+        if (hasGeometryNow()) {
+          mo.disconnect();
+          enableNextFrame();
+        }
+      });
+      mo.observe(host, { subtree: true, attributes: true, attributeFilter: ["x", "width", "height", "y"] });
+      // Safety: enable after 2s if no data ever arrives.
+      setTimeout(() => { mo.disconnect(); if (suppressTransitions) enableNextFrame(); }, 2000);
+    }
 
     // Single owner of the suppression class. Input behaviors call
     // gesture.draft/commit/cancel; this subscriber reacts. No other site
