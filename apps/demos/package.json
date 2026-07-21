@@ -11,7 +11,8 @@
   "dependencies": {
     "@hotbook/bireactive": "*",
     "@hotbook/layout": "*",
-    "bireactive": "^0.3.4"
+    "bireactive": "^0.3.4",
+    "lil-gui": "^0.21.0"
   },
   "devDependencies": {
     "typescript": "^5.7.2",

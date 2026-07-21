@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>icicle harness — kernel + dataview + editor</title>
+    <style>
+      :root {
+        --bg: oklch(0.14 0 0);
+        --panel: oklch(0.18 0 0);
+        --ink: oklch(0.88 0 0);
+        --muted: oklch(0.5 0 0);
+        --border: oklch(0.25 0 0);
+        --accent: oklch(0.65 0.15 240);
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body {
+        background: var(--bg);
+        color: var(--ink);
+        font-family: -apple-system, system-ui, sans-serif;
+        font-size: 13px;
+        padding: 16px;
+      }
+      h1 { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+      .sub { color: var(--muted); font-size: 11px; margin-bottom: 16px; }
+      #app {
+        display: grid;
+        grid-template-columns: 1fr 360px;
+        gap: 12px;
+        height: calc(100vh - 60px);
+      }
+      #left-col {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        min-height: 0;
+      }
+      #left-col .tile { flex: 1 1 0; min-height: 0; }
+      .tile {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+      }
+      .tile-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 6px 8px;
+        flex-shrink: 0;
+        border-bottom: 1px solid var(--border);
+      }
+      .tile-label {
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+        text-transform: uppercase;
+        pointer-events: none;
+      }
+      .status {
+        font-size: 10px;
+        color: var(--muted);
+        pointer-events: none;
+        font-variant-numeric: tabular-nums;
+      }
+      .status.drafting { color: var(--accent); }
+      .tile-body {
+        flex: 1 1 0;
+        min-height: 0;
+        position: relative;
+      }
+      v-icicle, v-sunburst, v-side-table {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      #config-bar {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        margin-bottom: 12px;
+        font-size: 11px;
+      }
+      #config-bar label {
+        color: var(--muted);
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        font-size: 10px;
+      }
+      #config-bar button {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        color: var(--ink);
+        padding: 3px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 11px;
+        font-family: inherit;
+      }
+      #config-bar button.active {
+        background: var(--accent);
+        color: oklch(0.14 0 0);
+        border-color: var(--accent);
+      }
+      #config-bar button:hover { border-color: var(--accent); }
+      #config-bar .group { display: flex; gap: 4px; align-items: center; }
+      /* Drill breadcrumb */
+      .drill-breadcrumb {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        padding: 4px 8px;
+        font-size: 11px;
+        pointer-events: auto;
+      }
+      .drill-segment { display: inline-flex; align-items: center; }
+      .drill-crumb {
+        background: none;
+        border: none;
+        color: var(--muted);
+        cursor: pointer;
+        font: inherit;
+        padding: 2px 6px;
+        border-radius: 3px;
+        transition: color 100ms, background 100ms;
+      }
+      .drill-crumb:hover { color: var(--ink); background: var(--panel); }
+      .drill-crumb--current {
+        color: var(--ink);
+        font-weight: 600;
+        cursor: default;
+      }
+      .drill-crumb--current:hover { background: none; }
+      .drill-sep { color: var(--border); margin: 0 1px; }
+      /* Reorder ghost: raised in DOM for z-order, drop shadow for depth */
+      [data-reordering] { filter: drop-shadow(0 6px 12px rgba(0,0,0,0.3)); }
+      /* Grab cursor when reorder mode is active */
+      v-icicle.reorder-active rect { cursor: grab !important; }
+      v-icicle.reorder-active [data-reordering] rect { cursor: grabbing !important; }
+      /* Hide edge handles during reorder — they paint above tiles and break the metaphor */
+      v-icicle.reorder-active g[data-edge] { display: none; }
+    </style>
+  </head>
+  <body>
+    <h1>icicle harness</h1>
+    <p class="sub">kernel · dataview · editor · cross-tile · one chart + one table on the same data</p>
+    <div id="config-bar">
+      <div class="group">
+        <label>orientation</label>
+        <button data-cfg="orientation" data-val="vertical" class="active" id="btn-vert">vertical</button>
+        <button data-cfg="orientation" data-val="horizontal" id="btn-horiz">horizontal</button>
+      </div>
+      <div class="group">
+        <label>sort</label>
+        <button data-cfg="sort" data-val="index" class="active" id="btn-index">index</button>
+        <button data-cfg="sort" data-val="value" id="btn-value">value</button>
+      </div>
+      <div class="group">
+        <label>depth</label>
+        <button data-cfg="depth" data-val="1" id="btn-depth-1">1</button>
+        <button data-cfg="depth" data-val="2" id="btn-depth-2">2</button>
+        <button data-cfg="depth" data-val="3" class="active" id="btn-depth-3">3</button>
+        <button data-cfg="depth" data-val="4" id="btn-depth-4">4</button>
+      </div>
+      <div class="group">
+        <label>measure</label>
+        <button data-cfg="measure" data-val="value" class="active" id="btn-measure-value">value</button>
+      </div>
+      <div class="group">
+        <label>drag</label>
+        <button data-cfg="dragBehavior" data-val="none" id="btn-drag-none">none</button>
+        <button data-cfg="dragBehavior" data-val="resize" id="btn-drag-resize">resize</button>
+        <button data-cfg="dragBehavior" data-val="reorder" id="btn-drag-reorder">reorder</button>
+      </div>
+      <div class="group">
+        <label>root</label>
+        <button data-cfg="showRoot" data-val="true" id="btn-root-show">show</button>
+        <button data-cfg="showRoot" data-val="false" class="active" id="btn-root-hide">hide</button>
+      </div>
+      <div class="group">
+        <label>breadcrumb</label>
+        <button data-cfg="showBreadcrumb" data-val="true" class="active" id="btn-bc-on">on</button>
+        <button data-cfg="showBreadcrumb" data-val="false" id="btn-bc-off">off</button>
+      </div>
+    </div>
+    <div id="app">
+      <div id="left-col">
+        <div class="tile" id="icicle-tile">
+          <div class="tile-header">
+            <span class="tile-label">icicle</span>
+            <span class="status" id="icicle-status">idle</span>
+          </div>
+          <div class="tile-body">
+            <v-icicle></v-icicle>
+          </div>
+        </div>
+        <div class="tile" id="sunburst-tile">
+          <div class="tile-header">
+            <span class="tile-label">sunburst</span>
+            <span class="status" id="sunburst-status">idle</span>
+          </div>
+          <div class="tile-body">
+            <v-sunburst></v-sunburst>
+          </div>
+        </div>
+      </div>
+      <div class="tile" id="table-tile">
+        <div class="tile-header">
+          <span class="tile-label">side table</span>
+          <span class="status" id="table-status">idle</span>
+        </div>
+        <div class="tile-body">
+          <v-side-table></v-side-table>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

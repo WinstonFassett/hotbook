@@ -29,7 +29,6 @@ import {
   MdIcicleLC,
   MdSunburstLC,
   MdSankeySimple,
-  MdSankeyFlow,
   MdTreeChart,
   MdGanttChartLC,
 } from '@hotbook/bireactive'
@@ -276,11 +275,26 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
       ? { selector: '[data-editable-value', pxPerUnit: 4 }
       : undefined
 
+    // Build a mountCtx so schema.mountProps can read tile config fields.
+    const leaves = leavesOfNodes(sorted)
+    const nodeById = new Map(leaves.map(n => [n.id, n] as const))
+    const mountCtx: MountContext = {
+      tile,
+      leaves,
+      nodeById,
+      ids: leaves.map(n => n.id),
+      valueBinding,
+      orderBinding,
+      orderDir,
+    }
+    const schemaMountProps = schema.mountProps ? (el: HTMLElement) => schema.mountProps!(mountCtx)(el) : undefined
+
     return makeHierSource({
       tag, nodes: sortedWithIndex, measureKey: valueBinding, depth, sortBy: hierSortBy, shapeKey, valueKey,
       drillKey, drillNodeId, showBreadcrumb: true, onUpdate, onUpdateMany,
       enableNumberDrag,
       orientation: orientationProp,
+      mountProps: schemaMountProps,
     })
   }
 

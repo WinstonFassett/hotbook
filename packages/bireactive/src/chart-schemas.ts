@@ -297,6 +297,26 @@ const scatterSchema: ChartSchema = {
 
 // ─── Hierarchical Charts ──────────────────────────────────────────────────────
 
+/** mountProps shared by all hierarchical charts. Wires the new config fields
+ *  (colorMode, dragBehavior, conservationMode) from the tile config through to
+ *  the chart element's bi-adapter setters, so the config UI / hotbook tile
+ *  config drives the chart. Fields absent on the tile are left at the chart's
+ *  default (no override). */
+function hierMountProps(ctx: MountContext): (el: any) => void {
+  return (el) => {
+    const t = ctx.tile as {
+      colorMode?: 'flat' | 'depth' | 'mono'
+      dragBehavior?: 'none' | 'resize' | 'reorder'
+      conservationMode?: 'additive' | 'proportional-neighbor' | 'proportional-siblings'
+      exitFade?: boolean
+    }
+    if (t.colorMode != null) el.colorMode = t.colorMode
+    if (t.dragBehavior != null) el.dragBehavior = t.dragBehavior
+    if (t.conservationMode != null) el.conservationMode = t.conservationMode
+    if (t.exitFade != null) el.exitFade = t.exitFade
+  }
+}
+
 const packSchema: ChartSchema = {
   kind: 'pack',
   label: 'Circle Pack',
@@ -307,6 +327,7 @@ const packSchema: ChartSchema = {
       { type: 'measure', label: 'Measure', path: 'valueBinding' },
       { type: 'sort', label: 'Sort', path: 'orderBinding' },
       { type: 'depth', label: 'Depth', path: 'depth' },
+      { type: 'toggle', label: 'Breadcrumb', path: 'showBreadcrumb' },
     ],
   },
   capabilities: {
@@ -314,6 +335,7 @@ const packSchema: ChartSchema = {
     showBreadcrumb: true,
   },
   toChart: (root) => root,
+  mountProps: hierMountProps,
 }
 
 const treemapSchema: ChartSchema = {
@@ -326,6 +348,8 @@ const treemapSchema: ChartSchema = {
       { type: 'measure', label: 'Measure', path: 'valueBinding' },
       { type: 'sort', label: 'Sort', path: 'orderBinding' },
       { type: 'depth', label: 'Depth', path: 'depth' },
+      { type: 'toggle', label: 'Root', path: 'showRoot' },
+      { type: 'toggle', label: 'Breadcrumb', path: 'showBreadcrumb' },
     ],
   },
   capabilities: {
@@ -333,6 +357,7 @@ const treemapSchema: ChartSchema = {
     showBreadcrumb: true,
   },
   toChart: (root) => root,
+  mountProps: hierMountProps,
 }
 
 const treetableSchema: ChartSchema = {
@@ -345,6 +370,8 @@ const treetableSchema: ChartSchema = {
       { type: 'measure', label: 'Measure', path: 'valueBinding' },
       { type: 'sort', label: 'Sort', path: 'orderBinding' },
       { type: 'depth', label: 'Depth', path: 'depth' },
+      { type: 'toggle', label: 'Root', path: 'showRoot' },
+      { type: 'toggle', label: 'Breadcrumb', path: 'showBreadcrumb' },
     ],
   },
   capabilities: {
@@ -352,6 +379,7 @@ const treetableSchema: ChartSchema = {
     showBreadcrumb: true,
   },
   toChart: (root) => root,
+  mountProps: hierMountProps,
 }
 
 const sunburstSchema: ChartSchema = {
@@ -364,6 +392,8 @@ const sunburstSchema: ChartSchema = {
       { type: 'measure', label: 'Measure', path: 'valueBinding' },
       { type: 'sort', label: 'Sort', path: 'orderBinding' },
       { type: 'depth', label: 'Depth', path: 'depth' },
+      { type: 'toggle', label: 'Root', path: 'showRoot' },
+      { type: 'toggle', label: 'Breadcrumb', path: 'showBreadcrumb' },
     ],
   },
   capabilities: {
@@ -371,6 +401,7 @@ const sunburstSchema: ChartSchema = {
     showBreadcrumb: true,
   },
   toChart: (root) => root,
+  mountProps: hierMountProps,
 }
 
 // ─── Hierarchical with Orientation ────────────────────────────────────────────
@@ -385,6 +416,8 @@ const icicleSchema: ChartSchema = {
       { type: 'measure', label: 'Measure', path: 'valueBinding' },
       { type: 'sort', label: 'Sort', path: 'orderBinding' },
       { type: 'depth', label: 'Depth', path: 'depth' },
+      { type: 'toggle', label: 'Root', path: 'showRoot' },
+      { type: 'toggle', label: 'Breadcrumb', path: 'showBreadcrumb' },
       { type: 'orientation', label: 'Orientation', path: 'orientation' },
     ],
   },
@@ -393,6 +426,7 @@ const icicleSchema: ChartSchema = {
     showBreadcrumb: true,
   },
   toChart: (root) => root,
+  mountProps: hierMountProps,
 }
 
 const treeSchema: ChartSchema = {
@@ -405,6 +439,8 @@ const treeSchema: ChartSchema = {
       { type: 'measure', label: 'Measure', path: 'valueBinding' },
       { type: 'sort', label: 'Sort', path: 'orderBinding' },
       { type: 'depth', label: 'Depth', path: 'depth' },
+      { type: 'toggle', label: 'Root', path: 'showRoot' },
+      { type: 'toggle', label: 'Breadcrumb', path: 'showBreadcrumb' },
       { type: 'orientation', label: 'Orientation', path: 'orientation' },
     ],
   },
@@ -413,6 +449,7 @@ const treeSchema: ChartSchema = {
     showBreadcrumb: true,
   },
   toChart: (root) => root,
+  mountProps: hierMountProps,
 }
 
 // ─── Graph Charts ─────────────────────────────────────────────────────────────

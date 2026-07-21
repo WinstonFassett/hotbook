@@ -28,6 +28,8 @@ export interface NumberDragOpts {
   altMultiplier?: number;
   /** Called once on gesture-start. */
   onStart?: () => void;
+  /** Called on each pointermove after `set` (real-time preview). */
+  onMove?: (v: number) => void;
   /** Called once on gesture-end. `canceled` = reverted via Esc. */
   onEnd?: (canceled: boolean) => void;
 }
@@ -63,6 +65,7 @@ export function numberDrag(el: HTMLElement | SVGElement, opts: NumberDragOpts): 
     if (e.altKey) mul *= altMul;
     const next = clamp(startVal + (dx / pxPerUnit) * mul);
     opts.set(next);
+    opts.onMove?.(next);
   };
 
   const onDown = (e: Event) => {

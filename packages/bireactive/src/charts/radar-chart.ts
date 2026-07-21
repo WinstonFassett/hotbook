@@ -2,22 +2,22 @@
 // Mirrors LC's radial Chart + scaleBand for x (angle per category).
 // Grid: polygon rings at radius ticks + spoke lines. Points on polygon are clickable/editable.
 
-import { Anchor, cell, circle, derive, easeOut, effect as biEffect, label, type Mount, num, pathD, tween, untracked, Vec } from "bireactive";
-import { Diagram } from "../lib/diagram";
+import { Anchor, cell, circle, derive, easeOut, effect as biEffect, label, num, pathD, tween, untracked, Vec } from "bireactive";
+import { RadialChartBase, type FlatItem } from "../radial/radial-chart-base";
 import { scaleLinear } from "d3-scale";
 import { extent, ticks as d3Ticks } from "d3-array";
 import { wheelController, dragController, dynamicWheelStep, realModifierDown } from "../lib/interaction";
-import { makeBridge, type ElementWithBridge } from "../lib/hud-bridge";
-import { useHostSize, FILL_STYLE } from "../lib/host-size";
 import { GESTURE_ACTIVE_CLASS } from "../lib/transitions";
+import { motion } from "../lib/runtime-config";
+import { setup } from "../hierarchical/gesture";
+import { transitionOnUpdated } from "../hierarchical/behaviors/transition-on-updated";
 
 const W = 640;
 const H = 640;
-const SORT_SEC = 0.35; // s — measure-swap tween duration
 
 const COLOR = "#7aaae8";
 
-interface Spoke {
+interface Spoke extends FlatItem {
   id?: string;
   name: string;
   value: number; // 0–100
@@ -31,18 +31,22 @@ function makeData(): Spoke[] {
   }));
 }
 
-export class MdRadarChartLC extends Diagram {
-  static styles = `
-    text { pointer-events: none; }
-    ${FILL_STYLE}
-    [data-focusable]:focus {
-      outline: 2px solid #4a9eff;
-      outline-offset: 2px;
-    }
-    [data-focusable]:focus:not(:focus-visible) {
-      outline: none;
-    }
-  `
+const RADAR_CSS = `
+text { pointer-events: none; }
+[data-focusable]:focus { outline: 2px solid #4a9eff; outline-offset: 2px; }
+[data-focusable]:focus:not(:focus-visible) { outline: none; }
+`;
+let radarCssInjected = false;
+function ensureRadarCss() {
+  if (typeof document === "undefined" || radarCssInjected) return;
+  radarCssInjected = true;
+  const style = document.createElement("style");
+  style.id = "vf-radar-chart";
+  style.textContent = RADAR_CSS;
+  document.head.appendChild(style);
+}
+
+export class MdRadarChartLC extends RadialChartBase {
   readonly dataCell = cell<readonly Spoke[]>(makeData());
   tickCount = 4;
 
@@ -59,15 +63,27 @@ export class MdRadarChartLC extends Diagram {
   get externalData(): { label: string; value: number }[] | undefined {
     return this.dataCell.value as unknown as { label: string; value: number }[];
   }
-  protected scene(s: Mount): void {
-    const { w: Wc, h: Hc } = useHostSize(this, { width: W, height: H });
-    this.view(Wc, Hc);
+  connectedCallback() {
+    super.connectedCallback();
+    if (!this._configCell.value) {
+      this._configCell.value = { sort: "index", conservationMode: "additive" };
+    }
+  }
+
+  protected _setupRendering(): void {
+    ensureRadarCss();
+    const s = this._s;
+    const { w: Wc, h: Hc } = this._hostSize!;
+    this._setViewBox(Wc.value, Hc.value);
     this.tabIndex = -1; // Container not directly focusable, items are
     this.style.outline = "none";
 
     // Rule 14: touch is a first-class gesture surface. Claim touch gesture
     // from the browser so drag-edit doesn't lose to page scroll on mobile.
     this.style.touchAction = "none";
+
+    // Sync dataCell → base _dataCell.
+    this._setupDisposers.push(biEffect(() => { this._dataCell.value = this.dataCell.value; }));
 
     const cx = derive(() => Wc.value / 2);
     const cy = derive(() => Hc.value / 2);
@@ -216,7 +232,7 @@ export class MdRadarChartLC extends Diagram {
         seenMeasureKey = measureKey; seenOrder = order;
         if (structural && !this.classList.contains(GESTURE_ACTIVE_CLASS)) {
           rCancel?.();
-          rCancel = this.anim.start(tween(rPx, target, SORT_SEC, easeOut) as any);
+          rCancel = this.anim.start(tween(rPx, target, motion.motionMs.value / 1000, easeOut) as any);
         } else {
           rCancel?.(); rCancel = null;
           rPx.value = target;
@@ -417,16 +433,17 @@ export class MdRadarChartLC extends Diagram {
       { size: 11, align: Anchor.Center, opacity: 0.7 },
     ));
 
-    // Cross-tile hover/select sync bridge.
-    const idOf = (d: Spoke | null) => d?.id ?? null;
-    const datumAt = (id: string | null) => id == null ? null : (data.value as Spoke[]).find(d => d.id === id) ?? null;
-    let applyingExternal = false;
-    const bridge = makeBridge({
-      setHover: (key) => { applyingExternal = true; hover.value = datumAt(key); applyingExternal = false; },
-      setSelect: (key) => { applyingExternal = true; selected.value = datumAt(key); applyingExternal = false; },
-    });
-    (this as unknown as ElementWithBridge).brSync = bridge;
-    biEffect(() => { const h = hover.value; if (applyingExternal) return; bridge.emitHover(idOf(h)); });
-    biEffect(() => { const sel = selected.value; if (applyingExternal) return; bridge.emitSelect(idOf(sel)); });
+    // Bridge: sync local hover/selected ↔ base class cells.
+    this._setupDisposers.push(
+      biEffect(() => { this._hoverCell.value = hover.value?.id ?? null; }),
+      biEffect(() => { this._focusCell.value = selected.value?.id ?? null; }),
+      biEffect(() => { const id = this._extHover; if (id) hover.value = (data.value as Spoke[]).find(d => d.id === id) ?? null; }),
+      biEffect(() => { const id = this._extFocus; if (id) selected.value = (data.value as Spoke[]).find(d => d.id === id) ?? null; }),
+    );
+  }
+
+  protected _composeBehaviors(): void {
+    const gesture = this._gesture!;
+    this._behaviorDispose = setup(gesture)(transitionOnUpdated());
   }
 }

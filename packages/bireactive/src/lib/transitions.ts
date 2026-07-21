@@ -1,49 +1,37 @@
-// Single source of truth for in-view transition timing across all charts
-// (Interaction Principle 10). Role-specific durations are explicit multipliers
-// of TRANSITION_BASE_MS — coherent rhythm from one tunable root.
+// Single source of truth for transition timing across all charts.
+// Three cells, no multipliers. See wiki/transition-timing.md for the
+// canonical reference.
 //
 // Decision: CSS transitions over tween cells. See wiki/transitions-decision.md.
 
-export const TRANSITION_BASE_MS = 100;
+import { motion } from "./runtime-config";
+
 export const TRANSITION_EASING = "cubic-bezier(0.4, 0.0, 0.2, 1)"; // ease-in-out
 
-/** Mark enter/exit windows (WIN-155). Not multipliers — enter/exit is a fixed
- *  fade window, not a rhythm role. Charts fade marks in from opacity 0 on first
- *  render (CSS) and hold them visible for EXIT_MS on removal via
- *  `withExitDelay` before evicting. */
-export const ENTER_MS = 400;
-export const EXIT_MS = 400;
-
-// Role multipliers. Keep these as multipliers (not raw ms) so the base rhythm
-// can be tuned in one place. Names match interaction-principles.md vocabulary.
+// Direct cell reads — no multipliers, no magic numbers. Each duration is
+// independently tunable via the tweaks pane.
 export const TRANSITION_DURATION = {
-  /** Value-change settle (Part 2): bar height, slice radius, etc. */
-  settle: 2.5 * TRANSITION_BASE_MS,        // 250ms
-  /** Reorder slide (Part 3): item moves to new slot position. */
-  reorder: 2.5 * TRANSITION_BASE_MS,       // 250ms
-  /** Hover/select micro-feedback (was inline 0.1s / 0.12s — kept identical). */
-  hover: 1.0 * TRANSITION_BASE_MS,          // 100ms
-  /** Highlight rect sliding between columns/rows. */
-  highlight: 1.5 * TRANSITION_BASE_MS,      // 150ms
-  /** Drill in/out zoom (Part 5 placeholder). */
-  drill: 3.0 * TRANSITION_BASE_MS,          // 300ms
+  /** Hover/focus micro-feedback. */
+  get hover()  { return motion.hoverMs.value; },
+  /** All layout and fade transitions (drill, config, value-commit, enter/exit). */
+  get motion() { return motion.motionMs.value; },
 } as const;
 
 /** True when the user has asked for reduced motion. Reactive (gesture-driven)
- *  motion ignores this; autonomous transitions (settle/reorder/drill) must
- *  respect it (Interaction Principle 9). */
+ *  motion ignores this; autonomous transitions must respect it
+ *  (Interaction Principle 9). */
 export function prefersReducedMotion(): boolean {
   if (typeof window === "undefined" || !window.matchMedia) return false;
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
 /** Compose a CSS `transition` shorthand for one or more properties on the
- *  settle rhythm. Returns "none" under reduced motion so autonomous transitions
+ *  motion rhythm. Returns "none" under reduced motion so autonomous transitions
  *  vanish without further plumbing at call sites. */
 export function settleTransition(properties: string | readonly string[]): string {
   if (prefersReducedMotion()) return "none";
   const props = typeof properties === "string" ? [properties] : properties;
-  return props.map(p => `${p} ${TRANSITION_DURATION.settle}ms ${TRANSITION_EASING}`).join(", ");
+  return props.map(p => `${p} ${TRANSITION_DURATION.motion}ms ${TRANSITION_EASING}`).join(", ");
 }
 
 export function hoverTransition(properties: string | readonly string[]): string {

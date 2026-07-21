@@ -1,0 +1,449 @@
+// hierarchical-chart-base.ts — shared base for Hierarchical charts (icicle, sunburst).
+// Owns the geometry-neutral chart machinery: reactive cells (config, tree, focus,
+// hover, drill, frozenOrder, reorderTick), Gesture/DataView lifecycle, config setter
+// + query-key rebuild logic, drill channel, value accessors (valueOf/writeValue/
+// siblings/restore), breadcrumb, dblclick/Esc drill wiring, and the _build skeleton.
+//
+// The chart subclass provides two hooks:
+//   • _setupRendering() — chart-specific derivers (allNodes, layout) + forEach
+//     layers (tiles/arcs, edges/handles) with chart-specific makeTile/makeArc/
+//     makeHandle/makeAngularHandle + drag attachment.
+//   • _composeBehaviors() — chart-specific behavior composition via setup()
+//     (drag/reorder behaviors + shared wheel/keyboard/transition/preview behaviors).
+//
+// Design: base class (not factory) because the shared lifecycle is ~300 lines of
+// boilerplate that's identical across hierarchical charts. The hooks are a small
+// interface, not a deep hierarchy. Per CLAUDE.md: prefer decoupling through
+// interfaces; the base owns cells + lifecycle, the chart owns geometry composition.
+
+import { cell, effect, group, type Cell } from "bireactive";
+import type { ChartConfig } from "./types";
+import { Kernel, configKey } from "./kernel";
+import { DataView } from "./data-view";
+import { Gesture } from "./gesture";
+import { findNode, snapshotValues, restoreValues, type ChartNode } from "./tree";
+import { bindChart, rebuildTree } from "./chart-binding";
+import { useHostSize } from "./host-size";
+import type { ConservationMode } from "./behaviors/keyboard-edit";
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+const FALLBACK_W = 720;
+const FALLBACK_H = 360;
+
+export abstract class HierarchicalChartBase extends HTMLElement {
+  // --- Shared reactive cells ---
+  protected _kernelCell = cell<Kernel | null>(null);
+  protected _configCell = cell<ChartConfig | null>(null);
+  protected _queryKeyCell = cell<string>("");
+  protected _treeRoot = cell<ChartNode | null>(null);
+  protected _frozenOrder = cell<Map<string, string[]> | null>(null);
+  protected _focusCell = cell<string | null>(null);
+  protected _hoverCell = cell<string | null>(null);
+  protected _drillId = cell<string | null>(null);
+  /** Tick cell — incremented on each reorder move to force layout
+   *  re-derivation (children array mutation isn't reactive on its own). */
+  protected _reorderTick = cell(0);
+
+  // --- Shared infrastructure ---
+  protected _gesture: Gesture | null = null;
+  protected _dataView: DataView | null = null;
+  protected _svg?: SVGSVGElement;
+  protected _chromeLayer?: HTMLDivElement;
+  protected _breadcrumbBar?: HTMLElement;
+  protected _rootShape?: any;
+  protected _defs?: SVGDefsElement;
+  protected _hostSize?: ReturnType<typeof useHostSize>;
+
+  protected _setupDisposers: (() => void)[] = [];
+  protected _buildDisposers: (() => void)[] = [];
+  protected _behaviorDispose: (() => void) | null = null;
+  protected _unsubChart: (() => void) | null = null;
+  protected _drillUnsub: (() => void) | null = null;
+
+  // --- Shared GestureContext value-accessor fields ---
+  get config() { return this._configCell.value!; }
+  get conservationMode(): ConservationMode {
+    return (this._configCell.value?.conservationMode as ConservationMode) ?? "additive";
+  }
+  altHeld() { return this._gesture?.store.altHeld ?? false; }
+  get snapshot() { return this._gesture?.store.snapshot ?? null; }
+  treeRoot() { return this._treeRoot.value; }
+  get pairTotal() { return this._gesture?.store.pairTotal ?? 0; }
+  setPairTotal(n: number) { if (this._gesture) this._gesture.store.pairTotal = n; }
+
+  // --- Config + kernel wiring ---
+  set kernel(k: Kernel) { this._kernelCell.value = k; }
+  /** Drill channel key — components with the same datasetId + drillKey
+   *  share drill state via the Kernel. Default: "default". */
+  drillKey = "default";
+  set config(c: ChartConfig) {
+    const prev = this._configCell.value;
+    const prevKey = prev ? configKey(prev) : "";
+    const nextKey = configKey(c);
+    // Compute effective drag behavior (auto-derives from sort when not set).
+    const prevDrag = prev?.dragBehavior ?? (prev?.sort === "index" ? "reorder" : "resize");
+    const nextDrag = c.dragBehavior ?? (c.sort === "index" ? "reorder" : "resize");
+    const dragChanged = prevDrag !== nextDrag;
+    this._configCell.value = { ...c };
+    if (this._gesture) this._gesture.store.config.value = { ...c };
+    // Query key change OR effective dragBehavior change → rebuild (behaviors
+    // are composed in _build, so a dragBehavior switch needs a rebuild).
+    if (prevKey !== nextKey || dragChanged) {
+      this._queryKeyCell.value = nextKey + (dragChanged ? `:drag=${nextDrag}` : "");
+    } else if (this._dataView) {
+      this._dataView.config = { ...c };
+      this._gesture?.editor.updated();
+    }
+  }
+  get dataView() { return this._dataView; }
+  get gesture() { return this._gesture; }
+  /** Bump the reorder tick — forces layout re-derivation after a
+   *  children-array mutation (reorder gestures). */
+  bumpReorder() { this._reorderTick.value++; }
+
+  // --- Focus + hover ---
+  setFocus(id: string | null) { this._focusCell.value = id; }
+  setHover(id: string | null) { this._hoverCell.value = id; }
+  get focusedId() { return this._focusCell.value; }
+  get hoveredId() { return this._hoverCell.value; }
+  get focusCell() { return this._focusCell; }
+  get hoverCell() { return this._hoverCell; }
+
+  // --- Drill (shared) ---
+  // D3-style drill: dblclick a node to drill in; dblclick the current
+  // focus to drill out to its parent. Emits to the Kernel's drill channel
+  // so subscribers (side table, etc.) can sync.
+  drill = (id: string | null) => {
+    let nextId: string | null;
+    if (id === null) {
+      nextId = null;
+    } else if (this._drillId.value === id) {
+      // Drilling to the current focus → drill out to parent.
+      const root = this._treeRoot.value;
+      if (root) {
+        const node = findNode(root, id);
+        const parentId = node?.parent?.id ?? null;
+        // Drilling out to the tree root = no drill (show full tree).
+        nextId = parentId === root.id ? null : parentId;
+      } else {
+        nextId = null;
+      }
+    } else {
+      nextId = id;
+    }
+    this._drillId.value = nextId;
+    // Emit to the Kernel's drill channel for cross-component sync.
+    const k = this._kernelCell.value;
+    const cfg = this._configCell.value;
+    if (k && cfg) k.setDrill(cfg.datasetId, this.drillKey, nextId);
+  };
+
+  // --- Value accessors (shared GestureContext fields) ---
+  valueOf = (id: string) => {
+    const root = this._treeRoot.value;
+    if (!root) return 0;
+    const node = findNode(root, id);
+    return node ? node.value.value : 0;
+  };
+  writeValue = (id: string, value: number) => {
+    const root = this._treeRoot.value;
+    if (!root) return;
+    const node = findNode(root, id);
+    if (node) node.value.value = value;
+  };
+  siblings = (id: string) => {
+    const root = this._treeRoot.value;
+    if (!root) return [];
+    const node = findNode(root, id);
+    if (!node || !node.parent) return [];
+    return node.parent.children.map((c) => c.id);
+  };
+  restore = () => {
+    const root = this._treeRoot.value;
+    if (root && this._gesture?.store.snapshot) restoreValues(root, this._gesture.store.snapshot);
+  };
+
+  // --- Lifecycle ---
+
+  connectedCallback() {
+    if (this._svg) return;
+    this.style.display = "flex";
+    this.style.flexDirection = "column";
+    this.style.width = "100%";
+    this.style.height = "100%";
+    this.style.outline = "none";
+    this.style.userSelect = "none";
+    this.tabIndex = -1;
+
+    // Chrome layer: HTML bar above the SVG for breadcrumb etc.
+    this._chromeLayer = document.createElement("div");
+    this._chromeLayer.style.flex = "0 0 auto";
+    this._chromeLayer.style.pointerEvents = "none";
+    this.appendChild(this._chromeLayer);
+
+    this._svg = document.createElementNS(SVG_NS, "svg");
+    this._svg.style.display = "block";
+    this._svg.style.flex = "1 1 0";
+    this._svg.style.width = "100%";
+    this._svg.style.overflow = "hidden";
+    this.appendChild(this._svg);
+
+    this._rootShape = group();
+    this._svg.appendChild(this._rootShape.el);
+
+    const defs = document.createElementNS(SVG_NS, "defs");
+    this._svg.appendChild(defs);
+    this._defs = defs;
+
+    this._hostSize = useHostSize(this, { width: FALLBACK_W, height: FALLBACK_H }, this._svg);
+
+    // Chart-specific rendering (derivers + forEach layers).
+    this._setupRendering();
+
+    // D3-style drill via host-level dblclick.
+    const onDblClick = () => {
+      const id = this._hoverCell.value ?? this._focusCell.value;
+      if (!id) return;
+      const root = this._treeRoot.value;
+      if (root) {
+        const node = findNode(root, id);
+        if (node && node.children.length === 0) return;
+      }
+      this.drill(id);
+      this.focus({ preventScroll: true });
+    };
+    this.addEventListener("dblclick", onDblClick);
+    this._setupDisposers.push(() => this.removeEventListener("dblclick", onDblClick));
+
+    // Escape → drill out one level (only when idle).
+    const onKeydown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (this._gesture?.state === "Drafting") return;
+      const drillId = this._drillId.value;
+      if (!drillId) return;
+      e.preventDefault();
+      this.drill(drillId);
+    };
+    this.addEventListener("keydown", onKeydown);
+    this._setupDisposers.push(() => this.removeEventListener("keydown", onKeydown));
+
+    // Breadcrumb (shared).
+    this._setupBreadcrumb();
+
+    // Data layer — rebuilds only when the query key changes.
+    this._setupDisposers.push(
+      effect(() => {
+        const k = this._kernelCell.value;
+        const _key = this._queryKeyCell.value;
+        const c = this._configCell.value;
+        if (k && c && _key) this._build(k, c);
+      }),
+    );
+  }
+
+  disconnectedCallback() {
+    this._unsubChart?.();
+    this._drillUnsub?.();
+    this._behaviorDispose?.();
+    this._buildDisposers.forEach((d) => d());
+    this._setupDisposers.forEach((d) => d());
+    this._rootShape?.dispose();
+    this._gesture?.dispose();
+    this._dataView?.dispose();
+    (this as any)._roDispose?.();
+    this._buildDisposers = [];
+    this._setupDisposers = [];
+  }
+
+  // --- _build skeleton (shared) ---
+  protected _build(kernel: Kernel, config: ChartConfig) {
+    this._buildDisposers.forEach((d) => d());
+    this._buildDisposers = [];
+    this._unsubChart?.();
+    this._drillUnsub?.();
+    this._behaviorDispose?.();
+    this._gesture?.dispose();
+    this._dataView?.dispose();
+
+    this._gesture = new Gesture(undefined, config);
+    this._gesture.store.host = this;
+    this._gesture.store.focus = this._focusCell;
+    this._gesture.store.hover = this._hoverCell;
+    this._gesture.store.tree = this._treeRoot;
+    this._gesture.store.takeSnapshot = () => {
+      const root = this._treeRoot.value;
+      if (root && !this._gesture!.store.snapshot) {
+        this._gesture!.store.snapshot = snapshotValues(root);
+      }
+    };
+
+    this._dataView = new DataView(kernel, config, this._gesture.editor);
+    this._unsubChart = bindChart({
+      treeRoot: this._treeRoot,
+      gesture: this._gesture,
+      dataView: this._dataView,
+      rebuild: () => {
+        rebuildTree(this._dataView!, this._treeRoot);
+      },
+      frozenOrder: this._frozenOrder,
+    });
+
+    rebuildTree(this._dataView, this._treeRoot);
+
+    // Subscribe to the Kernel's drill channel for cross-view sync.
+    // When another component drills on the same dataset+drillKey, update
+    // this chart's drillId. The viewport/layout derivers react automatically.
+    this._drillUnsub = kernel.subscribeDrill((datasetId, drillKey, nodeId) => {
+      if (datasetId !== config.datasetId || drillKey !== this.drillKey) return;
+      if (this._drillId.value !== nodeId) {
+        this._drillId.value = nodeId;
+      }
+    });
+
+    // Chart-specific behavior composition.
+    this._composeBehaviors();
+  }
+
+  // --- Breadcrumb (shared) ---
+  private _setupBreadcrumb() {
+    const CRUMB_FADE_MS = 160;
+
+    const fadeOutEl = (el: HTMLElement) => {
+      el.style.opacity = "0";
+      el.addEventListener("transitionend", function onEnd(e: TransitionEvent) {
+        if (e.propertyName !== "opacity") return;
+        el.removeEventListener("transitionend", onEnd);
+        el.remove();
+      });
+      setTimeout(() => el.remove(), CRUMB_FADE_MS + 60);
+    };
+
+    const buildSegment = (node: ChartNode, isLast: boolean): HTMLElement => {
+      const seg = document.createElement("span");
+      seg.className = "drill-segment";
+      seg.dataset.crumbId = node.id;
+      seg.style.transition = `opacity ${CRUMB_FADE_MS}ms ease`;
+      seg.style.opacity = "0";
+
+      const sep = document.createElement("span");
+      sep.className = "drill-sep";
+      sep.textContent = "›";
+      seg.appendChild(sep);
+
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = isLast ? "drill-crumb drill-crumb--current" : "drill-crumb";
+      btn.textContent = node.label;
+      if (!isLast) {
+        btn.addEventListener("click", () => this.drill(node.id));
+      }
+      seg.appendChild(btn);
+      return seg;
+    };
+
+    const buildRootSegment = (node: ChartNode): HTMLElement => {
+      const seg = document.createElement("span");
+      seg.className = "drill-segment";
+      seg.dataset.crumbId = node.id;
+      seg.style.transition = `opacity ${CRUMB_FADE_MS}ms ease`;
+      seg.style.opacity = "0";
+
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "drill-crumb";
+      btn.textContent = node.label;
+      btn.addEventListener("click", () => this.drill(null));
+      seg.appendChild(btn);
+      return seg;
+    };
+
+    const crumbEls = new Map<string, HTMLElement>();
+
+    const breadcrumbDispose = effect(() => {
+      const drillId = this._drillId.value;
+      const root = this._treeRoot.value;
+      const showBc = this._configCell.value?.showBreadcrumb === true;
+
+      let path: ChartNode[] = [];
+      if (showBc && drillId && root) {
+        let cur: ChartNode | null = findNode(root, drillId);
+        while (cur) {
+          path.unshift(cur);
+          cur = cur.parent;
+        }
+        if (path.length <= 1) path = [];
+      }
+
+      const newPathIds = new Set(path.map((n) => n.id));
+
+      for (const [id, el] of crumbEls) {
+        if (!newPathIds.has(id)) {
+          fadeOutEl(el);
+          crumbEls.delete(id);
+        }
+      }
+
+      if (path.length === 0) {
+        if (this._breadcrumbBar) {
+          fadeOutEl(this._breadcrumbBar);
+          this._breadcrumbBar = undefined;
+        }
+        return;
+      }
+
+      if (!this._breadcrumbBar) {
+        const bar = document.createElement("div");
+        bar.className = "drill-breadcrumb";
+        bar.style.transition = `opacity ${CRUMB_FADE_MS}ms ease`;
+        bar.style.opacity = "0";
+        this._chromeLayer!.appendChild(bar);
+        void bar.offsetHeight;
+        bar.style.opacity = "1";
+        this._breadcrumbBar = bar;
+      }
+
+      for (let i = 0; i < path.length; i++) {
+        const node = path[i];
+        const isLast = i === path.length - 1;
+        let seg = crumbEls.get(node.id);
+        if (!seg) {
+          seg = i === 0 ? buildRootSegment(node) : buildSegment(node, isLast);
+          crumbEls.set(node.id, seg);
+          let insertBefore: Node | null = null;
+          for (let j = i + 1; j < path.length; j++) {
+            const after = crumbEls.get(path[j].id);
+            if (after) { insertBefore = after; break; }
+          }
+          this._breadcrumbBar!.insertBefore(seg, insertBefore);
+          void seg.offsetHeight;
+          seg.style.opacity = "1";
+        } else {
+          const btn = seg.querySelector("button");
+          if (btn) {
+            btn.className = isLast ? "drill-crumb drill-crumb--current" : "drill-crumb";
+            const clone = btn.cloneNode(true) as HTMLButtonElement;
+            if (!isLast) {
+              clone.addEventListener("click", () => this.drill(node.id));
+            }
+            btn.replaceWith(clone);
+          }
+        }
+      }
+    });
+    this._setupDisposers.push(breadcrumbDispose);
+  }
+
+  // --- Hooks for the chart subclass ---
+
+  /** Chart-specific rendering: create derivers (allNodes, layout) and forEach
+   *  layers (tiles/arcs, edges/handles) with chart-specific shape makers +
+   *  drag attachment. Called once from connectedCallback. Push disposers
+   *  into _setupDisposers. */
+  protected abstract _setupRendering(): void;
+
+  /** Chart-specific behavior composition via setup(). Called from _build on
+   *  every query-key change. The chart composes its drag/reorder behaviors
+   *  + shared wheel/keyboard/transition/preview behaviors onto the gesture.
+   *  Store the dispose fn in _behaviorDispose. */
+  protected abstract _composeBehaviors(): void;
+}

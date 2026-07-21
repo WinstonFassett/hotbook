@@ -9,6 +9,7 @@ import { walkTree, effect as biEffect, batch } from "bireactive";
 import type { BiNode } from "./tree";
 import type { Writable, Cell } from "bireactive";
 import { makeBridge, type ElementWithBridge } from "./hud-bridge";
+import { DataViewController } from "./editor";
 import { GESTURE_ACTIVE_CLASS } from "./transitions";
 
 export interface SelectionState {
@@ -32,19 +33,30 @@ export interface ChartGestureSetup {
    *  always additive (per WIN-38 spec); drag mode lives on the per-handle
    *  callsite. Alt held during arrow keys forces additive regardless. */
   scalingMode?: ScalingMode;
+  /** Per-chart DataViewController. When provided, gestures go through the
+   *  state machine (start/commit/cancel) instead of the GESTURE_ACTIVE_CLASS
+   *  hack. The controller drives the siblings-frozen invariant. */
+  dataView?: DataViewController;
 }
 
 export function attachChartGestures(host: HTMLElement | SVGElement, setup: ChartGestureSetup): () => void {
   const { root, parentOf, state } = setup;
-  const defaultMode: ScalingMode = setup.scalingMode ?? "proportional-siblings";
+  const defaultScalingMode: ScalingMode = setup.scalingMode ?? "additive";
 
-  // applyDelta redistributes a node's change across its siblings, so a revert
-  // must restore the target AND every sibling — snapshot all their totals.
-  // Per-gesture value-mapping handed to the SHARED wheel controller.
-  const setGestureActive = (on: boolean) => (host as HTMLElement).classList?.toggle(GESTURE_ACTIVE_CLASS, on);
+  // Gesture lifecycle: when a dataView is provided, gestures go through the
+  // state machine (start/commit/cancel) which drives the GestureCoordinator
+  // and the siblings-frozen invariant. Without a dataView, fall back to the
+  // old GESTURE_ACTIVE_CLASS toggle for backward compatibility.
+  const dv = setup.dataView;
+  const setGestureActive = (on: boolean) => {
+    if (dv) return; // state machine handles it
+    (host as HTMLElement).classList?.toggle(GESTURE_ACTIVE_CLASS, on);
+  };
+
   const wheelConfig = {
     snapshot: (node: BiNode) => {
-      setGestureActive(true);
+      if (dv) dv.start('pre-edit', node.value.id);
+      else setGestureActive(true);
       const parent = parentOf(node);
       const group = parent ? (parent.children as BiNode[]) : [node];
       return group.map((n) => ({ node: n, value: n.value.total.value }));
@@ -52,7 +64,11 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
     restore: (_node: BiNode, snap: Array<{ node: BiNode; value: number }>) => {
       batch(() => { for (const s of snap) s.node.value.total.value = s.value; });
     },
-    onEnd: () => { setGestureActive(false); state.wheelLocked.current = null; },
+    onEnd: () => {
+      if (dv) dv.commit();
+      else setGestureActive(false);
+      state.wheelLocked.current = null;
+    },
   };
 
   const onWheel = (e: WheelEvent) => {
@@ -69,31 +85,76 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
     const target = wheelController.target as BiNode | null;
     if (!target || target === root) return;
     e.preventDefault();
-    // Wheel is always additive (per WIN-38 spec) with dynamic step scaled to
+    // Wheel is always additive (per spec) with dynamic step scaled to
     // current value, so a tick feels the same at value 5 and value 5000.
     // Shift = fine grain (1% vs 10%).
     const step = dynamicWheelStep(target.value.total.value, e.shiftKey);
     applyDelta(target, parentOf(target), e.deltaY < 0 ? +step : -step, { mode: "additive" });
   };
 
+  // Keyboard editing through the state machine (per spec §3):
+  // - First arrow begins a gesture (dv.start)
+  // - Each keydown (incl. key-repeat) applies a fractional dynamic step
+  // - Esc reverts the whole sequence to the gesture-start snapshot
+  // - keyup of the last held arrow commits and settles
+  // Default = additive (only target changes, parent total not preserved).
+  // Alt → proportional-neighbor (immediate neighbor absorbs delta, parent total preserved).
+  let keyGestureActive = false;
+  let keySnapshot: Array<{ node: BiNode; value: number }> | null = null;
+  let heldKeys = new Set<string>();
+
   const onKeydown = (e: KeyboardEvent) => {
     if (e.key === "Escape") {
-      // Drag-Esc is owned by the gesture (dragCancelable). Here: clear focus.
+      if (keyGestureActive && keySnapshot) {
+        // Revert the whole keyboard sequence to the gesture-start snapshot.
+        batch(() => { for (const s of keySnapshot!) s.node.value.total.value = s.value; });
+        if (dv) dv.cancel();
+        keyGestureActive = false;
+        keySnapshot = null;
+        heldKeys.clear();
+        e.preventDefault();
+        return;
+      }
+      // No active keyboard gesture: clear focus (legacy behavior).
       if (state.focused.value != null) { state.focused.value = null; e.preventDefault(); }
       return;
     }
     const f = state.focused.value;
     if (!f || f === root) return;
-    const step = e.shiftKey ? 5 : 1;
-    // Alt forces additive override (only target moves) regardless of the
-    // chart's configured scalingMode.
-    const mode: ScalingMode = e.altKey ? "additive" : defaultMode;
+    if (e.key !== "ArrowUp" && e.key !== "ArrowRight" && e.key !== "ArrowDown" && e.key !== "ArrowLeft") return;
+
+    // First arrow of a sequence begins the gesture.
+    if (!keyGestureActive) {
+      keyGestureActive = true;
+      const parent = parentOf(f);
+      const group = parent ? (parent.children as BiNode[]) : [f];
+      keySnapshot = group.map((n) => ({ node: n, value: n.value.total.value }));
+      if (dv) dv.start('pre-edit', f.value.id);
+      else setGestureActive(true);
+    }
+
+    heldKeys.add(e.key);
+    // Fractional dynamic step (∝ current value, Shift = fine).
+    const step = dynamicWheelStep(f.value.total.value, e.shiftKey);
+    // Default = chart's configured conservationMode; Alt → proportional-neighbor override.
+    const mode: ScalingMode = e.altKey ? "proportional-neighbor" : defaultScalingMode;
     if (e.key === "ArrowUp" || e.key === "ArrowRight") {
       applyDelta(f, parentOf(f), +step, { mode });
-      e.preventDefault();
-    } else if (e.key === "ArrowDown" || e.key === "ArrowLeft") {
+    } else {
       applyDelta(f, parentOf(f), -step, { mode });
-      e.preventDefault();
+    }
+    e.preventDefault();
+  };
+
+  const onKeyup = (e: KeyboardEvent) => {
+    if (!keyGestureActive) return;
+    heldKeys.delete(e.key);
+    if (heldKeys.size === 0) {
+      // Last held arrow released: commit.
+      if (dv) dv.commit();
+      else setGestureActive(false);
+      keyGestureActive = false;
+      keySnapshot = null;
     }
   };
 
@@ -106,6 +167,7 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
 
   host.addEventListener("wheel", onWheel as EventListener, { passive: false });
   host.addEventListener("keydown", onKeydown as EventListener);
+  host.addEventListener("keyup", onKeyup as EventListener);
 
   // ── Cross-tile sync bridge ──────────────────────────────────────────────
   // Index nodes by PNode id so external ids resolve to BiNodes.
@@ -167,6 +229,7 @@ export function attachChartGestures(host: HTMLElement | SVGElement, setup: Chart
     if (hostStyle) hostStyle.touchAction = prevTouchAction;
     host.removeEventListener("wheel", onWheel as EventListener);
     host.removeEventListener("keydown", onKeydown as EventListener);
+    host.removeEventListener("keyup", onKeyup as EventListener);
     host.removeEventListener("dblclick", onDblClick);
     focusDispose();
     state.emitHover = undefined;

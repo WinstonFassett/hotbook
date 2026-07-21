@@ -95,7 +95,16 @@ function valueData(
 
   function foldEdits(el: any, key: string) {
     const cur = el.dataCell?.value as any[] | undefined;
-    if (cur) applied.forEach((item, i) => { if (cur[i] != null) writeItemValue(item, schema!.readValue!(cur[i]), key); });
+    if (!cur) return;
+    // Match by identity, not position — the chart's data array may already be
+    // reordered (drag-to-reorder calls onReorder → setOrder → foldEdits AFTER
+    // the chart's onEnd has reordered data.value). Positional matching would
+    // write each datum's value into the wrong item.
+    const curById = new Map(cur.map((d: any) => [d.id ?? d.label, d]));
+    applied.forEach((item) => {
+      const curItem = curById.get(item.id);
+      if (curItem != null) writeItemValue(item, schema!.readValue!(curItem), key);
+    });
   }
 
   function apply(model: DemoDataModel, el: any, ordered: ValueItem[], orderBinding: 'index' | 'value' = 'index', orderDir: 'asc' | 'desc' = 'asc') {
@@ -203,20 +212,24 @@ function valueData(
       apply(this, el, byIndex);
     },
     setSort(el: any, sort: 'index' | 'value') {
+      console.log('[DM] setSort sort=', sort, 'byIndex ids=', byIndex.map(x => x.id));
       const key = getMeasureKey(el);
       foldEdits(el, key);
       const next = sort === 'value'
         ? byIndex.slice().sort((a, b) => (b as any)[key] - (a as any)[key])
         : byIndex.slice();
       const orderDir = sort === 'value' ? 'desc' : 'asc';
+      console.log('[DM] setSort applying next ids=', next.map(x => x.id));
       apply(this, el, next, sort, orderDir);
     },
     setOrder(el: any, ids: string[]) {
+      console.log('[DM] setOrder ids=', ids, 'byIndex ids=', byIndex.map(x => x.id));
       const key = getMeasureKey(el);
       foldEdits(el, key);
       const byId = new Map(byIndex.map(x => [x.id, x]));
       const next = ids.map(id => byId.get(id)!).filter(Boolean);
-      if (next.length !== byIndex.length) return;
+      console.log('[DM] setOrder next.length=', next.length, 'byIndex.length=', byIndex.length, 'next ids=', next.map(x => x.id));
+      if (next.length !== byIndex.length) { console.log('[DM] setOrder REJECTED — length mismatch'); return; }
       byIndex.length = 0;
       byIndex.push(...next);
       apply(this, el, byIndex.slice());
@@ -563,22 +576,45 @@ function hierarchicalData(kind: string): DemoDataModel {
     label: "Portfolio",
     color: "#222",
     children: [
-      { id: "tech", label: "Tech", color: "#5b8def", children: [
-        { id: "aapl", label: "AAPL", value: 35, color: "#86acf5" },
-        { id: "msft", label: "MSFT", value: 28, color: "#86acf5" },
-        { id: "nvda", label: "NVDA", value: 22, color: "#86acf5" },
-      ]},
-      { id: "finance", label: "Finance", color: "#7ed321", children: [
-        { id: "jpm", label: "JPM", value: 18, color: "#a6df5e" },
-        { id: "brk", label: "BRK", value: 14, color: "#a6df5e" },
+      { id: "health", label: "Health", color: "#e25c5c", children: [
+        { id: "health-devices", label: "Devices", color: "#ec8a8a", children: [
+          { id: "abt", label: "ABT", value: 4, color: "#ec8a8a" },
+          { id: "medtronic", label: "MDT", value: 5, color: "#ec8a8a" },
+        ]},
+        { id: "health-pharma", label: "Pharma", color: "#ec8a8a", children: [
+          { id: "pfe", label: "PFE", value: 6, color: "#ec8a8a" },
+          { id: "jnj", label: "JNJ", value: 9, color: "#ec8a8a" },
+        ]},
       ]},
       { id: "energy", label: "Energy", color: "#f5a623", children: [
-        { id: "xom", label: "XOM", value: 10, color: "#f7be5a" },
-        { id: "shel", label: "SHEL", value: 8, color: "#f7be5a" },
+        { id: "energy-gas", label: "Gas", color: "#f7be5a", children: [
+          { id: "cop", label: "COP", value: 5, color: "#f7be5a" },
+          { id: "shel", label: "SHEL", value: 8, color: "#f7be5a" },
+        ]},
+        { id: "energy-oil", label: "Oil", color: "#f7be5a", children: [
+          { id: "cvx", label: "CVX", value: 7, color: "#f7be5a" },
+          { id: "xom", label: "XOM", value: 10, color: "#f7be5a" },
+        ]},
       ]},
-      { id: "health", label: "Health", color: "#e25c5c", children: [
-        { id: "jnj", label: "JNJ", value: 9, color: "#ec8a8a" },
-        { id: "pfe", label: "PFE", value: 6, color: "#ec8a8a" },
+      { id: "finance", label: "Finance", color: "#7ed321", children: [
+        { id: "finance-insure", label: "Insurance", color: "#9ed44a", children: [
+          { id: "aig", label: "AIG", value: 6, color: "#a6df5e" },
+          { id: "brk", label: "BRK", value: 14, color: "#a6df5e" },
+        ]},
+        { id: "finance-banks", label: "Banks", color: "#9ed44a", children: [
+          { id: "bac", label: "BAC", value: 9, color: "#a6df5e" },
+          { id: "jpm", label: "JPM", value: 18, color: "#a6df5e" },
+        ]},
+      ]},
+      { id: "tech", label: "Tech", color: "#5b8def", children: [
+        { id: "tech-chips", label: "Chips", color: "#7ba3f0", children: [
+          { id: "amd", label: "AMD", value: 12, color: "#86acf5" },
+          { id: "nvda", label: "NVDA", value: 22, color: "#86acf5" },
+        ]},
+        { id: "tech-software", label: "Software", color: "#7ba3f0", children: [
+          { id: "msft", label: "MSFT", value: 28, color: "#86acf5" },
+          { id: "aapl", label: "AAPL", value: 35, color: "#86acf5" },
+        ]},
       ]},
     ],
   };
@@ -599,7 +635,6 @@ function hierarchicalData(kind: string): DemoDataModel {
     sync: () => () => {},
     columns: [
       { key: "value", label: "Value", width: 80 },
-      { key: "value2", label: "Value 2", width: 80 },
     ],
   };
 }
@@ -658,17 +693,6 @@ export function dataModelFor(id: string): DemoDataModel | undefined {
         })),
       );
 
-    case "pie-chart":
-      return valueData(
-        "pie",
-        ["Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta"].map((m, i) => ({
-          id: m,
-          label: m,
-          value: 15 + (i * 12) % 75,
-          color: PALETTE[i % PALETTE.length]!,
-        })),
-      );
-
     case "radar-chart":
       return valueData(
         "radar",
@@ -718,10 +742,11 @@ export function dataModelFor(id: string): DemoDataModel | undefined {
     case "treemap":
     case "icicle":
     case "sunburst":
+    case "pie-chart":
     case "tree-chart":
     case "budget-tree":
     case "treetable": {
-      const hierKind = id === 'budget-tree' ? 'pack' : id === 'tree-chart' ? 'tree' : id;
+      const hierKind = id === 'budget-tree' ? 'pack' : id === 'tree-chart' ? 'tree' : id === 'pie-chart' ? 'sunburst' : id;
       return hierarchicalData(hierKind);
     }
 
