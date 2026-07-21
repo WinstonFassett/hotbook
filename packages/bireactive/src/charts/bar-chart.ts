@@ -26,6 +26,16 @@ const H = 360;
 const SINGLE_COLOR = "#7aaae8";
 const SORT_SEC = 0.35; // s — orientation/measure swap tween duration
 
+// Default padding and geometry — these become themable CSS vars + reactive cells
+const DEFAULT_V_PAD = { top: 16, right: 24, bottom: 36, left: 48 };
+const DEFAULT_H_PAD = { top: 16, right: 64, bottom: 36, left: 16 };
+const DEFAULT_V_BAR_STEP = 56; // px per bar in vertical overflow
+const DEFAULT_H_BAND_STEP = 44; // px per band in horizontal overflow
+const DEFAULT_LABEL_PAD = 8; // padding from left edge for labels inside horizontal bars
+const DEFAULT_VALUE_PAD = 8; // padding from right edge for values inside horizontal bars
+const DEFAULT_VALUE_GAP = 4; // gap between label and value when rendered inline
+const DEFAULT_OUT_GAP = 8;   // gap when label/value is popped outside the bar
+
 interface Bar { id?: string; label: string; value: number; }
 
 function makeData(): Bar[] {
@@ -33,14 +43,12 @@ function makeData(): Bar[] {
   return labels.map((l) => ({ id: l, label: l, value: Math.round(20 + Math.random() * 80) }));
 }
 
-const V_PAD = { top: 16, right: 24, bottom: 36, left: 48 };
-const H_PAD = { top: 16, right: 64, bottom: 36, left: 16 };
-const V_BAR_STEP = 56; // px per bar in vertical overflow
-const H_BAND_STEP = 44; // px per band in horizontal overflow
-const LABEL_PAD = 8; // padding from left edge for labels inside horizontal bars
-const VALUE_PAD = 8; // padding from right edge for values inside horizontal bars
-const VALUE_GAP = 4; // gap between label and value when rendered inline
-const OUT_GAP = 8;   // gap when label/value is popped outside the bar
+// Helper to read CSS variable or return default
+function getCSSVar(varName: string, defaultValue: string | number): string | number {
+  if (typeof window === 'undefined') return defaultValue;
+  const value = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+  return value ? (typeof defaultValue === 'number' ? parseFloat(value) : value) : defaultValue;
+}
 
 // text-anchor / dominant-baseline strings for each Anchor value.
 const xAnchor = (x: number) => (x <= 0.25 ? "start" : x >= 0.75 ? "end" : "middle");
@@ -53,7 +61,7 @@ export class MdBarChartLC extends Diagram {
     ${GESTURE_SUPPRESSION_CSS}
     ${REORDER_ELEVATION_CSS}
     [data-focusable]:focus {
-      outline: 2px solid #4a9eff;
+      outline: 2px solid var(--color-focus, #4a9eff);
       outline-offset: 2px;
     }
     [data-focusable]:focus:not(:focus-visible) {
@@ -62,6 +70,20 @@ export class MdBarChartLC extends Diagram {
   `
 
   readonly dataCell = cell<readonly Bar[]>(makeData());
+
+  // Theming cells — geometry constants and colors as reactive cells
+  readonly accentColorCell = cell(SINGLE_COLOR);
+  readonly focusColorCell = cell("#4a9eff");
+  readonly paddingTopCell = cell(DEFAULT_V_PAD.top);
+  readonly paddingRightCell = cell(DEFAULT_V_PAD.right);
+  readonly paddingBottomCell = cell(DEFAULT_V_PAD.bottom);
+  readonly paddingLeftCell = cell(DEFAULT_H_PAD.left);
+  readonly barStepVerticalCell = cell(DEFAULT_V_BAR_STEP);
+  readonly bandStepHorizontalCell = cell(DEFAULT_H_BAND_STEP);
+  readonly labelPaddingCell = cell(DEFAULT_LABEL_PAD);
+  readonly valuePaddingCell = cell(DEFAULT_VALUE_PAD);
+  readonly valueGapCell = cell(DEFAULT_VALUE_GAP);
+  readonly outGapCell = cell(DEFAULT_OUT_GAP);
 
   private _orientationCell = cell<'vertical' | 'horizontal'>('vertical')
   get orientation(): 'vertical' | 'horizontal' { return this._orientationCell.value }
@@ -100,21 +122,22 @@ export class MdBarChartLC extends Diagram {
     return this.dataCell.value as Bar[];
   }
 
-  #barColor(idx: number, datum?: Bar): string {
-    if (this.colorMode === 'single') return SINGLE_COLOR;
+  #barColor(idx: number, datum?: Bar, accentColor?: string): string {
+    const color = accentColor || SINGLE_COLOR;
+    if (this.colorMode === 'single') return color;
 
     const max = Math.max(1, ...(this.dataCell.value as Bar[]).map(d => d.value));
     return getColorByStrategy(this.colorStrategy, {
       index: idx,
       value: datum?.value,
       identity: datum?.id ?? datum?.label,
-      singleColor: SINGLE_COLOR,
+      singleColor: color,
       palette: PALETTE,
       valueScale: (v) => v / max
     });
   }
-  #hoverColor(idx: number, datum?: Bar): string {
-    return lightenHex(this.#barColor(idx, datum), 0.35);
+  #hoverColor(idx: number, datum?: Bar, accentColor?: string): string {
+    return lightenHex(this.#barColor(idx, datum, accentColor), 0.35);
   }
 
   protected scene(s: Mount): void {
@@ -126,15 +149,42 @@ export class MdBarChartLC extends Diagram {
     const data = this.dataCell;
     const rows0 = data.peek() as Bar[];
 
+    // ─── Sync CSS variables to reactive cells ────────────────────────────────
+    // This makes theming reactive — changes to CSS vars trigger re-render
+    biEffect(() => {
+      const accentColor = getCSSVar('--color-accent', SINGLE_COLOR);
+      const focusColor = getCSSVar('--color-focus', "#4a9eff");
+      this.accentColorCell.value = accentColor as string;
+      this.focusColorCell.value = focusColor as string;
+    });
+
     // ─── Orientation ──────────────────────────────────────────────────────
     const isVert = derive(() => this._orientationCell.value === 'vertical');
 
     // ─── Padding + plot area (derived from orientation) ───────────────────
     // Left room grows for horizontal charts with labels so popped-out labels
     // stay visible outside the left edge of the bar.
-    const leftRoom = cell(H_PAD.left);
+    const leftRoom = cell(this.paddingLeftCell.value);
     const labelWidths: any[] = [];
-    const PAD = derive(() => isVert.value ? V_PAD : { ...H_PAD, left: leftRoom.value });
+
+    // Padding derived from reactive cells and orientation
+    const PAD = derive(() => {
+      if (isVert.value) {
+        return {
+          top: this.paddingTopCell.value,
+          right: this.paddingRightCell.value,
+          bottom: this.paddingBottomCell.value,
+          left: this.paddingLeftCell.value
+        };
+      } else {
+        return {
+          top: this.paddingTopCell.value,
+          right: this.paddingRightCell.value,
+          bottom: this.paddingBottomCell.value,
+          left: leftRoom.value
+        };
+      }
+    });
     const plotX = derive(() => PAD.value.left);
     const plotY = derive(() => PAD.value.top);
     const plotW = derive(() => Wc.value - PAD.value.left - PAD.value.right);
@@ -147,7 +197,7 @@ export class MdBarChartLC extends Diagram {
       const n = (data.value as Bar[]).length;
       return isVert.value ? (this.maxBars > 0 && n > this.maxBars) : (this.maxBands > 0 && n > this.maxBands);
     });
-    const STEP = derive(() => isVert.value ? V_BAR_STEP : H_BAND_STEP);
+    const STEP = derive(() => isVert.value ? this.barStepVerticalCell.value : this.bandStepHorizontalCell.value);
     const neededBand = derive(() => PAD.value.left + PAD.value.right + (data.value as Bar[]).length * STEP.value); // vertical: width
     const neededOrtho = derive(() => PAD.value.top + PAD.value.bottom + (data.value as Bar[]).length * STEP.value); // horizontal: height
 
@@ -465,11 +515,11 @@ export class MdBarChartLC extends Diagram {
       // Color derivation — must be plain strings, not nested cells
       const baseColor = (): string => {
         const d = di();
-        return d ? this.#barColor(cur.value, d) : SINGLE_COLOR;
+        return d ? this.#barColor(cur.value, d, this.accentColorCell.value) : this.accentColorCell.value;
       };
       const hoverBaseColor = (): string => {
         const d = di();
-        return d ? this.#hoverColor(cur.value, d) : lightenHex(SINGLE_COLOR, 0.35);
+        return d ? this.#hoverColor(cur.value, d, this.accentColorCell.value) : lightenHex(this.accentColorCell.value, 0.35);
       };
 
       // Bar geometry targets — all four swap roles with orientation.
@@ -613,17 +663,17 @@ export class MdBarChartLC extends Diagram {
       if (this.labelMode === 'inside' || this.labelMode === 'both') {
         labelPopped = derive(() => {
           if (isVert.value) return barH.value < minBand;
-          if (this.valueMode !== 'inside') return labelWidth.value + LABEL_PAD > barW.value;
-          const unitWidth = labelWidth.value + VALUE_GAP + valueWidth.value;
-          return unitWidth + VALUE_PAD + LABEL_PAD > barW.value;
+          if (this.valueMode !== 'inside') return labelWidth.value + this.labelPaddingCell.value > barW.value;
+          const unitWidth = labelWidth.value + this.valueGapCell.value + valueWidth.value;
+          return unitWidth + this.valuePaddingCell.value + this.labelPaddingCell.value > barW.value;
         });
         const inFill = derive(() => labelPopped.value ? "#888" : labelFill.value);
         const inOpacity = derive(() => isVert.value ? (labelPopped.value ? 0 : 1) : 1);
         const inPos = Vec.derive(() => {
           if (isVert.value) return { x: barCX.value, y: barY.value + 14 };
-          if (labelPopped.value) return { x: barX.value + barW.value + OUT_GAP, y: barCY.value };
-          // Place the item label at the left end of the bar with LABEL_PAD.
-          return { x: barX.value + LABEL_PAD, y: barCY.value };
+          if (labelPopped.value) return { x: barX.value + barW.value + this.outGapCell.value, y: barCY.value };
+          // Place the item label at the left end of the bar with labelPadding.
+          return { x: barX.value + this.labelPaddingCell.value, y: barCY.value };
         });
         inLbl = s(label(inPos, derive(() => di()?.label ?? ""),
           { size: 10, fill: inFill, opacity: inOpacity }));
@@ -636,7 +686,7 @@ export class MdBarChartLC extends Diagram {
           : derive(() => {
             if (isVert.value) return barH.value < minBand;
             if (labelPopped) return labelPopped.value;
-            return valueWidth.value + VALUE_PAD > barW.value;
+            return valueWidth.value + this.valuePaddingCell.value > barW.value;
           });
         const vFill = derive(() => valuePopped.value
           ? (this.valueMode === 'outside' ? "#888" : "#aaa")
@@ -646,19 +696,19 @@ export class MdBarChartLC extends Diagram {
             const labelVisible = labelPopped && !labelPopped.value;
             return {
               x: barCX.value,
-              y: valuePopped.value ? barY.value - OUT_GAP : (barY.value + (labelVisible ? 28 : 14)),
+              y: valuePopped.value ? barY.value - this.outGapCell.value : (barY.value + (labelVisible ? 28 : 14)),
             };
           }
           if (valuePopped.value) {
             if (labelPopped && labelPopped.value) {
               return {
-                x: barX.value + barW.value + OUT_GAP + labelWidth.value + VALUE_GAP,
+                x: barX.value + barW.value + this.outGapCell.value + labelWidth.value + this.valueGapCell.value,
                 y: barCY.value,
               };
             }
-            return { x: barX.value + barW.value + OUT_GAP, y: barCY.value };
+            return { x: barX.value + barW.value + this.outGapCell.value, y: barCY.value };
           }
-          return { x: barX.value + barW.value - VALUE_PAD, y: barCY.value };
+          return { x: barX.value + barW.value - this.valuePaddingCell.value, y: barCY.value };
         });
         vLbl = s(label(vPos, derive(() => { const d = di(); return d ? `${Math.round(d.value)}` : ""; }),
           { size: 11, fill: vFill, opacity: 1 }));
@@ -715,7 +765,7 @@ export class MdBarChartLC extends Diagram {
     if (labelWidths.length && this.labelMode !== 'inside') {
       biEffect(() => {
         const maxLabelWidth = Math.max(...labelWidths.map(w => w.value));
-        leftRoom.value = Math.max(H_PAD.left, maxLabelWidth + OUT_GAP);
+        leftRoom.value = Math.max(this.paddingLeftCell.value, maxLabelWidth + this.outGapCell.value);
       });
     }
 
