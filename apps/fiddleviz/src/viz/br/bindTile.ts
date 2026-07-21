@@ -115,7 +115,7 @@ export function bindHudSync(el: ElWithBrSync): () => void {
 // ─── bindTile (fiddleviz entry point) ───────────────────────────────────────
 
 /**
- * Hotbook-specific wrapper: passes bindHudSync as the HUD binding function.
+ * FiddleViz-specific wrapper: passes bindHudSync as the HUD binding function.
  * This is the only symbol BrLcTile.tsx needs to call directly.
  */
 export function bindTile(container: HTMLElement, source: TileSource): TileController {

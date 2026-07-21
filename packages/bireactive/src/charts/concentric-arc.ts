@@ -211,7 +211,7 @@ export class MdConcentricArcLC extends Diagram {
         return arr.findIndex(item => (item.id ?? item.label) === datumId);
       });
       const di = (): Ring | null => (data.value as Ring[])[cur.value] ?? null;
-      // Radius derived from the datum's CURRENT rank in data.value. Hotbook
+      // Radius derived from the datum's CURRENT rank in data.value. FiddleViz
       // hands data in display order; rank = index. Tween to the new rank so
       // reorder animates rather than snapping to new positions.
       const rOuterTarget = derive(() => rOuterStart.value - Math.max(0, cur.value) * ringStep.value);
