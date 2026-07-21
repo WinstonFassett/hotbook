@@ -67,6 +67,8 @@ Corollary: interpolate what changes. Color changing during a transition should b
 ### 15. Touch and mouse are equivalent gesture surfaces
 Direct manipulation should work on touch as well as mouse. Same gestures, same feedback, same mechanics. Where platform differences require adaptation (no hover on touch, different hit target sizes), adapt — but avoid dropping capabilities.
 
+**Value edits scale live; deferred scale is a future exception.** During value-edit gestures, charts should scale the edited mark and its axis/domain live (per Principle 9). Deferring the scale update until commit is a possible future optimization for specific cases, but the default is live scaling.
+
 ### 16. Layout should contain the data — zoom-to-fit on commit
 After any commit (gesture end, data change), the visualization should animate or snap to contain all data in bounds. Avoid clipping data or leaving persistent empty space. This is a post-commit operation, not mid-gesture.
 
