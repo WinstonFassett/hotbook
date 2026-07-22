@@ -32,14 +32,22 @@ function makeData(): Bar[] {
   return labels.map((l) => ({ id: l, label: l, value: Math.round(20 + Math.random() * 80) }));
 }
 
-const V_PAD = { top: 16, right: 24, bottom: 36, left: 48 };
-const H_PAD = { top: 16, right: 64, bottom: 36, left: 16 };
-const V_BAR_STEP = 56;
-const H_BAND_STEP = 44;
-const LABEL_PAD = 8;
-const VALUE_PAD = 8;
-const VALUE_GAP = 4;
-const OUT_GAP = 8;
+// Default geometry constants (now themeable via reactive cells)
+const DEFAULT_V_PAD = { top: 16, right: 24, bottom: 36, left: 48 };
+const DEFAULT_H_PAD = { top: 16, right: 64, bottom: 36, left: 16 };
+const DEFAULT_V_BAR_STEP = 56;
+const DEFAULT_H_BAND_STEP = 44;
+const DEFAULT_LABEL_PAD = 8;
+const DEFAULT_VALUE_PAD = 8;
+const DEFAULT_VALUE_GAP = 4;
+const DEFAULT_OUT_GAP = 8;
+
+// Helper to read CSS variable or return default
+function getCSSVar(varName: string, defaultValue: string | number): string | number {
+  if (typeof window === 'undefined') return defaultValue;
+  const value = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+  return value ? (typeof defaultValue === 'number' ? parseFloat(value) : value) : defaultValue;
+}
 
 const xAnchor = (x: number) => (x <= 0.25 ? "start" : x >= 0.75 ? "end" : "middle");
 const yAnchor = (y: number) => (y <= 0.25 ? "hanging" : y >= 0.75 ? "alphabetic" : "central");
@@ -51,7 +59,7 @@ ${FILL_STYLE}
 ${GESTURE_SUPPRESSION_CSS}
 .${GESTURE_ACTIVE_CLASS} * { transition: none !important; }
 ${REORDER_ELEVATION_CSS}
-[data-focusable]:focus { outline: 2px solid #4a9eff; outline-offset: 2px; }
+[data-focusable]:focus { outline: 2px solid var(--color-focus, #4a9eff); outline-offset: 2px; }
 [data-focusable]:focus:not(:focus-visible) { outline: none; }
 `;
 let barCssInjected = false;
@@ -89,6 +97,22 @@ export class MdBarChartLC extends CartesianChartBase {
   minBandSize: number = 0;
   maxBands: number = 10;
   maxBars: number = 10;
+
+  // Theming: reactive cells for geometry (publicly accessible for tweaks panel)
+  readonly paddingTopCell = cell(DEFAULT_V_PAD.top);
+  readonly paddingRightCell = cell(DEFAULT_V_PAD.right);
+  readonly paddingBottomCell = cell(DEFAULT_V_PAD.bottom);
+  readonly paddingLeftCell = cell(DEFAULT_V_PAD.left);
+  readonly barStepVerticalCell = cell(DEFAULT_V_BAR_STEP);
+  readonly bandStepHorizontalCell = cell(DEFAULT_H_BAND_STEP);
+  readonly labelPaddingCell = cell(DEFAULT_LABEL_PAD);
+  readonly valuePaddingCell = cell(DEFAULT_VALUE_PAD);
+  readonly valueGapCell = cell(DEFAULT_VALUE_GAP);
+  readonly outGapCell = cell(DEFAULT_OUT_GAP);
+
+  // Theming: reactive cells for colors (synced from CSS vars)
+  readonly accentColorCell = cell(SINGLE_COLOR);
+  readonly focusColorCell = cell("#4a9eff");
 
   set externalData(v: { label: string; value: number }[] | undefined) {
     if (v) {
@@ -140,11 +164,12 @@ export class MdBarChartLC extends CartesianChartBase {
   protected _valueScale?: any;
 
   #barColor(idx: number, datum?: Bar): string {
-    if (this.colorMode === 'single') return SINGLE_COLOR;
+    const accentColor = this.accentColorCell.value;
+    if (this.colorMode === 'single') return accentColor;
     const max = Math.max(1, ...this.dataCell.value.map(d => d.value));
     return getColorByStrategy(this.colorStrategy, {
       index: idx, value: datum?.value, identity: datum?.id ?? datum?.label,
-      singleColor: SINGLE_COLOR, palette: PALETTE, valueScale: (v) => v / max,
+      singleColor: accentColor, palette: PALETTE, valueScale: (v) => v / max,
     });
   }
   #hoverColor(idx: number, datum?: Bar): string {
@@ -172,6 +197,15 @@ export class MdBarChartLC extends CartesianChartBase {
     const s = this._s;
     const { w: Wc, h: Hc } = this._hostSize!;
 
+    // ─── Sync CSS variables to reactive cells ────────────────────────────────
+    // This makes theming reactive — changes to CSS vars trigger re-render
+    biEffect(() => {
+      const accentColor = getCSSVar('--color-accent', SINGLE_COLOR);
+      const focusColor = getCSSVar('--color-focus', "#4a9eff");
+      this.accentColorCell.value = accentColor as string;
+      this.focusColorCell.value = focusColor as string;
+    });
+
     // Sync dataCell → base _dataCell (so valueOf/writeValue work).
     this._dataSyncDispose?.();
     this._dataSyncDispose = biEffect(() => { this._dataCell.value = this.dataCell.value; });
@@ -181,9 +215,25 @@ export class MdBarChartLC extends CartesianChartBase {
     const isVert = derive(() => this._orientationCell.value === 'vertical');
 
     // ─── Padding + plot area ──────────────────────────────────────────────
-    const leftRoom = cell(H_PAD.left);
+    const leftRoom = cell(DEFAULT_H_PAD.left);
     const labelWidths: any[] = [];
-    const PAD = derive(() => isVert.value ? V_PAD : { ...H_PAD, left: leftRoom.value });
+    const PAD = derive(() => {
+      if (isVert.value) {
+        return {
+          top: this.paddingTopCell.value,
+          right: this.paddingRightCell.value,
+          bottom: this.paddingBottomCell.value,
+          left: this.paddingLeftCell.value
+        };
+      } else {
+        return {
+          top: this.paddingTopCell.value,
+          right: this.paddingRightCell.value,
+          bottom: this.paddingBottomCell.value,
+          left: leftRoom.value
+        };
+      }
+    });
     const plotX = derive(() => PAD.value.left);
     const plotY = derive(() => PAD.value.top);
     const plotW = derive(() => Wc.value - PAD.value.left - PAD.value.right);
@@ -196,7 +246,7 @@ export class MdBarChartLC extends CartesianChartBase {
       const n = data.value.length;
       return isVert.value ? (this.maxBars > 0 && n > this.maxBars) : (this.maxBands > 0 && n > this.maxBands);
     });
-    const STEP = derive(() => isVert.value ? V_BAR_STEP : H_BAND_STEP);
+    const STEP = derive(() => isVert.value ? this.barStepVerticalCell.value : this.bandStepHorizontalCell.value);
     const neededBand = derive(() => PAD.value.left + PAD.value.right + data.value.length * STEP.value);
     const neededOrtho = derive(() => PAD.value.top + PAD.value.bottom + data.value.length * STEP.value);
 
@@ -458,16 +508,16 @@ export class MdBarChartLC extends CartesianChartBase {
       if (this.labelMode === 'inside' || this.labelMode === 'both') {
         labelPopped = derive(() => {
           if (isVert.value) return barH.value < minBand;
-          if (this.valueMode !== 'inside') return labelWidth.value + LABEL_PAD > barW.value;
-          const unitWidth = labelWidth.value + VALUE_GAP + valueWidth.value;
-          return unitWidth + VALUE_PAD + LABEL_PAD > barW.value;
+          if (this.valueMode !== 'inside') return labelWidth.value + this.labelPaddingCell.value > barW.value;
+          const unitWidth = labelWidth.value + this.valueGapCell.value + valueWidth.value;
+          return unitWidth + this.valuePaddingCell.value + this.labelPaddingCell.value > barW.value;
         });
         const inFill = derive(() => labelPopped.value ? "#888" : labelFill.value);
         const inOpacity = derive(() => isVert.value ? (labelPopped.value ? 0 : 1) : 1);
         const inPos = Vec.derive(() => {
           if (isVert.value) return { x: barCX.value, y: barY.value + 14 };
-          if (labelPopped.value) return { x: barX.value + barW.value + OUT_GAP, y: barCY.value };
-          return { x: barX.value + LABEL_PAD, y: barCY.value };
+          if (labelPopped.value) return { x: barX.value + barW.value + this.outGapCell.value, y: barCY.value };
+          return { x: barX.value + this.labelPaddingCell.value, y: barCY.value };
         });
         inLbl = tile.add(label(inPos, derive(() => di()?.label ?? ""), { size: 10, fill: inFill, opacity: inOpacity }));
       }
@@ -479,7 +529,7 @@ export class MdBarChartLC extends CartesianChartBase {
           : derive(() => {
             if (isVert.value) return barH.value < minBand;
             if (labelPopped) return labelPopped.value;
-            return valueWidth.value + VALUE_PAD > barW.value;
+            return valueWidth.value + this.valuePaddingCell.value > barW.value;
           });
         const vFill = derive(() => valuePopped.value
           ? (this.valueMode === 'outside' ? "#888" : "#aaa")
@@ -487,15 +537,15 @@ export class MdBarChartLC extends CartesianChartBase {
         const vPos = Vec.derive(() => {
           if (isVert.value) {
             const labelVisible = labelPopped && !labelPopped.value;
-            return { x: barCX.value, y: valuePopped.value ? barY.value - OUT_GAP : (barY.value + (labelVisible ? 28 : 14)) };
+            return { x: barCX.value, y: valuePopped.value ? barY.value - this.outGapCell.value : (barY.value + (labelVisible ? 28 : 14)) };
           }
           if (valuePopped.value) {
             if (labelPopped && labelPopped.value) {
-              return { x: barX.value + barW.value + OUT_GAP + labelWidth.value + VALUE_GAP, y: barCY.value };
+              return { x: barX.value + barW.value + this.outGapCell.value + labelWidth.value + this.valueGapCell.value, y: barCY.value };
             }
-            return { x: barX.value + barW.value + OUT_GAP, y: barCY.value };
+            return { x: barX.value + barW.value + this.outGapCell.value, y: barCY.value };
           }
-          return { x: barX.value + barW.value - VALUE_PAD, y: barCY.value };
+          return { x: barX.value + barW.value - this.valuePaddingCell.value, y: barCY.value };
         });
         vLbl = tile.add(label(vPos, derive(() => { const d = di(); return d ? `${Math.round(d.value)}` : ""; }), { size: 11, fill: vFill, opacity: 1 }));
       }
@@ -709,7 +759,7 @@ export class MdBarChartLC extends CartesianChartBase {
     if (labelWidths.length && this.labelMode !== 'inside') {
       biEffect(() => {
         const maxLabelWidth = Math.max(...labelWidths.map(w => w.value));
-        leftRoom.value = Math.max(H_PAD.left, maxLabelWidth + OUT_GAP);
+        leftRoom.value = Math.max(DEFAULT_H_PAD.left, maxLabelWidth + this.outGapCell.value);
       });
     }
 
