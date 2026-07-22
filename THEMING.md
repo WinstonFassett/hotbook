@@ -13,8 +13,8 @@ This hybrid approach allows charts to be themable without sacrificing layout rea
 
 ### Available Variables
 
-#### Bar Chart
-- `--color-accent` — Primary bar fill color (default: `#7aaae8`)
+#### All Cartesian Charts (Bar, Line, Area, Scatter)
+- `--color-accent` — Primary chart color (default: `#7aaae8`)
 - `--color-focus` — Focus outline color (default: `#4a9eff`)
 - `--color-text` — Axis labels and secondary text (default: `#888`)
 
@@ -63,6 +63,43 @@ CSS variables automatically respond to `prefers-color-scheme: dark`:
 - `valuePaddingCell` — Value inner padding (default: 8px)
 - `valueGapCell` — Gap between label and value (default: 4px)
 - `outGapCell` — Gap when popped outside bar (default: 8px)
+
+#### Line Chart
+- `paddingTopCell` — Top padding (default: 16px)
+- `paddingRightCell` — Right padding (default: 24px)
+- `paddingBottomCell` — Bottom padding (default: 36px)
+- `paddingLeftCell` — Left padding (default: 56px)
+- `lineStrokeWidthCell` — Line stroke width (default: 2px)
+- `focusCircleRadiusCell` — Focus circle radius (default: 8px)
+- `hoverCircleRadiusCell` — Hover indicator radius (default: 4px)
+- `hoverStrokeWidthCell` — Hover circle stroke width (default: 2px)
+- `selectedOuterRadiusCell` — Selected outer ring radius (default: 6px)
+- `selectedInnerRadiusCell` — Selected inner dot radius (default: 3px)
+- `selectedStrokeWidthCell` — Selected circle stroke width (default: 2px)
+
+#### Area Chart
+- `paddingTopCell` — Top padding (default: 16px)
+- `paddingRightCell` — Right padding (default: 24px)
+- `paddingBottomCell` — Bottom padding (default: 36px)
+- `paddingLeftCell` — Left padding (default: 56px)
+- `areaFillOpacityCell` — Area fill opacity (default: 0.3)
+- `lineStrokeWidthCell` — Line stroke width (default: 2px)
+- `focusCircleRadiusCell` — Focus circle radius (default: 8px)
+- `hoverCircleRadiusCell` — Hover indicator radius (default: 4px)
+- `hoverStrokeWidthCell` — Hover circle stroke width (default: 2px)
+- `selectedOuterRadiusCell` — Selected outer ring radius (default: 6px)
+- `selectedInnerRadiusCell` — Selected inner dot radius (default: 3px)
+- `selectedStrokeWidthCell` — Selected circle stroke width (default: 2px)
+
+#### Scatter Chart
+- `paddingTopCell` — Top padding (default: 16px)
+- `paddingRightCell` — Right padding (default: 24px)
+- `paddingBottomCell` — Bottom padding (default: 36px)
+- `paddingLeftCell` — Left padding (default: 48px)
+- `dotRadiusCell` — Dot radius (default: 5px)
+- `dotStrokeWidthCell` — Dot stroke width (default: 1px)
+- `selectedRadiusCell` — Selected indicator radius (default: 9px)
+- `selectedStrokeWidthCell` — Selected circle stroke width (default: 2px)
 
 ### Usage
 
