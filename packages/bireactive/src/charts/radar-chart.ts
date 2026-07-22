@@ -15,8 +15,6 @@ import { transitionOnUpdated } from "../hierarchical/behaviors/transition-on-upd
 const W = 640;
 const H = 640;
 
-const COLOR = "#7aaae8";
-
 interface Spoke extends FlatItem {
   id?: string;
   name: string;
@@ -31,9 +29,35 @@ function makeData(): Spoke[] {
   }));
 }
 
+// Default geometry constants (now themeable via reactive cells)
+const DEFAULT_RADIAL_PADDING = 50;
+const DEFAULT_GRID_RING_STROKE_WIDTH = 1;
+const DEFAULT_GRID_RING_OPACITY = 0.1;
+const DEFAULT_TICK_LABEL_OFFSET = -4;
+const DEFAULT_TICK_LABEL_SIZE = 9;
+const DEFAULT_SPOKE_STROKE_WIDTH = 1;
+const DEFAULT_SPOKE_OPACITY = 0.12;
+const DEFAULT_LABEL_OFFSET = 22;
+const DEFAULT_LABEL_SIZE = 11;
+const DEFAULT_POLYGON_FILL_OPACITY = 0.18;
+const DEFAULT_POLYGON_STROKE_WIDTH = 2;
+const DEFAULT_POLYGON_STROKE_OPACITY = 0.85;
+const DEFAULT_DOT_RADIUS_NORMAL = 5;
+const DEFAULT_DOT_RADIUS_HOVER = 7;
+const DEFAULT_DOT_RADIUS_SELECTED = 8;
+const DEFAULT_DOT_STROKE_WIDTH_NORMAL = 1.5;
+const DEFAULT_DOT_STROKE_WIDTH_SELECTED = 2.5;
+
+// Helper to read CSS variable or return default
+function getCSSVar(varName: string, defaultValue: string | number): string | number {
+  if (typeof window === 'undefined') return defaultValue;
+  const value = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+  return value ? (typeof defaultValue === 'number' ? parseFloat(value) : value) : defaultValue;
+}
+
 const RADAR_CSS = `
 text { pointer-events: none; }
-[data-focusable]:focus { outline: 2px solid #4a9eff; outline-offset: 2px; }
+[data-focusable]:focus { outline: 2px solid var(--color-focus, #4a9eff); outline-offset: 2px; }
 [data-focusable]:focus:not(:focus-visible) { outline: none; }
 `;
 let radarCssInjected = false;
@@ -49,6 +73,35 @@ function ensureRadarCss() {
 export class MdRadarChartLC extends RadialChartBase {
   readonly dataCell = cell<readonly Spoke[]>(makeData());
   tickCount = 4;
+
+  // Theming: reactive cells for geometry
+  readonly radialPaddingCell = cell(DEFAULT_RADIAL_PADDING);
+  readonly gridRingStrokeWidthCell = cell(DEFAULT_GRID_RING_STROKE_WIDTH);
+  readonly gridRingOpacityCell = cell(DEFAULT_GRID_RING_OPACITY);
+  readonly tickLabelOffsetCell = cell(DEFAULT_TICK_LABEL_OFFSET);
+  readonly tickLabelSizeCell = cell(DEFAULT_TICK_LABEL_SIZE);
+  readonly spokeStrokeWidthCell = cell(DEFAULT_SPOKE_STROKE_WIDTH);
+  readonly spokeOpacityCell = cell(DEFAULT_SPOKE_OPACITY);
+  readonly labelOffsetCell = cell(DEFAULT_LABEL_OFFSET);
+  readonly labelSizeCell = cell(DEFAULT_LABEL_SIZE);
+  readonly polygonFillOpacityCell = cell(DEFAULT_POLYGON_FILL_OPACITY);
+  readonly polygonStrokeWidthCell = cell(DEFAULT_POLYGON_STROKE_WIDTH);
+  readonly polygonStrokeOpacityCell = cell(DEFAULT_POLYGON_STROKE_OPACITY);
+  readonly dotRadiusNormalCell = cell(DEFAULT_DOT_RADIUS_NORMAL);
+  readonly dotRadiusHoverCell = cell(DEFAULT_DOT_RADIUS_HOVER);
+  readonly dotRadiusSelectedCell = cell(DEFAULT_DOT_RADIUS_SELECTED);
+  readonly dotStrokeWidthNormalCell = cell(DEFAULT_DOT_STROKE_WIDTH_NORMAL);
+  readonly dotStrokeWidthSelectedCell = cell(DEFAULT_DOT_STROKE_WIDTH_SELECTED);
+
+  // Theming: reactive cells for colors
+  readonly accentColorCell = cell("#7aaae8");
+  readonly focusColorCell = cell("#4a9eff");
+  readonly gridColorCell = cell("#ffffff");
+  readonly spokeColorCell = cell("#ffffff");
+  readonly tickLabelColorCell = cell("#888");
+  readonly labelColorCell = cell("#aaa");
+  readonly dotStrokeColorNormalCell = cell("#0b0d12");
+  readonly dotStrokeColorSelectedCell = cell("#fff");
 
   private _measureKeyCell = cell<string>('')
   get measureKey(): string { return this._measureKeyCell.value }
@@ -82,12 +135,20 @@ export class MdRadarChartLC extends RadialChartBase {
     // from the browser so drag-edit doesn't lose to page scroll on mobile.
     this.style.touchAction = "none";
 
+    // ─── Sync CSS variables to reactive cells ────────────────────────────────
+    this._setupDisposers.push(biEffect(() => {
+      const accentColor = getCSSVar('--color-accent', "#7aaae8");
+      const focusColor = getCSSVar('--color-focus', "#4a9eff");
+      this.accentColorCell.value = accentColor as string;
+      this.focusColorCell.value = focusColor as string;
+    }));
+
     // Sync dataCell → base _dataCell.
     this._setupDisposers.push(biEffect(() => { this._dataCell.value = this.dataCell.value; }));
 
     const cx = derive(() => Wc.value / 2);
     const cy = derive(() => Hc.value / 2);
-    const rMax = derive(() => Math.min(Wc.value, Hc.value) / 2 - 50);
+    const rMax = derive(() => Math.min(Wc.value, Hc.value) / 2 - this.radialPaddingCell.value);
 
     const data = this.dataCell;
     const hover = cell<Spoke | null>(null);
@@ -151,20 +212,20 @@ export class MdRadarChartLC extends RadialChartBase {
         });
         return pts.join(" ") + " Z";
       });
-      s(pathD(ringD, { stroke: "#ffffff", opacity: 0.1, strokeWidth: 1 }));
+      s(pathD(ringD, { stroke: this.gridColorCell.value, opacity: this.gridRingOpacityCell.value, strokeWidth: this.gridRingStrokeWidthCell.value }));
       // Tick label at top spoke for each ring.
       const tickLblPos = Vec.derive(() => {
         const ts = ticks.value;
         if (ri >= ts.length || ts[ri] === 0) return { x: -1000, y: -1000 };
         const r = yScale.value(ts[ri]!);
         // Place label above the ring at the 12-o'clock position.
-        return { x: cx.value, y: cy.value - r - 4 };
+        return { x: cx.value, y: cy.value - r + this.tickLabelOffsetCell.value };
       });
       const tickLblText = derive(() => {
         const ts = ticks.value;
         return ri < ts.length && ts[ri] !== 0 ? String(ts[ri]) : "";
       });
-      s(label(tickLblPos, tickLblText, { size: 9, align: Anchor.Center, fill: "#888" }));
+      s(label(tickLblPos, tickLblText, { size: this.tickLabelSizeCell.value, align: Anchor.Center, fill: this.tickLabelColorCell.value }));
     }
 
     // Spoke lines + labels — rendered as derived paths so they react to count changes.
@@ -182,7 +243,7 @@ export class MdRadarChartLC extends RadialChartBase {
       }
       return pts.join(" ");
     });
-    s(pathD(spokeD, { fill: "none", stroke: "#ffffff", opacity: 0.12, strokeWidth: 1 }));
+    s(pathD(spokeD, { fill: "none", stroke: this.spokeColorCell.value, opacity: this.spokeOpacityCell.value, strokeWidth: this.spokeStrokeWidthCell.value }));
 
     // Labels — one text element per slot, repositioned + renamed reactively.
     for (let i = 0; i < MAX_SPOKES; i++) {
@@ -190,14 +251,14 @@ export class MdRadarChartLC extends RadialChartBase {
         const rows = data.value as Spoke[];
         if (i >= rows.length) return { x: -1000, y: -1000 }; // hide off-screen
         const a = angle(i);
-        const r = rMax.value + 22;
+        const r = rMax.value + this.labelOffsetCell.value;
         return { x: cx.value + Math.cos(a) * r, y: cy.value + Math.sin(a) * r };
       });
       const lblText = derive(() => {
         const rows = data.value as Spoke[];
         return i < rows.length ? rows[i]!.name : "";
       });
-      s(label(lblPos, lblText, { size: 11, align: Anchor.Center, fill: "#aaa" }));
+      s(label(lblPos, lblText, { size: this.labelSizeCell.value, align: Anchor.Center, fill: this.labelColorCell.value }));
     }
 
     // Per-slot radius cells — two-lane gate (WIN-144).
@@ -254,8 +315,8 @@ export class MdRadarChartLC extends RadialChartBase {
       return pts.join(" ") + " Z";
     });
 
-    s(pathD(polyD, { fill: COLOR, stroke: "none", opacity: 0.18 }));
-    s(pathD(polyD, { fill: "none", stroke: COLOR, strokeWidth: 2, opacity: 0.85 }));
+    s(pathD(polyD, { fill: this.accentColorCell.value, stroke: "none", opacity: this.polygonFillOpacityCell.value }));
+    s(pathD(polyD, { fill: "none", stroke: this.accentColorCell.value, strokeWidth: this.polygonStrokeWidthCell.value, opacity: this.polygonStrokeOpacityCell.value }));
 
     // Data points — one slot per MAX_SPOKES; each reads data.value[i] reactively.
     const spokeElements: SVGCircleElement[] = [];
@@ -277,20 +338,20 @@ export class MdRadarChartLC extends RadialChartBase {
         const rows = data.value as Spoke[];
         const d = rows[i];
         if (!d) return 0;
-        return selected.value === d ? 8 : hover.value === d ? 7 : 5;
+        return selected.value === d ? this.dotRadiusSelectedCell.value : hover.value === d ? this.dotRadiusHoverCell.value : this.dotRadiusNormalCell.value;
       });
       const dotStroke = derive(() => {
         const rows = data.value as Spoke[];
         const d = rows[i];
-        if (!d) return "#0b0d12";
-        return selected.value === d ? "#fff" : hover.value === d ? "#fff" : "#0b0d12";
+        if (!d) return this.dotStrokeColorNormalCell.value;
+        return selected.value === d ? this.dotStrokeColorSelectedCell.value : hover.value === d ? this.dotStrokeColorSelectedCell.value : this.dotStrokeColorNormalCell.value;
       });
       const dotStrokeW = derive(() => {
         const rows = data.value as Spoke[];
         const d = rows[i];
-        return d && selected.value === d ? 2.5 : 1.5;
+        return d && selected.value === d ? this.dotStrokeWidthSelectedCell.value : this.dotStrokeWidthNormalCell.value;
       });
-      const dot = s(circle(dotPos, dotR, { fill: COLOR, stroke: dotStroke, strokeWidth: dotStrokeW }));
+      const dot = s(circle(dotPos, dotR, { fill: this.accentColorCell.value, stroke: dotStroke, strokeWidth: dotStrokeW }));
       spokeElements[i] = dot.el as SVGCircleElement;
       dot.el.style.cursor = "ns-resize";
       dot.el.style.touchAction = "none";
