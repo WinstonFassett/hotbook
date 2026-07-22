@@ -7,4 +7,18 @@
   --bg-color: var(--bg);
   --bireactive-handle: var(--accent);
   --border-color: var(--border);
+
+  /* Chart theming colors */
+  --color-accent: #7aaae8;
+  --color-focus: #4a9eff;
+  --color-text: #888;
+}
+
+/* Dark mode overrides for chart colors */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-accent: #7aaae8;
+    --color-focus: #4a9eff;
+    --color-text: #999;
+  }
 }
