@@ -23,7 +23,6 @@ import { PALETTE, type ColorStrategy, getColorByStrategy } from "@hotbook/core";
 
 const W = 720;
 const H = 360;
-const SINGLE_COLOR = "#7aaae8";
 
 interface Bar extends FlatItem { id: string; label: string; value: number; }
 
@@ -31,15 +30,6 @@ function makeData(): Bar[] {
   const labels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   return labels.map((l) => ({ id: l, label: l, value: Math.round(20 + Math.random() * 80) }));
 }
-
-const V_PAD = { top: 16, right: 24, bottom: 36, left: 48 };
-const H_PAD = { top: 16, right: 64, bottom: 36, left: 16 };
-const V_BAR_STEP = 56;
-const H_BAND_STEP = 44;
-const LABEL_PAD = 8;
-const VALUE_PAD = 8;
-const VALUE_GAP = 4;
-const OUT_GAP = 8;
 
 const xAnchor = (x: number) => (x <= 0.25 ? "start" : x >= 0.75 ? "end" : "middle");
 const yAnchor = (y: number) => (y <= 0.25 ? "hanging" : y >= 0.75 ? "alphabetic" : "central");
@@ -51,7 +41,7 @@ ${FILL_STYLE}
 ${GESTURE_SUPPRESSION_CSS}
 .${GESTURE_ACTIVE_CLASS} * { transition: none !important; }
 ${REORDER_ELEVATION_CSS}
-[data-focusable]:focus { outline: 2px solid #4a9eff; outline-offset: 2px; }
+[data-focusable]:focus { outline: 2px solid var(--color-focus, #4a9eff); outline-offset: 2px; }
 [data-focusable]:focus:not(:focus-visible) { outline: none; }
 `;
 let barCssInjected = false;
@@ -70,6 +60,24 @@ export class MdBarChartLC extends CartesianChartBase {
   private _orientationCell = cell<'vertical' | 'horizontal'>('vertical');
   get orientation(): 'vertical' | 'horizontal' { return this._orientationCell.value }
   set orientation(v: 'vertical' | 'horizontal') { this._orientationCell.value = v }
+
+  // ─── Theming: Geometry cells ─────────────────────────────────────────
+  private paddingTopCell = cell(16);
+  private paddingRightVerticalCell = cell(24);
+  private paddingRightHorizontalCell = cell(64);
+  private paddingBottomCell = cell(36);
+  private paddingLeftVerticalCell = cell(48);
+  private paddingLeftHorizontalCell = cell(16);
+  private barStepVerticalCell = cell(56);
+  private bandStepHorizontalCell = cell(44);
+  private labelPaddingCell = cell(8);
+  private valuePaddingCell = cell(8);
+  private valueGapCell = cell(4);
+  private outGapCell = cell(8);
+
+  // ─── Theming: Color cells with CSS var sync ─────────────────────────
+  private accentColorCell = cell("#7aaae8");
+  private focusColorCell = cell("#4a9eff");
 
   private _measureKeyCell = cell<string>('');
   get measureKey(): string { return this._measureKeyCell.value }
@@ -140,11 +148,11 @@ export class MdBarChartLC extends CartesianChartBase {
   protected _valueScale?: any;
 
   #barColor(idx: number, datum?: Bar): string {
-    if (this.colorMode === 'single') return SINGLE_COLOR;
+    if (this.colorMode === 'single') return this.accentColorCell.value;
     const max = Math.max(1, ...this.dataCell.value.map(d => d.value));
     return getColorByStrategy(this.colorStrategy, {
       index: idx, value: datum?.value, identity: datum?.id ?? datum?.label,
-      singleColor: SINGLE_COLOR, palette: PALETTE, valueScale: (v) => v / max,
+      singleColor: this.accentColorCell.value, palette: PALETTE, valueScale: (v) => v / max,
     });
   }
   #hoverColor(idx: number, datum?: Bar): string {
@@ -165,6 +173,16 @@ export class MdBarChartLC extends CartesianChartBase {
         conservationMode: "additive",
       };
     }
+
+    // ─── CSS var sync: read --color-accent and --color-focus from CSS ─────
+    biEffect(() => {
+      if (typeof window === "undefined" || !this.isConnected) return;
+      const style = window.getComputedStyle(this);
+      const accent = style.getPropertyValue('--color-accent').trim();
+      const focus = style.getPropertyValue('--color-focus').trim();
+      if (accent) this.accentColorCell.value = accent;
+      if (focus) this.focusColorCell.value = focus;
+    });
   }
 
   protected _setupRendering(): void {
@@ -181,9 +199,21 @@ export class MdBarChartLC extends CartesianChartBase {
     const isVert = derive(() => this._orientationCell.value === 'vertical');
 
     // ─── Padding + plot area ──────────────────────────────────────────────
-    const leftRoom = cell(H_PAD.left);
+    const leftRoom = cell(this.paddingLeftHorizontalCell.value);
     const labelWidths: any[] = [];
-    const PAD = derive(() => isVert.value ? V_PAD : { ...H_PAD, left: leftRoom.value });
+    const V_PAD = derive(() => ({
+      top: this.paddingTopCell.value,
+      right: this.paddingRightVerticalCell.value,
+      bottom: this.paddingBottomCell.value,
+      left: this.paddingLeftVerticalCell.value
+    }));
+    const H_PAD = derive(() => ({
+      top: this.paddingTopCell.value,
+      right: this.paddingRightHorizontalCell.value,
+      bottom: this.paddingBottomCell.value,
+      left: this.paddingLeftHorizontalCell.value
+    }));
+    const PAD = derive(() => isVert.value ? V_PAD.value : { ...H_PAD.value, left: leftRoom.value });
     const plotX = derive(() => PAD.value.left);
     const plotY = derive(() => PAD.value.top);
 
@@ -508,16 +538,16 @@ export class MdBarChartLC extends CartesianChartBase {
       if (this.labelMode === 'inside' || this.labelMode === 'both') {
         labelPopped = derive(() => {
           if (isVert.value) return barH.value < minBand;
-          if (this.valueMode !== 'inside') return labelWidth.value + LABEL_PAD > barW.value;
-          const unitWidth = labelWidth.value + VALUE_GAP + valueWidth.value;
-          return unitWidth + VALUE_PAD + LABEL_PAD > barW.value;
+          if (this.valueMode !== 'inside') return labelWidth.value + this.labelPaddingCell.value > barW.value;
+          const unitWidth = labelWidth.value + this.valueGapCell.value + valueWidth.value;
+          return unitWidth + this.valuePaddingCell.value + this.labelPaddingCell.value > barW.value;
         });
         const inFill = derive(() => labelPopped.value ? "#888" : labelFill.value);
         const inOpacity = derive(() => isVert.value ? (labelPopped.value ? 0 : 1) : 1);
         const inPos = Vec.derive(() => {
           if (isVert.value) return { x: barCX.value, y: barY.value + 14 };
-          if (labelPopped.value) return { x: barX.value + barW.value + OUT_GAP, y: barCY.value };
-          return { x: barX.value + LABEL_PAD, y: barCY.value };
+          if (labelPopped.value) return { x: barX.value + barW.value + this.outGapCell.value, y: barCY.value };
+          return { x: barX.value + this.labelPaddingCell.value, y: barCY.value };
         });
         inLbl = tile.add(label(inPos, derive(() => di()?.label ?? ""), { size: 10, fill: inFill, opacity: inOpacity }));
       }
@@ -529,7 +559,7 @@ export class MdBarChartLC extends CartesianChartBase {
           : derive(() => {
             if (isVert.value) return barH.value < minBand;
             if (labelPopped) return labelPopped.value;
-            return valueWidth.value + VALUE_PAD > barW.value;
+            return valueWidth.value + this.valuePaddingCell.value > barW.value;
           });
         const vFill = derive(() => valuePopped.value
           ? (this.valueMode === 'outside' ? "#888" : "#aaa")
@@ -537,15 +567,15 @@ export class MdBarChartLC extends CartesianChartBase {
         const vPos = Vec.derive(() => {
           if (isVert.value) {
             const labelVisible = labelPopped && !labelPopped.value;
-            return { x: barCX.value, y: valuePopped.value ? barY.value - OUT_GAP : (barY.value + (labelVisible ? 28 : 14)) };
+            return { x: barCX.value, y: valuePopped.value ? barY.value - this.outGapCell.value : (barY.value + (labelVisible ? 28 : 14)) };
           }
           if (valuePopped.value) {
             if (labelPopped && labelPopped.value) {
-              return { x: barX.value + barW.value + OUT_GAP + labelWidth.value + VALUE_GAP, y: barCY.value };
+              return { x: barX.value + barW.value + this.outGapCell.value + labelWidth.value + this.valueGapCell.value, y: barCY.value };
             }
-            return { x: barX.value + barW.value + OUT_GAP, y: barCY.value };
+            return { x: barX.value + barW.value + this.outGapCell.value, y: barCY.value };
           }
-          return { x: barX.value + barW.value - VALUE_PAD, y: barCY.value };
+          return { x: barX.value + barW.value - this.valuePaddingCell.value, y: barCY.value };
         });
         vLbl = tile.add(label(vPos, derive(() => { const d = di(); return d ? `${Math.round(d.value)}` : ""; }), { size: 11, fill: vFill, opacity: 1 }));
       }
@@ -763,7 +793,7 @@ export class MdBarChartLC extends CartesianChartBase {
     if (labelWidths.length && this.labelMode !== 'inside') {
       biEffect(() => {
         const maxLabelWidth = Math.max(...labelWidths.map(w => w.value));
-        leftRoom.value = Math.max(H_PAD.left, maxLabelWidth + OUT_GAP);
+        leftRoom.value = Math.max(this.paddingLeftHorizontalCell.value, maxLabelWidth + this.outGapCell.value);
       });
     }
 
