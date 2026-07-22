@@ -28,6 +28,7 @@ import type { ChartConfig, PackRect, RenderNode } from "./types";
 import type { ChartNode } from "./tree";
 import { sortedChildren, resolveFill, labelColorFor } from "./tree";
 import { motion } from "../lib/runtime-config";
+import { hierarchicalTheme } from "./theming";
 import { TRANSITION_DURATION } from "../lib/transitions";
 
 /** Pack padding — driven by the shared `motion.separation` cell so the
@@ -140,9 +141,9 @@ export function makeCircle(
   const fill = derive(() => resolveFill(node.color, node.depth, fillColor?.value));
 
   const stroke = derive(() =>
-    chart.focusCell.value === node.id ? "#fff"
-    : chart.hoverCell.value === node.id ? "#c8cdd6"
-    : node.depth === 0 ? "#444" : "#0b0d12",
+    chart.focusCell.value === node.id ? hierarchicalTheme.focusColor.value
+    : chart.hoverCell.value === node.id ? hierarchicalTheme.hoverColor.value
+    : node.depth === 0 ? hierarchicalTheme.tileStrokeRoot.value : hierarchicalTheme.tileStroke.value,
   );
   const strokeWidth = derive(() => {
     const sep = motion.separation.value;
@@ -218,13 +219,13 @@ export function makeCircle(
     const nameLbl = label(
       Vec.derive(() => ({ x: 0, y: -6 })),
       nameText,
-      { size: 11, align: Anchor.Center, fill: labelFill, bold: true },
+      { size: hierarchicalTheme.fontSize.value, align: Anchor.Center, fill: labelFill, bold: true },
     );
     nameLbl.el.style.pointerEvents = "none";
     const valueLbl = label(
       Vec.derive(() => ({ x: 0, y: 8 })),
       valueText,
-      { size: 11, align: Anchor.Center, fill: labelFill, bold: false },
+      { size: hierarchicalTheme.fontSize.value, align: Anchor.Center, fill: labelFill, bold: false },
     );
     valueLbl.el.style.pointerEvents = "none";
     wrapG.appendChild(nameLbl.el);

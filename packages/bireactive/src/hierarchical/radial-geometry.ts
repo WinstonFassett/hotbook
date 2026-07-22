@@ -34,6 +34,7 @@ import type { ChartConfig, RadialRect, RenderNode } from "./types";
 import type { Gesture } from "./gesture";
 import { TRANSITION_DURATION } from "../lib/transitions";
 import { motion } from "../lib/runtime-config";
+import { hierarchicalTheme } from "./theming";
 import {
   type ChartNode,
   type Edge,
@@ -304,10 +305,10 @@ export function makeArc(
   // Innermost arc: no stroke — it's a solid disc, not a slice.
   const stroke = derive(() => {
     if (isInnermost.value) return "none";
-    if (!chart) return "#0b0d12";
-    if (chart.focusCell.value === node.id) return "#fff";
-    if (chart.hoverCell.value === node.id) return "#c8cdd6";
-    return "#0b0d12";
+    if (!chart) return hierarchicalTheme.tileStroke.value;
+    if (chart.focusCell.value === node.id) return hierarchicalTheme.focusColor.value;
+    if (chart.hoverCell.value === node.id) return hierarchicalTheme.hoverColor.value;
+    return hierarchicalTheme.tileStroke.value;
   });
   const strokeWidth = derive(() => {
     if (isInnermost.value) return 0;
@@ -383,7 +384,7 @@ export function makeArc(
   const lbl = label(
     Vec.derive(() => ({ x: 0, y: 0 })),
     labelText,
-    { size: 11, align: Anchor.Center, fill: labelColorFor(node.color) },
+    { size: hierarchicalTheme.fontSize.value, align: Anchor.Center, fill: labelColorFor(node.color) },
   );
   lbl.el.setAttribute("dy", "0.35em");
   lbl.el.style.pointerEvents = "none";

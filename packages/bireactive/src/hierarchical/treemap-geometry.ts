@@ -27,9 +27,8 @@ import type { LayoutRect, RenderNode } from "./types";
 import type { ChartNode } from "./tree";
 import { sortedChildren, resolveFill, labelColorFor } from "./tree";
 import { motion } from "../lib/runtime-config";
+import { hierarchicalTheme } from "./theming";
 import { TRANSITION_DURATION } from "../lib/transitions";
-
-const PAD_TOP = 16; // Fixed-pixel group header space
 
 /** Treemap padding (inner + outer) — driven by the shared `motion.separation`
  *  cell so the tweaks pane retunes it live. Sampled at layout time.
@@ -100,7 +99,7 @@ export function computeTreemapLayout(
     // sibling separation so nested blocks don't go flush against their
     // container. Without this, children touch all 4 walls of their parent,
     // which looks wrong compared to the clean gaps between siblings.
-    .paddingTop(PAD_TOP)
+    .paddingTop(hierarchicalTheme.tilePadding.value)
     .round(false)(h); // don't round — rounding halves sub-pixel padding
 
   // Extract rects for ALL nodes (including root). The chart's `present`
@@ -140,14 +139,14 @@ export function computeTreemapLayout(
         });
       }
 
-      // Re-apply fixed-pixel paddingTop. d3's paddingTop (PAD_TOP=16) was
+      // Re-apply fixed-pixel paddingTop. d3's paddingTop (hierarchicalTheme.tilePadding.value=16) was
       // applied at every level BEFORE the affine, so it got scaled by scaleY.
       // For small focus tiles (large scaleY), the header gap becomes huge
       // (e.g. 16 * 5 = 80px). Collapse it back to 16px screen-space by
       // shifting each group's children up by the reclaimed space and growing
       // their heights to fill it. Only the focus subtree is visible, so only
       // fix nodes within it.
-      const reclaim = PAD_TOP * (scaleY - 1);
+      const reclaim = hierarchicalTheme.tilePadding.value * (scaleY - 1);
       if (reclaim > 0) {
         const findFocus = (node: HierarchyRectangularNode<ChartNode>): HierarchyRectangularNode<ChartNode> | null => {
           if (node.data.id === drillId) return node;
@@ -224,8 +223,8 @@ export function makeTreemapTile(
   // Stroke reflects focus/selection and hover state.
   const stroke = derive(() => {
     if (!chart) return "none";
-    if (chart.focusCell.value === node.id) return "#fff";
-    if (chart.hoverCell.value === node.id) return "#c8cdd6";
+    if (chart.focusCell.value === node.id) return hierarchicalTheme.focusColor.value;
+    if (chart.hoverCell.value === node.id) return hierarchicalTheme.hoverColor.value;
     return "none";
   });
   const strokeWidth = derive(() => {
@@ -295,7 +294,7 @@ export function makeTreemapTile(
   });
 
   const nameLbl = label(Vec.derive(() => ({ x: 0, y: 0 })), nameText, {
-    size: 11,
+    size: hierarchicalTheme.fontSize.value,
     align: Anchor.TopLeft,
     fill: labelFill,
     bold: true,
@@ -310,7 +309,7 @@ export function makeTreemapTile(
     Vec.derive(() => ({ x: valueOffset.value, y: 0 })),
     valueText,
     {
-      size: 11,
+      size: hierarchicalTheme.fontSize.value,
       align: Anchor.TopLeft,
       fill: labelFill,
       bold: false,
