@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Text Measurement Prototype</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 20px;
+      background: oklch(0.2 0 0);
+      color: oklch(0.9 0 0);
+    }
+    h1, h2 {
+      color: oklch(0.95 0 0);
+    }
+    .section {
+      margin: 30px 0;
+      padding: 20px;
+      background: oklch(0.15 0 0);
+      border-radius: 4px;
+    }
+    .comparison {
+      display: flex;
+      gap: 20px;
+      margin: 20px 0;
+    }
+    .chart-demo {
+      flex: 1;
+      background: oklch(0.18 0 0);
+      padding: 10px;
+      border-radius: 4px;
+    }
+    .tile {
+      position: relative;
+      background: oklch(0.35 0.08 250);
+      border: 1px solid oklch(0.5 0 0);
+      margin: 10px 0;
+      display: inline-block;
+      overflow: hidden;
+    }
+    .tile-label {
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      font-size: 11px;
+      font-weight: bold;
+      color: white;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    .tile-value {
+      position: absolute;
+      top: 16px;
+      left: 3px;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.8);
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    .stats {
+      margin-top: 10px;
+      font-size: 12px;
+      color: oklch(0.7 0 0);
+    }
+    .table-demo {
+      background: oklch(0.14 0 0);
+      border-radius: 4px;
+      overflow: hidden;
+      margin: 20px 0;
+    }
+    .table-row {
+      display: grid;
+      padding: 8px;
+      border-bottom: 1px solid oklch(0.25 0 0);
+      align-items: center;
+      gap: 4px;
+    }
+    .table-header {
+      background: oklch(0.14 0 0);
+      font-weight: bold;
+      position: sticky;
+      top: 0;
+      border-bottom: 2px solid oklch(0.3 0 0);
+    }
+    .table-cell {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    code {
+      background: oklch(0.12 0 0);
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 12px;
+    }
+    .metric {
+      display: inline-block;
+      margin-right: 15px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Text Measurement Prototype (D2)</h1>
+  <p>Exploring canvas-based text measurement for layout-aware label visibility, truncation, and column auto-sizing.</p>
+
+  <!-- Section 1: Basic measurement demonstration -->
+  <div class="section">
+    <h2>1. Text Measurement Basics</h2>
+    <p>Measuring text widths using canvas.measureText() with caching:</p>
+    <div id="measurement-demo"></div>
+    <div class="stats" id="measurement-stats"></div>
+  </div>
+
+  <!-- Section 2: Label visibility comparison -->
+  <div class="section">
+    <h2>2. Label Visibility: Geometric vs. Measured</h2>
+    <p>Current approach uses geometric area thresholds (28px width). Text measurement knows actual label dimensions.</p>
+    <div class="comparison">
+      <div class="chart-demo">
+        <h3>Geometric (Current)</h3>
+        <div id="geometric-tiles"></div>
+        <div class="stats" id="geometric-stats"></div>
+      </div>
+      <div class="chart-demo">
+        <h3>Measured (Prototype)</h3>
+        <div id="measured-tiles"></div>
+        <div class="stats" id="measured-stats"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Section 3: Column auto-sizing -->
+  <div class="section">
+    <h2>3. Column Auto-sizing</h2>
+    <p>Current treetable uses fixed 64px columns. With measurement, columns can size to content.</p>
+    <div class="comparison">
+      <div class="chart-demo">
+        <h3>Fixed 64px (Current)</h3>
+        <div id="fixed-table"></div>
+      </div>
+      <div class="chart-demo">
+        <h3>Auto-sized (Prototype)</h3>
+        <div id="auto-table"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Section 4: Performance & caching -->
+  <div class="section">
+    <h2>4. Performance & Caching</h2>
+    <div id="perf-demo"></div>
+  </div>
+
+  <!-- Section 5: Design questions -->
+  <div class="section">
+    <h2>5. Design Questions</h2>
+    <ul>
+      <li><strong>Shared util vs. per-chart?</strong> → <em>Shared util in lib/ is cleaner. Charts import as needed.</em></li>
+      <li><strong>Cache across renders?</strong> → <em>Yes. Cache by (text, font) key. Clear on font size changes.</em></li>
+      <li><strong>Responsive resizing?</strong> → <em>Font size changes need cache invalidation. Could hook into resize observer or motion config changes.</em></li>
+      <li><strong>Truncation: ellipsis or fade?</strong> → <em>Ellipsis is simpler and more explicit. Fade requires gradient masks.</em></li>
+    </ul>
+  </div>
+
+  <script type="module">
+    // Inline text measurement implementation (mirrors the TypeScript utility)
+    let measurementContext = null;
+    const measurementCache = new Map();
+    const MAX_CACHE_SIZE = 1000;
+
+    function getContext() {
+      if (!measurementContext) {
+        const canvas = document.createElement('canvas');
+        measurementContext = canvas.getContext('2d');
+      }
+      return measurementContext;
+    }
+
+    function measureText(text, font) {
+      const key = `${text}|${font}`;
+      const cached = measurementCache.get(key);
+      if (cached !== undefined) return cached;
+
+      const ctx = getContext();
+      ctx.font = font;
+      const width = ctx.measureText(text).width;
+
+      measurementCache.set(key, width);
+      if (measurementCache.size > MAX_CACHE_SIZE) {
+        measurementCache.clear();
+      }
+
+      return width;
+    }
+
+    function textFits(text, font, availableWidth, padding = 0) {
+      const textWidth = measureText(text, font);
+      return textWidth <= (availableWidth - padding);
+    }
+
+    function truncateText(text, font, maxWidth, ellipsis = '…') {
+      const fullWidth = measureText(text, font);
+      if (fullWidth <= maxWidth) return text;
+
+      const ellipsisWidth = measureText(ellipsis, font);
+      const availableWidth = maxWidth - ellipsisWidth;
+      if (availableWidth <= 0) return ellipsis;
+
+      let low = 0, high = text.length, best = 0;
+      while (low <= high) {
+        const mid = Math.floor((low + high) / 2);
+        const candidate = text.substring(0, mid);
+        const width = measureText(candidate, font);
+        if (width <= availableWidth) {
+          best = mid;
+          low = mid + 1;
+        } else {
+          high = mid - 1;
+        }
+      }
+
+      return text.substring(0, best) + ellipsis;
+    }
+
+    // Demo 1: Basic measurement
+    const demoEl = document.getElementById('measurement-demo');
+    const statsEl = document.getElementById('measurement-stats');
+
+    const samples = [
+      { text: 'Short', font: 'bold 11px sans-serif' },
+      { text: 'Medium Label', font: 'bold 11px sans-serif' },
+      { text: 'Very Long Label Name Here', font: 'bold 11px sans-serif' },
+      { text: '12345', font: '11px sans-serif' },
+    ];
+
+    let html = '<table style="width: 100%; border-collapse: collapse;">';
+    html += '<tr><th style="text-align: left; padding: 4px; border-bottom: 1px solid oklch(0.3 0 0);">Text</th><th style="text-align: left; padding: 4px; border-bottom: 1px solid oklch(0.3 0 0);">Font</th><th style="text-align: right; padding: 4px; border-bottom: 1px solid oklch(0.3 0 0);">Width (px)</th></tr>';
+
+    samples.forEach(s => {
+      const width = measureText(s.text, s.font).toFixed(1);
+      html += `<tr><td style="padding: 4px;"><code>${s.text}</code></td><td style="padding: 4px;"><code>${s.font}</code></td><td style="text-align: right; padding: 4px;">${width}</td></tr>`;
+    });
+    html += '</table>';
+    demoEl.innerHTML = html;
+
+    statsEl.innerHTML = `Cache size: ${measurementCache.size} entries`;
+
+    // Demo 2: Label visibility comparison
+    const testTiles = [
+      { label: 'A', value: '100', width: 35, height: 30 },
+      { label: 'BB', value: '200', width: 30, height: 30 },
+      { label: 'CCC', value: '300', width: 25, height: 30 },
+      { label: 'DDDD', value: '400', width: 40, height: 30 },
+      { label: 'Very Long', value: '500', width: 60, height: 30 },
+      { label: 'X', value: '50', width: 20, height: 30 },
+    ];
+
+    const LABEL_PAD = 6; // 3px on each side
+    const font = 'bold 11px sans-serif';
+    const valueFont = '11px sans-serif';
+
+    // Geometric approach (current)
+    let geoHtml = '';
+    let geoShown = 0;
+    testTiles.forEach(t => {
+      const showLabel = t.width > 28 && t.height >= 16;
+      const showValue = t.width > 28 && t.height >= 28;
+      if (showLabel) geoShown++;
+
+      geoHtml += `<div class="tile" style="width: ${t.width}px; height: ${t.height}px;">`;
+      if (showLabel) {
+        geoHtml += `<div class="tile-label">${t.label}</div>`;
+      }
+      if (showValue) {
+        geoHtml += `<div class="tile-value">${t.value}</div>`;
+      }
+      geoHtml += `</div> `;
+    });
+    document.getElementById('geometric-tiles').innerHTML = geoHtml;
+    document.getElementById('geometric-stats').innerHTML = `Labels shown: ${geoShown}/${testTiles.length} (w > 28px threshold)`;
+
+    // Measured approach (prototype)
+    let measHtml = '';
+    let measShown = 0;
+    testTiles.forEach(t => {
+      const availWidth = t.width - LABEL_PAD;
+      const showLabel = textFits(t.label, font, availWidth);
+      const showValue = textFits(t.value, valueFont, availWidth) && t.height >= 28;
+      if (showLabel) measShown++;
+
+      measHtml += `<div class="tile" style="width: ${t.width}px; height: ${t.height}px;">`;
+      if (showLabel) {
+        const displayText = truncateText(t.label, font, availWidth);
+        measHtml += `<div class="tile-label">${displayText}</div>`;
+      }
+      if (showValue) {
+        measHtml += `<div class="tile-value">${t.value}</div>`;
+      }
+      measHtml += `</div> `;
+    });
+    document.getElementById('measured-tiles').innerHTML = measHtml;
+    document.getElementById('measured-stats').innerHTML = `Labels shown: ${measShown}/${testTiles.length} (measured to fit)`;
+
+    // Demo 3: Column auto-sizing
+    const tableData = [
+      { name: 'Root', v1: '1000', v2: '2000', v3: '3000' },
+      { name: 'Branch A', v1: '500', v2: '1500', v3: '2500' },
+      { name: 'Leaf 1', v1: '100', v2: '300', v3: '500' },
+      { name: 'Very Long Branch Name Here', v1: '50', v2: '150', v3: '250' },
+    ];
+
+    // Fixed 64px columns (current)
+    let fixedHtml = '<div class="table-demo">';
+    fixedHtml += '<div class="table-row table-header" style="grid-template-columns: 1fr repeat(3, 64px);">';
+    fixedHtml += '<div class="table-cell">Name</div><div class="table-cell">Value 1</div><div class="table-cell">Value 2</div><div class="table-cell">Value 3</div>';
+    fixedHtml += '</div>';
+    tableData.forEach(row => {
+      fixedHtml += '<div class="table-row" style="grid-template-columns: 1fr repeat(3, 64px);">';
+      fixedHtml += `<div class="table-cell">${row.name}</div>`;
+      fixedHtml += `<div class="table-cell">${row.v1}</div>`;
+      fixedHtml += `<div class="table-cell">${row.v2}</div>`;
+      fixedHtml += `<div class="table-cell">${row.v3}</div>`;
+      fixedHtml += '</div>';
+    });
+    fixedHtml += '</div>';
+    document.getElementById('fixed-table').innerHTML = fixedHtml;
+
+    // Auto-sized columns (prototype)
+    const colFont = '11px sans-serif';
+    const PAD = 16; // 8px on each side
+
+    // Measure max width for each column
+    const col1Width = Math.max(...tableData.map(r => measureText(r.v1, colFont))) + PAD;
+    const col2Width = Math.max(...tableData.map(r => measureText(r.v2, colFont))) + PAD;
+    const col3Width = Math.max(...tableData.map(r => measureText(r.v3, colFont))) + PAD;
+
+    const gridTemplate = `1fr ${col1Width}px ${col2Width}px ${col3Width}px`;
+
+    let autoHtml = '<div class="table-demo">';
+    autoHtml += `<div class="table-row table-header" style="grid-template-columns: ${gridTemplate};">`;
+    autoHtml += '<div class="table-cell">Name</div><div class="table-cell">Value 1</div><div class="table-cell">Value 2</div><div class="table-cell">Value 3</div>';
+    autoHtml += '</div>';
+    tableData.forEach(row => {
+      autoHtml += `<div class="table-row" style="grid-template-columns: ${gridTemplate};">`;
+      autoHtml += `<div class="table-cell">${row.name}</div>`;
+      autoHtml += `<div class="table-cell">${row.v1}</div>`;
+      autoHtml += `<div class="table-cell">${row.v2}</div>`;
+      autoHtml += `<div class="table-cell">${row.v3}</div>`;
+      autoHtml += '</div>';
+    });
+    autoHtml += '</div>';
+    autoHtml += `<div class="stats">Column widths: ${col1Width.toFixed(0)}px, ${col2Width.toFixed(0)}px, ${col3Width.toFixed(0)}px (auto-sized to content)</div>`;
+    document.getElementById('auto-table').innerHTML = autoHtml;
+
+    // Demo 4: Performance
+    const perfEl = document.getElementById('perf-demo');
+
+    // Benchmark: measure 1000 texts with and without cache
+    const benchText = 'Sample Label';
+    const benchFont = 'bold 11px sans-serif';
+
+    // Warm up cache
+    measureText(benchText, benchFont);
+
+    // Cached reads
+    const cachedStart = performance.now();
+    for (let i = 0; i < 1000; i++) {
+      measureText(benchText, benchFont);
+    }
+    const cachedTime = performance.now() - cachedStart;
+
+    // Clear cache and measure fresh
+    measurementCache.clear();
+    const freshStart = performance.now();
+    for (let i = 0; i < 1000; i++) {
+      const ctx = getContext();
+      ctx.font = benchFont;
+      ctx.measureText(benchText);
+    }
+    const freshTime = performance.now() - freshStart;
+
+    perfEl.innerHTML = `
+      <div class="metric"><strong>1000 cached reads:</strong> ${cachedTime.toFixed(2)}ms</div>
+      <div class="metric"><strong>1000 fresh measurements:</strong> ${freshTime.toFixed(2)}ms</div>
+      <div class="metric"><strong>Speedup:</strong> ${(freshTime / cachedTime).toFixed(1)}x</div>
+      <p style="margin-top: 10px; color: oklch(0.7 0 0);">
+        Cache provides significant speedup for repeated measurements. In charts with many similar labels,
+        this means we can measure on every render without performance concerns.
+      </p>
+    `;
+  </script>
+</body>
+</html>
