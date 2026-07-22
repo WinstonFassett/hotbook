@@ -44,21 +44,18 @@ private labelPaddingCell = cell(8);
 Define color cells and sync them with CSS variables in `connectedCallback()`:
 
 ```typescript
-// Color cells with default fallback values
+// Color cell with default fallback value
 private accentColorCell = cell("#7aaae8");
-private focusColorCell = cell("#4a9eff");
 
 connectedCallback() {
   super.connectedCallback();
 
-  // CSS var sync: read --color-accent and --color-focus from CSS
+  // CSS var sync: read --color-accent from CSS
   biEffect(() => {
     if (typeof window === "undefined" || !this.isConnected) return;
     const style = window.getComputedStyle(this);
     const accent = style.getPropertyValue('--color-accent').trim();
-    const focus = style.getPropertyValue('--color-focus').trim();
     if (accent) this.accentColorCell.value = accent;
-    if (focus) this.focusColorCell.value = focus;
   });
 }
 ```

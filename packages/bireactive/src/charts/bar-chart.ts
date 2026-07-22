@@ -77,7 +77,7 @@ export class MdBarChartLC extends CartesianChartBase {
 
   // ─── Theming: Color cells with CSS var sync ─────────────────────────
   private accentColorCell = cell("#7aaae8");
-  private focusColorCell = cell("#4a9eff");
+  private _themeRev = cell(0);
 
   private _measureKeyCell = cell<string>('');
   get measureKey(): string { return this._measureKeyCell.value }
@@ -174,14 +174,33 @@ export class MdBarChartLC extends CartesianChartBase {
       };
     }
 
-    // ─── CSS var sync: read --color-accent and --color-focus from CSS ─────
+    // ─── CSS var sync: read --color-accent from CSS ───────────────────────
+    // Bump _themeRev whenever style/class attributes change on this element
+    // or any ancestor so the biEffect re-reads computed style reactively.
+    if (typeof window !== "undefined") {
+      const bumpTheme = () => { this._themeRev.value++ };
+      const themeObserver = new MutationObserver(bumpTheme);
+      themeObserver.observe(this, { attributes: true, attributeFilter: ['style', 'class'] });
+      for (let el: Element | null = this.parentElement; el; el = el.parentElement) {
+        themeObserver.observe(el, { attributes: true, attributeFilter: ['style', 'class'] });
+      }
+      const mql = window.matchMedia('(prefers-color-scheme: dark)');
+      const schemeChange = () => { this._themeRev.value++ };
+      if ('addEventListener' in mql) mql.addEventListener('change', schemeChange);
+      else (mql as any).addListener(schemeChange);
+      this._setupDisposers.push(() => {
+        themeObserver.disconnect();
+        if ('removeEventListener' in mql) mql.removeEventListener('change', schemeChange);
+        else (mql as any).removeListener(schemeChange);
+      });
+    }
+
     biEffect(() => {
+      this._themeRev.value; // track theme changes
       if (typeof window === "undefined" || !this.isConnected) return;
-      const style = window.getComputedStyle(this);
-      const accent = style.getPropertyValue('--color-accent').trim();
-      const focus = style.getPropertyValue('--color-focus').trim();
-      if (accent) this.accentColorCell.value = accent;
-      if (focus) this.focusColorCell.value = focus;
+      const accent = window.getComputedStyle(this).getPropertyValue('--color-accent').trim();
+      const nextAccent = accent || "#7aaae8";
+      if (this.accentColorCell.value !== nextAccent) this.accentColorCell.value = nextAccent;
     });
   }
 
@@ -218,7 +237,7 @@ export class MdBarChartLC extends CartesianChartBase {
     const plotY = derive(() => PAD.value.top);
 
     // Fixed design step keeps band/bar thickness proportional to labels.
-    const STEP = derive(() => isVert.value ? V_BAR_STEP : H_BAND_STEP);
+    const STEP = derive(() => isVert.value ? this.barStepVerticalCell.value : this.bandStepHorizontalCell.value);
     const maxItems = derive(() => isVert.value ? this.maxBars : this.maxBands);
 
     // Content size = natural size for every item. Viewport size = what should
@@ -443,8 +462,8 @@ export class MdBarChartLC extends CartesianChartBase {
       });
       const di = (): Bar | null => datumCell.value;
 
-      const baseColor = (): string => { const d = di(); return d ? this.#barColor(cur.value, d) : SINGLE_COLOR; };
-      const hoverBaseColor = (): string => { const d = di(); return d ? this.#hoverColor(cur.value, d) : lightenHex(SINGLE_COLOR, 0.35); };
+      const baseColor = (): string => { const d = di(); return d ? this.#barColor(cur.value, d) : this.accentColorCell.value; };
+      const hoverBaseColor = (): string => { const d = di(); return d ? this.#hoverColor(cur.value, d) : lightenHex(this.accentColorCell.value, 0.35); };
 
       // Bar geometry — direct derive cells. CSS transitions (via
       // transitionOnUpdated) handle the settle animation: setAttribute fires
