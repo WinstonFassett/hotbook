@@ -221,17 +221,18 @@ export function makeTreemapTile(
 
   const visible = present ? derive(() => readNow(present)) : null;
 
+  const baseStroke = node.depth === 0 ? "#444" : "#0b0d12";
   // Stroke reflects focus/selection and hover state.
   const stroke = derive(() => {
-    if (!chart) return "none";
+    if (!chart) return baseStroke;
     if (chart.focusCell.value === node.id) return "#fff";
     if (chart.hoverCell.value === node.id) return "#c8cdd6";
-    return "none";
+    return baseStroke;
   });
   const strokeWidth = derive(() => {
-    if (!chart) return 0;
+    if (!chart) return 1;
     if (chart.focusCell.value === node.id || chart.hoverCell.value === node.id) return 2;
-    return 0;
+    return 1;
   });
 
   const fillColor = chart?._colorModeCell;

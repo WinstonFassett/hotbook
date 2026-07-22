@@ -184,6 +184,19 @@ export function buildTileSource(ctx: TileRenderContext): TileSource | null {
   const schema = getChartSchema(kind)
   if (!schema) return null
 
+  if (kind === 'pie') {
+    const leaves = leavesOfNodes(sorted)
+    const rootId = '__pie_root__'
+    const root: VizNode = { id: rootId, parentId: null, index: -1, name: 'root', measures: {}, dims: {} }
+    const pieNodes: VizNode[] = [root, ...leaves.map((n, i) => ({ ...n, parentId: rootId, index: i }))]
+    const shapeKey = hierShapeKey('v-br-pie', pieNodes, valueBinding, 1)
+    const valueKey = hierValueKey(pieNodes, valueBinding)
+    return makeHierSource({
+      tag: 'v-br-pie', nodes: pieNodes, measureKey: valueBinding, depth: 1, sortBy: 'index',
+      shapeKey, valueKey, showBreadcrumb: false, onUpdate, onUpdateMany,
+    })
+  }
+
   // ── Flat charts ──────────────────────────────────────────────────────────
   if (schema.dataShape === 'flat') {
     // Radar can render root-level totals from a tree dataset.
