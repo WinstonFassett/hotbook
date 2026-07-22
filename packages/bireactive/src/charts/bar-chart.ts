@@ -381,11 +381,11 @@ export class MdBarChartLC extends CartesianChartBase {
       });
       const barW = derive(() => {
         const d = di(); if (!d) return 0;
-        return isVert.value ? bandScale.value.bandwidth() : Math.max(0, (valueScale.value as any)(d.value) - plotX.value);
+        return isVert.value ? Math.max(0, bandScale.value.bandwidth()) : Math.max(0, (valueScale.value as any)(d.value) - plotX.value);
       });
       const barH = derive(() => {
         const d = di(); if (!d) return 0;
-        return isVert.value ? Math.max(0, plotBottom.value - (valueScale.value as any)(d.value)) : bandScale.value.bandwidth();
+        return isVert.value ? Math.max(0, plotBottom.value - (valueScale.value as any)(d.value)) : Math.max(0, bandScale.value.bandwidth());
       });
 
       const fill = derive(() => {
