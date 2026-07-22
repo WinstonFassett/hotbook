@@ -101,6 +101,25 @@ CSS variables automatically respond to `prefers-color-scheme: dark`:
 - `selectedRadiusCell` — Selected indicator radius (default: 9px)
 - `selectedStrokeWidthCell` — Selected circle stroke width (default: 2px)
 
+#### Radar Chart
+- `radialPaddingCell` — Radial padding from edge (default: 50px)
+- `gridRingStrokeWidthCell` — Grid ring stroke width (default: 1px)
+- `gridRingOpacityCell` — Grid ring opacity (default: 0.1)
+- `tickLabelOffsetCell` — Tick label vertical offset (default: -4px)
+- `tickLabelSizeCell` — Tick label font size (default: 9px)
+- `spokeStrokeWidthCell` — Spoke line stroke width (default: 1px)
+- `spokeOpacityCell` — Spoke line opacity (default: 0.12)
+- `labelOffsetCell` — Category label radial offset (default: 22px)
+- `labelSizeCell` — Category label font size (default: 11px)
+- `polygonFillOpacityCell` — Polygon fill opacity (default: 0.18)
+- `polygonStrokeWidthCell` — Polygon stroke width (default: 2px)
+- `polygonStrokeOpacityCell` — Polygon stroke opacity (default: 0.85)
+- `dotRadiusNormalCell` — Dot radius normal state (default: 5px)
+- `dotRadiusHoverCell` — Dot radius hover state (default: 7px)
+- `dotRadiusSelectedCell` — Dot radius selected state (default: 8px)
+- `dotStrokeWidthNormalCell` — Dot stroke width normal (default: 1.5px)
+- `dotStrokeWidthSelectedCell` — Dot stroke width selected (default: 2.5px)
+
 ### Usage
 
 Geometry cells are publicly accessible and can be tweaked via JavaScript or the tweaks panel:
