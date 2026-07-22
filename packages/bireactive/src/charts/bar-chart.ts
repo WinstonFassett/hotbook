@@ -9,7 +9,7 @@
 // measure swap). transitionOnUpdated owns the gesture-active class and the
 // settle CSS on rect attrs. Reorder uses REORDER_ACTIVE_CLASS + ghost transform.
 
-import { Anchor, cell, circle, derive, effect as biEffect, forEach, label, line, rect, Vec } from "bireactive";
+import { Anchor, cell, circle, derive, effect as biEffect, forEach, group, label, line, mount, rect, Vec } from "bireactive";
 import { CartesianChartBase, type CartesianConfig, type FlatItem } from "../cartesian/cartesian-chart-base";
 import { scaleLinear, scaleBand } from "d3-scale";
 import { FILL_STYLE } from "../lib/host-size";
@@ -186,31 +186,40 @@ export class MdBarChartLC extends CartesianChartBase {
     const PAD = derive(() => isVert.value ? V_PAD : { ...H_PAD, left: leftRoom.value });
     const plotX = derive(() => PAD.value.left);
     const plotY = derive(() => PAD.value.top);
-    const plotW = derive(() => Wc.value - PAD.value.left - PAD.value.right);
-    const plotH = derive(() => Hc.value - PAD.value.top - PAD.value.bottom);
+
+    // Fixed design step keeps band/bar thickness proportional to labels.
+    const STEP = derive(() => isVert.value ? V_BAR_STEP : H_BAND_STEP);
+    const maxItems = derive(() => isVert.value ? this.maxBars : this.maxBands);
+
+    // Content size = natural size for every item. Viewport size = what should
+    // fit without scrolling (maxItems). The host becomes the scrollport.
+    // The STEP applies along the band axis (x for vertical bars, y for horizontal bands).
+    const bandLength = derive(() => data.value.length * STEP.value);
+    const contentW = derive(() => isVert.value ? PAD.value.left + PAD.value.right + bandLength.value : Wc.value);
+    const contentH = derive(() => isVert.value ? Hc.value : PAD.value.top + PAD.value.bottom + bandLength.value);
+    const viewportW = derive(() => isVert.value ? Math.min(Wc.value, PAD.value.left + PAD.value.right + maxItems.value * STEP.value) : Wc.value);
+    const viewportH = derive(() => isVert.value ? Hc.value : Math.min(Hc.value, PAD.value.top + PAD.value.bottom + maxItems.value * STEP.value));
+
+    const plotW = derive(() => viewportW.value - PAD.value.left - PAD.value.right);
+    const plotH = derive(() => viewportH.value - PAD.value.top - PAD.value.bottom);
     const plotBottom = derive(() => plotY.value + plotH.value);
     const plotRight = derive(() => plotX.value + plotW.value);
 
-    // ─── Overflow mode ────────────────────────────────────────────────────
-    const overflowMode = derive(() => {
-      const n = data.value.length;
-      return isVert.value ? (this.maxBars > 0 && n > this.maxBars) : (this.maxBands > 0 && n > this.maxBands);
-    });
-    const STEP = derive(() => {
-      const isV = isVert.value;
-      const maxItems = isV ? this.maxBars : this.maxBands;
-      const pad = PAD.value;
-      const avail = isV
-        ? Math.max(1, Wc.value - pad.left - pad.right)
-        : Math.max(1, Hc.value - pad.top - pad.bottom);
-      return maxItems > 0 ? avail / maxItems : (isV ? V_BAR_STEP : H_BAND_STEP);
-    });
-    const neededBand = derive(() => PAD.value.left + PAD.value.right + data.value.length * STEP.value);
-    const neededOrtho = derive(() => PAD.value.top + PAD.value.bottom + data.value.length * STEP.value);
+    const contentPlotW = derive(() => contentW.value - PAD.value.left - PAD.value.right);
+    const contentPlotH = derive(() => contentH.value - PAD.value.top - PAD.value.bottom);
+    const contentBottom = derive(() => plotY.value + contentPlotH.value);
+    const contentRight = derive(() => plotX.value + contentPlotW.value);
 
-    const viewW = derive(() => overflowMode.value && isVert.value ? neededBand.value : Wc.value);
-    const viewH = derive(() => overflowMode.value && !isVert.value ? neededOrtho.value : Hc.value);
+    const overflowMode = derive(() => isVert.value ? (contentW.value > Wc.value) : (contentH.value > Hc.value));
+
+    const viewW = derive(() => contentW.value);
+    const viewH = derive(() => contentH.value);
     const svgEl = this._svg!;
+
+    // A separate group for the value axis. It is translated by the scroll
+    // offset so the axis appears fixed while the plot scrolls underneath.
+    const valueAxisGroup = group();
+    const axisS = mount(valueAxisGroup);
 
     // Gesture-suppression class toggle (light-DOM: vf-gesture-active on host).
     const setGestureActive = (on: boolean) => this.classList.toggle(GESTURE_ACTIVE_CLASS, on);
@@ -222,50 +231,82 @@ export class MdBarChartLC extends CartesianChartBase {
       const sy = vb && vb.height ? vb.height / r.height : 1;
       return { x: (e.clientX - r.left) * sx, y: (e.clientY - r.top) * sy };
     };
+
+    const updateAxisTransform = () => {
+      const iv = isVert.value;
+      const x = iv ? this.scrollLeft : 0;
+      const y = iv ? 0 : this.scrollTop;
+      valueAxisGroup.translate.value = { x, y };
+    };
+    this.addEventListener('scroll', updateAxisTransform, { passive: true });
+
     biEffect(() => {
-      this._setViewBox(viewW.value, viewH.value);
-      const om = overflowMode.value, iv = isVert.value;
+      const iv = isVert.value;
+      const om = overflowMode.value;
       const pan = om ? (iv ? 'pan-x' : 'pan-y') : 'none';
+
       this.style.touchAction = pan;
       svgEl.style.touchAction = pan;
-      svgEl.style.flex = om ? '0 0 auto' : '1 1 0';
-      if (om) {
-        svgEl.style.width = iv ? viewW.value + 'px' : '100%';
-        svgEl.style.height = iv ? '100%' : viewH.value + 'px';
-        this.style.overflowX = iv ? 'auto' : 'hidden';
-        this.style.overflowY = iv ? 'hidden' : 'auto';
-      } else {
-        svgEl.style.width = '';
-        svgEl.style.height = '';
-        this.style.overflowX = '';
-        this.style.overflowY = '';
-      }
-    });
 
-    const effPlotW = derive(() => overflowMode.value && isVert.value ? neededBand.value - PAD.value.left - PAD.value.right : plotW.value);
-    const effPlotH = derive(() => overflowMode.value && !isVert.value ? neededOrtho.value - PAD.value.top - PAD.value.bottom : plotH.value);
+      // The host is the scrollport: size it to the desired visible item count,
+      // anchor horizontal bars to the tile bottom, and keep vertical bars left/top.
+      this.style.alignSelf = iv ? 'flex-start' : 'flex-end';
+      this.style.marginTop = iv ? '' : 'auto';
+      if (iv) {
+        this.style.width = viewportW.value + 'px';
+        this.style.height = '';
+      } else {
+        this.style.width = '';
+        this.style.height = viewportH.value + 'px';
+      }
+      this.style.overflowX = iv ? (om ? 'auto' : 'hidden') : 'hidden';
+      this.style.overflowY = iv ? 'hidden' : (om ? 'auto' : 'hidden');
+
+      // The SVG is the scrollable content: sized to its natural item count.
+      this._setViewBox(viewW.value, viewH.value);
+      svgEl.style.flex = '0 0 auto';
+      svgEl.style.width = viewW.value + 'px';
+      svgEl.style.height = viewH.value + 'px';
+      // Keep first items in view and let the fixed value axis sit at the host edge.
+      svgEl.style.alignSelf = (iv || om) ? 'flex-start' : 'flex-end';
+
+      updateAxisTransform();
+    });
 
     // ─── Scales ───────────────────────────────────────────────────────────
     const bandScale = derive(() => {
       const isV = isVert.value;
-      const range = isV ? [plotX.value, plotX.value + effPlotW.value] : [plotY.value, plotY.value + effPlotH.value];
+      const range = isV ? [plotX.value, plotX.value + contentPlotW.value] : [plotY.value, plotY.value + contentPlotH.value];
       return scaleBand<string>().domain(data.value.map((_, i) => String(i))).range(range).padding(isV ? 0.25 : 0.15);
     });
     const valueScale = derive(() => {
       const max = Math.max(1, ...data.value.map(d => d.value));
       const isV = isVert.value;
-      const range = isV ? [plotY.value + effPlotH.value, plotY.value] : [plotX.value, plotX.value + effPlotW.value];
+      const range = isV ? [plotY.value + plotH.value, plotY.value] : [plotX.value, plotX.value + plotW.value];
       return scaleLinear().domain([0, max]).range(range).nice();
     });
     this._valueScale = valueScale;
 
-    // ─── Value axis ticks ─────────────────────────────────────────────────
+    const axisBaseX = derive(() => PAD.value.left);
+    const axisBaseY = derive(() => overflowMode.value ? (Hc.value - PAD.value.bottom) : (viewH.value - PAD.value.bottom));
+
+    // ─── Value axis (fixed while the plot scrolls) ────────────────────────
     const valueTicks = derive(() => {
       const sc = valueScale.value as any;
       const arr: any[] = typeof sc.ticks === "function" ? sc.ticks(5) : (sc.domain?.() ?? []);
       const fmt = typeof sc.tickFormat === "function" ? sc.tickFormat(5) : (v: any) => String(v);
       return arr.map((v) => ({ v, pos: sc(v), text: fmt(v) }));
     });
+
+    // Solid backdrop so axis labels hide any plot content behind them.
+    axisS(rect(
+      derive(() => 0),
+      derive(() => isVert.value ? 0 : axisBaseY.value),
+      derive(() => isVert.value ? PAD.value.left : viewportW.value),
+      derive(() => isVert.value ? viewportH.value : PAD.value.bottom),
+      { fill: 'var(--pv-bg, #0b0d12)' }
+    ));
+
     const AXIS_POOL = 12;
     for (let ti = 0; ti < AXIS_POOL; ti++) {
       const visible = derive(() => valueTicks.value[ti] ? 1 : 0);
@@ -273,13 +314,13 @@ export class MdBarChartLC extends CartesianChartBase {
       const labelOpacity = derive(() => 0.8 * visible.value);
       const text = derive(() => valueTicks.value[ti]?.text ?? "");
       const pos = derive(() => valueTicks.value[ti]?.pos ?? 0);
-      s(line(
-        Vec.derive(() => isVert.value ? { x: plotX.value, y: pos.value } : { x: pos.value, y: plotBottom.value }),
-        Vec.derive(() => isVert.value ? { x: plotX.value - 4, y: pos.value } : { x: pos.value, y: plotBottom.value + 4 }),
+      axisS(line(
+        Vec.derive(() => isVert.value ? { x: axisBaseX.value, y: pos.value } : { x: pos.value, y: axisBaseY.value }),
+        Vec.derive(() => isVert.value ? { x: axisBaseX.value - 4, y: pos.value } : { x: pos.value, y: axisBaseY.value + 4 }),
         { thin: true, stroke: "#888", opacity: tickOpacity },
       ));
-      const tlbl = s(label(
-        Vec.derive(() => isVert.value ? { x: plotX.value - 8, y: pos.value } : { x: pos.value, y: plotBottom.value + 16 }),
+      const tlbl = axisS(label(
+        Vec.derive(() => isVert.value ? { x: axisBaseX.value - 8, y: pos.value } : { x: pos.value, y: axisBaseY.value + 16 }),
         text, { size: 10, fill: "#888", opacity: labelOpacity },
       ));
       biEffect(() => {
@@ -289,15 +330,15 @@ export class MdBarChartLC extends CartesianChartBase {
       });
     }
     // Value axis baseline.
-    s(line(
-      Vec.derive(() => isVert.value ? { x: plotX.value, y: plotY.value } : { x: plotX.value, y: plotBottom.value }),
-      Vec.derive(() => isVert.value ? { x: plotX.value, y: plotBottom.value } : { x: plotRight.value, y: plotBottom.value }),
+    axisS(line(
+      Vec.derive(() => isVert.value ? { x: axisBaseX.value, y: plotY.value } : { x: plotX.value, y: axisBaseY.value }),
+      Vec.derive(() => isVert.value ? { x: axisBaseX.value, y: plotBottom.value } : { x: plotRight.value, y: axisBaseY.value }),
       { thin: true, opacity: 0.5, stroke: "#888" },
     ));
-    // Category axis baseline.
+    // Category axis baseline (scrolls with the bars/bands).
     s(line(
       Vec.derive(() => isVert.value ? { x: plotX.value, y: plotBottom.value } : { x: plotX.value, y: plotY.value }),
-      Vec.derive(() => isVert.value ? { x: plotRight.value, y: plotBottom.value } : { x: plotX.value, y: plotBottom.value }),
+      Vec.derive(() => isVert.value ? { x: contentRight.value, y: plotBottom.value } : { x: plotX.value, y: contentBottom.value }),
       { thin: true, opacity: 0.5, stroke: "#888" },
     ));
 
@@ -713,6 +754,10 @@ export class MdBarChartLC extends CartesianChartBase {
     }, { key: (item: Bar) => item.id });
 
     this._setupDisposers.push(() => barsResult.dispose());
+
+    // Place the value-axis layer on top of the bars so its backdrop masks
+    // the plot content behind the fixed axis labels.
+    this._svg!.appendChild(valueAxisGroup.el);
 
     // ─── Left-room padding for popped labels ───────────────────────────────
     if (labelWidths.length && this.labelMode !== 'inside') {
