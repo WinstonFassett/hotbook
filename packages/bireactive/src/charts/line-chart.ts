@@ -30,10 +30,27 @@ function makeSeries(): Point[] {
   return out;
 }
 
+// Default geometry constants (now themeable via reactive cells)
+const DEFAULT_PADDING = { top: 16, right: 24, bottom: 36, left: 56 };
+const DEFAULT_LINE_STROKE_WIDTH = 2;
+const DEFAULT_FOCUS_CIRCLE_RADIUS = 8;
+const DEFAULT_HOVER_CIRCLE_RADIUS = 4;
+const DEFAULT_HOVER_STROKE_WIDTH = 2;
+const DEFAULT_SELECTED_OUTER_RADIUS = 6;
+const DEFAULT_SELECTED_INNER_RADIUS = 3;
+const DEFAULT_SELECTED_STROKE_WIDTH = 2;
+
+// Helper to read CSS variable or return default
+function getCSSVar(varName: string, defaultValue: string | number): string | number {
+  if (typeof window === 'undefined') return defaultValue;
+  const value = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+  return value ? (typeof defaultValue === 'number' ? parseFloat(value) : value) : defaultValue;
+}
+
 const LINE_CSS = `
 text { pointer-events: none; }
 ${FILL_STYLE}
-[data-focusable]:focus { outline: 2px solid #4a9eff; outline-offset: 2px; }
+[data-focusable]:focus { outline: 2px solid var(--color-focus, #4a9eff); outline-offset: 2px; }
 [data-focusable]:focus:not(:focus-visible) { outline: none; }
 `;
 let lineCssInjected = false;
@@ -50,6 +67,25 @@ export class MdLineChartLC extends CartesianChartBase {
   readonly dataCell = cell<readonly Point[]>(makeSeries());
 
   private _yBindingCell = cell<(d: Point) => number>((d) => d.value);
+
+  // Theming: reactive cells for geometry
+  readonly paddingTopCell = cell(DEFAULT_PADDING.top);
+  readonly paddingRightCell = cell(DEFAULT_PADDING.right);
+  readonly paddingBottomCell = cell(DEFAULT_PADDING.bottom);
+  readonly paddingLeftCell = cell(DEFAULT_PADDING.left);
+  readonly lineStrokeWidthCell = cell(DEFAULT_LINE_STROKE_WIDTH);
+  readonly focusCircleRadiusCell = cell(DEFAULT_FOCUS_CIRCLE_RADIUS);
+  readonly hoverCircleRadiusCell = cell(DEFAULT_HOVER_CIRCLE_RADIUS);
+  readonly hoverStrokeWidthCell = cell(DEFAULT_HOVER_STROKE_WIDTH);
+  readonly selectedOuterRadiusCell = cell(DEFAULT_SELECTED_OUTER_RADIUS);
+  readonly selectedInnerRadiusCell = cell(DEFAULT_SELECTED_INNER_RADIUS);
+  readonly selectedStrokeWidthCell = cell(DEFAULT_SELECTED_STROKE_WIDTH);
+
+  // Theming: reactive cells for colors
+  readonly accentColorCell = cell("#7aaae8");
+  readonly focusColorCell = cell("#4a9eff");
+  readonly hoverLineColorCell = cell("#888");
+  readonly whiteColorCell = cell("#fff");
 
   get yBinding(): string { return (this as any)._yBindingName ?? 'value' }
   set yBinding(v: string) {
@@ -83,6 +119,14 @@ export class MdLineChartLC extends CartesianChartBase {
     this.tabIndex = -1;
     this.style.outline = "none";
 
+    // ─── Sync CSS variables to reactive cells ────────────────────────────────
+    this._setupDisposers.push(biEffect(() => {
+      const accentColor = getCSSVar('--color-accent', "#7aaae8");
+      const focusColor = getCSSVar('--color-focus', "#4a9eff");
+      this.accentColorCell.value = accentColor as string;
+      this.focusColorCell.value = focusColor as string;
+    }));
+
     const data = this.dataCell;
     this._setupDisposers.push(biEffect(() => { this._dataCell.value = this.dataCell.value; }));
 
@@ -93,13 +137,18 @@ export class MdLineChartLC extends CartesianChartBase {
       idOf: (d) => d.id ?? String(d.date.getTime()),
       host: this,
       anim: this.anim,
-      padding: { top: 16, right: 24, bottom: 36, left: 56 },
+      padding: {
+        top: this.paddingTopCell.value,
+        right: this.paddingRightCell.value,
+        bottom: this.paddingBottomCell.value,
+        left: this.paddingLeftCell.value
+      },
       yNice: true, yBaseline: 0,
     });
 
     axis(s, ctx, { placement: "bottom" });
     axis(s, ctx, { placement: "left" });
-    s(spline(ctx, { stroke: "#7aaae8", strokeWidth: 2 }));
+    s(spline(ctx, { stroke: this.accentColorCell.value, strokeWidth: this.lineStrokeWidthCell.value }));
 
     const hover = cell<Point | null>(null);
     const selected = cell<Point | null>(null);
@@ -116,7 +165,7 @@ export class MdLineChartLC extends CartesianChartBase {
     const pointElements = new Map<Point, SVGCircleElement>();
     for (const pt of points0) {
       const pos = Vec.derive(() => ({ x: ctx.xGet.value(pt), y: ctx.yGet.value(pt) }));
-      const focusCircle = s(circle(pos, 8, { fill: "transparent", stroke: "none" }));
+      const focusCircle = s(circle(pos, this.focusCircleRadiusCell.value, { fill: "transparent", stroke: "none" }));
       pointElements.set(pt, focusCircle.el as SVGCircleElement);
       focusCircle.el.setAttribute('tabindex', '0');
       focusCircle.el.setAttribute('data-focusable', 'point');
@@ -152,9 +201,9 @@ export class MdLineChartLC extends CartesianChartBase {
     });
     const hoverOpacity = derive(() => (hover.value ? 1 : 0));
 
-    const hoverCircle = s(circle(hoverPoint, 4, { fill: "#7aaae8", stroke: "#fff", strokeWidth: 2, opacity: hoverOpacity }));
+    const hoverCircle = s(circle(hoverPoint, this.hoverCircleRadiusCell.value, { fill: this.accentColorCell.value, stroke: this.whiteColorCell.value, strokeWidth: this.hoverStrokeWidthCell.value, opacity: hoverOpacity }));
     hoverCircle.el.style.pointerEvents = "none";
-    s(line(hoverX, hoverBottom, { thin: true, dashed: true, opacity: hoverOpacity, stroke: "#888" }));
+    s(line(hoverX, hoverBottom, { thin: true, dashed: true, opacity: hoverOpacity, stroke: this.hoverLineColorCell.value }));
 
     const selPoint = Vec.derive(() => {
       const p = selected.value; if (!p) return { x: -10, y: -10 };
@@ -162,8 +211,8 @@ export class MdLineChartLC extends CartesianChartBase {
     });
     const selOpacity = derive(() => (selected.value ? 1 : 0));
 
-    const selCircleOuter = s(circle(selPoint, 6, { fill: "transparent", stroke: "#fff", strokeWidth: 2, opacity: selOpacity }));
-    const selCircleInner = s(circle(selPoint, 3, { fill: "#fff", stroke: "transparent", opacity: selOpacity }));
+    const selCircleOuter = s(circle(selPoint, this.selectedOuterRadiusCell.value, { fill: "transparent", stroke: this.whiteColorCell.value, strokeWidth: this.selectedStrokeWidthCell.value, opacity: selOpacity }));
+    const selCircleInner = s(circle(selPoint, this.selectedInnerRadiusCell.value, { fill: this.whiteColorCell.value, stroke: "transparent", opacity: selOpacity }));
     selCircleOuter.el.style.pointerEvents = "none";
     selCircleInner.el.style.pointerEvents = "none";
 
