@@ -6,6 +6,7 @@
 
 import type { ChartConfig, LayoutRect, RenderNode } from "./types";
 import { motion } from "../lib/runtime-config";
+import { hierarchicalTheme } from "./theming";
 import { TRANSITION_DURATION } from "../lib/transitions";
 import {
   Anchor,
@@ -264,8 +265,8 @@ export function makeTile(
   // so the derive re-runs automatically when focus/hover changes.
   const stroke = derive(() => {
     if (!chart) return "none";
-    if (chart.focusCell.value === node.id) return "#fff";
-    if (chart.hoverCell.value === node.id) return "#c8cdd6";
+    if (chart.focusCell.value === node.id) return hierarchicalTheme.focusColor.value;
+    if (chart.hoverCell.value === node.id) return hierarchicalTheme.hoverColor.value;
     return "none";
   });
   const strokeWidth = derive(() => {
@@ -314,7 +315,7 @@ export function makeTile(
   const lbl = label(
     Vec.derive(() => ({ x: 0, y: 0 })),
     labelText,
-    { size: 11, align: Anchor.TopLeft, fill: labelColorFor(node.color), bold: true },
+    { size: hierarchicalTheme.fontSize.value, align: Anchor.TopLeft, fill: labelColorFor(node.color), bold: true },
   );
   lbl.el.style.pointerEvents = "none";
 
@@ -344,7 +345,7 @@ export function makeTile(
   const valueLbl = label(
     Vec.derive(() => ({ x: 0, y: 13 })),
     valueText,
-    { size: 11, align: Anchor.TopLeft, fill: labelColorFor(node.color), bold: false },
+    { size: hierarchicalTheme.fontSize.value, align: Anchor.TopLeft, fill: labelColorFor(node.color), bold: false },
   );
   valueLbl.el.style.pointerEvents = "none";
 

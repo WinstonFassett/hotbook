@@ -32,6 +32,7 @@ import { motion } from "../lib/runtime-config";
 import { previewFullRender, captureOrderFromWindow } from "./behaviors/preview-full-render";
 import { wheelEdit } from "./behaviors/wheel-edit";
 import { keyboardEdit } from "./behaviors/keyboard-edit";
+import { syncCssVarsToTheme } from "./theming";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const FALLBACK_W = 720;
@@ -294,6 +295,9 @@ export abstract class HierarchicalChartBase extends HTMLElement {
     this.style.outline = "none";
     this.style.userSelect = "none";
     this.tabIndex = -1;
+
+    // Sync CSS custom properties to theme cells for color theming.
+    syncCssVarsToTheme(this, this._setupDisposers);
 
     // Chrome layer: HTML bar above the SVG for breadcrumb etc.
     this._chromeLayer = document.createElement("div");
