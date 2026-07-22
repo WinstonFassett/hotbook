@@ -189,7 +189,7 @@ const concentricArcSchema: ChartSchema = {
       { type: 'sort', label: 'Sort', path: 'orderBinding' },
     ],
   },
-  toChart: (rows) => rows.map((r: FlatRow, i: number) => ({ id: r.id, label: r.label, color: r.color ?? palette[i % 6]!, value: Math.min(100, r.value), valueOriginal: r.measures?.value ?? r.value, value2Original: r.measures?.value2 ?? r.value2 })),
+  toChart: (rows) => rows.map((r: FlatRow, i: number) => ({ id: r.id, label: r.label, color: palette[i % palette.length]!, value: Math.min(100, r.value), valueOriginal: r.measures?.value ?? r.value, value2Original: r.measures?.value2 ?? r.value2 })),
   readValue: (d) => d.value,
   writeValue: (d, v) => { d.value = Math.min(100, v) },
   idOf: (d) => d.id,
@@ -208,10 +208,9 @@ function barMountProps(defaults: { orientation: 'horizontal' | 'vertical'; color
     el.labelMode = ctx.tile.labelMode ?? defaults.labelMode
     el.valueMode = ctx.tile.valueMode ?? defaults.valueMode
     el.minBandSize = ctx.tile.minBandSize ?? 0
-    if (ctx.tile.maxItems != null) {
-      const prop = orientation === 'horizontal' ? 'maxBands' : 'maxBars'
-      el[prop] = ctx.tile.maxItems
-    }
+    const prop = orientation === 'horizontal' ? 'maxBands' : 'maxBars'
+    const defaultMax = orientation === 'horizontal' ? 1 : 10
+    el[prop] = ctx.tile.maxItems ?? defaultMax
   }
 }
 

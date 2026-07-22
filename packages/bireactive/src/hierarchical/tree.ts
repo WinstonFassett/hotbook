@@ -49,6 +49,7 @@ export function resolveFill(
   depth: number,
   colorMode?: "flat" | "depth" | "mono",
 ): string {
+  if (depth === 0) return "#222";
   if (colorMode === "mono") return "oklch(0.55 0.08 240)";
   if (colorMode === "depth") {
     return hsl(baseColor).brighter(Math.max(0, depth - 1) * WASH_PER_LEVEL).toString();
