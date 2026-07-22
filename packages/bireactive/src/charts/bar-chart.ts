@@ -196,7 +196,15 @@ export class MdBarChartLC extends CartesianChartBase {
       const n = data.value.length;
       return isVert.value ? (this.maxBars > 0 && n > this.maxBars) : (this.maxBands > 0 && n > this.maxBands);
     });
-    const STEP = derive(() => isVert.value ? V_BAR_STEP : H_BAND_STEP);
+    const STEP = derive(() => {
+      const isV = isVert.value;
+      const maxItems = isV ? this.maxBars : this.maxBands;
+      const pad = PAD.value;
+      const avail = isV
+        ? Math.max(1, Wc.value - pad.left - pad.right)
+        : Math.max(1, Hc.value - pad.top - pad.bottom);
+      return maxItems > 0 ? avail / maxItems : (isV ? V_BAR_STEP : H_BAND_STEP);
+    });
     const neededBand = derive(() => PAD.value.left + PAD.value.right + data.value.length * STEP.value);
     const neededOrtho = derive(() => PAD.value.top + PAD.value.bottom + data.value.length * STEP.value);
 
@@ -220,6 +228,7 @@ export class MdBarChartLC extends CartesianChartBase {
       const pan = om ? (iv ? 'pan-x' : 'pan-y') : 'none';
       this.style.touchAction = pan;
       svgEl.style.touchAction = pan;
+      svgEl.style.flex = om ? '0 0 auto' : '1 1 0';
       if (om) {
         svgEl.style.width = iv ? viewW.value + 'px' : '100%';
         svgEl.style.height = iv ? '100%' : viewH.value + 'px';
