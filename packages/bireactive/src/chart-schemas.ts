@@ -208,9 +208,12 @@ function barMountProps(defaults: { orientation: 'horizontal' | 'vertical'; color
     el.labelMode = ctx.tile.labelMode ?? defaults.labelMode
     el.valueMode = ctx.tile.valueMode ?? defaults.valueMode
     el.minBandSize = ctx.tile.minBandSize ?? 0
-    const prop = orientation === 'horizontal' ? 'maxBands' : 'maxBars'
-    const defaultMax = orientation === 'horizontal' ? 1 : 10
-    el[prop] = ctx.tile.maxItems ?? defaultMax
+    if (ctx.tile.maxItems != null) {
+      const prop = orientation === 'horizontal' ? 'maxBands' : 'maxBars'
+      el[prop] = ctx.tile.maxItems
+    } else if (orientation === 'horizontal') {
+      el.maxBands = 8
+    }
   }
 }
 
