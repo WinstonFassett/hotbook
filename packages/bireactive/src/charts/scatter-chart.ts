@@ -16,7 +16,6 @@ import { transitionOnUpdated } from "../hierarchical/behaviors/transition-on-upd
 
 const W = 720;
 const H = 360;
-const COLOR = "#7aaae8";
 
 interface Point extends FlatItem { x: number; y: number; }
 
@@ -29,10 +28,24 @@ function makeData(): Point[] {
   })).sort((a, b) => a.x - b.x);
 }
 
+// Default geometry constants (now themeable via reactive cells)
+const DEFAULT_PADDING = { top: 16, right: 24, bottom: 36, left: 48 };
+const DEFAULT_DOT_RADIUS = 5;
+const DEFAULT_DOT_STROKE_WIDTH = 1;
+const DEFAULT_SELECTED_RADIUS = 9;
+const DEFAULT_SELECTED_STROKE_WIDTH = 2;
+
+// Helper to read CSS variable or return default
+function getCSSVar(varName: string, defaultValue: string | number): string | number {
+  if (typeof window === 'undefined') return defaultValue;
+  const value = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+  return value ? (typeof defaultValue === 'number' ? parseFloat(value) : value) : defaultValue;
+}
+
 const SCATTER_CSS = `
 text { pointer-events: none; }
 ${FILL_STYLE}
-[data-focusable]:focus { outline: 2px solid #4a9eff; outline-offset: 2px; }
+[data-focusable]:focus { outline: 2px solid var(--color-focus, #4a9eff); outline-offset: 2px; }
 [data-focusable]:focus:not(:focus-visible) { outline: none; }
 `;
 let scatterCssInjected = false;
@@ -50,6 +63,23 @@ export class MdScatterChartLC extends CartesianChartBase {
 
   private _xBindingCell = cell<(d: Point) => number>((d) => d.x);
   private _yBindingCell = cell<(d: Point) => number>((d) => d.y);
+
+  // Theming: reactive cells for geometry
+  readonly paddingTopCell = cell(DEFAULT_PADDING.top);
+  readonly paddingRightCell = cell(DEFAULT_PADDING.right);
+  readonly paddingBottomCell = cell(DEFAULT_PADDING.bottom);
+  readonly paddingLeftCell = cell(DEFAULT_PADDING.left);
+  readonly dotRadiusCell = cell(DEFAULT_DOT_RADIUS);
+  readonly dotStrokeWidthCell = cell(DEFAULT_DOT_STROKE_WIDTH);
+  readonly selectedRadiusCell = cell(DEFAULT_SELECTED_RADIUS);
+  readonly selectedStrokeWidthCell = cell(DEFAULT_SELECTED_STROKE_WIDTH);
+
+  // Theming: reactive cells for colors
+  readonly accentColorCell = cell("#7aaae8");
+  readonly focusColorCell = cell("#4a9eff");
+  readonly hoverColorCell = cell("#a4c0f0");
+  readonly selectedFillCell = cell("#fff");
+  readonly dotStrokeCell = cell("#0b0d12");
 
   get xBinding(): string { return (this as any)._xBindingName ?? '_index' }
   set xBinding(v: string) {
@@ -109,6 +139,14 @@ export class MdScatterChartLC extends CartesianChartBase {
     this.tabIndex = -1;
     this.style.outline = "none";
 
+    // ─── Sync CSS variables to reactive cells ────────────────────────────────
+    this._setupDisposers.push(biEffect(() => {
+      const accentColor = getCSSVar('--color-accent', "#7aaae8");
+      const focusColor = getCSSVar('--color-focus', "#4a9eff");
+      this.accentColorCell.value = accentColor as string;
+      this.focusColorCell.value = focusColor as string;
+    }));
+
     const data = this.dataCell;
 
     // Sync dataCell → base _dataCell.
@@ -121,7 +159,12 @@ export class MdScatterChartLC extends CartesianChartBase {
       idOf: (d) => d.id ?? String(data.peek().indexOf(d)),
       host: this,
       anim: this.anim,
-      padding: { top: 16, right: 24, bottom: 36, left: 48 },
+      padding: {
+        top: this.paddingTopCell.value,
+        right: this.paddingRightCell.value,
+        bottom: this.paddingBottomCell.value,
+        left: this.paddingLeftCell.value
+      },
       xNice: true, yNice: true, yBaseline: 0,
     });
 
@@ -144,9 +187,9 @@ export class MdScatterChartLC extends CartesianChartBase {
     for (const d of points0) {
       const pos = Vec.derive(() => ({ x: ctx.xGet.value(d), y: ctx.yGet.value(d) }));
       const fill = derive(() =>
-        selected.value === d ? "#fff" : hover.value === d ? "#a4c0f0" : COLOR,
+        selected.value === d ? this.selectedFillCell.value : hover.value === d ? this.hoverColorCell.value : this.accentColorCell.value,
       );
-      const dot = s(circle(pos, 5, { fill, stroke: "#0b0d12", strokeWidth: 1 }));
+      const dot = s(circle(pos, this.dotRadiusCell.value, { fill, stroke: this.dotStrokeCell.value, strokeWidth: this.dotStrokeWidthCell.value }));
       dotElements.set(d, dot.el as SVGCircleElement);
       dot.el.setAttribute('tabindex', '0');
       dot.el.setAttribute('data-focusable', 'point');
@@ -173,7 +216,7 @@ export class MdScatterChartLC extends CartesianChartBase {
       return { x: ctx.xGet.value(p), y: ctx.yGet.value(p) };
     });
     const selOpacity = derive(() => (selected.value ? 1 : 0));
-    s(circle(selPos, 9, { fill: "transparent", stroke: "#fff", strokeWidth: 2, opacity: selOpacity }));
+    s(circle(selPos, this.selectedRadiusCell.value, { fill: "transparent", stroke: this.selectedFillCell.value, strokeWidth: this.selectedStrokeWidthCell.value, opacity: selOpacity }));
 
     s(label(Vec.derive(() => ({ x: Wc.value / 2, y: 12 })), "Scatter"));
   }
