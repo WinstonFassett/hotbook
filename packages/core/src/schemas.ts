@@ -20,6 +20,9 @@ export interface UIField {
   type: 'measure' | 'sort' | 'orientation' | 'depth' | 'xKey' | 'yKey' | 'groupBy' | 'toggle'
   label: string
   path: string  // dot-path into config object (e.g., 'measureKey', 'orderBinding')
+  /** For toggle fields: when true, the checkbox defaults to checked if the
+   *  config value is undefined (i.e., the feature is on by default). */
+  defaultChecked?: boolean
 }
 
 // ─── Runtime Data Row ─────────────────────────────────────────────────────────

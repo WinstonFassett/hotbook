@@ -50,6 +50,10 @@ export interface ChartConfig {
    *  out on level changes), false for icicle/treemap/pack (content moves
    *  off-screen on drill, no exit fade needed). */
   exitFade?: boolean;
+  /** Treemap-only: during a value-edit drag, freeze siblings and scale only
+   *  the edited tile from its center (true, default) vs relayout all siblings
+   *  live in real time (false). */
+  ghostResize?: boolean;
 }
 
 /** A draft event produced by a control surface. */

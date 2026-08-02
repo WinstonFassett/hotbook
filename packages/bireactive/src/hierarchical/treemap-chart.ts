@@ -126,9 +126,11 @@ export class TreemapChart extends HierarchicalChartBase implements ChartAccessor
 
     // Treemap-specific: freeze sibling layout during own edit-drafts so
     // only the edited tile scales in place (spec §5 draft freeze).
+    // When ghostResize is false, skip the freeze → siblings relayout live.
     const draftFreeze: Behavior = (g: Gesture) =>
       g.editor.subscribe((t) => {
         if (t.type === "draft" && t.draft?.intent === "edit") {
+          if (this._configCell.value?.ghostResize === false) return;
           if (!this._frozenLayout.value) {
             this._frozenLayout.value = new Map(this._liveLayout!.value);
           }
