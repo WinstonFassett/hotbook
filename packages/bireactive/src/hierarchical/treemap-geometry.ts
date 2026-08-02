@@ -96,10 +96,9 @@ export function computeTreemapLayout(
     .tile(treemapSquarify)
     .size([Math.max(1, W), Math.max(1, H)])
     .paddingInner(pad)
-    .paddingOuter(pad) // gap between parent edge and children — matches
-    // sibling separation so nested blocks don't go flush against their
-    // container. Without this, children touch all 4 walls of their parent,
-    // which looks wrong compared to the clean gaps between siblings.
+    // No paddingOuter — with frame styling, children go flush against the
+    // parent frame on left/right/bottom. Only paddingTop creates the header
+    // gap. Sibling gaps come from paddingInner alone.
     .paddingTop(PAD_TOP)
     .round(false)(h); // don't round — rounding halves sub-pixel padding
 
@@ -142,11 +141,10 @@ export function computeTreemapLayout(
 
       // Re-apply fixed-pixel paddingTop. d3's paddingTop (PAD_TOP=16) was
       // applied at every level BEFORE the affine, so it got scaled by scaleY.
-      // For small focus tiles (large scaleY), the header gap becomes huge
-      // (e.g. 16 * 5 = 80px). Collapse it back to 16px screen-space by
-      // shifting each group's children up by the reclaimed space and growing
-      // their heights to fill it. Only the focus subtree is visible, so only
-      // fix nodes within it.
+      // A node at depth D from the focus has D levels of scaled PAD_TOP
+      // accumulated in its y position. Shift it up by D * reclaim to collapse
+      // all D levels back to 16px screen-space. Grow each node's height by
+      // one reclaim (its own children's PAD_TOP correction).
       const reclaim = PAD_TOP * (scaleY - 1);
       if (reclaim > 0) {
         const findFocus = (node: HierarchyRectangularNode<ChartNode>): HierarchyRectangularNode<ChartNode> | null => {
@@ -157,24 +155,25 @@ export function computeTreemapLayout(
           }
           return null;
         };
-        const fixPadding = (node: HierarchyRectangularNode<ChartNode>) => {
+        const focusD3Node = findFocus(rootNode);
+        const fixPadding = (node: HierarchyRectangularNode<ChartNode>, depth: number) => {
           const children = node.children;
           if (!children || children.length === 0) return;
           for (const child of children) {
             const cr = map.get(child.data.id);
             if (cr) {
+              const shift = depth * reclaim;
               map.set(child.data.id, {
                 x: cr.x,
-                y: cr.y - reclaim,
+                y: cr.y - shift,
                 width: cr.width,
                 height: cr.height + reclaim,
               });
             }
-            fixPadding(child as HierarchyRectangularNode<ChartNode>);
+            fixPadding(child as HierarchyRectangularNode<ChartNode>, depth + 1);
           }
         };
-        const focusD3Node = findFocus(rootNode);
-        if (focusD3Node) fixPadding(focusD3Node);
+        if (focusD3Node) fixPadding(focusD3Node, 1);
       }
     }
   }
@@ -237,8 +236,32 @@ export function makeTreemapTile(
 
   const fillColor = chart?._colorModeCell;
   const fill = derive(() => resolveFill(node.color, node.depth, fillColor?.value));
-  const tile = rect(rx, ry, rw, rh, { fill, stroke, strokeWidth });
+
+  // Group tiles render as frames: header bar (PAD_TOP tall) with color +
+  // border around the full tile, transparent body so children show through.
+  // Leaf tiles stay solid fill.
+  const isGroup = !node.isLeaf;
+  const HEADER_H = PAD_TOP;
+
+  const tile = rect(rx, ry, rw, rh, {
+    fill: isGroup ? "transparent" : fill,
+    stroke,
+    strokeWidth,
+  });
   tile.el.setAttribute("data-id", node.id);
+
+  // Header bar for group tiles — solid color strip at the top.
+  let headerRect: ReturnType<typeof rect> | null = null;
+  if (isGroup) {
+    headerRect = rect(
+      rx,
+      ry,
+      rw,
+      derive(() => Math.min(HEADER_H, rh.value)),
+      { fill, stroke: "none" },
+    );
+    headerRect.el.style.pointerEvents = "none";
+  }
   // Tile rect transitions are handled by the transitionOnUpdated behavior's
   // injected <style> (x/y/width/height on rect elements). No inline
   // transition here — the behavior's CSS is the single source of truth.
@@ -359,6 +382,7 @@ export function makeTreemapTile(
   });
 
   const g = group({}, tile);
+  if (headerRect) g.add(headerRect);
   g.el.appendChild(labelWrap);
   if (clipId) g.el.style.clipPath = `url(#${clipId})`;
   // Don't use track() — it may not exist on group. Keep the disposer alive

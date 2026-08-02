@@ -85,7 +85,7 @@ export class IcicleChart extends HierarchicalChartBase implements EdgeDragHandle
       const off = attachEdgeHandleDrag(handle, this);
       handle.track(off);
       return handle;
-    }, { key: (edge) => edge.id });
+    }, { key: (edge) => `${edge.parentId}:${edge.index}` });
 
     this._setupDisposers.push(() => {
       tilesResult.dispose();

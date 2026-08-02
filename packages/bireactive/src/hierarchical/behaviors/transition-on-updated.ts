@@ -123,10 +123,14 @@ ${selector}.${REORDER_ACTIVE_CLASS} [data-reordering] * { transition: none !impo
     const styleDispose = effect(emitStyle);
 
     // Enable transitions after the first data-driven layout. Two cases:
-    // 1. Elements already exist with geometry (synchronous data) → enable
-    //    after one rAF to let the current flush complete.
-    // 2. Elements don't exist yet (async data via tile binder) → watch for
-    //    the first attribute write, then enable.
+    // 1. Elements already exist with geometry (rebuild, e.g. sort change) →
+    //    enable synchronously so the layout re-derivation animates from old
+    //    to new positions. The old geometry is already in the DOM; any new
+    //    attribute writes will transition. (Previously used rAF here, but the
+    //    rAF callback ran AFTER the synchronous layout re-derivation, so rects
+    //    jumped instead of animating — the sort-change regression.)
+    // 2. Elements don't exist yet (initial mount, async data via tile binder) →
+    //    watch for the first attribute write, then enable on next frame.
     const hasGeometryNow = () => {
       const els = host.querySelectorAll(elements);
       for (const el of els) {
@@ -140,9 +144,18 @@ ${selector}.${REORDER_ACTIVE_CLASS} [data-reordering] * { transition: none !impo
     const enableNextFrame = () => {
       requestAnimationFrame(() => { suppressTransitions = false; emitStyle(); });
     };
-    if (hasGeometryNow()) {
-      // Elements already have geometry — data was set synchronously.
-      // Enable after one frame so any pending attribute writes don't animate.
+    if (hasGeometryNow() && durationMs) {
+      // Elements already have geometry AND the chart explicitly opts into CSS
+      // transitions (provides durationMs). This is a rebuild (e.g. sort change)
+      // — enable transitions synchronously so layout re-derivation animates from
+      // old to new positions. Charts that use JS tween systems (sunburst via
+      // settleArcCells) pass no durationMs; they fall through to the rAF path
+      // to avoid double-animating handle rects on top of the JS tween.
+      suppressTransitions = false;
+      emitStyle();
+    } else if (hasGeometryNow()) {
+      // Elements exist but chart doesn't use CSS transitions for layout (e.g.
+      // sunburst uses settleArcCells). Use rAF delay to avoid interfering.
       enableNextFrame();
     } else {
       // Watch for the first geometry attribute write (async data arrival).
