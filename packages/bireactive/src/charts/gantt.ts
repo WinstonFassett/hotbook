@@ -49,8 +49,6 @@ import { lightenHex } from "../lib/color-utils";
 import { PALETTE } from "@hotbook/core";
 import { attachReorderGesture } from "../lib/reorder-gesture";
 import { withExitDelay, membershipCell } from "../lib/mark-lifecycle";
-import { setup } from "../hierarchical/gesture";
-import { transitionOnUpdated } from "../hierarchical/behaviors/transition-on-updated";
 
 const W = 720;
 const H = 360;
@@ -162,9 +160,11 @@ export class MdGanttChartLC extends CartesianChartBase {
 
   protected _composeBehaviors(): void {
     // Gantt uses custom drag/wheel/keyboard controllers, not shared behaviors.
-    // Just install transitionOnUpdated for CSS transitions on settle.
-    const gesture = this._gesture!;
-    this._behaviorDispose = setup(gesture)(transitionOnUpdated());
+    // No transitionOnUpdated — the gantt has its own JS tween system for
+    // y-position animation (tween(entry.yCell, ...)). transitionOnUpdated
+    // injects CSS transitions on rect x/y/width/height which conflict with
+    // the JS tweens (two systems fighting over the same attributes).
+    // GESTURE_ACTIVE_CLASS is toggled manually by the gantt's own drag handlers.
   }
 
   #color(idx: number, task: GanttTask): string {
