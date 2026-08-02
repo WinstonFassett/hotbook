@@ -25,7 +25,7 @@ import { CartesianChartBase } from "../cartesian/cartesian-chart-base";
 import { dragCancelable } from "../lib/esc-contract";
 import type { BiNode } from "../lib/tree";
 import { setup } from "../hierarchical/gesture";
-import { transitionOnUpdated } from "../hierarchical/behaviors/transition-on-updated";
+import { transitionOnUpdated, GESTURE_ACTIVE_CLASS } from "../hierarchical/behaviors/transition-on-updated";
 
 const BUDGET_CSS = `
 [data-focusable]:focus { outline: 2px solid #4a9eff; outline-offset: 2px; }
@@ -298,7 +298,11 @@ export class MdBudgetTree extends CartesianChartBase {
       // Cancelable drag: lens sources are [a, b, leftX] but only [a, b] are
       // writable cells, so those are the revert snapshot. Esc reverts via the
       // host contract installed below.
-      dragCancelable(pillShape, knob, [a, b], { host: this });
+      dragCancelable(pillShape, knob, [a, b], {
+        host: this,
+        onStart: () => this.classList.add(GESTURE_ACTIVE_CLASS),
+        onEnd: () => this.classList.remove(GESTURE_ACTIVE_CLASS),
+      });
       pillShape.el.style.cursor = "ew-resize";
     }
     // Esc-revert is owned by each pill's dragCancelable gesture. No selection here.

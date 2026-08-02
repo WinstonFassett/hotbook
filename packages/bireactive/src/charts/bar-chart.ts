@@ -298,15 +298,6 @@ export class MdBarChartLC extends CartesianChartBase {
       return arr.map((v) => ({ v, pos: sc(v), text: fmt(v) }));
     });
 
-    // Solid backdrop so axis labels hide any plot content behind them.
-    axisS(rect(
-      derive(() => 0),
-      derive(() => isVert.value ? 0 : axisBaseY.value),
-      derive(() => isVert.value ? PAD.value.left : viewportW.value),
-      derive(() => isVert.value ? viewportH.value : PAD.value.bottom),
-      { fill: 'var(--pv-bg, #0b0d12)' }
-    ));
-
     const AXIS_POOL = 12;
     for (let ti = 0; ti < AXIS_POOL; ti++) {
       const visible = derive(() => valueTicks.value[ti] ? 1 : 0);
@@ -803,17 +794,13 @@ export class MdBarChartLC extends CartesianChartBase {
     // down) moves down in pixels → value decreases. Horizontal bars: value
     // axis is X (normal range), so +deltaY must move left in pixels → value
     // decreases, matching "drag the handle down/left = smaller value".
-    // A mouse wheel notch fires deltaY≈120, but a real drag moves only a few
-    // px per frame — so we dampen by WHEEL_PX_DIVISOR to make one notch feel
-    // like a ~10px drag (predictable, not explosive).
-    const WHEEL_PX_DIVISOR = 12;
+    // 1:1 pixel mapping — same as drag and same as area/line wheel.
     const pixelToValueDelta = (deltaY: number, currentValue: number): number => {
       const scale = this._valueScale?.value;
       if (!scale) return -Math.abs(currentValue * 0.1) * Math.sign(deltaY);
       const isV = this._orientationCell.value === 'vertical';
-      const px = deltaY / WHEEL_PX_DIVISOR;
       const curPx = scale(currentValue);
-      const newPx = isV ? curPx + px : curPx - px;
+      const newPx = isV ? curPx + deltaY : curPx - deltaY;
       return scale.invert(newPx) - currentValue;
     };
     this._behaviorDispose = this._composeStandardBehaviors(
