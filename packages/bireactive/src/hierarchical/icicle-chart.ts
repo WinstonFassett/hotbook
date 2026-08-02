@@ -81,6 +81,7 @@ export class IcicleChart extends HierarchicalChartBase implements EdgeDragHandle
         this._layout!,
         this._configCell,
         derive(() => membership.value.has(edge.leftId) && membership.value.has(edge.rightId)),
+        this._layoutTransitioning,
       );
       const off = attachEdgeHandleDrag(handle, this);
       handle.track(off);

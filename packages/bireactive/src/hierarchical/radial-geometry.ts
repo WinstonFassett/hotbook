@@ -458,6 +458,7 @@ export function makeAngularHandle(
   center: Vec,
   present?: Read<boolean>,
   layout?: Cell<Map<string, RadialRect>>,
+  transitioning?: Read<boolean>,
 ): Shape {
   // Read geometry from arcCellsMap (the ANIMATED cells) so handles stay in
   // sync with arcs during the settle tween. The cells are reactive (num()),
@@ -517,11 +518,13 @@ export function makeAngularHandle(
     wrapG.style.transform = `translate(${x}px, ${y}px) rotate(${deg}deg)`;
   });
 
-  if (present) {
+  if (present || transitioning) {
     const visDispose = effect(() => {
-      const vis = readNow(present);
-      handle.el.style.pointerEvents = vis ? "all" : "none";
-      handle.el.style.opacity = vis ? "" : "0";
+      const vis = present ? readNow(present) : true;
+      const transitioningNow = transitioning ? readNow(transitioning) : false;
+      const show = vis && !transitioningNow;
+      handle.el.style.pointerEvents = show ? "all" : "none";
+      handle.el.style.opacity = show ? "" : "0";
     });
     (handle as any).track?.(visDispose);
   }

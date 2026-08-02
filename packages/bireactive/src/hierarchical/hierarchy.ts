@@ -417,6 +417,7 @@ export function makeHandle(
   layout: Cell<Map<string, LayoutRect>>,
   configCell: Cell<ChartConfig | null>,
   present?: Read<boolean>,
+  transitioning?: Read<boolean>,
 ): Shape {
   const isHoriz = derive(() => configCell.value?.orientation === "horizontal");
 
@@ -450,12 +451,16 @@ export function makeHandle(
   handle.el.style.pointerEvents = "all";
   (handle as any)._edge = edge;
 
-  // Pointer-events gate: handle can't capture clicks when either sibling
-  // is off-window. No opacity fade — same physical metaphor as tiles.
-  if (present) {
+  // Pointer-events + opacity gate: handle can't capture clicks when either
+  // sibling is off-window. During layout transitions (sort change), handles
+  // fade out and re-enter — their positions are meaningless mid-reorder.
+  if (present || transitioning) {
     const visDispose = effect(() => {
-      const vis = readNow(present);
-      handle.el.style.pointerEvents = vis ? "all" : "none";
+      const vis = present ? readNow(present) : true;
+      const transitioningNow = transitioning ? readNow(transitioning) : false;
+      const show = vis && !transitioningNow;
+      handle.el.style.pointerEvents = show ? "all" : "none";
+      handle.el.style.opacity = show ? "" : "0";
     });
     (handle as any).track?.(visDispose);
   }

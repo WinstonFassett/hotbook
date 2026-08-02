@@ -160,6 +160,7 @@ export class SunburstChart extends HierarchicalChartBase implements EdgeDragHand
           return true;
         }),
         this._layout!,
+        this._layoutTransitioning,
       );
       const off = attachEdgeHandleDrag(handle, this, "grabbing");
       handle.track(off);
