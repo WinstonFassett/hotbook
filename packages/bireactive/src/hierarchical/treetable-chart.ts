@@ -313,6 +313,11 @@ export class TreetableChart extends HierarchicalChartBase {
       row.innerHTML = this._buildRowContent(node, nodeId, depth, hasKids, isCollapsed, indent, visibleColumns, singleColumnMode);
 
       // Set up reactive value display + editing for each column
+      const bn = this._biNodeFor(nodeId);
+      const primaryKey = (
+        visibleColumns.find((c) => c.key === "total" || (bn && bn.value.measures?.[c.key] === bn.value.total))
+        ?? visibleColumns[0]
+      )?.key;
       for (let ci = 0; ci < visibleColumns.length; ci++) {
         const col = visibleColumns[ci];
         const valueCell = row.querySelector<HTMLElement>(`[data-value-cell="${nodeId}:${col.key}"]`);
@@ -322,8 +327,10 @@ export class TreetableChart extends HierarchicalChartBase {
         this._valueEffectDisposers.get(effectKey)?.();
         this._numberDragDisposers.get(effectKey)?.();
 
-        const isPrimary = ci === 0;
-        const measureValue = this._valueSourceFor(node, col, isPrimary);
+        const isPrimary = col.key === primaryKey;
+        const measureValue = isPrimary
+          ? node.value
+          : (bn?.value.measures?.[col.key] as { value: number } | undefined) ?? null;
         if (!measureValue) continue;
 
         const dispose = effect(() => {
@@ -657,24 +664,23 @@ export class TreetableChart extends HierarchicalChartBase {
     return [{ key: "total", label: "Value", width: 80, visible: true }];
   }
 
-  /** Resolve the reactive value source for a row+column. The FIRST visible
-   *  column is the primary measure and reads the shared ChartNode value cell
-   *  (kernel-backed → live cross-view draft previews). Extra columns read
-   *  the compat BiNode's measure cells directly (old behavior). */
-  private _valueSourceFor(node: ChartNode, col: ColumnDef, isPrimary: boolean): { value: number } | null {
-    if (isPrimary || col.key === "total") return node.value;
+  /** The compat BiNode for a row. The primary column is the one whose
+   *  measure cell is the node's `total` (what the kernel/ChartNode value
+   *  mirrors), falling back to the first visible column; it reads the
+   *  ChartNode value cell (kernel-backed → live cross-view draft previews).
+   *  Other columns read the BiNode's own measure cells directly. */
+  private _biNodeFor(id: string): BiNode | null {
     const biRoot = (this as any).data as BiNode | null | undefined;
     if (!biRoot) return null;
     const find = (n: BiNode): BiNode | null => {
-      if (n.value.id === node.id) return n;
+      if (n.value.id === id) return n;
       for (const c of n.children as BiNode[]) {
         const f = find(c);
         if (f) return f;
       }
       return null;
     };
-    const bn = find(biRoot);
-    return (bn?.value.measures?.[col.key] as { value: number } | undefined) ?? null;
+    return find(biRoot);
   }
 
   private _getVisibleColumns(): ColumnDef[] {

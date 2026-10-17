@@ -26,7 +26,8 @@ def value_cell(page, section: str, node_id: str, key: str):
 
 
 def read(page, section: str, node_id: str, key: str) -> float:
-    return float(value_cell(page, section, node_id, key).text_content())
+    # The treetable renders 0 as a blank cell.
+    return float(value_cell(page, section, node_id, key).text_content() or 0)
 
 
 def leaf_ids(page, section: str, key: str) -> list[str]:
