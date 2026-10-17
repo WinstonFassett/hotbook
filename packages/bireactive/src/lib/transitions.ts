@@ -44,6 +44,16 @@ export function hoverTransition(properties: string | readonly string[]): string 
  *  on the chart host; pair with the CSS rule emitted by `gestureSuppressionCss`. */
 export const GESTURE_ACTIVE_CLASS = "vf-gesture-active";
 
+/** Marks a chart host as mid-gesture (class + `gestureActive` flag). On the
+ *  off→on edge it dispatches a bubbling `gesturestart`, the counterpart of the
+ *  chart's existing `gesturecommit`, so linked views can hold their order. */
+export function announceGesture(host: HTMLElement, on: boolean): void {
+  const was = !!(host as any).gestureActive;
+  host.classList.toggle(GESTURE_ACTIVE_CLASS, on);
+  (host as any).gestureActive = on;
+  if (on && !was) host.dispatchEvent(new CustomEvent("gesturestart", { bubbles: true }));
+}
+
 /** CSS that disables `transition` on every descendant while a gesture is live.
  *  Inject once per chart `static styles`. */
 export const GESTURE_SUPPRESSION_CSS = `:host(.${GESTURE_ACTIVE_CLASS}) * { transition: none !important; }`;

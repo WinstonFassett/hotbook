@@ -7,7 +7,7 @@ import { RadialChartBase, type FlatItem } from "../radial/radial-chart-base";
 import { scaleLinear } from "d3-scale";
 import { extent, ticks as d3Ticks } from "d3-array";
 import { wheelController, dragController, dynamicWheelStep, realModifierDown } from "../lib/interaction";
-import { GESTURE_ACTIVE_CLASS } from "../lib/transitions";
+import { GESTURE_ACTIVE_CLASS, announceGesture } from "../lib/transitions";
 import { motion } from "../lib/runtime-config";
 import { setup } from "../hierarchical/gesture";
 import { transitionOnUpdated } from "../hierarchical/behaviors/transition-on-updated";
@@ -98,7 +98,7 @@ export class MdRadarChartLC extends RadialChartBase {
       data.value = [...data.value];
     };
 
-    const setGestureActive = (on: boolean) => { this.classList.toggle(GESTURE_ACTIVE_CLASS, on); (this as any).gestureActive = on; };
+    const setGestureActive = (on: boolean) => announceGesture(this, on);
 
     // Config handed to the SHARED wheel controller (app-wide singleton).
     const wheelConfig = {

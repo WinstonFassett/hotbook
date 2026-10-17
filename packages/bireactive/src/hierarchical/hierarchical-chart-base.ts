@@ -426,6 +426,7 @@ export abstract class HierarchicalChartBase extends HTMLElement {
         rebuildTree(this._dataView!, this._treeRoot);
       },
       frozenOrder: this._frozenOrder,
+      holdFrozen: () => this._holdFrozen(),
     });
 
     rebuildTree(this._dataView, this._treeRoot);
@@ -649,6 +650,11 @@ export abstract class HierarchicalChartBase extends HTMLElement {
    *  + shared wheel/keyboard/transition/preview behaviors onto the gesture.
    *  Store the dispose fn in _behaviorDispose. */
   protected abstract _composeBehaviors(): void;
+
+  /** True while `_frozenOrder` is held for a gesture outside this chart's own Editor. */
+  protected _holdFrozen(): boolean {
+    return false;
+  }
 
   /** Shared behavior composition: transitionOnUpdated + [extraPre] +
    *  previewFullRender + wheelEdit + keyboardEdit + chart-specific drag
