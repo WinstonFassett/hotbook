@@ -92,7 +92,7 @@ export class MdBarChartLC extends CartesianChartBase {
 
   set externalData(v: { label: string; value: number }[] | undefined) {
     if (v) {
-      const bars = v.map((d, i) => ({ id: (d as any).id ?? d.label, label: d.label, value: d.value, color: (d as any).color }));
+      const bars = v.map((d) => ({ ...d, id: (d as any).id ?? d.label })) as Bar[];
       this.dataCell.value = bars;
       this.items = bars;
     }
