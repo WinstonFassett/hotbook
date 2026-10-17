@@ -314,9 +314,10 @@ export class TreetableChart extends HierarchicalChartBase {
 
       // Set up reactive value display + editing for each column
       const bn = this._biNodeFor(nodeId);
+      const availableColumns = this._getAvailableColumns();
       const primaryKey = (
-        visibleColumns.find((c) => c.key === "total" || (bn && bn.value.measures?.[c.key] === bn.value.total))
-        ?? visibleColumns[0]
+        availableColumns.find((c) => c.key === "total" || (bn && bn.value.measures?.[c.key] === bn.value.total))
+        ?? availableColumns[0]
       )?.key;
       for (let ci = 0; ci < visibleColumns.length; ci++) {
         const col = visibleColumns[ci];
