@@ -98,6 +98,18 @@ def run(page) -> None:
     after = read(page, "bar-chart", "Feb", "value")
     check("bar: Feb value scrubs up", after > before, f"{before} -> {after}")
 
+    page.locator("#gantt v-treetable button[title='Column picker']").click()
+    page.locator("[data-column-picker] label", has_text="End").locator("input").click()
+    page.wait_for_timeout(500)
+    check("gantt [End hidden]: End column gone", value_cell(page, "gantt", "t4", "end").count() == 0)
+    cs, ce = chart_tasks(page)["t4"]
+    s = read(page, "gantt", "t4", "start")
+    check("gantt [End hidden]: start still matches chart", round(s) == round(cs), f"table={s} chart={cs}")
+    scrub(page, "gantt", "t4", "start", 40)
+    cs2, ce2 = chart_tasks(page)["t4"]
+    check("gantt [End hidden]: scrub moves chart start", cs2 > cs, f"{cs} -> {cs2}")
+    check("gantt [End hidden]: scrub leaves chart end", round(ce2) == round(ce), f"{ce} -> {ce2}")
+
 
 def main() -> int:
     with sync_playwright() as p:
