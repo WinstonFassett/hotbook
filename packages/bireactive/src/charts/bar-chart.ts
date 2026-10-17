@@ -13,7 +13,7 @@ import { Anchor, cell, circle, derive, effect as biEffect, forEach, group, label
 import { CartesianChartBase, type CartesianConfig, type FlatItem } from "../cartesian/cartesian-chart-base";
 import { scaleLinear, scaleBand } from "d3-scale";
 import { FILL_STYLE } from "../lib/host-size";
-import { GESTURE_ACTIVE_CLASS, GESTURE_SUPPRESSION_CSS, REORDER_ELEVATION_CSS } from "../lib/transitions";
+import { GESTURE_ACTIVE_CLASS, GESTURE_SUPPRESSION_CSS, REORDER_ELEVATION_CSS, announceGesture } from "../lib/transitions";
 import { motion } from "../lib/runtime-config";
 import { lightenHex } from "../lib/color-utils";
 import { dragController } from "../lib/interaction";
@@ -223,7 +223,7 @@ export class MdBarChartLC extends CartesianChartBase {
     const axisS = mount(valueAxisGroup);
 
     // Gesture-suppression class toggle (light-DOM: vf-gesture-active on host).
-    const setGestureActive = (on: boolean) => this.classList.toggle(GESTURE_ACTIVE_CLASS, on);
+    const setGestureActive = (on: boolean) => announceGesture(this, on);
     // Convert a pointer event's client coords into the SVG viewBox coordinate space.
     const localPoint = (e: PointerEvent): { x: number; y: number } => {
       const r = svgEl.getBoundingClientRect();

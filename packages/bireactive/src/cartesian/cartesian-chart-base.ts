@@ -27,6 +27,7 @@ import { wheelEdit } from "../hierarchical/behaviors/wheel-edit";
 import { keyboardEdit } from "../hierarchical/behaviors/keyboard-edit";
 import type { ConservationMode } from "../hierarchical/behaviors/keyboard-edit";
 import { attachRaf } from "../lib/raf";
+import { announceGesture } from "../lib/transitions";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const FALLBACK_W = 720;
@@ -332,9 +333,9 @@ export abstract class CartesianChartBase extends HTMLElement {
     this._buildDisposers.push(
       this._gesture.editor.subscribe((t) => {
         if (t.type === "draft") {
-          (this as any).gestureActive = true;
+          announceGesture(this, true);
         } else if (t.type === "commit" || t.type === "cancel") {
-          (this as any).gestureActive = false;
+          announceGesture(this, false);
           this.dispatchEvent(new CustomEvent("gesturecommit", {
             detail: {
               canceled: t.type === "cancel",

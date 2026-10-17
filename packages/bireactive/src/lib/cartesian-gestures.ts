@@ -7,7 +7,7 @@ import { bisector } from "d3-array";
 import { effect as biEffect } from "bireactive";
 import type { Cell, Writable } from "bireactive";
 import { makeBridge, type ElementWithBridge } from "./hud-bridge";
-import { GESTURE_ACTIVE_CLASS } from "./transitions";
+import { announceGesture } from "./transitions";
 
 export interface CartesianGestureState<TData> {
   hover: Writable<Cell<TData | null>>;
@@ -59,7 +59,7 @@ export function attachCartesianGestures<TData>(
   // (Bridge identity is by datum id now, so a shifted order can't mis-resolve.)
   let gestureOrder: TData[] | null = null;
 
-  const setGestureActive = (on: boolean) => { host.classList.toggle(GESTURE_ACTIVE_CLASS, on); (host as any).gestureActive = on; };
+  const setGestureActive = (on: boolean) => announceGesture(host, on);
 
   // Captured at wheel gesture start for scale-aware delta computation.
   let wheelStartScale: any = null;

@@ -144,6 +144,46 @@ export class TreetableChart extends HierarchicalChartBase {
   /** Row enter animations on/off (legacy API). Default on. */
   enableTransitions?: boolean;
 
+  private _gestureSource: EventTarget | null = null;
+  private _detachGestureSource?: () => void;
+  private _externalHold = false;
+
+  /** A linked chart host. Between its `gesturestart` and `gesturecommit` the
+   *  table holds its row order; values keep updating live. */
+  get gestureSource(): EventTarget | null { return this._gestureSource; }
+  set gestureSource(target: EventTarget | null) {
+    this._detachGestureSource?.();
+    this._detachGestureSource = undefined;
+    this._releaseExternalHold();
+    this._gestureSource = target;
+    if (!target) return;
+    const onStart = (e: Event) => {
+      // Safari fires a native (non-Custom) `gesturestart` for trackpad pinch.
+      if (!(e instanceof CustomEvent)) return;
+      const root = this._treeRoot.value;
+      if (!root || this.config.sort === "index" || this._frozenOrder.value) return;
+      this._externalHold = true;
+      this._frozenOrder.value = captureDisplayedOrder(root, this.config.sort === "value" ? "value" : "index");
+    };
+    const onCommit = () => this._releaseExternalHold();
+    target.addEventListener("gesturestart", onStart);
+    target.addEventListener("gesturecommit", onCommit);
+    this._detachGestureSource = () => {
+      target.removeEventListener("gesturestart", onStart);
+      target.removeEventListener("gesturecommit", onCommit);
+    };
+  }
+
+  private _releaseExternalHold(): void {
+    if (!this._externalHold) return;
+    this._externalHold = false;
+    this._frozenOrder.value = null;
+  }
+
+  protected _holdFrozen(): boolean {
+    return this._externalHold;
+  }
+
   // Override _createSurface to build HTML surface instead of SVG
   protected _createSurface(): void {
     this._root = document.createElement("div");
@@ -725,6 +765,7 @@ export class TreetableChart extends HierarchicalChartBase {
 
   disconnectedCallback() {
     super.disconnectedCallback();
+    this.gestureSource = null;
     // Clean up all effects
     for (const dispose of this._valueEffectDisposers.values()) {
       dispose();
