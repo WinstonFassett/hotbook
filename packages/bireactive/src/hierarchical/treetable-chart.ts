@@ -18,6 +18,7 @@ import { findNode } from "./tree";
 import { numberDrag } from "../lib/number-drag";
 import type { BiNode } from "../lib/tree";
 import { keyboardEdit } from "./behaviors/keyboard-edit";
+import { previewFullRender } from "./behaviors/preview-full-render";
 import { prefersReducedMotion, settleTransition } from "./behaviors/transition-on-updated";
 import { motion } from "../lib/runtime-config";
 import { HierarchicalChartBase } from "./hierarchical-chart-base";
@@ -43,12 +44,35 @@ function subtreeValue(n: ChartNode): number {
   return kids.reduce((s, c) => s + subtreeValue(c), 0);
 }
 
+function orderedChildren(
+  node: ChartNode,
+  sortBy?: "index" | "value",
+  frozen?: Map<string, string[]> | null,
+): ChartNode[] {
+  const ids = frozen?.get(node.id);
+  if (ids) return node.children.slice().sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+  if (sortBy === "value") return node.children.slice().sort((a, b) => subtreeValue(b) - subtreeValue(a));
+  return node.children;
+}
+
+function captureDisplayedOrder(root: ChartNode, sortBy?: "index" | "value"): Map<string, string[]> {
+  const order = new Map<string, string[]>();
+  (function walk(n: ChartNode) {
+    if (n.children.length === 0) return;
+    const kids = orderedChildren(n, sortBy);
+    order.set(n.id, kids.map((c) => c.id));
+    kids.forEach(walk);
+  })(root);
+  return order;
+}
+
 function computeVisible(
   root: ChartNode,
   collapsed: Set<string>,
   maxDepth?: number,
   sortBy?: "index" | "value",
   drillId?: string | null,
+  frozen?: Map<string, string[]> | null,
 ): VisibleRow[] {
   const out: VisibleRow[] = [];
 
@@ -57,11 +81,8 @@ function computeVisible(
   const effectiveRoot = drillId ? findNode(root, drillId) ?? root : root;
 
   function walk(node: ChartNode, depth: number) {
-    let children = node.children;
+    const children = orderedChildren(node, sortBy, frozen);
     const hasKids = children.length > 0;
-    if (hasKids && sortBy === "value") {
-      children = children.slice().sort((a, b) => subtreeValue(b) - subtreeValue(a));
-    }
 
     // Add node (skip effective root at depth 0)
     if (depth > 0) {
@@ -134,6 +155,7 @@ export class TreetableChart extends HierarchicalChartBase {
   // --- Hook: chart-specific rendering ---
   protected _setupRendering(): void {
     // Create the render effect that responds to tree/config/collapsed changes
+    let wasFrozen = false;
     this._setupDisposers.push(
       effect(() => {
         const root = this._treeRoot.value;
@@ -141,13 +163,18 @@ export class TreetableChart extends HierarchicalChartBase {
         const drillId = this._drillId.value;
         const collapsed = this._collapsedCell.value; // reactive dependency
         this._renderTick.value; // reactive: refresh()/columns writes
+        const frozen = this._frozenOrder.value;
+        // The freeze captures the rows already on screen; rebuilding them would cancel the live numberDrag.
+        const freezing = !!frozen && !wasFrozen;
+        wasFrozen = !!frozen;
+        if (freezing && this._body) return;
 
         if (!root || !config) {
           if (this._body) this._body.innerHTML = "";
           return;
         }
 
-        this._render(root, config, drillId, collapsed);
+        this._render(root, config, drillId, collapsed, frozen);
       }),
     );
   }
@@ -157,6 +184,11 @@ export class TreetableChart extends HierarchicalChartBase {
     const gesture = this._gesture!;
 
     this._behaviorDispose = setup(gesture)(
+      previewFullRender({
+        deferSort: () => this.config.sort !== "index",
+        frozenOrder: this._frozenOrder,
+        captureOrder: () => captureDisplayedOrder(this._treeRoot.value!, this.config.sort === "value" ? "value" : "index"),
+      }),
       keyboardEdit({
         target: () => this._focusCell.value,
         valueOf: () => this.valueOf,
@@ -170,7 +202,13 @@ export class TreetableChart extends HierarchicalChartBase {
 
   // --- Rendering logic ---
 
-  private _render(root: ChartNode, config: ChartConfig, drillId: string | null, collapsed: Set<string>): void {
+  private _render(
+    root: ChartNode,
+    config: ChartConfig,
+    drillId: string | null,
+    collapsed: Set<string>,
+    frozen: Map<string, string[]> | null,
+  ): void {
     const visibleColumns = this._getVisibleColumns();
     const singleColumnMode = visibleColumns.length === 1;
     // CSS grid template: name column carries the weight (1fr), each value
@@ -207,6 +245,7 @@ export class TreetableChart extends HierarchicalChartBase {
       config.depth,
       config.sort === "value" ? "value" : "index",
       drillId,
+      frozen,
     );
     const allNodeIds: string[] = [];
 
@@ -652,7 +691,7 @@ export class TreetableChart extends HierarchicalChartBase {
     const drillId = this._drillId.value;
     const collapsed = this._collapsedCell.value;
     if (root && config) {
-      this._render(root, config, drillId, collapsed);
+      this._render(root, config, drillId, collapsed, this._frozenOrder.value);
     }
   }
 
