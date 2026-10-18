@@ -48,7 +48,7 @@ export function configKey(config: ChartConfig): string {
 export type KernelListener = (datasetId: string) => void;
 
 /** Listener for draft events broadcast to all DataViews on the same dataset. */
-export type DraftBroadcastListener = (draft: DraftEvent, phase: "draft" | "commit" | "cancel") => void;
+export type DraftBroadcastListener = (draft: DraftEvent, phase: "draft" | "commit" | "cancel", datasetId: string) => void;
 
 /** Listener for drill-state changes on a dataset+drillKey channel. */
 export type DrillListener = (datasetId: string, drillKey: string, nodeId: string | null) => void;
@@ -111,8 +111,8 @@ export class Kernel {
 
   /** Broadcast a draft event to all subscribers (cross-tile).
    *  Charts that are not the active editor receive this and render the preview. */
-  broadcastDraft(draft: DraftEvent, phase: "draft" | "commit" | "cancel"): void {
-    for (const fn of this._draftListeners) fn(draft, phase);
+  broadcastDraft(draft: DraftEvent, phase: "draft" | "commit" | "cancel", datasetId: string): void {
+    for (const fn of this._draftListeners) fn(draft, phase, datasetId);
   }
 
   /** Subscribe to committed data updates. */

@@ -13,7 +13,7 @@ import { Anchor, cell, circle, derive, effect as biEffect, forEach, group, label
 import { CartesianChartBase, type CartesianConfig, type FlatItem } from "../cartesian/cartesian-chart-base";
 import { scaleLinear, scaleBand } from "d3-scale";
 import { FILL_STYLE } from "../lib/host-size";
-import { GESTURE_ACTIVE_CLASS, GESTURE_SUPPRESSION_CSS, REORDER_ELEVATION_CSS } from "../lib/transitions";
+import { GESTURE_ACTIVE_CLASS, GESTURE_SUPPRESSION_CSS, REORDER_ELEVATION_CSS, announceGesture } from "../lib/transitions";
 import { motion } from "../lib/runtime-config";
 import { lightenHex } from "../lib/color-utils";
 import { dragController } from "../lib/interaction";
@@ -25,7 +25,7 @@ const W = 720;
 const H = 360;
 const SINGLE_COLOR = "#7aaae8";
 
-interface Bar extends FlatItem { id: string; label: string; value: number; }
+interface Bar extends FlatItem { id: string; label: string; value: number; color?: string; }
 
 function makeData(): Bar[] {
   const labels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -96,7 +96,7 @@ export class MdBarChartLC extends CartesianChartBase {
 
   set externalData(v: { label: string; value: number }[] | undefined) {
     if (v) {
-      const bars = v.map((d, i) => ({ id: (d as any).id ?? d.label, label: d.label, value: d.value }));
+      const bars = v.map((d) => ({ ...d, id: (d as any).id ?? d.label })) as Bar[];
       this.dataCell.value = bars;
       this.items = bars;
     }
@@ -145,6 +145,7 @@ export class MdBarChartLC extends CartesianChartBase {
 
   #barColor(idx: number, datum?: Bar): string {
     if (this.colorMode === 'single') return SINGLE_COLOR;
+    if (this.colorStrategy === 'index' && datum?.color) return datum.color;
     const max = Math.max(1, ...this.dataCell.value.map(d => d.value));
     return getColorByStrategy(this.colorStrategy, {
       index: idx, value: datum?.value, identity: datum?.id ?? datum?.label,
@@ -226,7 +227,7 @@ export class MdBarChartLC extends CartesianChartBase {
     const axisS = mount(valueAxisGroup);
 
     // Gesture-suppression class toggle (light-DOM: vf-gesture-active on host).
-    const setGestureActive = (on: boolean) => this.classList.toggle(GESTURE_ACTIVE_CLASS, on);
+    const setGestureActive = (on: boolean) => announceGesture(this, on);
     // Convert a pointer event's client coords into the SVG viewBox coordinate space.
     const localPoint = (e: PointerEvent): { x: number; y: number } => {
       const r = svgEl.getBoundingClientRect();
@@ -408,8 +409,8 @@ export class MdBarChartLC extends CartesianChartBase {
       });
       const di = (): Bar | null => datumCell.value;
 
-      const baseColor = (): string => { const d = di(); return d ? this.#barColor(cur.value, d) : SINGLE_COLOR; };
-      const hoverBaseColor = (): string => { const d = di(); return d ? this.#hoverColor(cur.value, d) : lightenHex(SINGLE_COLOR, 0.35); };
+      const baseColor = (): string => { const d = di(); return d ? this.#barColor(idx, d) : SINGLE_COLOR; };
+      const hoverBaseColor = (): string => { const d = di(); return d ? this.#hoverColor(idx, d) : lightenHex(SINGLE_COLOR, 0.35); };
 
       // Bar geometry — direct derive cells. CSS transitions (via
       // transitionOnUpdated) handle the settle animation: setAttribute fires
@@ -753,8 +754,7 @@ export class MdBarChartLC extends CartesianChartBase {
 
     this._setupDisposers.push(() => barsResult.dispose());
 
-    // Place the value-axis layer on top of the bars so its backdrop masks
-    // the plot content behind the fixed axis labels.
+    // Place the value-axis layer on top of the bars.
     this._svg!.appendChild(valueAxisGroup.el);
 
     // ─── Left-room padding for popped labels ───────────────────────────────

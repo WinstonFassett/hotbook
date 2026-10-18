@@ -78,6 +78,8 @@ export function adoptBiRoot(root: BiNode): string {
 
   // Guard: true while one side is applying the other side's change.
   let applying = false;
+  // Leaf values previewed from a Kernel draft; the effect must not write them back as commits.
+  const previews = new Map<string, number>();
 
   // BiNode → Kernel: watch every leaf total cell.
   const stopEffect = effect(() => {
@@ -86,7 +88,7 @@ export function adoptBiRoot(root: BiNode): string {
     forEachNode(root, (n) => {
       if (n.children.length > 0) return;
       const v = leafValue(n); // reactive read — effect re-runs on any leaf change
-      if (applying) return;
+      if (applying || previews.get(n.value.id) === v) return;
       const dn = findNode(ds.root, n.value.id);
       if (dn && dn.value !== v) writes.push({ nodeId: n.value.id, value: v });
     });
@@ -136,6 +138,35 @@ export function adoptBiRoot(root: BiNode): string {
     }
   });
 
+  // Kernel draft → BiNode: preview edit drafts on the leaves; cancel restores the committed value.
+  const stopDrafts = sharedKernel.subscribeDrafts((draft, phase, id) => {
+    if (id !== datasetId || draft.intent !== "edit") return;
+    if (phase === "commit") {
+      previews.clear();
+      return;
+    }
+    const ds = sharedKernel.getDataset(datasetId);
+    if (!ds) return;
+    applying = true;
+    try {
+      const edits: Array<[string | undefined, number | undefined]> = [
+        [draft.nodeId, draft.value],
+        [draft.secondaryNodeId, draft.secondaryValue],
+      ];
+      for (const [nodeId, value] of edits) {
+        if (nodeId == null || value == null) continue;
+        const bn = findBiNode(root, nodeId);
+        if (!bn || bn.children.length > 0) continue;
+        const next = phase === "draft" ? value : findNode(ds.root, nodeId)?.value;
+        if (phase === "draft") previews.set(nodeId, value);
+        else previews.delete(nodeId);
+        if (next != null && leafValue(bn) !== next) bn.value.total.value = next;
+      }
+    } finally {
+      applying = false;
+    }
+  });
+
   const entry: RootEntry = {
     datasetId,
     refs: 0,
@@ -143,6 +174,7 @@ export function adoptBiRoot(root: BiNode): string {
     dispose: () => {
       stopEffect();
       stopKernel();
+      stopDrafts();
       entries.delete(root);
     },
   };

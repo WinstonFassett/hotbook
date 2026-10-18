@@ -204,16 +204,16 @@ export class DataView {
     this._unsubEditor = this.editor.subscribe((t) => {
       if (t.type === "draft") {
         kernel.drafts.onDraftStart(this.editor);
-        kernel.broadcastDraft(t.draft!, "draft");
+        kernel.broadcastDraft(t.draft!, "draft", config.datasetId);
       } else if (t.type === "commit") {
         kernel.drafts.onDraftEnd(this.editor);
         // The chart's commit effect writes the value to the Kernel.
         // The Kernel publish triggers _emitUpdated for all subscribers.
         // Broadcast commit so other charts transition off the draft overlay.
-        if (t.draft) kernel.broadcastDraft(t.draft, "commit");
+        if (t.draft) kernel.broadcastDraft(t.draft, "commit", config.datasetId);
       } else if (t.type === "cancel") {
         kernel.drafts.onDraftEnd(this.editor);
-        if (t.draft) kernel.broadcastDraft(t.draft, "cancel");
+        if (t.draft) kernel.broadcastDraft(t.draft, "cancel", config.datasetId);
       }
       // Emit to local listeners (the chart)
       this._emitLocal(t.type, t.draft);

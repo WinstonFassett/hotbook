@@ -47,6 +47,8 @@ export interface ChartBinding {
   rebuild: () => void;
   /** Optional: frozen order cell to update on draft/cancel. */
   frozenOrder?: { value: Map<string, string[]> | null };
+  /** Optional: while true, `updated` keeps frozenOrder (another view's gesture owns it). */
+  holdFrozen?: () => boolean;
 }
 
 /** Subscribe to a DataView and handle events via the binding.
@@ -59,7 +61,7 @@ export function bindChart(b: ChartBinding): () => void {
 
     if (event.type === "updated") {
       if (g.state === "Drafting") return;
-      b.frozenOrder && (b.frozenOrder.value = null);
+      if (b.frozenOrder && !b.holdFrozen?.()) b.frozenOrder.value = null;
       g.resetStore();
       b.rebuild();
       return;

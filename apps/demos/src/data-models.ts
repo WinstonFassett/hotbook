@@ -136,15 +136,6 @@ function valueData(
     const isValue2 = measureKey === 'value2';
 
     const leaves = ordered.map((item, i) => {
-      const total = Num.lens(
-        data,
-        (d: any[]) => (d && d[i] ? schema!.readValue!(d[i]) : 0),
-        (target: number, d: any[]) => {
-          const next = d.slice();
-          if (next[i]) schema!.writeValue!(next[i], target);
-          return next;
-        },
-      );
       const valueCell = Num.lens(
         data,
         (d: any[]) => {
@@ -154,6 +145,7 @@ function valueData(
         (target: number, d: any[]) => {
           const next = d.slice();
           if (next[i]) {
+            next[i] = { ...next[i] };
             if (isValue) {
               schema!.writeValue!(next[i], target);
             } else {
@@ -173,6 +165,7 @@ function valueData(
         (target: number, d: any[]) => {
           const next = d.slice();
           if (next[i]) {
+            next[i] = { ...next[i] };
             if (isValue2) {
               schema!.writeValue!(next[i], target);
             } else {
@@ -183,6 +176,10 @@ function valueData(
           return next;
         },
       );
+      // The node's total IS the cell for the measure the chart is plotting, so
+      // consumers that probe `measures[key] === total` find the active column
+      // instead of falling back to the first one.
+      const total = isValue2 ? value2Cell : valueCell;
       return node({ id: item.id, label: item.label, color: item.color, total, measures: { value: valueCell, value2: value2Cell } } as any);
     });
 

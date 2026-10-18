@@ -722,6 +722,7 @@ if (app) {
           (el as any).externalRoot = dataModel.root;
         }
       }
+      (treetable as any).gestureSource = el;
       tableWrap.appendChild(treetable);
 
       chartAndTableWrap.appendChild(stage);

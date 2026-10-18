@@ -301,7 +301,7 @@ function header(): HTMLDivElement {
 }
 
 function fmtNum(v: number): string {
-  if (v === 0) return "";
+  if (v === 0) return "0";
   if (v < 10) return v.toFixed(1);
   return Math.round(v).toString();
 }
