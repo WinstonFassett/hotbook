@@ -516,7 +516,8 @@ function buildChartConfigUI(demoId: string, chartEl: HTMLElement, dataModel?: De
         // Read current value from config (hierarchical charts read these
         // from the config object, not as direct element properties).
         const cfg = (chartEl as any).config ?? {};
-        cb.checked = !!cfg[field.path];
+        const val = cfg[field.path];
+        cb.checked = val === undefined ? !!field.defaultChecked : !!val;
         cb.addEventListener('change', () => {
           // Update the config object and re-set it on the chart element.
           const newCfg = { ...(chartEl as any).config, [field.path]: cb.checked };

@@ -352,6 +352,7 @@ const treemapSchema: ChartSchema = {
       { type: 'depth', label: 'Depth', path: 'depth' },
       { type: 'toggle', label: 'Root', path: 'showRoot' },
       { type: 'toggle', label: 'Breadcrumb', path: 'showBreadcrumb' },
+      { type: 'toggle', label: 'Ghost Resize', path: 'ghostResize', defaultChecked: true },
     ],
   },
   capabilities: {

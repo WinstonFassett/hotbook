@@ -380,11 +380,30 @@ export class TreetableChart extends HierarchicalChartBase {
         this._valueEffectDisposers.set(effectKey, dispose);
 
         // Primary column edits route through the DataView draft/commit flow
-        // (cross-view previews); extra columns write BiNode measure cells
-        // directly (legacy behavior — the kernel only carries one measure).
+        // (cross-view previews for hierarchical charts). For Cartesian charts
+        // that don't subscribe to the kernel, also write to the BiNode's total
+        // measure cell directly so the chart picks up the change via its
+        // data model. Extra columns already write BiNode measure cells directly.
+        const biRoot = (this as any).data as BiNode | null | undefined;
+        const biNode = isPrimary && biRoot ? (() => {
+          const find = (n: BiNode): BiNode | null => {
+            if (n.value.id === nodeId) return n;
+            for (const c of n.children as BiNode[]) {
+              const f = find(c);
+              if (f) return f;
+            }
+            return null;
+          };
+          return find(biRoot);
+        })() : null;
+        const biTotalCell = biNode?.value.measures?.total as { value: number } | undefined;
+
         const dragDispose = numberDrag(valueCell, {
           get: () => measureValue.value,
-          set: (v: number) => { measureValue.value = v; },
+          set: (v: number) => {
+            measureValue.value = v;
+            if (biTotalCell) biTotalCell.value = v;
+          },
           pxPerUnit: 4,
           ...(isPrimary
             ? {

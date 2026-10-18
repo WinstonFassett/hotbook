@@ -8,6 +8,34 @@ import type { Gesture } from "./gesture";
 import type { ChartNode } from "./hierarchy";
 import { applyDraft, buildTree, leafValues, restoreValues, snapshotValues } from "./hierarchy";
 
+/** Collect only leaves whose value changed since the snapshot. Falls back
+ *  to collecting ALL leaves if no snapshot is available (e.g. gesture
+ *  initiated without a draft event). This is the targeted-write replacement
+ *  for the old `leafValues(root)` + `writeValues(ALL)` pattern: instead of
+ *  writing every leaf to the Kernel on every commit, we write only the
+ *  leaves that actually changed. For a single-value edit that's 1 write
+ *  instead of N; for a two-sibling reapportion that's 2 writes; for a
+ *  treetable parent-edit (total() scales all children) that's K writes
+ *  where K = number of leaves in the edited subtree. */
+function changedLeaves(
+  root: ChartNode,
+  snapshot: Map<string, number> | null,
+): Array<{ nodeId: string; value: number }> {
+  if (!snapshot) return leafValues(root);
+  const out: Array<{ nodeId: string; value: number }> = [];
+  function walk(n: ChartNode) {
+    if (n.children.length === 0) {
+      const old = snapshot.get(n.id);
+      const cur = n.value.value;
+      if (old !== cur) out.push({ nodeId: n.id, value: cur });
+    } else {
+      for (const c of n.children) walk(c);
+    }
+  }
+  walk(root);
+  return out;
+}
+
 export interface ChartBinding {
   /** The reactive tree root cell (writable). */
   treeRoot: { value: ChartNode | null };
@@ -53,8 +81,17 @@ export function bindChart(b: ChartBinding): () => void {
 
     if (event.type === "commit") {
       if (event.isActive) {
-        const writes = leafValues(root);
-        b.dataView.kernel.writeValues(b.dataView.config.datasetId, writes);
+        // Reorder commits: the reorder behavior already called writeReorder
+        // before commit (swapping the DataNode children array + publishing).
+        // No leaf values changed — skip the value write entirely. Previously
+        // this wrote ALL leaves (a no-op that triggered a second _publish +
+        // double rebuild on all views).
+        if (event.draft?.intent !== "reorder") {
+          const writes = changedLeaves(root, g.store.snapshot);
+          if (writes.length > 0) {
+            b.dataView.kernel.writeValues(b.dataView.config.datasetId, writes);
+          }
+        }
       }
       // frozenOrder clear on commit/cancel is owned by the previewFullRender
       // behavior (via Editor subscription). chart-binding only clears on

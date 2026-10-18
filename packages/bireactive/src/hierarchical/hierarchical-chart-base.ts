@@ -107,6 +107,10 @@ export abstract class HierarchicalChartBase extends HTMLElement {
   protected _focusCell = cell<string | null>(null);
   protected _hoverCell = cell<string | null>(null);
   protected _drillId = cell<string | null>(null);
+  /** True during a layout transition triggered by a config change (sort,
+   *  depth, orientation). Handle opacity reads this so handles exit/re-enter
+   *  instead of sliding around meaninglessly during sort reordering. */
+  protected _layoutTransitioning = cell(false);
   /** Exposed for geometry modules that need to know the current drill target
    *  (e.g. sunburst center label only shows for the drilled/root node). */
   get drillCell() { return this._drillId; }
@@ -169,6 +173,7 @@ export abstract class HierarchicalChartBase extends HTMLElement {
     const prevDrag = prev?.dragBehavior ?? (prev?.sort === "index" ? "reorder" : "resize");
     const nextDrag = c.dragBehavior ?? (c.sort === "index" ? "reorder" : "resize");
     const dragChanged = prevDrag !== nextDrag;
+    const sortChanged = prev?.sort !== c.sort;
     this._configCell.value = { ...c };
     this._colorModeCell.value = c.colorMode;
     if (this._gesture) this._gesture.store.config.value = { ...c };
@@ -179,6 +184,12 @@ export abstract class HierarchicalChartBase extends HTMLElement {
     } else if (this._dataView) {
       this._dataView.config = { ...c };
       this._gesture?.editor.updated();
+    }
+    // Sort change triggers a layout transition — hide handles during it.
+    if (sortChanged && prev) {
+      this._layoutTransitioning.value = true;
+      const ms = motion.motionMs.value;
+      setTimeout(() => { this._layoutTransitioning.value = false; }, ms);
     }
   }
   get dataView() { return this._dataView; }

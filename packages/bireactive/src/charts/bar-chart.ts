@@ -44,6 +44,10 @@ const OUT_GAP = 8;
 const xAnchor = (x: number) => (x <= 0.25 ? "start" : x >= 0.75 ? "end" : "middle");
 const yAnchor = (y: number) => (y <= 0.25 ? "hanging" : y >= 0.75 ? "alphabetic" : "central");
 
+// Static zero anchor for labels positioned via `translate` (CSS transform on
+// the <g> wrapper, which IS CSS-animatable — unlike <text> x/y attributes).
+const ZERO_VEC = Vec.derive(() => ({ x: 0, y: 0 }));
+
 // Inject chart-specific styles (no shadow DOM — light DOM + document styles).
 const BAR_CSS = `
 text { pointer-events: none; }
@@ -488,7 +492,8 @@ export class MdBarChartLC extends CartesianChartBase {
         const catPos = Vec.derive(() => isVert.value
           ? { x: barCX.value, y: plotBottom.value + 16 }
           : { x: plotX.value - 6, y: barCY.value });
-        catLbl = tile.add(label(catPos, derive(() => di()?.label ?? ""), { size: 10, fill: "#888", opacity: 0.8 }));
+        catLbl = tile.add(label(ZERO_VEC, derive(() => di()?.label ?? ""), { size: 10, fill: "#888", opacity: 0.8, translate: catPos }));
+        biEffect(() => { catLbl.el.style.transition = `transform ${motion.motionMs.value}ms ease-out`; });
         biEffect(() => {
           const a = isVert.value ? Anchor.Center : Anchor.Right;
           catLbl.intrinsic!.setAttribute('text-anchor', xAnchor(a.x));
@@ -511,7 +516,8 @@ export class MdBarChartLC extends CartesianChartBase {
           if (labelPopped.value) return { x: barX.value + barW.value + OUT_GAP, y: barCY.value };
           return { x: barX.value + LABEL_PAD, y: barCY.value };
         });
-        inLbl = tile.add(label(inPos, derive(() => di()?.label ?? ""), { size: 10, fill: inFill, opacity: inOpacity }));
+        inLbl = tile.add(label(ZERO_VEC, derive(() => di()?.label ?? ""), { size: 10, fill: inFill, opacity: inOpacity, translate: inPos }));
+        biEffect(() => { inLbl.el.style.transition = `transform ${motion.motionMs.value}ms ease-out`; });
       }
 
       // ─── Value label ───────────────────────────────────────────────────
@@ -539,7 +545,8 @@ export class MdBarChartLC extends CartesianChartBase {
           }
           return { x: barX.value + barW.value - VALUE_PAD, y: barCY.value };
         });
-        vLbl = tile.add(label(vPos, derive(() => { const d = di(); return d ? `${Math.round(d.value)}` : ""; }), { size: 11, fill: vFill, opacity: 1 }));
+        vLbl = tile.add(label(ZERO_VEC, derive(() => { const d = di(); return d ? `${Math.round(d.value)}` : ""; }), { size: 11, fill: vFill, opacity: 1, translate: vPos }));
+        biEffect(() => { vLbl.el.style.transition = `transform ${motion.motionMs.value}ms ease-out`; });
       }
 
       // ─── Measure text widths + alignment ───────────────────────────────
@@ -794,17 +801,13 @@ export class MdBarChartLC extends CartesianChartBase {
     // down) moves down in pixels → value decreases. Horizontal bars: value
     // axis is X (normal range), so +deltaY must move left in pixels → value
     // decreases, matching "drag the handle down/left = smaller value".
-    // A mouse wheel notch fires deltaY≈120, but a real drag moves only a few
-    // px per frame — so we dampen by WHEEL_PX_DIVISOR to make one notch feel
-    // like a ~10px drag (predictable, not explosive).
-    const WHEEL_PX_DIVISOR = 12;
+    // 1:1 pixel mapping — same as drag and same as area/line wheel.
     const pixelToValueDelta = (deltaY: number, currentValue: number): number => {
       const scale = this._valueScale?.value;
       if (!scale) return -Math.abs(currentValue * 0.1) * Math.sign(deltaY);
       const isV = this._orientationCell.value === 'vertical';
-      const px = deltaY / WHEEL_PX_DIVISOR;
       const curPx = scale(currentValue);
-      const newPx = isV ? curPx + px : curPx - px;
+      const newPx = isV ? curPx + deltaY : curPx - deltaY;
       return scale.invert(newPx) - currentValue;
     };
     this._behaviorDispose = this._composeStandardBehaviors(
@@ -823,7 +826,7 @@ export class MdBarChartLC extends CartesianChartBase {
     // ghost, lets siblings slide via CSS).
     return {
       durationMs: () => motion.motionMs.value,
-      elements: "rect",
+      elements: "rect, text",
     };
   }
 }
