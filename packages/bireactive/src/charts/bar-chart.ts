@@ -404,6 +404,16 @@ export class MdBarChartLC extends CartesianChartBase {
         return null;
       });
       const di = (): Bar | null => datumCell.value;
+      // The datum's value, keyed off the data ARRAY. External edits (table
+      // scrub, lens write) mutate the datum in place and republish the array,
+      // so `datumCell` yields the same object (Object.is) and nothing derived
+      // from `di()?.value` alone would recompute (WIN-552).
+      const valueCell = derive(() => {
+        const arr = data.value;
+        for (let i = 0; i < arr.length; i++) if (arr[i].id === datum.id) return arr[i].value;
+        return 0;
+      });
+      const dv = (): number => valueCell.value;
 
       const baseColor = (): string => { const d = di(); return d ? this.#barColor(idx, d) : SINGLE_COLOR; };
       const hoverBaseColor = (): string => { const d = di(); return d ? this.#hoverColor(idx, d) : lightenHex(SINGLE_COLOR, 0.35); };
@@ -419,15 +429,15 @@ export class MdBarChartLC extends CartesianChartBase {
       const barY = derive(() => {
         const i = cur.value; if (i < 0) return -9999;
         const d = di(); if (!d) return isVert.value ? plotBottom.value : -9999;
-        return isVert.value ? (valueScale.value as any)(d.value) : (bandScale.value(String(i)) ?? 0);
+        return isVert.value ? (valueScale.value as any)(dv()) : (bandScale.value(String(i)) ?? 0);
       });
       const barW = derive(() => {
         const d = di(); if (!d) return 0;
-        return isVert.value ? Math.max(0, bandScale.value.bandwidth()) : Math.max(0, (valueScale.value as any)(d.value) - plotX.value);
+        return isVert.value ? Math.max(0, bandScale.value.bandwidth()) : Math.max(0, (valueScale.value as any)(dv()) - plotX.value);
       });
       const barH = derive(() => {
         const d = di(); if (!d) return 0;
-        return isVert.value ? Math.max(0, plotBottom.value - (valueScale.value as any)(d.value)) : Math.max(0, bandScale.value.bandwidth());
+        return isVert.value ? Math.max(0, plotBottom.value - (valueScale.value as any)(dv())) : Math.max(0, bandScale.value.bandwidth());
       });
 
       const fill = derive(() => {
@@ -458,7 +468,7 @@ export class MdBarChartLC extends CartesianChartBase {
       tile.el.setAttribute('data-id', datum.id);
       biEffect(() => {
         const d = di();
-        if (d) tile.el.setAttribute('aria-label', `${d.label}: ${Math.round(d.value)}`);
+        if (d) tile.el.setAttribute('aria-label', `${d.label}: ${Math.round(dv())}`);
       });
       tile.el.addEventListener("pointerenter", () => { const d = di(); if (d) this.setHover(d.id); });
       tile.el.addEventListener("pointerleave", () => { const d = di(); if (d && this._hoverCell.value === d.id) this.setHover(null); });
@@ -539,13 +549,13 @@ export class MdBarChartLC extends CartesianChartBase {
           }
           return { x: barX.value + barW.value - VALUE_PAD, y: barCY.value };
         });
-        vLbl = tile.add(label(vPos, derive(() => { const d = di(); return d ? `${Math.round(d.value)}` : ""; }), { size: 11, fill: vFill, opacity: 1 }));
+        vLbl = tile.add(label(vPos, derive(() => (di() ? `${Math.round(dv())}` : "")), { size: 11, fill: vFill, opacity: 1 }));
       }
 
       // ─── Measure text widths + alignment ───────────────────────────────
       if (inLbl || vLbl || catLbl) {
         biEffect(() => {
-          di();
+          di(); dv();
           if (inLbl) labelWidth.value = (inLbl.intrinsic as SVGTextElement).getComputedTextLength();
           else if (catLbl) labelWidth.value = (catLbl.intrinsic as SVGTextElement).getComputedTextLength();
           if (vLbl) valueWidth.value = (vLbl.intrinsic as SVGTextElement).getComputedTextLength();
