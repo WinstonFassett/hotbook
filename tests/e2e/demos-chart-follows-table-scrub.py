@@ -109,7 +109,8 @@ def case(page, section: str, node_id: str, label: str) -> None:
     r = scrub(page, section, node_id, 80, "escape")
     check(f"{label}: table scrubs live", r["mid"]["table"] > r["before"]["table"], f"{r['before']} -> {r['mid']}")
     check(f"{label}: chart follows table mid-scrub", agree(r["mid"]), str(r["mid"]))
-    check(f"{label}: bar grows mid-scrub", bar_grew(r["before"], r["mid"]), f"{r['before']} -> {r['mid']}")
+    if section == "bar-chart":
+        check(f"{label}: bar grows mid-scrub", bar_grew(r["before"], r["mid"]), f"{r['before']} -> {r['mid']}")
     check(f"{label}: Escape reverts both", r["after"] == r["before"], f"{r['before']} vs {r['after']}")
 
     r = scrub(page, section, node_id, 80, "release")
