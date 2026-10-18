@@ -136,15 +136,6 @@ function valueData(
     const isValue2 = measureKey === 'value2';
 
     const leaves = ordered.map((item, i) => {
-      const total = Num.lens(
-        data,
-        (d: any[]) => (d && d[i] ? schema!.readValue!(d[i]) : 0),
-        (target: number, d: any[]) => {
-          const next = d.slice();
-          if (next[i]) schema!.writeValue!(next[i], target);
-          return next;
-        },
-      );
       const valueCell = Num.lens(
         data,
         (d: any[]) => {
@@ -183,6 +174,23 @@ function valueData(
           return next;
         },
       );
+      // The chart-bound measure's own cell IS the leaf total (WIN-543). The
+      // treetable picks its primary (kernel-backed, live) column as the one
+      // whose measure cell is the total; a separate total lens made it fall
+      // back to column 0, so in Value 2 mode the Value column showed value2.
+      const total = isValue2
+        ? value2Cell
+        : isValue
+          ? valueCell
+          : Num.lens(
+              data,
+              (d: any[]) => (d && d[i] ? schema!.readValue!(d[i]) : 0),
+              (target: number, d: any[]) => {
+                const next = d.slice();
+                if (next[i]) schema!.writeValue!(next[i], target);
+                return next;
+              },
+            );
       return node({ id: item.id, label: item.label, color: item.color, total, measures: { value: valueCell, value2: value2Cell } } as any);
     });
 
