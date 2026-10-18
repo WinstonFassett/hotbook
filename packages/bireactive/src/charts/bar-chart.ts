@@ -299,15 +299,6 @@ export class MdBarChartLC extends CartesianChartBase {
       return arr.map((v) => ({ v, pos: sc(v), text: fmt(v) }));
     });
 
-    // Solid backdrop so axis labels hide any plot content behind them.
-    axisS(rect(
-      derive(() => 0),
-      derive(() => isVert.value ? 0 : axisBaseY.value),
-      derive(() => isVert.value ? PAD.value.left : viewportW.value),
-      derive(() => isVert.value ? viewportH.value : PAD.value.bottom),
-      { fill: 'var(--pv-bg, #0b0d12)' }
-    ));
-
     const AXIS_POOL = 12;
     for (let ti = 0; ti < AXIS_POOL; ti++) {
       const visible = derive(() => valueTicks.value[ti] ? 1 : 0);
@@ -756,8 +747,7 @@ export class MdBarChartLC extends CartesianChartBase {
 
     this._setupDisposers.push(() => barsResult.dispose());
 
-    // Place the value-axis layer on top of the bars so its backdrop masks
-    // the plot content behind the fixed axis labels.
+    // Place the value-axis layer on top of the bars.
     this._svg!.appendChild(valueAxisGroup.el);
 
     // ─── Left-room padding for popped labels ───────────────────────────────
