@@ -382,9 +382,15 @@ export class TreetableChart extends HierarchicalChartBase {
         // Primary column edits route through the DataView draft/commit flow
         // (cross-view previews); extra columns write BiNode measure cells
         // directly (legacy behavior — the kernel only carries one measure).
+        // Primary leaf edits also write the compat BiNode total so lens-fed
+        // flat charts follow live; Escape restore reverts both through `set`.
+        const biLeaf = isPrimary && bn && bn.children.length === 0 ? bn.value.total : null;
         const dragDispose = numberDrag(valueCell, {
           get: () => measureValue.value,
-          set: (v: number) => { measureValue.value = v; },
+          set: (v: number) => {
+            measureValue.value = v;
+            if (biLeaf) biLeaf.value = v;
+          },
           pxPerUnit: 4,
           ...(isPrimary
             ? {
