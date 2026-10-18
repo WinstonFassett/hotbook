@@ -12,13 +12,15 @@
 //   • Kernel → BiNode: on Kernel publish, changed leaf values are written
 //     back into the BiNode `total` cells (groups re-derive via their lens),
 //     and child-order changes are applied to the BiNode children arrays.
-// An `applying` flag guards against echo loops.
+// `applying` guards synchronous re-entry between the two directions. The
+// `gateOpen` cell keeps speculative leaf writes (an editor Drafting on the
+// shared Kernel) out of the Kernel until the gesture commits or cancels.
 //
 // All compat charts share one module-level Kernel, so any two charts fed the
 // same BiNode root share a dataset — cross-view sync (drafts + drill) works
 // exactly like the harness.
 
-import { effect } from "bireactive";
+import { cell, effect } from "bireactive";
 import type { BiNode } from "../lib/tree";
 import type { ChartConfig, DataNode } from "./types";
 import { Kernel, findNode } from "./kernel";
@@ -79,14 +81,24 @@ export function adoptBiRoot(root: BiNode): string {
   // Guard: true while one side is applying the other side's change.
   let applying = false;
 
+  // Closed while any Editor on the shared Kernel is Drafting. Invariant: a
+  // cancel restores, or a commit publishes, every BiNode leaf in the same
+  // synchronous task that reopens the gate, so the effect's re-run only
+  // reconciles writes that landed during someone else's gesture.
+  const gateOpen = cell(!sharedKernel.drafts.isDrafting);
+  const stopGate = sharedKernel.drafts.subscribe((isDrafting) => {
+    if (gateOpen.value === isDrafting) gateOpen.value = !isDrafting;
+  });
+
   // BiNode → Kernel: watch every leaf total cell.
   const stopEffect = effect(() => {
     const writes: Array<{ nodeId: string; value: number }> = [];
     const ds = sharedKernel.getDataset(datasetId)!;
+    const open = gateOpen.value;
     forEachNode(root, (n) => {
       if (n.children.length > 0) return;
       const v = leafValue(n); // reactive read — effect re-runs on any leaf change
-      if (applying) return;
+      if (applying || !open) return;
       const dn = findNode(ds.root, n.value.id);
       if (dn && dn.value !== v) writes.push({ nodeId: n.value.id, value: v });
     });
@@ -143,6 +155,7 @@ export function adoptBiRoot(root: BiNode): string {
     dispose: () => {
       stopEffect();
       stopKernel();
+      stopGate();
       entries.delete(root);
     },
   };
