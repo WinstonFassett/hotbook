@@ -220,6 +220,14 @@ export abstract class CartesianChartBase extends HTMLElement {
     this._svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
   }
 
+  /** Keep the viewBox equal to the host size. Pointer coordinates are mapped
+   *  through the viewBox, so it must follow every resize or hover/click
+   *  resolves against a stale width. */
+  protected _bindViewBoxToHost(): void {
+    const { w, h } = this._hostSize!;
+    this._setupDisposers.push(effect(() => this._setViewBox(w.value, h.value)));
+  }
+
   // --- Lifecycle ---
   protected _surfaceReady = false;
 

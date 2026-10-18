@@ -178,7 +178,7 @@ export class MdGanttChartLC extends CartesianChartBase {
     const data = this.dataCell;
     const rows0 = data.value as GanttTask[];
 
-    this._setViewBox(Wc.value, Hc.value);
+    this._bindViewBoxToHost();
 
     // Sync dataCell → base _dataCell.
     this._setupDisposers.push(biEffect(() => { this._dataCell.value = this.dataCell.value; }));

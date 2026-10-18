@@ -81,7 +81,7 @@ export class MdGaugeSegmentedLC extends RadialChartBase {
     ensureGaugeSegCss();
     const s = this._s;
     const { w: Wc, h: Hc } = this._hostSize!;
-    this._setViewBox(Wc.value, Hc.value);
+    this._bindViewBoxToHost();
     this.tabIndex = 0;
     this.style.outline = "none";
 

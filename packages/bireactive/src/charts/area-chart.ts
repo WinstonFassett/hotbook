@@ -80,7 +80,7 @@ export class MdAreaChartLC extends CartesianChartBase {
     ensureAreaCss();
     const s = this._s;
     const { w: Wc, h: Hc } = this._hostSize!;
-    this._setViewBox(Wc.value, Hc.value);
+    this._bindViewBoxToHost();
     this.tabIndex = -1;
     this.style.outline = "none";
 
