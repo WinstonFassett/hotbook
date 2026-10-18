@@ -1,4 +1,4 @@
-import { num, Num, treeNode as node, type Writable, type Num as NumType } from "bireactive";
+import { cell, num, Num, treeNode as node, type Cell, type Writable, type Num as NumType } from "bireactive";
 import { type BiNode, type ColumnDef } from "@hotbook/bireactive";
 import type { GanttTask } from "@hotbook/bireactive";
 import { sharedRows, items } from "./layout/demo-data";
@@ -38,10 +38,16 @@ function valueLeaf(
   value: number,
   color: string,
   value2: number = value,
+  selected: Writable<Cell<string>>,
 ): BiNode {
   const v = bi(value);
   const v2 = bi(value2);
-  return node({ id, label, color, total: v, measures: { value: v, value2: v2 } } as any);
+  const total = Num.lens(
+    [v, v2, selected],
+    ([a, b, sel]) => (sel === "value2" ? b : a),
+    (target, [a, b, sel]) => (sel === "value2" ? [a, target, sel] : [target, b, sel]),
+  );
+  return node({ id, label, color, total, measures: { value: v, value2: v2 } } as any);
 }
 
 function writeItemValue(item: any, target: number, key: string = "value"): void {
@@ -429,6 +435,8 @@ function sankeyData(
     layers.get(layer)!.push(n);
   });
 
+  const selected = cell<string>("value");
+
   const leaves: BiNode[] = [];
   const layerNodes = Array.from(layers.entries())
     .sort((a, b) => a[0] - b[0])
@@ -437,7 +445,7 @@ function sankeyData(
         .map((nodeId) => {
           const outLinks = links.filter((l) => l.source === nodeId);
           if (outLinks.length === 0) {
-            const leaf = valueLeaf(nodeId, nodeId, 0, PALETTE[layer % PALETTE.length]!);
+            const leaf = valueLeaf(nodeId, nodeId, 0, PALETTE[layer % PALETTE.length]!, undefined, selected);
             leaves.push(leaf);
             return leaf;
           }
@@ -449,6 +457,7 @@ function sankeyData(
               l.value,
               PALETTE[layer % PALETTE.length]!,
               value2,
+              selected,
             );
             leaves.push(leaf);
             return leaf;
@@ -468,7 +477,6 @@ function sankeyData(
 
   const root = dataRoot(layerNodes);
 
-  let selectedKey = 'value';
   const getLinks = () =>
     leaves
       .map((leaf) => {
@@ -478,7 +486,7 @@ function sankeyData(
         return {
           source: parts[0]!,
           target: parts[1]!,
-          value: (leaf.value as any).measures[selectedKey]?.value ?? 0,
+          value: (leaf.value as any).measures[selected.value]?.value ?? 0,
         };
       })
       .filter(Boolean) as { source: string; target: string; value: number }[];
@@ -497,9 +505,9 @@ function sankeyData(
   return {
     root,
     setChartData(this: DemoDataModel, el: any) {
-      selectedKey = el.measureKey || 'value';
+      selected.value = el.measureKey || 'value';
       const chartCtx: ChartContext = {
-        valueBinding: selectedKey,
+        valueBinding: selected.value,
         orderBinding: 'index',
         orderDir: 'asc',
         rawNodes: [],
