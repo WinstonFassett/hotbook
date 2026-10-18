@@ -73,6 +73,9 @@ export interface DraftEvent {
   parentId?: string;
   /** Snapshot of sibling order to freeze during gesture (when sort !== 'index'). */
   frozenOrder?: Map<string, string[]>;
+  /** Dataset the draft belongs to (stamped by the DataView). Cross-tile
+   *  listeners use it to ignore drafts from unrelated datasets. */
+  datasetId?: string;
 }
 
 /** Editor states. */

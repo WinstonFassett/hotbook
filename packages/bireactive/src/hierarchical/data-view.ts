@@ -231,12 +231,12 @@ export class DataView {
 
   /** Start a draft from this chart's control surface. */
   draft(event: DraftEvent): void {
-    this.editor.draft(event);
+    this.editor.draft({ ...event, datasetId: this.config.datasetId });
   }
 
   /** Update an in-progress draft. */
   updateDraft(event: DraftEvent): void {
-    this.editor.updateDraft(event);
+    this.editor.updateDraft({ ...event, datasetId: this.config.datasetId });
   }
 
   /** Commit the current draft. The chart writes the value to the Kernel in

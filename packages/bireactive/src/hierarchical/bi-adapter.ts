@@ -78,6 +78,9 @@ export function adoptBiRoot(root: BiNode): string {
 
   // Guard: true while one side is applying the other side's change.
   let applying = false;
+  // True while a Kernel draft is being previewed into the BiNode leaves
+  // (WIN-544). The BiNode → Kernel effect must not commit those previews.
+  let drafting = false;
 
   // BiNode → Kernel: watch every leaf total cell.
   const stopEffect = effect(() => {
@@ -86,7 +89,7 @@ export function adoptBiRoot(root: BiNode): string {
     forEachNode(root, (n) => {
       if (n.children.length > 0) return;
       const v = leafValue(n); // reactive read — effect re-runs on any leaf change
-      if (applying) return;
+      if (applying || drafting) return;
       const dn = findNode(ds.root, n.value.id);
       if (dn && dn.value !== v) writes.push({ nodeId: n.value.id, value: v });
     });
@@ -136,6 +139,43 @@ export function adoptBiRoot(root: BiNode): string {
     }
   });
 
+  // Kernel drafts → BiNode (WIN-544): preview an in-flight edit into the
+  // leaf `total` cells so lens-fed consumers (flat charts reading the BiNode
+  // through Num.lens) follow the gesture live instead of jumping on commit.
+  // Commit is finalized by the Kernel publish above; cancel restores the
+  // committed Kernel values.
+  const writeLeaf = (id: string, value: number) => {
+    const bn = findBiNode(root, id);
+    if (bn && bn.children.length === 0 && leafValue(bn) !== value) bn.value.total.value = value;
+  };
+  const stopDrafts = sharedKernel.subscribeDrafts((draft, phase) => {
+    if (draft.intent !== "edit") return;
+    const ds = sharedKernel.getDataset(datasetId);
+    if (!ds) return;
+    const mine = draft.datasetId ? draft.datasetId === datasetId : findNode(ds.root, draft.nodeId) !== null;
+    if (!mine) return;
+    applying = true;
+    try {
+      if (phase === "draft") {
+        drafting = true;
+        writeLeaf(draft.nodeId, draft.value);
+        if (draft.secondaryNodeId) writeLeaf(draft.secondaryNodeId, draft.secondaryValue ?? 0);
+      } else {
+        drafting = false;
+        if (phase === "cancel") {
+          const restore = (id: string) => {
+            const dn = findNode(ds.root, id);
+            if (dn) writeLeaf(id, dn.value);
+          };
+          restore(draft.nodeId);
+          if (draft.secondaryNodeId) restore(draft.secondaryNodeId);
+        }
+      }
+    } finally {
+      applying = false;
+    }
+  });
+
   const entry: RootEntry = {
     datasetId,
     refs: 0,
@@ -143,6 +183,7 @@ export function adoptBiRoot(root: BiNode): string {
     dispose: () => {
       stopEffect();
       stopKernel();
+      stopDrafts();
       entries.delete(root);
     },
   };
