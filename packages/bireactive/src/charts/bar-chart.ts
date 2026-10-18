@@ -400,7 +400,7 @@ export class MdBarChartLC extends CartesianChartBase {
       // using it for data lookup would swap bar identities during reorder.
       const datumCell = derive(() => {
         const arr = data.value;
-        for (let i = 0; i < arr.length; i++) if (arr[i].id === datum.id) return arr[i];
+        for (let i = 0; i < arr.length; i++) if (arr[i].id === datum.id) return { ...arr[i] };
         return null;
       });
       const di = (): Bar | null => datumCell.value;
