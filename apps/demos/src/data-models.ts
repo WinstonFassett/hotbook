@@ -145,6 +145,7 @@ function valueData(
         (target: number, d: any[]) => {
           const next = d.slice();
           if (next[i]) {
+            next[i] = { ...next[i] };
             if (isValue) {
               schema!.writeValue!(next[i], target);
             } else {
@@ -164,6 +165,7 @@ function valueData(
         (target: number, d: any[]) => {
           const next = d.slice();
           if (next[i]) {
+            next[i] = { ...next[i] };
             if (isValue2) {
               schema!.writeValue!(next[i], target);
             } else {
